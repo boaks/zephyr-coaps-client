@@ -1,0 +1,10 @@
+# zephyr build folder
+build*/
+.project
+# eclipse ide
+.cproject
+.settings
+# cmake
+CMakeCache.txt
+cmake_install.cmake
+CMakeFiles

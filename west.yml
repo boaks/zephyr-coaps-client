@@ -1,0 +1,34 @@
+#
+# Copyright (c) 2022 Achim Kraus CloudCoap.net
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Eclipse Public License 2.0 which is available at
+# http://www.eclipse.org/legal/epl-2.0
+#
+# SPDX-License-Identifier: EPL-2.0
+#
+
+manifest:
+  remotes:
+    - name: ncs
+      url-base: https://github.com/nrfconnect
+# boaks is only temporary used. The origin is eclipse and after
+# some open PRs get merged, boaks will be replaced by eclipse
+    - name: boaks
+      url-base: https://github.com/boaks
+  projects:
+    - name: nrf
+      repo-path: sdk-nrf
+      remote: ncs
+      revision: v1.9.1
+      import: true
+    - name: tinydtls
+      repo-path: tinydtls
+      remote: boaks
+      revision: zephyr_cid_develop
+      path: modules/lib/tinydtls
+  self:
+    path: coaps-client
