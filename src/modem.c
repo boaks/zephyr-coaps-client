@@ -29,7 +29,6 @@ K_SEM_DEFINE(lte_connected, 0, 1);
 
 #if defined(CONFIG_NRF_MODEM_LIB)
 
-static char at_buf[128];
 static volatile int lte_connected_state = 0;
 
 static void lte_handler(const struct lte_lc_evt *const evt)
@@ -131,24 +130,20 @@ static void terminate_at_buffer(char *line, size_t len)
 static int modem_init(void)
 {
    int err = 0;
-   static const char header[] = "%HWVERSION: ";
 
    if (IS_ENABLED(CONFIG_LTE_AUTO_INIT_AND_CONNECT)) {
       /* Do nothing, modem is already configured and LTE connected. */
    } else {
+      char buf[32];
       nrf_modem_lib_init(NORMAL_MODE);
 
-      err = modem_at_cmd("AT%%HWVERSION", at_buf, sizeof(at_buf));
+      err = modem_at_cmd("AT%%HWVERSION", buf, sizeof(buf), "%HWVERSION: ");
       if (err > 0) {
-         if (strncmp(at_buf, header, sizeof(header) - 1) == 0) {
-            LOG_INF("hw: %s", at_buf + sizeof(header) - 1);
-         } else {
-            LOG_INF("hw: %s", at_buf);
-         }
+         LOG_INF("hw: %s", buf);
       }
-      err = modem_at_cmd("AT+CGMR", at_buf, sizeof(at_buf));
+      err = modem_at_cmd("AT+CGMR", buf, sizeof(buf), NULL);
       if (err > 0) {
-         LOG_INF("R: %s", at_buf);
+         LOG_INF("R: %s", buf);
       }
 
       err = lte_lc_init();
@@ -261,7 +256,7 @@ void modem_set_power_modes(int enable)
    }
 }
 
-int modem_at_cmd(const char *cmd, char *buf, size_t max_len)
+int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
 {
    int err;
    char at_buf[128];
@@ -271,7 +266,11 @@ int modem_at_cmd(const char *cmd, char *buf, size_t max_len)
       return err;
    }
    terminate_at_buffer(at_buf, sizeof(at_buf));
-   strncpy(buf, at_buf, max_len - 1);
+   if (skip && strncmp(at_buf, skip, strlen(skip)) == 0) {
+      strncpy(buf, at_buf + strlen(skip), max_len - 1);
+   } else {
+      strncpy(buf, at_buf, max_len - 1);
+   }
    return strlen(buf);
 }
 
@@ -288,11 +287,12 @@ void modem_set_power_modes(int enable)
    (void)enable;
 }
 
-int modem_at_cmd(const char *cmd, char *buf, size_t max_len)
+int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
 {
    (void)cmd;
    (void)buf;
    (void)max_len;
+   (void)skip;
    return 0;
 }
 

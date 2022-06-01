@@ -20,6 +20,6 @@ int modem_start(int init);
 
 void modem_set_power_modes(int enable);
 
-int modem_at_cmd(const char* cmd, char* buf, size_t max_len);
+int modem_at_cmd(const char* cmd, char* buf, size_t max_len, const char *skip);
 
 #endif /* MODEM_H */

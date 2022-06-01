@@ -133,8 +133,6 @@ int coap_client_parse_data(uint8 *data, size_t len)
 
 int coap_client_prepare_post(void)
 {
-   static const char header_vbat[] = "%XVBAT: ";
-   static const char header_cesq[] = "+CESQ: ";
    char buf[192], *p;
    int err;
    int index;
@@ -157,23 +155,22 @@ int coap_client_prepare_post(void)
 
    uptime = (unsigned int)(k_uptime_get() / 1000);
 
-   err = modem_at_cmd("AT%%XVBAT", coap_message_buf, sizeof(coap_message_buf));
+   err = modem_at_cmd("AT%%XVBAT", coap_message_buf, sizeof(coap_message_buf), "%XVBAT: ");
    if (err < 0) {
       dtls_warn("Failed to read battery level!\n");
    }
-   if (err > 0 && strncmp(coap_message_buf, header_vbat, sizeof(header_vbat) - 1) == 0) {
-      p = coap_message_buf + sizeof(header_vbat) - 1;
-      bat_level[0] = atoi(p);
+   if (err > 0 ) {
+      bat_level[0] = atoi(coap_message_buf);
    } else {
       bat_level[0] = 1;
    }
 
-   err = modem_at_cmd("AT+CESQ", coap_message_buf, sizeof(coap_message_buf));
+   err = modem_at_cmd("AT+CESQ", coap_message_buf, sizeof(coap_message_buf), "+CESQ: ");
    if (err < 0) {
       dtls_warn("Failed to read signal level!\n");
    }
-   if (err > 0 && strncmp(coap_message_buf, header_cesq, sizeof(header_cesq) - 1) == 0) {
-      p = coap_message_buf + sizeof(header_cesq) - 1;
+   if (err > 0) {
+      p = coap_message_buf;
       index = 0;
       while (*p && index < 4) {
          if (*p++ == ',') {

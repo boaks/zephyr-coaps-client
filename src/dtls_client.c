@@ -468,7 +468,7 @@ int dtls_loop(void)
    dtls_init_destination(&dst);
 
    modem_set_power_modes(0);
-   imei_len = modem_at_cmd("AT+CGSN", imei, sizeof(imei));
+   imei_len = modem_at_cmd("AT+CGSN", imei, sizeof(imei), NULL);
    dtls_credentials_init_psk(0 < imei_len ? imei : NULL);
    dtls_credentials_init_handler(&cb);
 
