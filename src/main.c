@@ -13,22 +13,22 @@
 
 #include <logging/log.h>
 
-#include "ui.h"
-#include "modem.h"
 #include "coap_client.h"
 #include "dtls_client.h"
+#include "modem.h"
+#include "ui.h"
 
 LOG_MODULE_REGISTER(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 void main(void)
 {
 
-	LOG_INF("CoAP/DTLS CID sample " CLIENT_VERSION " has started");
+   LOG_INF("CoAP/DTLS CID sample " CLIENT_VERSION " has started");
 
-	ui_init(dtls_trigger);
+   ui_init(dtls_trigger);
 
-	modem_start(3);
+   modem_start(3);
 
-	LOG_INF("start dtls-client");
-	dtls_loop();
+   LOG_INF("start dtls-client");
+   dtls_loop();
 }

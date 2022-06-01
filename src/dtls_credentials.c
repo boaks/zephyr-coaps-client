@@ -70,63 +70,54 @@ get_psk_info(struct dtls_context_t *ctx UNUSED_PARAM,
              unsigned char *result, size_t result_length)
 {
 
-  switch (type)
-  {
-  case DTLS_PSK_IDENTITY:
-    if (id_len)
-    {
-      dtls_debug("got psk_identity_hint: '%.*s'\n", (int)id_len, id);
-    }
+   switch (type) {
+      case DTLS_PSK_IDENTITY:
+         if (id_len) {
+            dtls_debug("got psk_identity_hint: '%.*s'\n", (int)id_len, id);
+         }
 
-    if (result_length < psk_id_length)
-    {
-      dtls_warn("cannot set psk_identity -- buffer too small\n");
-      return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
-    }
+         if (result_length < psk_id_length) {
+            dtls_warn("cannot set psk_identity -- buffer too small\n");
+            return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
+         }
 
-    memcpy(result, psk_id, psk_id_length);
-    return psk_id_length;
-  case DTLS_PSK_KEY:
-    if (id_len != psk_id_length || memcmp(psk_id, id, id_len) != 0)
-    {
-      dtls_warn("PSK for unknown id requested, exiting\n");
-      return dtls_alert_fatal_create(DTLS_ALERT_ILLEGAL_PARAMETER);
-    }
-    else if (result_length < psk_key_length)
-    {
-      dtls_warn("cannot set psk -- buffer too small\n");
-      return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
-    }
+         memcpy(result, psk_id, psk_id_length);
+         return psk_id_length;
+      case DTLS_PSK_KEY:
+         if (id_len != psk_id_length || memcmp(psk_id, id, id_len) != 0) {
+            dtls_warn("PSK for unknown id requested, exiting\n");
+            return dtls_alert_fatal_create(DTLS_ALERT_ILLEGAL_PARAMETER);
+         } else if (result_length < psk_key_length) {
+            dtls_warn("cannot set psk -- buffer too small\n");
+            return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
+         }
 
-    memcpy(result, psk_key, psk_key_length);
-    return psk_key_length;
-  case DTLS_PSK_HINT:
-  default:
-    dtls_warn("unsupported request type: %d\n", type);
-  }
+         memcpy(result, psk_key, psk_key_length);
+         return psk_key_length;
+      case DTLS_PSK_HINT:
+      default:
+         dtls_warn("unsupported request type: %d\n", type);
+   }
 
-  return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
+   return dtls_alert_fatal_create(DTLS_ALERT_INTERNAL_ERROR);
 }
 
 void dtls_credentials_init_psk(const char *imei)
 {
-  if (imei)
-  {
-    snprintf(psk_id, sizeof(psk_id), "cali.%s", imei);
-  }
-  else
-  {
-    uint32_t id = 0;
-    dtls_prng((unsigned char *) &id, sizeof(id));
-    snprintf(psk_id, sizeof(psk_id), "cali.%u", id);
-  }
-  dtls_info("psk-id: %s\n", psk_id);
-  psk_id_length = strlen(psk_id);
+   if (imei) {
+      snprintf(psk_id, sizeof(psk_id), "cali.%s", imei);
+   } else {
+      uint32_t id = 0;
+      dtls_prng((unsigned char *)&id, sizeof(id));
+      snprintf(psk_id, sizeof(psk_id), "cali.%u", id);
+   }
+   dtls_info("psk-id: %s\n", psk_id);
+   psk_id_length = strlen(psk_id);
 }
 #else /* DTLS_PSK */
 
-void dtls_credentials_init_psk(const char *imei UNUSED_PARAM) {
-
+void dtls_credentials_init_psk(const char *imei UNUSED_PARAM)
+{
 }
 
 #endif /* DTLS_PSK */
@@ -138,16 +129,16 @@ get_ecdsa_key(struct dtls_context_t *ctx,
               const session_t *session,
               const dtls_ecdsa_key_t **result)
 {
-  static const dtls_ecdsa_key_t ecdsa_key = {
-      .curve = DTLS_ECDH_CURVE_SECP256R1,
-      .priv_key = ecdsa_priv_key,
-      .pub_key_x = ecdsa_pub_key_x,
-      .pub_key_y = ecdsa_pub_key_y};
-  (void)ctx;
-  (void)session;
+   static const dtls_ecdsa_key_t ecdsa_key = {
+       .curve = DTLS_ECDH_CURVE_SECP256R1,
+       .priv_key = ecdsa_priv_key,
+       .pub_key_x = ecdsa_pub_key_x,
+       .pub_key_y = ecdsa_pub_key_y};
+   (void)ctx;
+   (void)session;
 
-  *result = &ecdsa_key;
-  return 0;
+   *result = &ecdsa_key;
+   return 0;
 }
 
 static int
@@ -157,25 +148,25 @@ verify_ecdsa_key(struct dtls_context_t *ctx,
                  const unsigned char *other_pub_y,
                  size_t key_size)
 {
-  (void)ctx;
-  (void)session;
-  (void)other_pub_x;
-  (void)other_pub_y;
-  (void)key_size;
-  return 0;
+   (void)ctx;
+   (void)session;
+   (void)other_pub_x;
+   (void)other_pub_y;
+   (void)key_size;
+   return 0;
 }
 #endif /* DTLS_ECC */
 #endif
 
-void dtls_credentials_init_handler(dtls_handler_t* handler) 
+void dtls_credentials_init_handler(dtls_handler_t *handler)
 {
 #ifdef DTLS_PSK
-    handler->get_psk_info = get_psk_info;
+   handler->get_psk_info = get_psk_info;
 #endif /* DTLS_PSK */
 #ifdef USE_ECC
 #ifdef DTLS_ECC
-    handler->get_ecdsa_key = get_ecdsa_key;
-    handler->verify_ecdsa_key = verify_ecdsa_key;
+   handler->get_ecdsa_key = get_ecdsa_key;
+   handler->verify_ecdsa_key = verify_ecdsa_key;
 #endif /* DTLS_ECC */
 #endif
 }
