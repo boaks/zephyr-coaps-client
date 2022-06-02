@@ -15,11 +15,18 @@
 #define MODEM_H
 
 #include <stddef.h>
+#include <sys_clock.h>
 
-int modem_start(int init);
-
-void modem_set_power_modes(int enable);
+int modem_start(k_timeout_t timeout);
 
 int modem_at_cmd(const char* cmd, char* buf, size_t max_len, const char *skip);
+
+int modem_set_power_modes(int enable);
+
+int modem_set_offline(void);
+
+int modem_set_normal(void);
+
+int modem_power_off(void);
 
 #endif /* MODEM_H */

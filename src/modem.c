@@ -11,6 +11,7 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include <kernel.h>
 #include <logging/log.h>
 #include <modem/lte_lc.h>
 #include <modem/nrf_modem_lib.h>
@@ -25,11 +26,37 @@
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
-K_SEM_DEFINE(lte_connected, 0, 1);
-
 #if defined(CONFIG_NRF_MODEM_LIB)
 
+K_MUTEX_DEFINE(lte_mutex);
+K_CONDVAR_DEFINE(lte_condvar);
+
+static bool initialized = 0;
+static bool start_connect = 0;
 static volatile int lte_connected_state = 0;
+
+static void lte_connection_set(int connected)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   lte_connected_state = connected;
+   if (connected) {
+      k_condvar_broadcast(&lte_condvar);
+   }
+   k_mutex_unlock(&lte_mutex);
+}
+
+static int lte_connection_wait(k_timeout_t timeout)
+{
+   int res = 0;
+   k_mutex_lock(&lte_mutex, timeout);
+   res = lte_connected_state;
+   if (!res) {
+      k_condvar_wait(&lte_condvar, &lte_mutex, timeout);
+      res = lte_connected_state;
+   }
+   k_mutex_unlock(&lte_mutex);
+   return res;
+}
 
 static void lte_handler(const struct lte_lc_evt *const evt)
 {
@@ -41,17 +68,15 @@ static void lte_handler(const struct lte_lc_evt *const evt)
             if (evt->nw_reg_status == LTE_LC_NW_REG_SEARCHING) {
                LOG_INF("Network registration status: searching ...");
             }
-            lte_connected_state = 0;
-            k_sem_take(&lte_connected, K_NO_WAIT);
             dtls_lte_connected(LTE_CONNECT_NETWORK, 0);
+            lte_connection_set(0);
             break;
          }
 
          LOG_INF("Network registration status: %s",
                  evt->nw_reg_status == LTE_LC_NW_REG_REGISTERED_HOME ? "Connected - home network" : "Connected - roaming");
-         lte_connected_state = 1;
          dtls_lte_connected(LTE_CONNECT_NETWORK, 1);
-         k_sem_give(&lte_connected);
+         lte_connection_set(1);
          break;
       case LTE_LC_EVT_LTE_MODE_UPDATE:
          if (evt->lte_mode == LTE_LC_LTE_MODE_NONE) {
@@ -133,7 +158,7 @@ static int modem_init(void)
 
    if (IS_ENABLED(CONFIG_LTE_AUTO_INIT_AND_CONNECT)) {
       /* Do nothing, modem is already configured and LTE connected. */
-   } else {
+   } else if (!initialized) {
       char buf[32];
       nrf_modem_lib_init(NORMAL_MODE);
 
@@ -143,7 +168,7 @@ static int modem_init(void)
       }
       err = modem_at_cmd("AT+CGMR", buf, sizeof(buf), NULL);
       if (err > 0) {
-         LOG_INF("R: %s", buf);
+         LOG_INF("rev: %s", buf);
       }
 
       err = lte_lc_init();
@@ -157,6 +182,7 @@ static int modem_init(void)
          }
          return err;
       }
+      initialized = true;
       LOG_INF("modem initialized");
    }
 
@@ -169,20 +195,21 @@ static int modem_connect(void)
 
    if (IS_ENABLED(CONFIG_LTE_AUTO_INIT_AND_CONNECT)) {
       /* Do nothing, modem is already configured and LTE connected. */
-   } else {
+   } else if (!start_connect) {
       err = lte_lc_connect_async(lte_handler);
       if (err) {
          LOG_WRN("Connecting to LTE network failed, error: %d",
                  err);
+      } else {
+         start_connect = true;
       }
    }
    return err;
 }
 
-int modem_start(int init)
+int modem_start(k_timeout_t timeout)
 {
    int err = 0;
-   int count = 0;
 
    ui_led_op(LED_COLOR_BLUE, LED_SET);
    ui_led_op(LED_COLOR_RED, LED_SET);
@@ -191,21 +218,23 @@ int modem_start(int init)
     * because the enabling of RAI is dependent on the
     * configured network mode which is set during modem initialization.
     */
-   if (init & 1) {
-      err = modem_init();
-   }
-
-   if (!err && init & 2) {
+   err = modem_init();
+   if (!err) {
       err = modem_connect();
    }
-
-   if (!err && !lte_connected_state) {
-
-      while (k_sem_take(&lte_connected, K_MSEC(1500))) {
-         ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
-         ui_led_op(LED_COLOR_RED, LED_TOGGLE);
-         ++count;
-         if (count > 100) {
+   if (!err) {
+      int led_on = 1;
+      while (!lte_connection_wait(K_MSEC(1500))) {
+         led_on = !led_on;
+         if (led_on) {
+            ui_led_op(LED_COLOR_BLUE, LED_SET);
+            ui_led_op(LED_COLOR_RED, LED_SET);
+         } else {
+            ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
+            ui_led_op(LED_COLOR_RED, LED_CLEAR);
+         }
+         timeout.ticks -= K_MSEC(1500).ticks;
+         if (0 > timeout.ticks) {
             err = 1;
             break;
          }
@@ -217,7 +246,25 @@ int modem_start(int init)
    return err;
 }
 
-void modem_set_power_modes(int enable)
+int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
+{
+   int err;
+   char at_buf[128];
+   memset(buf, 0, max_len);
+   err = nrf_modem_at_cmd(at_buf, sizeof(at_buf), cmd);
+   if (err) {
+      return err;
+   }
+   terminate_at_buffer(at_buf, sizeof(at_buf));
+   if (skip && strncmp(at_buf, skip, strlen(skip)) == 0) {
+      strncpy(buf, at_buf + strlen(skip), max_len - 1);
+   } else {
+      strncpy(buf, at_buf, max_len - 1);
+   }
+   return strlen(buf);
+}
+
+int modem_set_power_modes(int enable)
 {
    int err = 0;
 
@@ -254,24 +301,22 @@ void modem_set_power_modes(int enable)
          LOG_INF("lte_lc_rai_req, disabled.");
       }
    }
+   return err;
 }
 
-int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
+int modem_set_offline(void)
 {
-   int err;
-   char at_buf[128];
-   memset(buf, 0, max_len);
-   err = nrf_modem_at_cmd(at_buf, sizeof(at_buf), cmd);
-   if (err) {
-      return err;
-   }
-   terminate_at_buffer(at_buf, sizeof(at_buf));
-   if (skip && strncmp(at_buf, skip, strlen(skip)) == 0) {
-      strncpy(buf, at_buf + strlen(skip), max_len - 1);
-   } else {
-      strncpy(buf, at_buf, max_len - 1);
-   }
-   return strlen(buf);
+   return lte_lc_offline();
+}
+
+int modem_set_normal(void)
+{
+   return lte_lc_normal();
+}
+
+int modem_power_off(void)
+{
+   return lte_lc_power_off();
 }
 
 #else
@@ -282,17 +327,33 @@ int modem_start(int init)
    return 0;
 }
 
-void modem_set_power_modes(int enable)
-{
-   (void)enable;
-}
-
 int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
 {
    (void)cmd;
    (void)buf;
    (void)max_len;
    (void)skip;
+   return 0;
+}
+
+int modem_set_power_modes(int enable)
+{
+   (void)enable;
+   return 0;
+}
+
+int modem_set_offline(void)
+{
+   return 0;
+}
+
+int modem_set_normal(void)
+{
+   return 0;
+}
+
+int modem_power_off(void)
+{
    return 0;
 }
 

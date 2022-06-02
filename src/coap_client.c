@@ -90,17 +90,17 @@ int coap_client_parse_data(uint8 *data, size_t len)
       }
       if (coap_current_mid == mid) {
          if (COAP_TYPE_ACK == type) {
-            dtls_debug("CoAP ACK %u received.\n", mid);
+            dtls_debug("CoAP ACK %u received.", mid);
             return PARSE_ACK;
          } else if (COAP_TYPE_RESET == type) {
-            dtls_debug("CoAP RST %u received.\n", mid);
+            dtls_debug("CoAP RST %u received.", mid);
             return PARSE_RST;
          } else if (COAP_TYPE_NON_CON == type) {
-            dtls_debug("CoAP NON %u received.\n", mid);
+            dtls_debug("CoAP NON %u received.", mid);
             return PARSE_IGN;
          }
       } else {
-         dtls_debug("CoAP msg %u received, mismatching %u.\n", mid, coap_current_mid);
+         dtls_debug("CoAP msg %u received, mismatching %u.", mid, coap_current_mid);
          return PARSE_IGN;
       }
    }
@@ -108,7 +108,7 @@ int coap_client_parse_data(uint8 *data, size_t len)
    token_len = coap_header_get_token(&reply, token);
    if ((token_len != sizeof(coap_current_token)) ||
        (memcmp(&coap_current_token, token, token_len) != 0)) {
-      dtls_debug("Invalid token received: 0x%02x%02x%02x%02x\n", token[0], token[1], token[2], token[3]);
+      dtls_debug("Invalid token received: 0x%02x%02x%02x%02x", token[0], token[1], token[2], token[3]);
       return PARSE_IGN;
    }
 
@@ -125,8 +125,8 @@ int coap_client_parse_data(uint8 *data, size_t len)
       strcpy(coap_message_buf, "EMPTY");
    }
 
-   dtls_info("CoAP response received. code: %d.%02d, token 0x%02x%02x%02x%02x\n", (code >> 5) & 7, code & 0x1f, token[0], token[1], token[2], token[3]);
-   dtls_info("  payload: %s\n", coap_message_buf);
+   dtls_info("CoAP response received. code: %d.%02d, token 0x%02x%02x%02x%02x", (code >> 5) & 7, code & 0x1f, token[0], token[1], token[2], token[3]);
+   dtls_info("  payload: %s", coap_message_buf);
 
    return PARSE_RESPONSE;
 }
@@ -157,7 +157,7 @@ int coap_client_prepare_post(void)
 
    err = modem_at_cmd("AT%%XVBAT", coap_message_buf, sizeof(coap_message_buf), "%XVBAT: ");
    if (err < 0) {
-      dtls_warn("Failed to read battery level!\n");
+      dtls_warn("Failed to read battery level!");
    }
    if (err > 0 ) {
       bat_level[0] = atoi(coap_message_buf);
@@ -167,7 +167,7 @@ int coap_client_prepare_post(void)
 
    err = modem_at_cmd("AT+CESQ", coap_message_buf, sizeof(coap_message_buf), "+CESQ: ");
    if (err < 0) {
-      dtls_warn("Failed to read signal level!\n");
+      dtls_warn("Failed to read signal level!");
    }
    if (err > 0) {
       p = coap_message_buf;
@@ -184,20 +184,20 @@ int coap_client_prepare_post(void)
                     uptime, CLIENT_VERSION, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
    if (bat_level[0] > 1) {
       index += snprintf(buf + index, sizeof(buf) - index, "\n%u mV", bat_level[0]);
-      dtls_info("%u mV\n", bat_level[0]);
+      dtls_info("%u mV", bat_level[0]);
    }
    if (p) {
       index += snprintf(buf + index, sizeof(buf) - index, "\nRSSI: %s", p);
-      dtls_info("RSSI q,p: %s\n", p);
+      dtls_info("RSSI q,p: %s", p);
    }
 #ifdef CONFIG_EXTERNAL_SENSORS
    if (ext_sensors_temperature_get(&value) == 0) {
       index += snprintf(buf + index, sizeof(buf) - index, "\n%.2f C", value);
-      dtls_info("%.2f C\n", value);
+      dtls_info("%.2f C", value);
    }
    if (ext_sensors_humidity_get(&value) == 0) {
       index += snprintf(buf + index, sizeof(buf) - index, "\n%.2f %%H", value);
-      dtls_info("%.2f %%H\n", value);
+      dtls_info("%.2f %%H", value);
    }
 #endif
    coap_current_token++;
@@ -208,7 +208,7 @@ int coap_client_prepare_post(void)
                           sizeof(coap_current_token), token,
                           COAP_METHOD_POST, coap_current_mid);
    if (err < 0) {
-      dtls_warn("Failed to create CoAP request, %d\n", err);
+      dtls_warn("Failed to create CoAP request, %d", err);
       return err;
    }
 
@@ -216,26 +216,26 @@ int coap_client_prepare_post(void)
                                    (uint8_t *)CONFIG_COAP_RESOURCE,
                                    strlen(CONFIG_COAP_RESOURCE));
    if (err < 0) {
-      dtls_warn("Failed to encode CoAP URI-PATH option, %d\n", err);
+      dtls_warn("Failed to encode CoAP URI-PATH option, %d", err);
       return err;
    }
 
    err = coap_append_option_int(&request, COAP_OPTION_CONTENT_FORMAT,
                                 COAP_CONTENT_FORMAT_TEXT_PLAIN);
    if (err < 0) {
-      dtls_warn("Failed to encode CoAP CONTENT_FORMAT option, %d\n", err);
+      dtls_warn("Failed to encode CoAP CONTENT_FORMAT option, %d", err);
       return err;
    }
 
 #ifdef CONFIG_COAP_QUERY_DELAY_ENABLE
    err = snprintf(query, sizeof(query), "delay=%d", query_delay);
-   dtls_info("CoAP request, delay %d\n", query_delay);
+   dtls_info("CoAP request, delay %d", query_delay);
 
    err = coap_packet_append_option(&request, COAP_OPTION_URI_QUERY,
                                    (uint8_t *)query,
                                    strlen(query));
    if (err < 0) {
-      dtls_warn("Failed to encode CoAP URI-QUERY option 'delay=%d', %d\n", query_delay, err);
+      dtls_warn("Failed to encode CoAP URI-QUERY option 'delay=%d', %d", query_delay, err);
       return err;
    }
    if (query_delay > 30000) {
@@ -249,24 +249,24 @@ int coap_client_prepare_post(void)
                                    (uint8_t *)"keep",
                                    strlen("keep"));
    if (err < 0) {
-      dtls_warn("Failed to encode CoAP URI-QUERY option 'keep', %d\n", err);
+      dtls_warn("Failed to encode CoAP URI-QUERY option 'keep', %d", err);
       return err;
    }
 #endif
    err = coap_packet_append_payload_marker(&request);
    if (err < 0) {
-      dtls_warn("Failed to encode CoAP payload-marker, %d\n", err);
+      dtls_warn("Failed to encode CoAP payload-marker, %d", err);
       return err;
    }
 
    err = coap_packet_append_payload(&request, buf, strlen(buf));
    if (err < 0) {
-      dtls_warn("Failed to encode CoAP payload, %d\n", err);
+      dtls_warn("Failed to encode CoAP payload, %d", err);
       return err;
    }
 
    coap_message_len = request.offset;
-   dtls_info("CoAP request prepared, token 0x%02x%02x%02x%02x, %u bytes\n", token[0], token[1], token[2], token[3], coap_message_len);
+   dtls_info("CoAP request prepared, token 0x%02x%02x%02x%02x, %u bytes", token[0], token[1], token[2], token[3], coap_message_len);
 
    return err;
 }
@@ -275,7 +275,7 @@ int coap_client_send_post(struct dtls_context_t *ctx, session_t *dst)
 {
    int result = dtls_write(ctx, dst, coap_message_buf, coap_message_len);
    if (result < 0) {
-      dtls_warn("Failed to send CoAP request, %d\n", errno);
+      dtls_warn("Failed to send CoAP request, %d", errno);
    }
    return result;
 }

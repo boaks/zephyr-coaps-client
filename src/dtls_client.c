@@ -62,6 +62,7 @@ K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
 
 static void reboot()
 {
+   modem_power_off();
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    ui_led_op(LED_COLOR_RED, LED_SET);
@@ -74,23 +75,51 @@ static void reboot()
       ui_led_op(LED_COLOR_RED, LED_SET);
       k_sleep(K_MSEC(500));
    }
-   k_sleep(K_MSEC(500));
+   k_sleep(K_MSEC(500));  
    sys_reboot(SYS_REBOOT_COLD);
+}
+
+static void reconnect()
+{
+   int minutes = 15;
+   while (!network_connected) {
+      dtls_info("> modem offline (%d minutes)", minutes);
+      modem_set_offline();
+      k_sleep(K_MSEC(2000));
+      ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
+      ui_led_op(LED_COLOR_RED, LED_CLEAR);
+      ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
+      if (k_sem_take(&dtls_trigger_msg, K_MINUTES(minutes)) == 0) {
+         dtls_info("> modem normal (manual)");
+         minutes = 15;
+      } else if (minutes < 61) {
+         dtls_info("> modem normal (timeout)");
+         minutes *= 2;
+      } else {
+         dtls_info("> modem reboot");
+         reboot();
+      }
+      modem_set_normal();
+      if (modem_start(K_SECONDS(120)) == 0) {
+         break;
+      }
+   }
 }
 
 static void reopen_socket(struct dtls_context_t *ctx)
 {
-   dtls_warn("> reconnect modem\n");
+   int err;
+   dtls_warn("> reconnect modem");
    modem_set_power_modes(0);
-   if (modem_start(0) != 0) {
-      dtls_warn("> reconnect modem failed, reboot\n");
-      reboot();
+   err = modem_start(K_SECONDS(120));
+   if (err) {
+      reconnect();
    }
    int *fd = (int *)dtls_get_app_data(ctx);
    (void)close(*fd);
    *fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
    if (*fd < 0) {
-      dtls_warn("> reopen UDP socket failed, %d, errno %d (%s), reboot\n", *fd, errno, strerror(errno));
+      dtls_warn("> reopen UDP socket failed, %d, errno %d (%s), reboot", *fd, errno, strerror(errno));
       reboot();
    }
    modem_set_power_modes(1);
@@ -112,7 +141,7 @@ static void dtls_coap_success(void)
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
-   dtls_info("%u/%ldms/%ldms: success\n", lte_connections, time1, time2);
+   dtls_info("%u/%ldms/%ldms: success", lte_connections, time1, time2);
    if (transmission <= COAP_MAX_RETRANSMISSION) {
       transmissions[transmission]++;
    }
@@ -129,9 +158,9 @@ static void dtls_coap_success(void)
    if (time1 < 2000) {
       int index = 0;
       unsigned int rtt = 0;
-      dtls_info("retrans: 0*%u, 1*%u, 2*%u, 3*%u, failures %u\n", transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
-      dtls_info("rtt: 0-2s: %u, 2-4s: %u, 4-6s: %u, 6-8s: %u, 8-10s: %u\n", rtts[0], rtts[1], rtts[2], rtts[3], rtts[4]);
-      dtls_info("rtt: 10-12s: %u, 12-14s: %u, 14-16s: %u, 16-18s: %u, 18-%u: %u\n", rtts[5], rtts[6], rtts[7], rtts[8], rtts[10], rtts[9]);
+      dtls_info("retrans: 0*%u, 1*%u, 2*%u, 3*%u, failures %u", transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
+      dtls_info("rtt: 0-2s: %u, 2-4s: %u, 4-6s: %u, 6-8s: %u, 8-10s: %u", rtts[0], rtts[1], rtts[2], rtts[3], rtts[4]);
+      dtls_info("rtt: 10-12s: %u, 12-14s: %u, 14-16s: %u, 16-18s: %u, 18-%u: %u", rtts[5], rtts[6], rtts[7], rtts[8], rtts[10], rtts[9]);
       time1 = 0;
       time2 = 0;
       for (index = 0; index <= RTT_SLOTS; ++index) {
@@ -142,10 +171,10 @@ static void dtls_coap_success(void)
          }
       }
       if (time1 > 0) {
-         dtls_info("rtt: avg. %lds (%ld#)\n", time2 / time1, time1);
+         dtls_info("rtt: avg. %lds (%ld#)", time2 / time1, time1);
       }
-      dtls_info("vbat: %u, %u, %u, %u, %u\n", bat_level[0], bat_level[1], bat_level[2], bat_level[3], bat_level[4]);
-      dtls_info("      %u, %u, %u, %u, %u\n", bat_level[5], bat_level[6], bat_level[7], bat_level[8], bat_level[9]);
+      dtls_info("vbat: %u, %u, %u, %u, %u", bat_level[0], bat_level[1], bat_level[2], bat_level[3], bat_level[4]);
+      dtls_info("      %u, %u, %u, %u, %u", bat_level[5], bat_level[6], bat_level[7], bat_level[8], bat_level[9]);
    }
 }
 
@@ -165,7 +194,7 @@ static void dtls_coap_failure(void)
    ui_led_op(LED_COLOR_RED, LED_SET);
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
-   dtls_info("%u/%ldms/%ldms: failure\n", lte_connections, time1, time2);
+   dtls_info("%u/%ldms/%ldms: failure", lte_connections, time1, time2);
    transmissions[COAP_MAX_RETRANSMISSION + 1]++;
 }
 
@@ -220,12 +249,12 @@ send_to_peer(struct dtls_context_t *ctx,
 
    res = sendto(*fd, data, len, MSG_DONTWAIT, &session->addr.sa, session->size);
    if (res < 0) {
-      dtls_warn("send_to_peer failed: %d, errno %d (%s)\n", res, errno, strerror(errno));
+      dtls_warn("send_to_peer failed: %d, errno %d (%s)", res, errno, strerror(errno));
       if (ENETDOWN == errno) {
          reopen_socket(ctx);
          res = sendto(*fd, data, len, MSG_DONTWAIT, &session->addr.sa, session->size);
          if (res < 0) {
-            dtls_warn("retry send_to_peer failed: %d, errno %d (%s)\n", res, errno, strerror(errno));
+            dtls_warn("retry send_to_peer failed: %d, errno %d (%s)", res, errno, strerror(errno));
             if (ENETDOWN == errno) {
                network_connected = 0;
             }
@@ -238,39 +267,39 @@ send_to_peer(struct dtls_context_t *ctx,
          if (RESEND == request_state) {
             if (lte_connected) {
                request_state = RECEIVE;
-               dtls_info("hs_resent_to_peer %d\n", res);
+               dtls_info("hs_resent_to_peer %d", res);
             } else {
-               dtls_info("hs_resend_to_peer %d\n", res);
+               dtls_info("hs_resend_to_peer %d", res);
             }
          } else {
             timeout = COAP_ACK_TIMEOUT;
             if (lte_connected) {
                request_state = RECEIVE;
-               dtls_info("hs_sent_to_peer %d\n", res);
+               dtls_info("hs_sent_to_peer %d", res);
             } else {
                request_state = SEND;
-               dtls_info("hs_send_to_peer %d\n", res);
+               dtls_info("hs_send_to_peer %d", res);
             }
          }
       } else if (SEND == request_state) {
          if (lte_connected) {
             request_state = RECEIVE;
-            dtls_info("sent_to_peer %d\n", res);
+            dtls_info("sent_to_peer %d", res);
          } else {
-            dtls_info("send_to_peer %d\n", res);
+            dtls_info("send_to_peer %d", res);
          }
       } else if (RESEND == request_state) {
          if (lte_connected) {
             request_state = RECEIVE;
-            dtls_info("resent_to_peer %d\n", res);
+            dtls_info("resent_to_peer %d", res);
          } else {
-            dtls_info("resend_to_peer %d\n", res);
+            dtls_info("resend_to_peer %d", res);
          }
       } else if (RECEIVE == request_state) {
          if (lte_connected) {
-            dtls_info("unintended resent_to_peer %d\n", res);
+            dtls_info("unintended resent_to_peer %d", res);
          } else {
-            dtls_info("unintended resend_to_peer %d\n", res);
+            dtls_info("unintended resend_to_peer %d", res);
          }
       }
    }
@@ -282,14 +311,14 @@ dtls_handle_event(struct dtls_context_t *ctx, session_t *session,
                   dtls_alert_level_t level, unsigned short code)
 {
    if (DTLS_EVENT_CONNECTED == code) {
-      dtls_info("dtls connected.\n");
+      dtls_info("dtls connected.");
       dtls_connected = 1;
       request_state = NONE;
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
       ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
       modem_set_power_modes(1);
    } else if (DTLS_EVENT_CONNECT == code) {
-      dtls_info("dtls connect ...\n");
+      dtls_info("dtls connect ...");
       dtls_connected = 0;
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_SET);
@@ -319,14 +348,14 @@ dtls_handle_read(struct dtls_context_t *ctx)
                   &session.addr.sa, &session.size);
 
    if (len < 0) {
-      dtls_warn("recv_from_peer failed: errno %d (%s)\n", len, strerror(errno));
+      dtls_warn("recv_from_peer failed: errno %d (%s)", len, strerror(errno));
       return -1;
    } else {
       dtls_dsrv_log_addr(DTLS_LOG_DEBUG, "peer", &session);
       dtls_debug_dump("bytes from peer", buf, len);
    }
    if (len >= 0) {
-      dtls_info("received_from_peer %d bytes\n", len);
+      dtls_info("received_from_peer %d bytes", len);
       if (!dtls_connected && request_state == RESEND) {
          request_state = SEND;
       }
@@ -407,12 +436,12 @@ static int dtls_init_destination(session_t *destination)
       err = getaddrinfo(CONFIG_COAP_SERVER_HOSTNAME, NULL, &hints, &result);
    }
    if (err != 0) {
-      LOG_WRN("ERROR: getaddrinfo failed %d", err);
+      dtls_warn("ERROR: getaddrinfo failed %d", err);
       return -EIO;
    }
 
    if (result == NULL) {
-      LOG_WRN("ERROR: Address not found");
+      dtls_warn("ERROR: Address not found");
       return -ENOENT;
    }
 
@@ -426,7 +455,7 @@ static int dtls_init_destination(session_t *destination)
    int res = inet_pton(AF_INET, CONFIG_UDP_SERVER_ADDRESS_STATIC,
                        &(destination->addr.sin.sin_addr));
    if (res != 1) {
-      printk("ERROR: inet_pton failed %d", res);
+      dtls_warn("ERROR: inet_pton failed %d", res);
       return -EIO;
    }
 #endif
@@ -436,8 +465,8 @@ static int dtls_init_destination(session_t *destination)
 
    inet_ntop(AF_INET, &destination->addr.sin.sin_addr.s_addr, ipv4_addr,
              sizeof(ipv4_addr));
-   LOG_INF("Destination: %s", host);
-   LOG_INF("IPv4 Address found %s", ipv4_addr);
+   dtls_info("Destination: %s", host);
+   dtls_info("IPv4 Address found %s", ipv4_addr);
 
    return 0;
 }
@@ -457,15 +486,19 @@ int dtls_loop(void)
 
    dtls_set_log_level(DTLS_LOG_INFO);
 
-   fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-
-   if (fd < 0) {
-      LOG_WRN("Failed to create UDP socket: %d", errno);
-      return -errno;
+   if (modem_start(K_SECONDS(120)) != 0) {
+      reconnect();
    }
 
    memset(&dst, 0, sizeof(session_t));
    dtls_init_destination(&dst);
+
+   fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+
+   if (fd < 0) {
+      dtls_warn("Failed to create UDP socket: %d", errno);
+      reboot();
+   }
 
    modem_set_power_modes(0);
    imei_len = modem_at_cmd("AT+CGSN", imei, sizeof(imei), NULL);
@@ -478,8 +511,8 @@ int dtls_loop(void)
 
    dtls_context = dtls_new_context(&fd);
    if (!dtls_context) {
-      dtls_emerg("cannot create context\n");
-      return -1;
+      dtls_emerg("cannot create context");
+      reboot();
    }
 
    dtls_set_handler(dtls_context, &cb);
@@ -526,7 +559,7 @@ int dtls_loop(void)
 
       if (result < 0) { /* error */
          if (errno != EINTR) {
-            dtls_warn("select failed: errno %d (%s)\n", result, strerror(errno));
+            dtls_warn("select failed: errno %d (%s)", result, strerror(errno));
          }
       } else if (result == 0) { /* timeout */
          if (request_state == SEND || request_state == RESEND) {
@@ -536,9 +569,9 @@ int dtls_loop(void)
                if (time < 0)
                   time = -1;
                if (request_state == SEND) {
-                  dtls_info("%d/%d/%u-%ld ms: connected => sent\n", lte_connected, k_sem_count_get(&lte_connected_send), lte_connections, time);
+                  dtls_info("%d/%d/%u-%ld ms: connected => sent", lte_connected, k_sem_count_get(&lte_connected_send), lte_connections, time);
                } else {
-                  dtls_info("%d/%d/%u-%ld ms: connected => resent\n", lte_connected, k_sem_count_get(&lte_connected_send), lte_connections, time);
+                  dtls_info("%d/%d/%u-%ld ms: connected => resent", lte_connected, k_sem_count_get(&lte_connected_send), lte_connections, time);
                }
                request_state = RECEIVE;
             } else if (loops < 60) {
@@ -560,10 +593,10 @@ int dtls_loop(void)
                   timeout <<= 1;
                   request_state = RESEND;
                   if (dtls_connected) {
-                     dtls_info("CoAP request resend, timeout %d\n", timeout);
+                     dtls_info("CoAP request resend, timeout %d", timeout);
                      result = coap_client_send_post(dtls_context, &dst);
                   } else {
-                     dtls_info("hs resend, timeout %d\n", timeout);
+                     dtls_info("hs resend, timeout %d", timeout);
                      dtls_check_retransmit(dtls_context, NULL);
                      result = 1;
                   }
