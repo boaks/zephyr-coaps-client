@@ -12,7 +12,7 @@ Download the [nRF Connect for Desktop](https://www.nordicsemi.com/Products/Devel
 
 Download one of the [pre-build firmware images](./prebuild/) matching your device and available tools.
 
-Connect the Thingy:91 to your debug probe and use the [nRF Connect Programmer](https://infocenter.nordicsemi.com/index.jsp?topic=/struct_nrftools/struct/nrftools_nrfconnect.html) to apply the downloaded pre-build firmware.
+Connect the `Thingy:91` to your debug probe and use the [nRF Connect Programmer](https://infocenter.nordicsemi.com/index.jsp?topic=/struct_nrftools/struct/nrftools_nrfconnect.html) to apply the downloaded pre-build firmware.
 
 ## Run It
 

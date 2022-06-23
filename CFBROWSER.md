@@ -16,7 +16,7 @@ java --module-path /usr/share/openjfx/lib --add-modules javafx.controls,javafx.f
 
 ![cf-browser](./docu_images/cf-browser.png)
 
-Press the "GET" button to read the list of available devices. Then select your device by the IMEI (label on the Thingy:91 under the orange cover) and press the "GET" button again. The cf-browser response window shows the last sent request of your device.
-If you press the "N" button on the Thingy:91 again, and then the "GET" button again, the displayed text is modified slightly. Press the "OBSERVE" button and you will see the update automatically, if you press the "N" button on the Thingy:91 again.
+Press the "GET" button to read the list of available devices. Then select your device by the IMEI (label on the `Thingy:91` under the orange cover) and press the "GET" button again. The cf-browser response window shows the last sent request of your device.
+If you press the "N" button on the Thingy:91 again, and then the "GET" button again, the displayed text is modified slightly. Press the "OBSERVE" button and you will see the update automatically, if you press the "N" button on the `Thingy:91` again.
 
 The cf-browser is a tool to easily explore coap, but it's not a intended application.
