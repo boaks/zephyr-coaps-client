@@ -27,7 +27,7 @@
 
 #define APP_COAP_MAX_MSG_LEN 1280
 #define APP_COAP_VERSION 1
-#define APP_COAP_LOG_PAYLOAD_SIZE 64
+#define APP_COAP_LOG_PAYLOAD_SIZE 128
 
 static uint32_t coap_current_token;
 static uint16_t coap_current_mid;
@@ -115,18 +115,16 @@ int coap_client_parse_data(uint8 *data, size_t len)
    coap_message_len = 0;
 
    payload = coap_packet_get_payload(&reply, &payload_len);
+
+   dtls_info("CoAP response received. code: %d.%02d, token 0x%02x%02x%02x%02x, %d bytes", (code >> 5) & 7, code & 0x1f, token[0], token[1], token[2], token[3], payload_len);
    if (payload_len > 0) {
       if (payload_len > APP_COAP_LOG_PAYLOAD_SIZE) {
          payload_len = APP_COAP_LOG_PAYLOAD_SIZE;
       }
       memcpy(coap_message_buf, payload, payload_len);
       coap_message_buf[payload_len] = 0;
-   } else {
-      strcpy(coap_message_buf, "EMPTY");
+      dtls_info("  payload: %s", coap_message_buf);
    }
-
-   dtls_info("CoAP response received. code: %d.%02d, token 0x%02x%02x%02x%02x", (code >> 5) & 7, code & 0x1f, token[0], token[1], token[2], token[3]);
-   dtls_info("  payload: %s", coap_message_buf);
 
    return PARSE_RESPONSE;
 }
@@ -159,7 +157,7 @@ int coap_client_prepare_post(void)
    if (err < 0) {
       dtls_warn("Failed to read battery level!");
    }
-   if (err > 0 ) {
+   if (err > 0) {
       bat_level[0] = atoi(coap_message_buf);
    } else {
       bat_level[0] = 1;

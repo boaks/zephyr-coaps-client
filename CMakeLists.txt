@@ -29,7 +29,6 @@ zephyr_library_link_libraries(tinydtls)
 
 # APP END
 
-
 if (COPY_PREBUILDS)
    # enable west build -b ... -- -DCOPY_PREBUILDS=On
    message(NOTICE "copy prebuild binaries into ${CMAKE_BINARY_DIR}/../prebuild")
