@@ -58,6 +58,8 @@ Eclipse/TinyDtls comes with some modified files from micro-ecc
 * Project: https://github.com/kmackay/micro-ecc/
 * Source:  https://github.com/kmackay/micro-ecc/archive/refs/heads/master.zip
 
+Please consider also [tinydtls - ABOUT](https://github.com/eclipse/tinydtls/blob/main/ABOUT.md) for more details about eclipse/tinydtls and used licenses and content.
+
 Nordic Semiconductor Connect SDK (ncs) 1.9.1
 
 * License: Nordic-5-Clause
