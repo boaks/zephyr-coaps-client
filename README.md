@@ -23,6 +23,9 @@ Without that knowledge it will be hard an time consuming to make benefit out of 
 | For now, only the<br/> [Nordic Semiconductor Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91)<br/> is supported. | ![Thingy:91](./docu_images/thingy91.jpg) |
 | :- | - |
 
+The `Thingy:91` demo works with [ncs-1.9.1](https://github.com/nrfconnect/sdk-nrf/tree/v1.9.1) and [ncs-2.0.0](https://github.com/nrfconnect/sdk-nrf/tree/v2.0.0).
+To benefit from the newer modem features, please consider to use the modem firmware [1.3.1](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.1.zip) or [1.3.2](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.2.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
+
 Maybe other modems and devices gets supported over the time as well.
 
 ## Required HW-Tools for Thingy:91
@@ -48,7 +51,7 @@ In order to be able to build the demo-client, you need to install the developmen
 ### Install Tools and Tool-Chains
 
 Basically, this requires to follow [Developing with Zephyr](https://docs.zephyrproject.org/latest/develop/index.html).
-Though for now only the [Nordic Semiconductor Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) is supported, it may be also good to go through [Getting started with Thingy:91](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/ug_thingy91_gsg.html) additionally.
+Though for now only the [Nordic Semiconductor Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) is supported, it may be easier to go through [Getting started with Thingy:91](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/ug_thingy91_gsg.html).
 
 Please check the proper installation of your tools building some of the provided samples there (e.g. [zephyr/samples/basic/blinky](https://github.com/zephyrproject-rtos/zephyr/tree/main/samples/basic/blinky) or/and [nrf/samples/nrf9160/udp](https://github.com/nrfconnect/sdk-nrf/tree/main/samples/nrf9160/udp)).
 
