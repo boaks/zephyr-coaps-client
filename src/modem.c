@@ -58,25 +58,52 @@ static int lte_connection_wait(k_timeout_t timeout)
    return res;
 }
 
+static void lte_registration(enum lte_lc_nw_reg_status reg_status)
+{
+   const char *description = "unknown";
+   int connected = 0;
+
+   switch (reg_status) {
+      case LTE_LC_NW_REG_NOT_REGISTERED:
+         description = "Not Connected";
+         break;
+      case LTE_LC_NW_REG_REGISTERED_HOME:
+         description = "Connected - home network";
+         connected = 1;
+         break;
+      case LTE_LC_NW_REG_SEARCHING:
+         description = "Searching ...";
+         break;
+      case LTE_LC_NW_REG_REGISTRATION_DENIED:
+         description = "Not Connected - denied";
+         break;
+      case LTE_LC_NW_REG_UNKNOWN:
+         break;
+      case LTE_LC_NW_REG_REGISTERED_ROAMING:
+         description = "Connected - roaming network";
+         connected = 1;
+         break;
+      case LTE_LC_NW_REG_REGISTERED_EMERGENCY:
+         description = "Connected - emergency network";
+         connected = 1;
+         break;
+      case LTE_LC_NW_REG_UICC_FAIL:
+         description = "Not Connected - UICC fail";
+         break;
+   }
+
+   lte_connection_set(connected);
+   dtls_lte_connected(LTE_CONNECT_NETWORK, connected);
+
+   LOG_INF("Network registration status: %s", description);
+}
+
 static void lte_handler(const struct lte_lc_evt *const evt)
 {
    static unsigned long connect_time = 0;
    switch (evt->type) {
       case LTE_LC_EVT_NW_REG_STATUS:
-         if ((evt->nw_reg_status != LTE_LC_NW_REG_REGISTERED_HOME) &&
-             (evt->nw_reg_status != LTE_LC_NW_REG_REGISTERED_ROAMING)) {
-            if (evt->nw_reg_status == LTE_LC_NW_REG_SEARCHING) {
-               LOG_INF("Network registration status: searching ...");
-            }
-            dtls_lte_connected(LTE_CONNECT_NETWORK, 0);
-            lte_connection_set(0);
-            break;
-         }
-
-         LOG_INF("Network registration status: %s",
-                 evt->nw_reg_status == LTE_LC_NW_REG_REGISTERED_HOME ? "Connected - home network" : "Connected - roaming");
-         dtls_lte_connected(LTE_CONNECT_NETWORK, 1);
-         lte_connection_set(1);
+         lte_registration(evt->nw_reg_status);
          break;
       case LTE_LC_EVT_LTE_MODE_UPDATE:
          if (evt->lte_mode == LTE_LC_LTE_MODE_NONE) {

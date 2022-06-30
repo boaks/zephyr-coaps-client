@@ -53,6 +53,12 @@ static unsigned long response_time = 0;
 static unsigned int transmission = 0;
 static int timeout = 0;
 
+#if (defined CONFIG_LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO || defined LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO)
+#define NETWORK_TIMEOUT K_SECONDS(360)
+#else
+#define NETWORK_TIMEOUT K_SECONDS(180)
+#endif
+
 #define RTT_SLOTS 9
 #define RTT_INTERVAL 2000
 static unsigned int rtts[RTT_SLOTS + 2] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20};
@@ -100,7 +106,7 @@ static void reconnect()
          reboot();
       }
       modem_set_normal();
-      if (modem_start(K_SECONDS(120)) == 0) {
+      if (modem_start(NETWORK_TIMEOUT) == 0) {
          break;
       }
    }
@@ -111,7 +117,7 @@ static void reopen_socket(struct dtls_context_t *ctx)
    int err;
    dtls_warn("> reconnect modem");
    modem_set_power_modes(0);
-   err = modem_start(K_SECONDS(120));
+   err = modem_start(NETWORK_TIMEOUT);
    if (err) {
       reconnect();
    }
@@ -486,7 +492,7 @@ int dtls_loop(void)
 
    dtls_set_log_level(DTLS_LOG_INFO);
 
-   if (modem_start(K_SECONDS(120)) != 0) {
+   if (modem_start(NETWORK_TIMEOUT) != 0) {
       reconnect();
    }
 
