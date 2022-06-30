@@ -51,7 +51,11 @@ In order to be able to build the demo-client, you need to install the developmen
 ### Install Tools and Tool-Chains
 
 Basically, this requires to follow [Developing with Zephyr](https://docs.zephyrproject.org/latest/develop/index.html).
-Though for now only the [Nordic Semiconductor Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) is supported, it may be easier to go through [Getting started with Thingy:91](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/ug_thingy91_gsg.html).
+Though for now only the [Nordic Semiconductor Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) is supported, it may be easier to go through [Getting started with Thingy:91](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/ug_thingy91_gsg.html). 
+
+**Note:** both, the zephyr's "developing" and Nordic Semiconductor's "getting started" has changed and may change over time and so it's hard to give good advice. Currently I have good experience with [Nordic Semiconductor - Installing manually](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/gs_installing.html) and Ubuntu 20.04 (support for 18.04 has been removed). Installing [nRF Connect for Desktop](https://www.nordicsemi.com/Products/Development-tools/nrf-connect-for-desktop/download#infotabs) and apply the "Toolchain Manager" app works as well on Ubuntu 20.04. Start the terminal from that app to ge a cmd console with a proper environment.
+
+![Toolchain Manager](./docu_images/toolchain_manager.png)
 
 Please check the proper installation of your tools building some of the provided samples there (e.g. [zephyr/samples/basic/blinky](https://github.com/zephyrproject-rtos/zephyr/tree/main/samples/basic/blinky) or/and [nrf/samples/nrf9160/udp](https://github.com/nrfconnect/sdk-nrf/tree/main/samples/nrf9160/udp)).
 
@@ -67,6 +71,10 @@ west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git zephyr-c
 Please obey the `--mr main`.
 Otherwise it will fail fetching the non existing "master" branch!
 
+```sh
+west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git
+```
+
 That creates a `zephyr-coaps-client` folder and you need to populate it further:
 
 ```sh
@@ -78,10 +86,33 @@ That takes a while (couple of minutes). It downloads zephyr, the Nordic Semicond
 
 Currently the demo uses the [zephyr-cid-develop](https://github.com/boaks/tinydtls/tree/zephyr_cid_develop) branch of my tinydtls fork. This is only intended for temporary convenience because currently many PRs are pending at the [eclipse repo](https://github.com/eclipse/tinydtls) and it will take some time to get them merged into "develop" or "main" there. When done, this demo will be switched to that [eclipse repo](https://github.com/eclipse/tinydtls).
 
+### Download the Sources into an available zephyr workspace
+
+Using 
+
+```sh
+west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git zephyr-coaps-client
+```
+
+from a "Toolchain Manager" installation, fails with an error message, that a workspace already exists.
+In order to add just this coaps-demo-app and the tinydtls module library to a workspace, open the workspae (for ncs the "ncs" installation folder and change to "v2.0.0" folder there). Here you find a ".west" folder, that contains the west-configuration for the workspace. Rename that ".west" folder into ".west.org" in order to replace that west-configuration by the one from this example. Now execute 
+
+```sh
+west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git
+```
+
+That creates a new west-configuration. You need to populate it further:
+
+```sh
+west update 
+```
+
+That takes a couple of seconds, though zephyr is already downloaded.
+
 ### Build & Flash
 
 After `west` completes the update, build the firmware:
-Change the current directory to "zephyr-coaps-client/coaps-client".
+Change the current directory to "zephyr-coaps-client/coaps-client" (or "<workspace>/coaps-client").
 
 ```sh
 cd coaps-client
