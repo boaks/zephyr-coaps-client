@@ -8,7 +8,8 @@ This [zephyr](https://www.zephyrproject.org/) client demonstrates to use coaps (
 - efficient, and 
 - end-to-end encrypted
 
-mobile device communication (LTE-M, NB-IoT), up to a few hundred bytes. Together, CoAP / DTLS CID and LTE-M/NB-IoT, enables to build mobile applications with 
+mobile device communication (LTE-M, NB-IoT) for messages up to a few hundred bytes.
+In combination, CoAP / DTLS CID and LTE-M/NB-IoT, enables to build mobile applications with 
 
 - zero-install and 
 - high cost-efficiency.
@@ -17,6 +18,9 @@ The demo client itself is in early development stage. In "good weather", the `Th
 
 The demo client is intended as groundwork for your own ideas. "Out-of-the-box" this application is only useful to easily check, if mobile IoT works at the locations and environment you want to use it. To build products and applications on this protocol stack requires to implement a production client and to adapt the coap-server for your function. The demo targets therefore people, which are already common with [zephyr](https://www.zephyrproject.org/), or, even better, common with the development for the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) itself.
 Without that knowledge it will be hard an time consuming to make benefit out of this demo.
+
+**Note:**
+The demo client is considered to use CoAP/DTLS CID. Without server-side support for DTLS CID, it will not work proper. Please ensure, that your server supports that.
 
 ## Supported Devices
 
@@ -72,10 +76,6 @@ west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git zephyr-c
 > **Note:** 
 Please obey the `--mr main`.
 Otherwise it will fail fetching the non existing "master" branch!
-
-```sh
-west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git
-```
 
 That creates a `zephyr-coaps-client` folder and you need to populate it further:
 
@@ -145,6 +145,7 @@ Demo message:
 41 s, Thingy:91 v0.2, 0*3, 1*0, 2*0, 3*0, failures 0
 4015 mV
 RSSI: 23,35
+q=??.??????,??.??????
 24.83 C
 53.16 %H
 ```

@@ -28,12 +28,15 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #if defined(CONFIG_NRF_MODEM_LIB)
 
-K_MUTEX_DEFINE(lte_mutex);
-K_CONDVAR_DEFINE(lte_condvar);
+static K_MUTEX_DEFINE(lte_mutex);
+static K_CONDVAR_DEFINE(lte_condvar);
+
+static K_SEM_DEFINE(ptau_update, 0, 1);
 
 static bool initialized = 0;
 static bool start_connect = 0;
 static volatile int lte_connected_state = 0;
+static volatile int ptau = 0;
 
 static void lte_connection_set(int connected)
 {
@@ -115,8 +118,12 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          }
          break;
       case LTE_LC_EVT_PSM_UPDATE:
-         LOG_INF("PSM parameter update: TAU: %d, Active time: %d",
+         LOG_INF("PSM parameter update: TAU: %d s, Active time: %d s",
                  evt->psm_cfg.tau, evt->psm_cfg.active_time);
+         if (evt->psm_cfg.active_time > 0) {
+            ptau = evt->psm_cfg.tau;
+            k_sem_give(&ptau_update);
+         }
          break;
       case LTE_LC_EVT_EDRX_UPDATE:
          {
@@ -161,6 +168,12 @@ static void lte_handler(const struct lte_lc_evt *const evt)
             LOG_INF("LTE modem Battery Low!");
          } else if (evt->modem_evt == LTE_LC_MODEM_EVT_OVERHEATED) {
             LOG_INF("LTE modem Overheated!");
+         } else if (evt->modem_evt == LTE_LC_MODEM_EVT_RESET_LOOP) {
+            LOG_INF("LTE modem Reset Loop!");
+         } else if (evt->modem_evt == LTE_LC_MODEM_EVT_SEARCH_DONE) {
+            LOG_INF("LTE modem search done.");
+         } else if (evt->modem_evt == LTE_LC_MODEM_EVT_LIGHT_SEARCH_DONE) {
+            LOG_INF("LTE modem light search done.");
          }
          break;
       default:
@@ -179,7 +192,25 @@ static void terminate_at_buffer(char *line, size_t len)
    }
 }
 
-static int modem_init(void)
+static int modem_connect(void)
+{
+   int err = 0;
+
+   if (IS_ENABLED(CONFIG_LTE_AUTO_INIT_AND_CONNECT)) {
+      /* Do nothing, modem is already configured and LTE connected. */
+   } else if (!start_connect) {
+      err = lte_lc_connect_async(lte_handler);
+      if (err) {
+         LOG_WRN("Connecting to LTE network failed, error: %d",
+                 err);
+      } else {
+         start_connect = true;
+      }
+   }
+   return err;
+}
+
+int modem_init(void)
 {
    int err = 0;
 
@@ -216,27 +247,19 @@ static int modem_init(void)
    return err;
 }
 
-static int modem_connect(void)
-{
-   int err = 0;
-
-   if (IS_ENABLED(CONFIG_LTE_AUTO_INIT_AND_CONNECT)) {
-      /* Do nothing, modem is already configured and LTE connected. */
-   } else if (!start_connect) {
-      err = lte_lc_connect_async(lte_handler);
-      if (err) {
-         LOG_WRN("Connecting to LTE network failed, error: %d",
-                 err);
-      } else {
-         start_connect = true;
-      }
-   }
-   return err;
-}
-
 int modem_start(k_timeout_t timeout)
 {
    int err = 0;
+
+#ifdef CONFIG_LTE_MODE_PREFERENCE_LTE_M
+   LOG_INF("LTE-M preference.");
+#elif CONFIG_LTE_MODE_PREFERENCE_NBIOT
+   LOG_INF("NB-IoT preference.");
+#elif CONFIG_LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO
+   LOG_INF("LTE-M PLMN preference.");
+#elif CONFIG_LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO
+   LOG_INF("NB-IoT PLMN preference.");
+#endif
 
    ui_led_op(LED_COLOR_BLUE, LED_SET);
    ui_led_op(LED_COLOR_RED, LED_SET);
@@ -294,6 +317,7 @@ int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
 int modem_set_power_modes(int enable)
 {
    int err = 0;
+   char buf[96];
 
    if (enable) {
 #if defined(CONFIG_UDP_PSM_ENABLE)
@@ -303,6 +327,14 @@ int modem_set_power_modes(int enable)
          LOG_WRN("lte_lc_psm_req, error: %d", err);
       } else {
          LOG_INF("lte_lc_psm_req, enabled.");
+         if (k_sem_take(&ptau_update, K_SECONDS(10)) == 0) {
+            if (modem_at_cmd("AT+CPSMS?", buf, sizeof(buf), "+CPSMS:") > 0) {
+               LOG_INF(">> %s", buf);
+            }
+            if (modem_at_cmd("AT%%XMONITOR", buf, sizeof(buf), "%XMONITOR:") > 0) {
+               LOG_INF(">> %s", buf);
+            }
+         }
       }
 #endif
 #if defined(CONFIG_UDP_RAI_ENABLE)
@@ -347,6 +379,11 @@ int modem_power_off(void)
 }
 
 #else
+
+int modem_init(void)
+{
+   return 0;
+}
 
 int modem_start(int init)
 {

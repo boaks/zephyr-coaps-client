@@ -19,6 +19,7 @@
 #include "coap_client.h"
 #include "dtls_debug.h"
 #include "modem.h"
+#include "modem_location.h"
 #include "ui.h"
 
 #ifdef CONFIG_EXTERNAL_SENSORS
@@ -135,6 +136,9 @@ int coap_client_prepare_post(void)
    int err;
    int index;
    unsigned int uptime;
+   double latitude = 0.0;
+   double longitude = 0.0;
+
 #ifdef CONFIG_EXTERNAL_SENSORS
    double value = 0.0;
 #endif
@@ -188,6 +192,25 @@ int coap_client_prepare_post(void)
       index += snprintf(buf + index, sizeof(buf) - index, "\nRSSI: %s", p);
       dtls_info("RSSI q,p: %s", p);
    }
+   switch (modem_location_get(0, &latitude, &longitude)) {
+      case NO_LOCATION:
+         index += snprintf(buf + index, sizeof(buf) - index, "\nNo location");
+         dtls_info("No location");
+         break;
+      case CURRENT_LOCATION:
+         index += snprintf(buf + index, sizeof(buf) - index, "\nq=%.06f,%.06f", latitude, longitude);
+         dtls_info("URL: https://maps.google.com/?q=%.06f,%.06f",
+                   latitude, longitude);
+         break;
+      case PREVIOUS_LOCATION:
+         index += snprintf(buf + index, sizeof(buf) - index, "\n*q=%.06f,%.06f", latitude, longitude);
+         dtls_info("(previous) URL: https://maps.google.com/?q=%.06f,%.06f",
+                   latitude, longitude);
+         break;
+      default:
+         break;
+   }
+
 #ifdef CONFIG_EXTERNAL_SENSORS
    if (ext_sensors_temperature_get(&value) == 0) {
       index += snprintf(buf + index, sizeof(buf) - index, "\n%.2f C", value);

@@ -27,6 +27,7 @@
 #include "dtls_debug.h"
 #include "global.h"
 #include "modem.h"
+#include "modem_location.h"
 #include "ui.h"
 
 #define COAP_ACK_TIMEOUT 3
@@ -53,10 +54,10 @@ static unsigned long response_time = 0;
 static unsigned int transmission = 0;
 static int timeout = 0;
 
-#if (defined CONFIG_LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO || defined LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO)
-#define NETWORK_TIMEOUT K_SECONDS(360)
+#if (defined CONFIG_LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO || defined CONFIG_LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO)
+#define NETWORK_TIMEOUT_S 360
 #else
-#define NETWORK_TIMEOUT K_SECONDS(180)
+#define NETWORK_TIMEOUT_S 180
 #endif
 
 #define RTT_SLOTS 9
@@ -81,32 +82,35 @@ static void reboot()
       ui_led_op(LED_COLOR_RED, LED_SET);
       k_sleep(K_MSEC(500));
    }
-   k_sleep(K_MSEC(500));  
+   k_sleep(K_MSEC(500));
    sys_reboot(SYS_REBOOT_COLD);
 }
 
 static void reconnect()
 {
-   int minutes = 15;
+   int timeout_seconds = NETWORK_TIMEOUT_S;
+   int sleep_minutes = 15;
    while (!network_connected) {
-      dtls_info("> modem offline (%d minutes)", minutes);
+      dtls_info("> modem offline (%d minutes)", sleep_minutes);
       modem_set_offline();
       k_sleep(K_MSEC(2000));
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
       ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-      if (k_sem_take(&dtls_trigger_msg, K_MINUTES(minutes)) == 0) {
+      if (k_sem_take(&dtls_trigger_msg, K_MINUTES(sleep_minutes)) == 0) {
          dtls_info("> modem normal (manual)");
-         minutes = 15;
-      } else if (minutes < 61) {
+         sleep_minutes = 15;
+      } else if (sleep_minutes < 61) {
          dtls_info("> modem normal (timeout)");
-         minutes *= 2;
+         sleep_minutes *= 2;
       } else {
          dtls_info("> modem reboot");
          reboot();
       }
       modem_set_normal();
-      if (modem_start(NETWORK_TIMEOUT) == 0) {
+      timeout_seconds *= 2;
+      dtls_info("> modem search network (%d minutes)", timeout_seconds / 60);
+      if (modem_start(K_SECONDS(timeout_seconds)) == 0) {
          break;
       }
    }
@@ -117,7 +121,7 @@ static void reopen_socket(struct dtls_context_t *ctx)
    int err;
    dtls_warn("> reconnect modem");
    modem_set_power_modes(0);
-   err = modem_start(NETWORK_TIMEOUT);
+   err = modem_start(K_SECONDS(NETWORK_TIMEOUT_S));
    if (err) {
       reconnect();
    }
@@ -414,12 +418,17 @@ void dtls_lte_connected(enum dtls_lte_connect_type type, int connected)
    }
 }
 
-void dtls_trigger(void)
+static void dtls_trigger(void)
 {
-   ui_led_op(LED_COLOR_RED, LED_CLEAR);
    if (request_state == NONE) {
       k_sem_give(&dtls_trigger_msg);
    }
+}
+
+static void dtls_manual_trigger(void)
+{
+   ui_led_op(LED_COLOR_RED, LED_CLEAR);
+   dtls_trigger();
 }
 
 static int dtls_init_destination(session_t *destination)
@@ -491,8 +500,12 @@ int dtls_loop(void)
    long time;
 
    dtls_set_log_level(DTLS_LOG_INFO);
+   ui_init(dtls_manual_trigger);
 
-   if (modem_start(NETWORK_TIMEOUT) != 0) {
+   modem_init();
+   modem_location_init(dtls_trigger);
+
+   if (modem_start(K_SECONDS(NETWORK_TIMEOUT_S)) != 0) {
       reconnect();
    }
 
@@ -526,6 +539,8 @@ int dtls_loop(void)
    request_state = SEND;
    timeout = COAP_ACK_TIMEOUT;
    dtls_connect(dtls_context, &dst);
+
+   modem_location_start(60, 120);
 
    while (1) {
       if (!network_connected) {

@@ -21,8 +21,6 @@ enum dtls_lte_connect_type {
 
 void dtls_lte_connected(enum dtls_lte_connect_type type, int connected);
 
-void dtls_trigger(void);
-
 int dtls_loop(void);
 
 #endif /* DTLS_CLIENT_ */

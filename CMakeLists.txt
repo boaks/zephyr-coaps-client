@@ -18,7 +18,14 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(coaps-client)
 
 # APP START
-target_sources(app PRIVATE src/main.c src/modem.c src/ui.c src/dtls_client.c src/dtls_credentials.c src/coap_client.c)
+target_sources(app PRIVATE 
+	src/main.c 
+	src/modem.c 
+	src/modem_location.c 
+	src/ui.c 
+	src/dtls_client.c 
+	src/dtls_credentials.c 
+	src/coap_client.c)
 
 add_subdirectory_ifdef(CONFIG_EXTERNAL_SENSORS src/ext_sensors)
 

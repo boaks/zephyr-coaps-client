@@ -17,6 +17,8 @@
 #include <stddef.h>
 #include <sys_clock.h>
 
+int modem_init(void);
+
 int modem_start(k_timeout_t timeout);
 
 int modem_at_cmd(const char* cmd, char* buf, size_t max_len, const char *skip);
