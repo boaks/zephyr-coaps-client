@@ -25,7 +25,7 @@ extern unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
 extern unsigned int bat_level[BAT_LEVEL_SLOTS];
 
 typedef enum { PARSE_IGN = 0, PARSE_RST, PARSE_ACK, PARSE_RESPONSE } parse_result_t;
-int coap_client_parse_data(uint8 *data, size_t len);
+int coap_client_parse_data(uint8_t *data, size_t len);
 
 int coap_client_prepare_post(void);
 int coap_client_send_post(struct dtls_context_t *ctx, session_t *dst);

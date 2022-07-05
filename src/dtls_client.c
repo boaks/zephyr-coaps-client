@@ -27,8 +27,11 @@
 #include "dtls_debug.h"
 #include "global.h"
 #include "modem.h"
-#include "modem_location.h"
 #include "ui.h"
+
+#ifdef CONFIG_LOCATION_ENABLE
+#include "modem_location.h"
+#endif
 
 #define COAP_ACK_TIMEOUT 3
 #define ADD_ACK_TIMEOUT 3
@@ -503,7 +506,9 @@ int dtls_loop(void)
    ui_init(dtls_manual_trigger);
 
    modem_init();
+#ifdef CONFIG_LOCATION_ENABLE
    modem_location_init(dtls_trigger);
+#endif
 
    if (modem_start(K_SECONDS(NETWORK_TIMEOUT_S)) != 0) {
       reconnect();
@@ -540,7 +545,9 @@ int dtls_loop(void)
    timeout = COAP_ACK_TIMEOUT;
    dtls_connect(dtls_context, &dst);
 
+#ifdef CONFIG_LOCATION_ENABLE
    modem_location_start(60, 120);
+#endif
 
    while (1) {
       if (!network_connected) {

@@ -8,7 +8,8 @@
 
 menuconfig EXTERNAL_SENSORS
 	bool "External sensors"
-
+	default y
+	
 if EXTERNAL_SENSORS
 
 config EXTERNAL_SENSORS_ACTIVITY_DETECTION_AUTO

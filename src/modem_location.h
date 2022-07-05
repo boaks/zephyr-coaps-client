@@ -14,6 +14,8 @@
 #ifndef MODEM_LOCATION_H
 #define MODEM_LOCATION_H
 
+#include <modem/location.h>
+
 typedef enum {
    NO_LOCATION,
    CURRENT_LOCATION,
@@ -26,6 +28,6 @@ int modem_location_init(location_callback_handler_t handler);
 
 int modem_location_start(int interval, int timeout);
 
-location_state_t modem_location_get(int timeout, double *latitude, double *longitude);
+location_state_t modem_location_get(int timeout, struct location_data *location);
 
 #endif /* MODEM_LOCATION_H */

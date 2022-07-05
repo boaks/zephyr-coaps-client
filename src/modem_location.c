@@ -31,8 +31,7 @@ static K_CONDVAR_DEFINE(location_condvar);
 
 static location_callback_handler_t s_handler;
 
-static volatile double s_latitude = 0.0;
-static volatile double s_longitude = 0.0;
+static volatile struct location_data s_location;
 static volatile location_state_t s_location_state = NO_LOCATION;
 
 static void location_event_handler(const struct location_event_data *event_data)
@@ -84,8 +83,7 @@ static void location_event_handler(const struct location_event_data *event_data)
    }
    k_mutex_lock(&location_mutex, K_FOREVER);
    if (CURRENT_LOCATION == state) {
-      s_latitude = event_data->location.latitude;
-      s_longitude = event_data->location.longitude;
+      s_location = event_data->location;
       s_location_state = state;
       k_condvar_broadcast(&location_condvar);
    } else if (NO_LOCATION != s_location_state) {
@@ -140,7 +138,7 @@ int modem_location_start(int interval, int timeout)
    return err;
 }
 
-location_state_t modem_location_get(int timeout, double *latitude, double *longitude)
+location_state_t modem_location_get(int timeout, struct location_data *location)
 {
    location_state_t result;
 
@@ -183,12 +181,9 @@ location_state_t modem_location_get(int timeout, double *latitude, double *longi
 
    k_mutex_lock(&location_mutex, K_FOREVER);
    result = s_location_state;
-   if (CURRENT_LOCATION == result) {
-      if (latitude) {
-         *latitude = s_latitude;
-      }
-      if (longitude) {
-         *longitude = s_longitude;
+   if (NO_LOCATION != result) {
+      if (location) {
+         *location = s_location;
       }
    }
    k_mutex_unlock(&location_mutex);
@@ -211,11 +206,10 @@ int modem_location_start(int interval, int timeout)
    return 0;
 }
 
-location_state_t modem_location_get(int timeout, double *latitude, double *longitude)
+location_state_t modem_location_get(int timeout, struct location_data *location);
 {
    (void)timeout;
-   (void)latitude;
-   (void)longitude;
+   (void)location;
    return NO_LOCATION;
 }
 

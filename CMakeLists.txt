@@ -21,11 +21,13 @@ project(coaps-client)
 target_sources(app PRIVATE 
 	src/main.c 
 	src/modem.c 
-	src/modem_location.c 
+	src/power_manager.c 
 	src/ui.c 
 	src/dtls_client.c 
 	src/dtls_credentials.c 
 	src/coap_client.c)
+
+target_sources_ifdef(CONFIG_LOCATION_ENABLE app PRIVATE src/modem_location.c)
 
 add_subdirectory_ifdef(CONFIG_EXTERNAL_SENSORS src/ext_sensors)
 

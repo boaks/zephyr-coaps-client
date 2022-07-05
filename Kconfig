@@ -49,17 +49,33 @@ config UDP_RAI_ENABLE
 	bool "Enable LTE Release Assistance Indication"
 	default y
 
+config LOCATION_ENABLE
+	bool "Enable GNSS Loaction"
+	default y
+	select CJSON_LIB
+	select LOCATION
+	select LOCATION_METHOD_GNSS
+
+if ADP536X
+
+config ADP536X_POWER_MANAGEMENT
+	bool "Enable ADP536X Power Management"
+	default y
+
+endif # ADP536X
+
 endmenu
+
+
+
+if SENSOR
+	rsource "src/ext_sensors/Kconfig"
+endif # SENSOR
 
 # Logging
 module = COAP_CLIENT
 module-str = CoAP Client
 source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
-
-if SENSOR
-	rsource "src/ext_sensors/Kconfig"
-	EXTERNAL_SENSORS = y
-endif # SENSOR
 
 source "${ZEPHYR_BASE}/subsys/logging/Kconfig.formatting"
 

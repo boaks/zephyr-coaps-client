@@ -19,9 +19,12 @@
 #include "coap_client.h"
 #include "dtls_debug.h"
 #include "modem.h"
-#include "modem_location.h"
+#include "power_manager.h"
 #include "ui.h"
 
+#ifdef CONFIG_LOCATION_ENABLE
+#include "modem_location.h"
+#endif
 #ifdef CONFIG_EXTERNAL_SENSORS
 #include "ext_sensors.h"
 #endif
@@ -63,7 +66,7 @@ static void ext_sensor_handler(const struct ext_sensor_evt *const evt)
 }
 #endif
 
-int coap_client_parse_data(uint8 *data, size_t len)
+int coap_client_parse_data(uint8_t *data, size_t len)
 {
    int err;
    struct coap_packet reply;
@@ -132,18 +135,25 @@ int coap_client_parse_data(uint8 *data, size_t len)
 
 int coap_client_prepare_post(void)
 {
-   char buf[192], *p;
-   int err;
-   int index;
-   unsigned int uptime;
-   double latitude = 0.0;
-   double longitude = 0.0;
-
 #ifdef CONFIG_EXTERNAL_SENSORS
    double value = 0.0;
 #endif
+#ifdef CONFIG_LOCATION_ENABLE
+   struct location_data location;
+#endif
+
+   power_manager_status_t battery_status = POWER_UNKNOWN;
+   uint16_t battery_voltage = 0xffff;
+   uint8_t battery_level = 0xff;
+
+   char buf[256], *p;
+   int err;
+   int index;
+   unsigned int uptime;
+
    uint8_t *token = (uint8_t *)&coap_current_token;
    struct coap_packet request;
+
 #ifdef CONFIG_COAP_QUERY_DELAY_ENABLE
    static int query_delay = 0;
    char query[30];
@@ -154,17 +164,14 @@ int coap_client_prepare_post(void)
    for (index = BAT_LEVEL_SLOTS - 1; index > 0; --index) {
       bat_level[index] = bat_level[index - 1];
    }
+   bat_level[0] = 1;
 
    uptime = (unsigned int)(k_uptime_get() / 1000);
 
-   err = modem_at_cmd("AT%%XVBAT", coap_message_buf, sizeof(coap_message_buf), "%XVBAT: ");
-   if (err < 0) {
-      dtls_warn("Failed to read battery level!");
-   }
-   if (err > 0) {
-      bat_level[0] = atoi(coap_message_buf);
-   } else {
-      bat_level[0] = 1;
+   if (!power_manager_status(&battery_level, &battery_voltage, &battery_status)) {
+      if (battery_voltage != 0xffff) {
+         bat_level[0] = battery_voltage;
+      }
    }
 
    err = modem_at_cmd("AT+CESQ", coap_message_buf, sizeof(coap_message_buf), "+CESQ: ");
@@ -185,31 +192,58 @@ int coap_client_prepare_post(void)
    index = snprintf(buf, sizeof(buf), "%u s, Thingy:91 %s, 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
                     uptime, CLIENT_VERSION, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
    if (bat_level[0] > 1) {
+      int start = index + 1;
       index += snprintf(buf + index, sizeof(buf) - index, "\n%u mV", bat_level[0]);
-      dtls_info("%u mV", bat_level[0]);
+      if (battery_level < 0xff) {
+         index += snprintf(buf + index, sizeof(buf) - index, " %u%%", battery_level);
+      }
+      const char *msg = "";
+      switch (battery_status) {
+         case FROM_BATTERY:
+            msg = "battery";
+            break;
+         case CHARGING:
+            msg = "charging";
+            break;
+         case CHARGING_COMPLETED:
+            msg = "full";
+            break;
+         default:
+            break;
+      }
+      index += snprintf(buf + index, sizeof(buf) - index, " %s", msg);
+      dtls_info("%s", buf + start);
    }
    if (p) {
       index += snprintf(buf + index, sizeof(buf) - index, "\nRSSI: %s", p);
       dtls_info("RSSI q,p: %s", p);
    }
-   switch (modem_location_get(0, &latitude, &longitude)) {
+
+#ifdef CONFIG_LOCATION_ENABLE
+   err = 0;
+   switch (modem_location_get(0, &location)) {
       case NO_LOCATION:
-         index += snprintf(buf + index, sizeof(buf) - index, "\nNo location");
          dtls_info("No location");
          break;
-      case CURRENT_LOCATION:
-         index += snprintf(buf + index, sizeof(buf) - index, "\nq=%.06f,%.06f", latitude, longitude);
-         dtls_info("URL: https://maps.google.com/?q=%.06f,%.06f",
-                   latitude, longitude);
-         break;
       case PREVIOUS_LOCATION:
-         index += snprintf(buf + index, sizeof(buf) - index, "\n*q=%.06f,%.06f", latitude, longitude);
-         dtls_info("(previous) URL: https://maps.google.com/?q=%.06f,%.06f",
-                   latitude, longitude);
+         err = 1;
+      case CURRENT_LOCATION:
+         if (location.datetime.valid) {
+            index += snprintf(buf + index, sizeof(buf) - index, "\n%sq=%.06f,%.06f,%04d-%02d-%02dT%02d:%02d:%02dZ",
+                              err ? "*" : "",
+                              location.latitude, location.longitude, location.datetime.year, location.datetime.month, location.datetime.day, location.datetime.hour, location.datetime.minute, location.datetime.second);
+         } else {
+            index += snprintf(buf + index, sizeof(buf) - index, "\n%sq=%.06f,%.06f",
+                              err ? "*" : "",
+                              location.latitude, location.longitude);
+         }
+         dtls_info("URL: https://maps.google.com/?q=%.06f,%.06f",
+                   location.latitude, location.longitude);
          break;
       default:
          break;
    }
+#endif
 
 #ifdef CONFIG_EXTERNAL_SENSORS
    if (ext_sensors_temperature_get(&value) == 0) {
@@ -309,6 +343,8 @@ int coap_client_init(void)
    if (err < 0) {
    }
 #endif
+
+   power_manager_init();
    coap_current_token = sys_rand32_get();
    return err;
 }
