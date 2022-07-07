@@ -83,6 +83,8 @@ static struct k_timer led_red_timer;
 static struct k_timer led_green_timer;
 static struct k_timer led_blue_timer;
 
+static K_MUTEX_DEFINE(led_mutex);
+
 static void timer_expiry_function(struct k_timer *timer_id)
 {
    if (&led_red_timer == timer_id) {
@@ -128,6 +130,7 @@ static void initButton(void)
 
 static void ui_op(const struct device *port, gpio_pin_t pin, led_op_t op, struct k_timer *timer)
 {
+//   k_mutex_lock(&led_mutex, K_FOREVER);
    if (timer) {
       k_timer_stop(timer);
    }
@@ -150,6 +153,7 @@ static void ui_op(const struct device *port, gpio_pin_t pin, led_op_t op, struct
             break;
       }
    }
+//   k_mutex_unlock(&led_mutex);
 }
 
 void ui_led_op(led_t led, led_op_t op)

@@ -11,8 +11,8 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-#include <kernel.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 #include <modem/location.h>
 #include <stdio.h>
 #include <string.h>
@@ -93,9 +93,10 @@ static void location_event_handler(const struct location_event_data *event_data)
          LOG_INF("Getting location: Unknown event.");
          break;
    }
+   int64_t now = k_uptime_get();
    k_mutex_lock(&location_mutex, K_FOREVER);
    if (CURRENT_LOCATION == state) {
-      s_location_last = k_uptime_get();
+      s_location_last = now;
       s_location = event_data->location;
       s_location_state = state;
       k_condvar_broadcast(&location_condvar);
@@ -237,7 +238,7 @@ void modem_location_loop(void)
    static int64_t next_gnss = 0;
 
    int64_t now = k_uptime_get();
-   if (next_gnss < now) {
+   if ((now - next_gnss) > 0) {
       location_state_t state = modem_location_get(0, NULL);
 
       if (state == PREVIOUS_LOCATION) {

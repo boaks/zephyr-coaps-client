@@ -49,28 +49,122 @@ config UDP_RAI_ENABLE
 	bool "Enable LTE Release Assistance Indication"
 	default y
 
+endmenu
+
+menu "Extra Functions"
+
 config LOCATION_ENABLE
 	bool "Enable GNSS Loaction"
-	default n
-	select CJSON_LIB
-	select LOCATION
+	default y
 	select LOCATION_METHOD_GNSS
+	select LOCATION
+	select CJSON_LIB
+	help
+	   Enable GNSS location. Early development stage.
+	   Does not support A-GPS. To start GNSS, place the
+	   Thingy:91 outside in an open space. Once the 
+	   almanac data is downloaded from satelites, 
+	   positions are start to be reported. 
+	   Seems, that walking around, the Thingy:91
+	   withdraws the almanac and stops reporting
+	   positions.
+
+if SENSOR
 
 if ADP536X
 
 config ADP536X_POWER_MANAGEMENT
 	bool "Enable ADP536X Power Management"
 	default y
+	help
+	   Enable battery level and charging state monitor.
 
 endif # ADP536X
 
-endmenu
+if ADXL362
 
+config ADXL362_MOTION_DETECTION
+	bool "Enable ADXL362 Motion Detection"
+	default y
+	help
+	   Enable (indirect) motion detection using accelerometer.
+	   More configuration options are available at 
+	   "Zephyr Kernel > Device Drivers > Sensor Drivers > ADXL362 sensor"
 
+if ADXL362_MOTION_DETECTION
 
-if SENSOR
-	rsource "src/ext_sensors/Kconfig"
+config ADXL362_MOTION_DETECTION_LED
+	bool "Enable ADXL362 Motion Detection LED"
+	default n
+	help
+	   Enable LED to signal motion detection using accelerometer.
+
+endif # ADXL362_MOTION_DETECTION
+
+endif # ADXL362
+
+config BME680_BSEC
+	bool "BME680 BSEC"
+	depends on !BME680
+	help
+	  Use BME680 with Bosch BSEC library (IAQ Index Air Quality).
+	  The library itself must be downloaded from Bosch Sensortec
+	  and placed in "<ncs>/nrf/ext/BSEC_1.4.8.0_Generic_Release_updated_v3"
+	  Disable "Zephyr Kernel > Device Drivers > Sensor Drivers > BME680 sensor"
+	  in order to use the BME680 with the Bosch BSEC library! Enable 
+	  the BME680 sensor to use it without the Bosch BSEC library! 
+
+if BME680_BSEC
+
+config BME680_BSEC_THREAD_STACK_SIZE
+	int "BSEC thread stack size"
+	default 4096
+
+choice BME680_BSEC_SAMPLE_MODE
+	prompt "Bosch BSEC sample mode"
+	default BME680_BSEC_SAMPLE_MODE_LOW_POWER
+	help
+	  Configure sample interval. BSEC support 3s or 300s
+
+config BME680_BSEC_SAMPLE_MODE_LOW_POWER
+	bool "BSEC low power mode"
+	help
+	  Sample data from BSEC every 0.33333 Hz (3 second interval).
+
+config BME680_BSEC_SAMPLE_MODE_ULTRA_LOW_POWER
+	bool "BSEC low ultra power mode"
+	help
+	  Sample data from BSEC every 0.0033333 Hz (300 second interval).
+
+endchoice # BME680_BSEC_SAMPLE_MODE
+
+endif # BME680_BSEC
+
+if BME680_BSEC || BME680
+
+config BME680_TEMPERATURE_OFFSET
+	int "BME680 temperature offset in degree celsius * 100"
+	default 120 if BOARD_THINGY91_NRF9160_NS
+	default 100
+	help
+	  BME680 temperature offset. To account for external heat sources on the board.
+	  The actual value is divided by 100. This is due to the Kconfig parser
+	  not supporting floating point types.
+	  The default value 120 is translated to 1.2 degrees celsius offset.
+
+endif # BME680_BSEC || BME680
+
+if BME680
+
+config BME680_SAMPLE_INTERVAL_S
+	int "BME680 minimal sample interval in seconds"
+	default 10
+
+endif # BME680
+
 endif # SENSOR
+
+endmenu
 
 # Logging
 module = COAP_CLIENT

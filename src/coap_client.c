@@ -22,11 +22,10 @@
 #include "power_manager.h"
 #include "ui.h"
 
+#include "environment_sensor.h"
+
 #ifdef CONFIG_LOCATION_ENABLE
 #include "modem_location.h"
-#endif
-#ifdef CONFIG_EXTERNAL_SENSORS
-#include "ext_sensors.h"
 #endif
 
 #define APP_COAP_MAX_MSG_LEN 1280
@@ -42,29 +41,6 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
 unsigned int bat_level[BAT_LEVEL_SLOTS] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
-#ifdef CONFIG_EXTERNAL_SENSORS
-static void ext_sensor_handler(const struct ext_sensor_evt *const evt)
-{
-   switch (evt->type) {
-      case EXT_SENSOR_EVT_ACCELEROMETER_ERROR:
-         dtls_info("accelerometer error!");
-         break;
-      case EXT_SENSOR_EVT_TEMPERATURE_ERROR:
-         dtls_info("temperature error!");
-         break;
-      case EXT_SENSOR_EVT_HUMIDITY_ERROR:
-         dtls_info("humidity error!");
-         break;
-      case EXT_SENSOR_EVT_PRESSURE_ERROR:
-         dtls_info("accelerometer trigger");
-         break;
-      case EXT_SENSOR_EVT_ACCELEROMETER_TRIGGER:
-         dtls_info("accelerometer trigger");
-         break;
-   }
-}
-#endif
 
 int coap_client_parse_data(uint8_t *data, size_t len)
 {
@@ -135,8 +111,9 @@ int coap_client_parse_data(uint8_t *data, size_t len)
 
 int coap_client_prepare_post(void)
 {
-#ifdef CONFIG_EXTERNAL_SENSORS
+#ifdef ENVIRONMENT_SENSOR
    double value = 0.0;
+   int32_t int_value = 0;
 #endif
 #ifdef CONFIG_LOCATION_ENABLE
    struct location_data location;
@@ -226,7 +203,7 @@ int coap_client_prepare_post(void)
       index += snprintf(buf + index, sizeof(buf) - index, "\nRSSI: %s", p);
       dtls_info("RSSI q,p: %s", p);
    }
-   p = modem_get_network_mode(); 
+   p = modem_get_network_mode();
    index += snprintf(buf + index, sizeof(buf) - index, "\nNetwork: %s", p);
    dtls_info("Network: %s", p);
 
@@ -265,14 +242,47 @@ int coap_client_prepare_post(void)
    }
 #endif
 
-#ifdef CONFIG_EXTERNAL_SENSORS
-   if (ext_sensors_temperature_get(&value) == 0) {
+#ifdef ENVIRONMENT_SENSOR
+   if (environment_get_temperature(&value) == 0) {
       index += snprintf(buf + index, sizeof(buf) - index, "\n%.2f C", value);
       dtls_info("%.2f C", value);
    }
-   if (ext_sensors_humidity_get(&value) == 0) {
+   if (environment_get_humidity(&value) == 0) {
       index += snprintf(buf + index, sizeof(buf) - index, "\n%.2f %%H", value);
       dtls_info("%.2f %%H", value);
+   }
+   if (environment_get_pressure(&value) == 0) {
+      index += snprintf(buf + index, sizeof(buf) - index, "\n%.1f hPa", value);
+      dtls_info("%.1f hPa", value);
+   }
+   if (environment_get_gas(&int_value) == 0) {
+      const char *desc = "???";
+      switch (int_value > 0 ? (int_value - 1) / 50 : 0) {
+         case 0:
+            desc = "excellent";
+            break;
+         case 1:
+            desc = "good";
+            break;
+         case 2:
+            desc = "lightly polluted";
+            break;
+         case 3:
+            desc = "moderately polluted";
+            break;
+         case 4:
+            desc = "heavily polluted";
+            break;
+         case 5:
+         case 6:
+            desc = "severely polluted";
+            break;
+         default:
+            desc = "extremely polluted";
+            break;
+      }
+      index += snprintf(buf + index, sizeof(buf) - index, "\n%d Q (%s)", int_value, desc);
+      dtls_info("%d Q (%s)", int_value, desc);
    }
 #endif
    coap_current_token++;
@@ -357,15 +367,7 @@ int coap_client_send_post(struct dtls_context_t *ctx, session_t *dst)
 
 int coap_client_init(void)
 {
-   int err = 0;
-#ifdef CONFIG_EXTERNAL_SENSORS
-   err = ext_sensors_init(ext_sensor_handler);
-   if (err < 0) {
-      dtls_warn("Init sensors failed %d", errno);
-   }
-#endif
-
    power_manager_init();
    coap_current_token = sys_rand32_get();
-   return err;
+   return 0;
 }

@@ -27,9 +27,53 @@ target_sources(app PRIVATE
 	src/dtls_credentials.c 
 	src/coap_client.c)
 
+target_sources_ifdef(CONFIG_ADXL362_MOTION_DETECTION app PRIVATE src/accelerometer_sensor.c)
+
 target_sources_ifdef(CONFIG_LOCATION_ENABLE app PRIVATE src/modem_location.c)
 
-add_subdirectory_ifdef(CONFIG_EXTERNAL_SENSORS src/ext_sensors)
+target_sources_ifdef(CONFIG_BME680 app PRIVATE src/environment_sensor.c)
+
+if (CONFIG_BME680_BSEC)
+        set(bsec_version "BSEC_1.4.8.0_Generic_Release_updated_v3")
+        set(bsec_dir "${ZEPHYR_NRF_MODULE_DIR}/ext/${bsec_version}")
+
+        if (CONFIG_FP_SOFTABI)
+                set(BSEC_LIB_DIR ${bsec_dir}/algo/normal_version/bin/gcc/Cortex_M33)
+        endif()
+        if (CONFIG_FP_HARDABI)
+                set(BSEC_LIB_DIR ${bsec_dir}/algo/normal_version/bin/gcc/Cortex_M33F)
+        endif()
+
+        if(NOT EXISTS "${BSEC_LIB_DIR}/libalgobsec.a")
+                assert(0 "Could not find BSEC library in \"${bsec_dir}\".")
+        endif()
+
+        if (CONFIG_BME680_BSEC_SAMPLE_MODE_ULTRA_LOW_POWER)
+                set(BSEC_CONFIG_DIR ${bsec_dir}/config/generic_18v_300s_4d)
+        endif()
+        if (CONFIG_BME680_BSEC_SAMPLE_MODE_LOW_POWER)
+                set(BSEC_CONFIG_DIR ${bsec_dir}/config/generic_18v_3s_4d)
+        endif()
+        set(BSEC_EXAMPLE_DIR ${bsec_dir}/examples/bsec_iot_example)
+
+        target_include_directories(app PRIVATE ${BSEC_LIB_DIR} ${BSEC_CONFIG_DIR} ${BSEC_EXAMPLE_DIR})
+
+        target_sources(app PRIVATE 
+                src/environment_sensor.c
+                ${BSEC_CONFIG_DIR}/bsec_serialized_configurations_iaq.c
+                ${bsec_dir}/examples/bsec_iot_example/bsec_integration.c
+                ${bsec_dir}/examples/bsec_iot_example/bme680.c)
+
+        add_library(bsec_lib STATIC IMPORTED GLOBAL)
+        add_dependencies(bsec_lib math_lib bsec_target)
+
+        set_target_properties(bsec_lib PROPERTIES IMPORTED_LOCATION "${BSEC_LIB_DIR}/libalgobsec.a")
+        set_target_properties(bsec_lib PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${BSEC_LIB_DIR}")
+
+        target_link_libraries(bsec_lib INTERFACE -L${LIBC_LIBRARY_DIR})
+        target_link_libraries(app PUBLIC bsec_lib)
+endif()
+
 
 zephyr_include_directories(src)
 

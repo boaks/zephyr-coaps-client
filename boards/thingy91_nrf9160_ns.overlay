@@ -1,46 +1,36 @@
 /*
- * Copyright (c) 2021 Nordic Semiconductor ASA
+ * Copyright (c) 2022 Achim Kraus CloudCoap.net
  *
- * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
  *
- * Origin:
- * https://github.com/nrfconnect/sdk-nrf/blob/v1.9.1/applications/asset_tracker_v2/boards/thingy91_nrf9160_ns.overlay
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
  */
 
-/ {
-	aliases {
-		temp-sensor = &bme680;
-		humidity-sensor = &bme680;
-		pressure-sensor = &bme680;
-		accelerometer = &adxl362;
-	};
 /*
-	pwmleds0 {
-		compatible = "pwm-leds";
-		status = "okay";
-		pwm_led0: led_pwm_0 {
-			status = "okay";
-			pwms = <&pwm0 29>;
-			label = "LED0 red";
-		};
-		pwm_led1: led_pwm_1 {
-			status = "okay";
-			pwms = <&pwm0 30>;
-			label = "LED0 green";
-		};
-		pwm_led2: led_pwm_2 {
-			status = "okay";
-			pwms = <&pwm0 31>;
-			label = "LED0 blue";
-		};
+ * Map the devices to the aliases of the application. 
+ */ 
+
+/ {
+	aliases {	
+		/* alias for sensor with SENSOR_CHAN_AMBIENT_TEMP channel */
+		temperatur-sensor = &bme680;
+		/* alias for sensor with SENSOR_CHAN_HUMIDITY channel */
+		humidity-sensor = &bme680;
+		/* alias for sensor with SENSOR_CHAN_PRESS channel */
+		pressure-sensor = &bme680;
+		/* alias for sensor with SENSOR_CHAN_GAS_RES channel */
+		gas-sensor = &bme680;
+
+		/* alias for BME680 sensor to be used with Bosch BSEC library (IAQ Index Air Quality) */
+		environment-sensor = &bme680;
+
+		/* alias for sensor with SENSOR_CHAN_ACCEL_XYZ channels */
+		accelerometer-sensor = &adxl362;
+
 	};
-*/	
-};
-
-&i2c2 {
-	bme680: bme680@76 {};
-};
-
-&spi3 {
-	adxl362: adxl362@0 {};
 };

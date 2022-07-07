@@ -33,6 +33,12 @@
 #include "modem_location.h"
 #endif
 
+#ifdef CONFIG_ADXL362_MOTION_DETECTION
+#include "accelerometer_sensor.h"
+#endif
+
+#include "environment_sensor.h"
+
 #define COAP_ACK_TIMEOUT 3
 #define ADD_ACK_TIMEOUT 3
 
@@ -508,6 +514,17 @@ static void dtls_wakeup_trigger(void)
    wakeup_next_sent = now + ((NETWORK_WAKEUP_SEND_INTERVAL_S)*1000);
 }
 
+#ifdef CONFIG_ADXL362_MOTION_DETECTION
+static void accelerometer_handler(const struct accelerometer_evt *const evt)
+{
+   dtls_info("accelerometer trigger, x %.02f, y %.02f, z %.02f", evt->values[0], evt->values[1], evt->values[2]);
+#ifdef CONFIG_ADXL362_MOTION_DETECTION_LED
+   ui_led_op(LED_COLOR_GREEN, LED_BLINK);
+   ui_led_op(LED_COLOR_RED, LED_BLINK);
+#endif /* CONFIG_ADXL362_MOTION_DETECTION_LED */
+}
+#endif
+
 int dtls_loop(void)
 {
    char imei[24];
@@ -530,7 +547,13 @@ int dtls_loop(void)
 #else
    dtls_warn("no location");
 #endif
-
+#ifdef CONFIG_ADXL362_MOTION_DETECTION
+   accelerometer_init(accelerometer_handler);
+   accelerometer_enable(true);
+#endif
+#ifdef ENVIRONMENT_SENSOR
+   environment_init();
+#endif
    if (modem_start(K_SECONDS(NETWORK_TIMEOUT_S)) != 0) {
       reconnect();
    }

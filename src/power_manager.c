@@ -11,8 +11,8 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-#include <kernel.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 
 #include "power_manager.h"
 

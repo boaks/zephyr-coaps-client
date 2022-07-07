@@ -80,3 +80,7 @@ another country, of encryption software. BEFORE using any encryption software,
 please check the country's laws, regulations and policies concerning the import,
 possession, or use, and re-export of encryption software, to see if this is
 permitted.
+
+## Optional Third-party Content
+
+The usage of the [Bosch BSEC library](https://www.bosch-sensortec.com/software-tools/software/bsec/) is optional under this [license](https://www.bosch-sensortec.com/media/boschsensortec/downloads/bsec/2017-07-17_clickthrough_license_terms_environmentalib_sw_clean.pdf).

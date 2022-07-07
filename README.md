@@ -146,15 +146,44 @@ Demo message:
 4160 mV 95% charging (V)
 RSSI: 255,255
 Network: CAT-M1
-29.69 C
-38.99 %H
 ```
 
-It starts with the up-time in seconds in the first line, followed by the label "Thingy:91" and a sent statistic. "`0*3`" := 43 exchanges without retransmission, "`1*0`" := no (0) exchanges with 1 retransmission. The current exchange is not included in this statistic. The second line contains the battery status and the third the receiving signal strength. The next line contains the network mode (CAT-M1 or NB-IoT). If the sensors are enabled (default), the temperature and humidity is also appended.
+It starts with the up-time in seconds in the first line, followed by the label "Thingy:91" and a sent statistic. "`0*3`" := 43 exchanges without retransmission, "`1*0`" := no (0) exchanges with 1 retransmission. The current exchange is not included in this statistic. The second line contains the battery status and the third the receiving signal strength. The next line contains the network mode (CAT-M1 or NB-IoT).
 
 The demo uses the "echo" resource of the plugtest-server, therefore the response contains just the same message.
 
 If you want to see, what your `Thingy:91` has sent to the server, see [cf-browser](./CFBROWSER.md).
+
+## Configuration
+
+The application comes with a [KConfig](blob/main/Kconfig) to configure some functions. Use
+
+```
+west build -b thingy91_nrf9160_ns -t menuconfig
+```
+
+for the console variant, and
+
+```
+west build -b thingy91_nrf9160_ns -t guiconfig
+```
+
+for the GUI variant.
+
+Please read the provided help for this settings.
+
+For the usage of the environment sensor [BME680 (Bosch)](https://www.bosch-sensortec.com/products/environmental-sensors/gas-sensors/bme680/) two options are available:
+
+- zephyr bme680 driver, access to temperature, humidity, pressure, and the "gas sensor resistance". No additional source are required. Enabled at
+`Zephyr Kernel > Device Drivers > Sensor Drivers > BME680 sensor`.
+
+- Bosch [bme680 BSEC library], access to temperature, humidity, pressure, and the IAQ (Index Air Quality).
+The [BSEC](https://www.bosch-sensortec.com/software-tools/software/bsec/) must be downloaded from Bosch and comes with its own [license](https://www.bosch-sensortec.com/media/boschsensortec/downloads/bsec/2017-07-17_clickthrough_license_terms_environmentalib_sw_clean.pdf). Unzip the downloaded archive into the `zephyr-coaps-client/nrf/ext/` (or `<ncs>/nrf/ext/`). The resulting path must be `nrf/ext/BSEC_1.4.8.0_Generic_Release_updated_v3`.
+If the preparation is done, disable 
+`Zephyr Kernel > Device Drivers > Sensor Drivers > BME680 sensor` (if enabled),
+and then enable
+`Extra Functions > BME680 BSEC`.
+instead.
 
 ## Next Steps
 
@@ -169,6 +198,6 @@ See also [Roadmap](./ROADMAP.md) for the plan of the next months.
 This demo itself is licensed under [EPL-2.0](./licenses/EPL-2.0.txt).
 
 Some files are used especially for the `Thingy:91` and are licensed under [Nordic-5](./licenses/Nordic-5.txt). This files are only licensed to be used with Nordic Semiconductor devices.
-See [boards](./boards), [child_image](./child_image), and [ext_sensors](./src/ext_sensors).
+See [boards](./boards) and [child_image](./child_image).
 
 The demo uses several third-party content, please refer to [NOTICE](NOTICE.md) for details.
