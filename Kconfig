@@ -51,7 +51,7 @@ config UDP_RAI_ENABLE
 
 config LOCATION_ENABLE
 	bool "Enable GNSS Loaction"
-	default y
+	default n
 	select CJSON_LIB
 	select LOCATION
 	select LOCATION_METHOD_GNSS

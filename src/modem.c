@@ -37,6 +37,7 @@ static bool initialized = 0;
 static bool start_connect = 0;
 static volatile int lte_connected_state = 0;
 static volatile int ptau = 0;
+static const char* volatile network_mode = "init";
 
 static void lte_connection_set(int connected)
 {
@@ -110,12 +111,13 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          break;
       case LTE_LC_EVT_LTE_MODE_UPDATE:
          if (evt->lte_mode == LTE_LC_LTE_MODE_NONE) {
-            LOG_INF("LTE Mode: none");
+            network_mode = "none";
          } else if (evt->lte_mode == LTE_LC_LTE_MODE_LTEM) {
-            LOG_INF("LTE Mode: CAT-M1");
+            network_mode = "CAT-M1";
          } else if (evt->lte_mode == LTE_LC_LTE_MODE_NBIOT) {
-            LOG_INF("LTE Mode: CAT-NB");
+            network_mode = "NB-IoT";
          }
+         LOG_INF("LTE Mode: %s", network_mode);
          break;
       case LTE_LC_EVT_PSM_UPDATE:
          LOG_INF("PSM parameter update: TAU: %d s, Active time: %d s",
@@ -296,6 +298,10 @@ int modem_start(k_timeout_t timeout)
    return err;
 }
 
+const char* modem_get_network_mode(void) {
+   return network_mode;
+}
+
 int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
 {
    int err;
@@ -389,6 +395,10 @@ int modem_start(int init)
 {
    (void)init;
    return 0;
+}
+
+const char* modem_get_network_mode(void) {
+   return "n.a.";
 }
 
 int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)

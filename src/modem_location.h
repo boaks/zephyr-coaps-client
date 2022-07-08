@@ -18,6 +18,8 @@
 
 typedef enum {
    NO_LOCATION,
+   PENDING_LOCATION,
+   TIMEOUT_LOCATION,
    CURRENT_LOCATION,
    PREVIOUS_LOCATION
 } location_state_t;
@@ -26,8 +28,10 @@ typedef void (*location_callback_handler_t)(void);
 
 int modem_location_init(location_callback_handler_t handler);
 
-int modem_location_start(int interval, int timeout);
+int modem_location_start(int interval, int timeout, bool visibility_detection);
 
 location_state_t modem_location_get(int timeout, struct location_data *location);
+
+void modem_location_loop(void);
 
 #endif /* MODEM_LOCATION_H */

@@ -21,6 +21,8 @@ int modem_init(void);
 
 int modem_start(k_timeout_t timeout);
 
+const char* modem_get_network_mode(void);
+
 int modem_at_cmd(const char* cmd, char* buf, size_t max_len, const char *skip);
 
 int modem_set_power_modes(int enable);

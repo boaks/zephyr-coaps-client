@@ -202,8 +202,14 @@ int coap_client_prepare_post(void)
          case FROM_BATTERY:
             msg = "battery";
             break;
-         case CHARGING:
-            msg = "charging";
+         case CHARGING_TRICKLE:
+            msg = "charging (trickle)";
+            break;
+         case CHARGING_I:
+            msg = "charging (I)";
+            break;
+         case CHARGING_V:
+            msg = "charging (V)";
             break;
          case CHARGING_COMPLETED:
             msg = "full";
@@ -214,31 +220,44 @@ int coap_client_prepare_post(void)
       index += snprintf(buf + index, sizeof(buf) - index, " %s", msg);
       dtls_info("%s", buf + start);
    }
+
    if (p) {
       index += snprintf(buf + index, sizeof(buf) - index, "\nRSSI: %s", p);
       dtls_info("RSSI q,p: %s", p);
    }
+   p = modem_get_network_mode(); 
+   index += snprintf(buf + index, sizeof(buf) - index, "\nNetwork: %s", p);
+   dtls_info("Network: %s", p);
 
 #ifdef CONFIG_LOCATION_ENABLE
    err = 0;
    switch (modem_location_get(0, &location)) {
       case NO_LOCATION:
+         index += snprintf(buf + index, sizeof(buf) - index, "\n*POS=n.a.");
          dtls_info("No location");
+         break;
+      case PENDING_LOCATION:
+         index += snprintf(buf + index, sizeof(buf) - index, "\n*POS=pending");
+         dtls_info("No location - pending");
+         break;
+      case TIMEOUT_LOCATION:
+         index += snprintf(buf + index, sizeof(buf) - index, "\n*POS=timeout");
+         dtls_info("No location - timeout");
          break;
       case PREVIOUS_LOCATION:
          err = 1;
       case CURRENT_LOCATION:
          if (location.datetime.valid) {
-            index += snprintf(buf + index, sizeof(buf) - index, "\n%sq=%.06f,%.06f,%04d-%02d-%02dT%02d:%02d:%02dZ",
+            index += snprintf(buf + index, sizeof(buf) - index, "\n%sPOS=%.06f,%.06f,%.01f,%04d-%02d-%02dT%02d:%02d:%02dZ",
                               err ? "*" : "",
-                              location.latitude, location.longitude, location.datetime.year, location.datetime.month, location.datetime.day, location.datetime.hour, location.datetime.minute, location.datetime.second);
+                              location.latitude, location.longitude, location.accuracy, location.datetime.year, location.datetime.month, location.datetime.day, location.datetime.hour, location.datetime.minute, location.datetime.second);
          } else {
-            index += snprintf(buf + index, sizeof(buf) - index, "\n%sq=%.06f,%.06f",
+            index += snprintf(buf + index, sizeof(buf) - index, "\n%sPOS=%.06f,%.06f,%.01f",
                               err ? "*" : "",
-                              location.latitude, location.longitude);
+                              location.latitude, location.longitude, location.accuracy);
          }
-         dtls_info("URL: https://maps.google.com/?q=%.06f,%.06f",
-                   location.latitude, location.longitude);
+         dtls_info("URL: https://maps.google.com/?q=%.06f,%.06f,%.01f",
+                   location.latitude, location.longitude, location.accuracy);
          break;
       default:
          break;
@@ -341,6 +360,7 @@ int coap_client_init(void)
 #ifdef CONFIG_EXTERNAL_SENSORS
    err = ext_sensors_init(ext_sensor_handler);
    if (err < 0) {
+      dtls_warn("Init sensors failed %d", errno);
    }
 #endif
 

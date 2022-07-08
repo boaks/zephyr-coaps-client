@@ -65,12 +65,16 @@ static void power_manager_read_status(power_manager_status_t *status)
             *status = FROM_BATTERY;
             break;
          case 1:
+            *status = CHARGING_TRICKLE;
+            break;
          case 2:
+            *status = CHARGING_I;
+            break;
          case 3:
-            *status = CHARGING;
+            *status = CHARGING_V;
             break;
          case 4:
-            *status = CHARGING;
+            *status = CHARGING_COMPLETED;
             break;
          case 5:
          case 6:

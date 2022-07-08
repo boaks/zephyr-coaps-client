@@ -508,6 +508,8 @@ int dtls_loop(void)
    modem_init();
 #ifdef CONFIG_LOCATION_ENABLE
    modem_location_init(dtls_trigger);
+#else
+   dtls_warn("no location");
 #endif
 
    if (modem_start(K_SECONDS(NETWORK_TIMEOUT_S)) != 0) {
@@ -545,15 +547,14 @@ int dtls_loop(void)
    timeout = COAP_ACK_TIMEOUT;
    dtls_connect(dtls_context, &dst);
 
-#ifdef CONFIG_LOCATION_ENABLE
-   modem_location_start(60, 120);
-#endif
-
    while (1) {
       if (!network_connected) {
          reopen_socket(dtls_context);
          network_connected = 1;
       }
+#ifdef CONFIG_LOCATION_ENABLE
+      modem_location_loop();
+#endif
 
       FD_ZERO(&rfds);
       FD_ZERO(&wfds);

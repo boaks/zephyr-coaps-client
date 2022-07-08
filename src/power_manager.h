@@ -19,7 +19,9 @@
 typedef enum {
    POWER_UNKNOWN,
    FROM_BATTERY,
-   CHARGING,
+   CHARGING_TRICKLE,
+   CHARGING_I,
+   CHARGING_V,
    CHARGING_COMPLETED,
 } power_manager_status_t;
 

@@ -26,6 +26,14 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #if defined(CONFIG_NRF_MODEM_LIB)
 
+#define GNSS_TIMEOUT_INITIAL 120
+#define GNSS_TIMEOUT_MAXIMUM 300
+#define GNSS_TIMEOUT_SCAN    30
+
+#define GNSS_INTERVAL_INITIAL_PROBE 240
+#define GNSS_INTERVAL_MAXIMUM_PROBE 3600
+#define GNSS_INTERVAL_SCAN 60
+
 static K_MUTEX_DEFINE(location_mutex);
 static K_CONDVAR_DEFINE(location_condvar);
 
@@ -62,6 +70,7 @@ static void location_event_handler(const struct location_event_data *event_data)
          break;
 
       case LOCATION_EVT_TIMEOUT:
+         state = TIMEOUT_LOCATION;
          LOG_INF("Getting location timed out");
          break;
 
@@ -86,14 +95,26 @@ static void location_event_handler(const struct location_event_data *event_data)
       s_location = event_data->location;
       s_location_state = state;
       k_condvar_broadcast(&location_condvar);
-   } else if (NO_LOCATION != s_location_state) {
-      s_location_state = state;
+   } else if (CURRENT_LOCATION == s_location_state) {
+      s_location_state = PREVIOUS_LOCATION;
+      k_condvar_broadcast(&location_condvar);
+   } else if (PENDING_LOCATION == s_location_state && TIMEOUT_LOCATION == state) {
+      s_location_state = TIMEOUT_LOCATION;
       k_condvar_broadcast(&location_condvar);
    }
    k_mutex_unlock(&location_mutex);
    if (CURRENT_LOCATION == state && s_handler) {
       (*s_handler)();
    }
+}
+
+static void modem_location_reset(void)
+{
+   k_mutex_lock(&location_mutex, K_FOREVER);
+   if (TIMEOUT_LOCATION == s_location_state || NO_LOCATION == s_location_state) {
+      s_location_state = PENDING_LOCATION;
+   }
+   k_mutex_unlock(&location_mutex);
 }
 
 static int modem_location_wait(k_timeout_t timeout)
@@ -118,7 +139,7 @@ int modem_location_init(location_callback_handler_t handler)
    return err;
 }
 
-int modem_location_start(int interval, int timeout)
+int modem_location_start(int interval, int timeout, bool visibility_detection)
 {
    int err;
    struct location_config config;
@@ -127,10 +148,11 @@ int modem_location_start(int interval, int timeout)
    location_config_defaults_set(&config, ARRAY_SIZE(methods), methods);
    config.interval = interval;
    config.methods[0].gnss.timeout = timeout;
-   config.methods[0].gnss.visibility_detection = false;
+   config.methods[0].gnss.visibility_detection = visibility_detection;
 
    LOG_INF("Requesting location with GNSS for %d s, interval %d", timeout, interval);
 
+   modem_location_reset();
    err = location_request(&config);
    if (err) {
       LOG_INF("Requesting location failed, error: %d\n", err);
@@ -145,7 +167,7 @@ location_state_t modem_location_get(int timeout, struct location_data *location)
    if (timeout > 0) {
       int err;
 
-      err = modem_location_start(0, timeout);
+      err = modem_location_start(0, timeout, false);
       if (err) {
          return NO_LOCATION;
       }
@@ -191,18 +213,56 @@ location_state_t modem_location_get(int timeout, struct location_data *location)
    return result;
 }
 
+void modem_location_loop(void)
+{
+   static bool init = true;
+   static bool pending = true;
+   static unsigned int timeout = GNSS_TIMEOUT_INITIAL;
+   static unsigned int interval = GNSS_INTERVAL_INITIAL_PROBE;
+   static unsigned long next_gnss = 0;
+
+   unsigned long now = (unsigned long)k_uptime_get();
+
+   if (init && next_gnss < now) {
+      location_state_t state = modem_location_get(0, NULL);
+
+      if (NO_LOCATION == state || TIMEOUT_LOCATION == state) {
+         if (pending) {
+            LOG_INF("request gnss, timeout %u[s]", timeout);
+            modem_location_start(0, timeout, false);
+            timeout *= 2;
+            timeout = timeout < GNSS_TIMEOUT_MAXIMUM ? timeout : GNSS_TIMEOUT_MAXIMUM;
+            next_gnss = now;
+            pending = false;
+         } else if (TIMEOUT_LOCATION == state) {
+            next_gnss += (interval * 1000);
+            unsigned long time = (next_gnss - now) / 1000;
+            LOG_INF("timeout gnss, next request in %lu[s]", time);
+            interval *= 2;
+            interval = interval < GNSS_INTERVAL_MAXIMUM_PROBE ? interval : GNSS_INTERVAL_MAXIMUM_PROBE;
+            pending = true;
+         }
+      }
+      if (state == CURRENT_LOCATION) {
+         init = false;
+         modem_location_start(GNSS_INTERVAL_SCAN, GNSS_TIMEOUT_SCAN, true);
+      }
+   }
+}
+
 #else
 
 int modem_location_init(location_callback_handler_t handler)
 {
-   (void) handler;
+   (void)handler;
    return 0;
 }
 
-int modem_location_start(int interval, int timeout)
+int modem_location_start(int interval, int timeout, bool visibility_detection)
 {
    (void)interval;
    (void)timeout;
+   (void)visibility_detection;
    return 0;
 }
 
@@ -213,4 +273,7 @@ location_state_t modem_location_get(int timeout, struct location_data *location)
    return NO_LOCATION;
 }
 
+void modem_location_loop(void)
+{
+}
 #endif
