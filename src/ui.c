@@ -79,6 +79,21 @@ static const struct device *button_dev;
 static struct gpio_callback button_cb_data;
 static ui_callback_handler_t button_callback;
 
+static struct k_timer led_red_timer;
+static struct k_timer led_green_timer;
+static struct k_timer led_blue_timer;
+
+static void timer_expiry_function(struct k_timer *timer_id)
+{
+   if (&led_red_timer == timer_id) {
+      ui_led_op(LED_COLOR_RED, LED_CLEAR);
+   } else if (&led_green_timer == timer_id) {
+      ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
+   } else if (&led_blue_timer == timer_id) {
+      ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
+   }
+}
+
 static void button_pressed(const struct device *dev, struct gpio_callback *cb,
                            uint32_t pins)
 {
@@ -111,8 +126,11 @@ static void initButton(void)
    }
 }
 
-static void ui_op(const struct device *port, gpio_pin_t pin, led_op_t op)
+static void ui_op(const struct device *port, gpio_pin_t pin, led_op_t op, struct k_timer *timer)
 {
+   if (timer) {
+      k_timer_stop(timer);
+   }
    if (port != NULL) {
       switch (op) {
          case LED_SET:
@@ -124,6 +142,12 @@ static void ui_op(const struct device *port, gpio_pin_t pin, led_op_t op)
          case LED_TOGGLE:
             gpio_pin_toggle(port, pin);
             break;
+         case LED_BLINK:
+            if (timer) {
+               gpio_pin_set(port, pin, 1);
+               k_timer_start(timer, K_MSEC(500), K_NO_WAIT);
+            }
+            break;
       }
    }
 }
@@ -132,13 +156,13 @@ void ui_led_op(led_t led, led_op_t op)
 {
    switch (led) {
       case LED_COLOR_RED:
-         ui_op(led_red_dev, PIN_RED, op);
+         ui_op(led_red_dev, PIN_RED, op, &led_red_timer);
          break;
       case LED_COLOR_BLUE:
-         ui_op(led_blue_dev, PIN_BLUE, op);
+         ui_op(led_blue_dev, PIN_BLUE, op, &led_blue_timer);
          break;
       case LED_COLOR_GREEN:
-         ui_op(led_green_dev, PIN_GREEN, op);
+         ui_op(led_green_dev, PIN_GREEN, op, &led_green_timer);
          break;
    }
 }
@@ -176,5 +200,8 @@ int ui_init(ui_callback_handler_t button_handler)
    }
    button_callback = button_handler;
    initButton();
+   k_timer_init(&led_red_timer, timer_expiry_function, NULL);
+   k_timer_init(&led_green_timer, timer_expiry_function, NULL);
+   k_timer_init(&led_blue_timer, timer_expiry_function, NULL);
    return 0;
 }

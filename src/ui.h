@@ -18,7 +18,7 @@ typedef void (*ui_callback_handler_t)(void);
 
 typedef enum { LED_COLOR_RED, LED_COLOR_BLUE, LED_COLOR_GREEN } led_t;
 
-typedef enum { LED_SET, LED_CLEAR, LED_TOGGLE } led_op_t;
+typedef enum { LED_SET, LED_CLEAR, LED_TOGGLE, LED_BLINK } led_op_t;
 
 void ui_led_op(led_t led, led_op_t op);
 int ui_init(ui_callback_handler_t button_callback);
