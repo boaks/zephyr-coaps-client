@@ -146,7 +146,8 @@ int coap_client_prepare_post(void)
    uint16_t battery_voltage = 0xffff;
    uint8_t battery_level = 0xff;
 
-   char buf[256], *p;
+   const char *p;
+   char buf[256];
    int err;
    int index;
    unsigned int uptime;

@@ -33,6 +33,7 @@ static K_CONDVAR_DEFINE(lte_condvar);
 
 static K_SEM_DEFINE(ptau_update, 0, 1);
 
+static wakeup_callback_handler_t wakeup_handler = NULL;
 static bool initialized = 0;
 static bool start_connect = 0;
 static volatile int lte_connected_state = 0;
@@ -162,8 +163,11 @@ static void lte_handler(const struct lte_lc_evt *const evt)
       case LTE_LC_EVT_MODEM_SLEEP_ENTER:
          LOG_INF("LTE modem sleeps");
          break;
-      case LTE_LC_EVT_MODEM_SLEEP_EXIT:
+      case LTE_LC_EVT_MODEM_SLEEP_EXIT:      
          LOG_INF("LTE modem wakes up");
+         if (wakeup_handler) {
+            wakeup_handler();
+         }
          break;
       case LTE_LC_EVT_MODEM_EVENT:
          if (evt->modem_evt == LTE_LC_MODEM_EVT_BATTERY_LOW) {
@@ -212,7 +216,7 @@ static int modem_connect(void)
    return err;
 }
 
-int modem_init(void)
+int modem_init(wakeup_callback_handler_t handler)
 {
    int err = 0;
 
@@ -243,6 +247,7 @@ int modem_init(void)
          return err;
       }
       initialized = true;
+      wakeup_handler = handler;
       LOG_INF("modem initialized");
    }
 
@@ -270,7 +275,6 @@ int modem_start(k_timeout_t timeout)
     * because the enabling of RAI is dependent on the
     * configured network mode which is set during modem initialization.
     */
-   err = modem_init();
    if (!err) {
       err = modem_connect();
    }
@@ -386,7 +390,7 @@ int modem_power_off(void)
 
 #else
 
-int modem_init(void)
+int modem_init(wakeup_callback_handler_t handler)
 {
    return 0;
 }

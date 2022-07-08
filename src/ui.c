@@ -85,7 +85,7 @@ static void button_pressed(const struct device *dev, struct gpio_callback *cb,
    ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
 
    if (button_callback != NULL) {
-      (*button_callback)();
+      button_callback();
    }
 }
 

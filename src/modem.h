@@ -17,7 +17,9 @@
 #include <stddef.h>
 #include <sys_clock.h>
 
-int modem_init(void);
+typedef void (*wakeup_callback_handler_t)(void);
+
+int modem_init(wakeup_callback_handler_t handler);
 
 int modem_start(k_timeout_t timeout);
 

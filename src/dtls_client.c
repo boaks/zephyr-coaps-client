@@ -57,6 +57,10 @@ static unsigned long response_time = 0;
 static unsigned int transmission = 0;
 static int timeout = 0;
 
+/* the wakeup send interval is only effecitve on PSM wakeup */
+/* the granularity of this time is therefore the PSM time */
+#define NETWORK_WAKEUP_SEND_INTERVAL_S (3600 * 4 - 100) /* approx. 4h */
+
 #if (defined CONFIG_LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO || defined CONFIG_LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO)
 #define NETWORK_TIMEOUT_S 360
 #else
@@ -421,19 +425,6 @@ void dtls_lte_connected(enum dtls_lte_connect_type type, int connected)
    }
 }
 
-static void dtls_trigger(void)
-{
-   if (request_state == NONE) {
-      k_sem_give(&dtls_trigger_msg);
-   }
-}
-
-static void dtls_manual_trigger(void)
-{
-   ui_led_op(LED_COLOR_RED, LED_CLEAR);
-   dtls_trigger();
-}
-
 static int dtls_init_destination(session_t *destination)
 {
    const char *host = NULL;
@@ -489,6 +480,34 @@ static int dtls_init_destination(session_t *destination)
    return 0;
 }
 
+static void dtls_trigger(void)
+{
+   if (request_state == NONE) {
+      k_sem_give(&dtls_trigger_msg);
+   }
+}
+
+static void dtls_manual_trigger(void)
+{
+   ui_led_op(LED_COLOR_RED, LED_CLEAR);
+   dtls_trigger();
+}
+
+static void dtls_wakeup_trigger(void)
+{
+   static unsigned long wakeup_next_sent = 0;
+   unsigned long now = (unsigned long)k_uptime_get();
+
+   if (request_state == NONE) {
+      if (wakeup_next_sent <= now) {
+         dtls_trigger();
+      } else {
+         return;
+      }
+   }
+   wakeup_next_sent = now + ((NETWORK_WAKEUP_SEND_INTERVAL_S)*1000);
+}
+
 int dtls_loop(void)
 {
    char imei[24];
@@ -505,7 +524,7 @@ int dtls_loop(void)
    dtls_set_log_level(DTLS_LOG_INFO);
    ui_init(dtls_manual_trigger);
 
-   modem_init();
+   modem_init(dtls_wakeup_trigger);
 #ifdef CONFIG_LOCATION_ENABLE
    modem_location_init(dtls_trigger);
 #else
