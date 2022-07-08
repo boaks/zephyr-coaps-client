@@ -28,7 +28,9 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #define GNSS_TIMEOUT_INITIAL 120
 #define GNSS_TIMEOUT_MAXIMUM 300
-#define GNSS_TIMEOUT_SCAN    30
+#define GNSS_TIMEOUT_SCAN 30
+
+#define GNSS_TIMEOUT_REINIT 300
 
 #define GNSS_INTERVAL_INITIAL_PROBE 240
 #define GNSS_INTERVAL_MAXIMUM_PROBE 3600
@@ -37,9 +39,10 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 static K_MUTEX_DEFINE(location_mutex);
 static K_CONDVAR_DEFINE(location_condvar);
 
-static location_callback_handler_t s_handler;
+static location_callback_handler_t location_handler;
 
 static volatile struct location_data s_location;
+static volatile int64_t s_location_last;
 static volatile location_state_t s_location_state = NO_LOCATION;
 
 static void location_event_handler(const struct location_event_data *event_data)
@@ -92,6 +95,7 @@ static void location_event_handler(const struct location_event_data *event_data)
    }
    k_mutex_lock(&location_mutex, K_FOREVER);
    if (CURRENT_LOCATION == state) {
+      s_location_last = k_uptime_get();
       s_location = event_data->location;
       s_location_state = state;
       k_condvar_broadcast(&location_condvar);
@@ -103,15 +107,17 @@ static void location_event_handler(const struct location_event_data *event_data)
       k_condvar_broadcast(&location_condvar);
    }
    k_mutex_unlock(&location_mutex);
-   if (CURRENT_LOCATION == state && s_handler) {
-      (*s_handler)();
+   if (CURRENT_LOCATION == state && location_handler) {
+      location_handler();
    }
 }
 
-static void modem_location_reset(void)
+static void modem_location_reset(bool init)
 {
    k_mutex_lock(&location_mutex, K_FOREVER);
-   if (TIMEOUT_LOCATION == s_location_state || NO_LOCATION == s_location_state) {
+   if (init) {
+      s_location_state = NO_LOCATION;
+   } else if (TIMEOUT_LOCATION == s_location_state || NO_LOCATION == s_location_state) {
       s_location_state = PENDING_LOCATION;
    }
    k_mutex_unlock(&location_mutex);
@@ -126,6 +132,15 @@ static int modem_location_wait(k_timeout_t timeout)
    return res;
 }
 
+static int64_t modem_location_last_position_uptime(void)
+{
+   int64_t last;
+   k_mutex_lock(&location_mutex, K_FOREVER);
+   last = s_location_last;
+   k_mutex_unlock(&location_mutex);
+   return last;
+}
+
 int modem_location_init(location_callback_handler_t handler)
 {
    int err;
@@ -134,7 +149,7 @@ int modem_location_init(location_callback_handler_t handler)
    if (err) {
       LOG_INF("Initializing the Location library failed, error: %d", err);
    } else {
-      s_handler = handler;
+      location_handler = handler;
    }
    return err;
 }
@@ -152,7 +167,7 @@ int modem_location_start(int interval, int timeout, bool visibility_detection)
 
    LOG_INF("Requesting location with GNSS for %d s, interval %d", timeout, interval);
 
-   modem_location_reset();
+   modem_location_reset(false);
    err = location_request(&config);
    if (err) {
       LOG_INF("Requesting location failed, error: %d\n", err);
@@ -219,33 +234,48 @@ void modem_location_loop(void)
    static bool pending = true;
    static unsigned int timeout = GNSS_TIMEOUT_INITIAL;
    static unsigned int interval = GNSS_INTERVAL_INITIAL_PROBE;
-   static unsigned long next_gnss = 0;
+   static int64_t next_gnss = 0;
 
-   unsigned long now = (unsigned long)k_uptime_get();
-
-   if (init && next_gnss < now) {
+   int64_t now = k_uptime_get();
+   if (next_gnss < now) {
       location_state_t state = modem_location_get(0, NULL);
 
-      if (NO_LOCATION == state || TIMEOUT_LOCATION == state) {
-         if (pending) {
-            LOG_INF("request gnss, timeout %u[s]", timeout);
-            modem_location_start(0, timeout, false);
-            timeout *= 2;
-            timeout = timeout < GNSS_TIMEOUT_MAXIMUM ? timeout : GNSS_TIMEOUT_MAXIMUM;
-            next_gnss = now;
-            pending = false;
-         } else if (TIMEOUT_LOCATION == state) {
-            next_gnss += (interval * 1000);
-            unsigned long time = (next_gnss - now) / 1000;
-            LOG_INF("timeout gnss, next request in %lu[s]", time);
-            interval *= 2;
-            interval = interval < GNSS_INTERVAL_MAXIMUM_PROBE ? interval : GNSS_INTERVAL_MAXIMUM_PROBE;
+      if (state == PREVIOUS_LOCATION) {
+         if ((now - modem_location_last_position_uptime()) > (GNSS_TIMEOUT_REINIT * 1000)) {
+            modem_location_reset(true);
+            state = NO_LOCATION;
+            interval = GNSS_INTERVAL_INITIAL_PROBE;
+            timeout = GNSS_TIMEOUT_INITIAL;
+            init = true;
             pending = true;
+         } else {
+            next_gnss = now + (GNSS_INTERVAL_SCAN * 1000);
+            return;
          }
       }
-      if (state == CURRENT_LOCATION) {
-         init = false;
-         modem_location_start(GNSS_INTERVAL_SCAN, GNSS_TIMEOUT_SCAN, true);
+      if (init) {
+         if (NO_LOCATION == state || TIMEOUT_LOCATION == state) {
+            if (pending) {
+               LOG_INF("request gnss, timeout %u[s]", timeout);
+               modem_location_start(0, timeout, false);
+               timeout *= 2;
+               timeout = timeout < GNSS_TIMEOUT_MAXIMUM ? timeout : GNSS_TIMEOUT_MAXIMUM;
+               next_gnss = now;
+               pending = false;
+            } else if (TIMEOUT_LOCATION == state) {
+               next_gnss += (interval * 1000);
+               unsigned long time = (next_gnss - now) / 1000;
+               LOG_INF("timeout gnss, next request in %lu[s]", time);
+               interval *= 2;
+               interval = interval < GNSS_INTERVAL_MAXIMUM_PROBE ? interval : GNSS_INTERVAL_MAXIMUM_PROBE;
+               pending = true;
+            }
+         }
+         if (state == CURRENT_LOCATION) {
+            init = false;
+            modem_location_start(GNSS_INTERVAL_SCAN, GNSS_TIMEOUT_SCAN, true);
+            next_gnss = now + (GNSS_INTERVAL_SCAN * 1000);
+         }
       }
    }
 }
