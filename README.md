@@ -142,15 +142,15 @@ The demo client exchanges encrypted messages with the coap-server. These message
 Demo message:
 
 ```
-41 s, Thingy:91 v0.2, 0*3, 1*0, 2*0, 3*0, failures 0
-4015 mV
-RSSI: 23,35
-q=??.??????,??.??????
-24.83 C
-53.16 %H
+15641 s, Thingy:91 v0.2, 0*43, 1*0, 2*0, 3*0, failures 0
+4160 mV 95% charging (V)
+RSSI: 255,255
+Network: CAT-M1
+29.69 C
+38.99 %H
 ```
 
-It starts with the up-time in seconds in the first line, followed by the label "Thingy:91" and a sent statistic. "`0*3`" := 3 exchanges without retransmission, "`1*0`" := no (0) exchanges with 1 retransmission. The current exchange is not included in this statistic. The second line contains the battery voltage and the third the receiving signal strength. If the sensors are enabled (default), the temperature and humidity is also appended.
+It starts with the up-time in seconds in the first line, followed by the label "Thingy:91" and a sent statistic. "`0*3`" := 43 exchanges without retransmission, "`1*0`" := no (0) exchanges with 1 retransmission. The current exchange is not included in this statistic. The second line contains the battery status and the third the receiving signal strength. The next line contains the network mode (CAT-M1 or NB-IoT). If the sensors are enabled (default), the temperature and humidity is also appended.
 
 The demo uses the "echo" resource of the plugtest-server, therefore the response contains just the same message.
 
@@ -161,6 +161,8 @@ If you want to see, what your `Thingy:91` has sent to the server, see [cf-browse
 As mentioned at the introduction, the demo is intended as groundwork for your own ideas. 
 
 [Next Steps](./NEXTSTEPS.md)  
+
+See also [Roadmap](./ROADMAP.md) for the plan of the next months.
 
 ## Licenses
 
