@@ -29,6 +29,9 @@ int environment_get_humidity(double *value);
 int environment_get_pressure(double *value);
 
 int environment_get_gas(int32_t *value);
+
+int environment_get_iaq(int32_t *value);
+
 #endif /* CONFIG_BME680_BSEC || CONFIG_BME680 */
 
 #endif /* ENVIRONMENT_SENSOR_H */

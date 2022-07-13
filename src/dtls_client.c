@@ -325,6 +325,9 @@ send_to_peer(struct dtls_context_t *ctx,
             dtls_info("unintended resend_to_peer %d", res);
          }
       }
+      if (lte_connected) {
+         modem_set_transmission_time();
+      }
    }
    return res;
 }
@@ -376,6 +379,7 @@ dtls_handle_read(struct dtls_context_t *ctx)
    } else {
       dtls_dsrv_log_addr(DTLS_LOG_DEBUG, "peer", &session);
       dtls_debug_dump("bytes from peer", buf, len);
+      modem_set_transmission_time();
    }
    if (len >= 0) {
       dtls_info("received_from_peer %d bytes", len);

@@ -16,7 +16,7 @@
 
 #include "dtls.h"
 
-#define CLIENT_VERSION "v0.2"
+#define CLIENT_VERSION "v0.3"
 
 #define COAP_MAX_RETRANSMISSION 3
 #define BAT_LEVEL_SLOTS 10

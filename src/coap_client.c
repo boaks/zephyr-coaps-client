@@ -127,10 +127,12 @@ int coap_client_prepare_post(void)
    char buf[256];
    int err;
    int index;
+   int start;
    unsigned int uptime;
 
    uint8_t *token = (uint8_t *)&coap_current_token;
    struct coap_packet request;
+   struct lte_lc_psm_cfg psm;
 
 #ifdef CONFIG_COAP_QUERY_DELAY_ENABLE
    static int query_delay = 0;
@@ -167,10 +169,13 @@ int coap_client_prepare_post(void)
    } else {
       p = NULL;
    }
+   start = 0;
    index = snprintf(buf, sizeof(buf), "%u s, Thingy:91 %s, 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
                     uptime, CLIENT_VERSION, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
+   dtls_info("%s", buf + start);
+
    if (bat_level[0] > 1) {
-      int start = index + 1;
+      start = index + 1;
       index += snprintf(buf + index, sizeof(buf) - index, "\n%u mV", bat_level[0]);
       if (battery_level < 0xff) {
          index += snprintf(buf + index, sizeof(buf) - index, " %u%%", battery_level);
@@ -200,12 +205,28 @@ int coap_client_prepare_post(void)
    }
 
    if (p) {
-      index += snprintf(buf + index, sizeof(buf) - index, "\nRSSI: %s", p);
-      dtls_info("RSSI q,p: %s", p);
+      start = index + 1;
+      index += snprintf(buf + index, sizeof(buf) - index, "\nRSSI q,p: %s", p);
+      dtls_info("%s", buf + start);
    }
    p = modem_get_network_mode();
+   start = index + 1;
    index += snprintf(buf + index, sizeof(buf) - index, "\nNetwork: %s", p);
-   dtls_info("Network: %s", p);
+   dtls_info("%s", buf + start);
+
+   index += snprintf(buf + index, sizeof(buf) - index, "\n");
+   start = index;
+   if (modem_get_psm_status(&psm) == 0) {
+      index += snprintf(buf + index, sizeof(buf) - index, "PSM: %d s", psm.tau);
+   }
+   err = modem_get_release_time();
+   if (err > 0) {
+      if (index > start) {
+         index += snprintf(buf + index, sizeof(buf) - index, ", ");
+      }
+      index += snprintf(buf + index, sizeof(buf) - index, "Released: %d ms", err);
+   }
+   dtls_info("%s", buf + start);
 
 #ifdef CONFIG_LOCATION_ENABLE
    err = 0;
@@ -244,18 +265,22 @@ int coap_client_prepare_post(void)
 
 #ifdef ENVIRONMENT_SENSOR
    if (environment_get_temperature(&value) == 0) {
+      start = index + 1;
       index += snprintf(buf + index, sizeof(buf) - index, "\n%.2f C", value);
-      dtls_info("%.2f C", value);
+      dtls_info("%s", buf + start);
    }
    if (environment_get_humidity(&value) == 0) {
+      start = index + 1;
       index += snprintf(buf + index, sizeof(buf) - index, "\n%.2f %%H", value);
-      dtls_info("%.2f %%H", value);
+      dtls_info("%s", buf + start);
    }
    if (environment_get_pressure(&value) == 0) {
+      start = index + 1;
       index += snprintf(buf + index, sizeof(buf) - index, "\n%.1f hPa", value);
-      dtls_info("%.1f hPa", value);
+      dtls_info("%s", buf + start);
    }
-   if (environment_get_gas(&int_value) == 0) {
+   if (environment_get_iaq(&int_value) == 0) {
+      start = index + 1;
       const char *desc = "???";
       switch (int_value > 0 ? (int_value - 1) / 50 : 0) {
          case 0:
@@ -282,7 +307,7 @@ int coap_client_prepare_post(void)
             break;
       }
       index += snprintf(buf + index, sizeof(buf) - index, "\n%d Q (%s)", int_value, desc);
-      dtls_info("%d Q (%s)", int_value, desc);
+      dtls_info("%s", buf + start);
    }
 #endif
    coap_current_token++;

@@ -49,8 +49,8 @@ static struct environment_values {
    float temperature;
    float humidity;
    float pressure;
+   float gas;
    float air_quality;
-   float co2;
 
 } environment_values;
 
@@ -89,8 +89,8 @@ static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_a
    environment_values.temperature = temperature - temperature_offset; /* compensate self heating */
    environment_values.humidity = humidity;
    environment_values.pressure = pressure / 100.0; /* hPA */
+   environment_values.gas = gas;
    environment_values.air_quality = iaq;
-   environment_values.co2 = co2_equivalent;
 
    k_mutex_unlock(&environment_mutex);
 }
@@ -148,36 +148,45 @@ int environment_init(void)
    return 0;
 }
 
-int environment_get_temperature(double *value)
+int environment_get_float(double *value, const float *current)
 {
    k_mutex_lock(&environment_mutex, K_FOREVER);
-   *value = environment_values.temperature;
+   *value = *current;
    k_mutex_unlock(&environment_mutex);
    return 0;
+}
+
+int environment_get_int32(int32_t *value, const float *current)
+{
+   k_mutex_lock(&environment_mutex, K_FOREVER);
+   *value = *current;
+   k_mutex_unlock(&environment_mutex);
+   return 0;
+}
+
+int environment_get_temperature(double *value)
+{
+   return environment_get_float(value, &environment_values.temperature);
 }
 
 int environment_get_humidity(double *value)
 {
-   k_mutex_lock(&environment_mutex, K_FOREVER);
-   *value = environment_values.humidity;
-   k_mutex_unlock(&environment_mutex);
-   return 0;
+   return environment_get_float(value, &environment_values.humidity);
 }
 
 int environment_get_pressure(double *value)
 {
-   k_mutex_lock(&environment_mutex, K_FOREVER);
-   *value = environment_values.pressure;
-   k_mutex_unlock(&environment_mutex);
-   return 0;
+   return environment_get_float(value, &environment_values.pressure);
 }
 
 int environment_get_gas(int32_t *value)
 {
-   k_mutex_lock(&environment_mutex, K_FOREVER);
-   *value = environment_values.air_quality;
-   k_mutex_unlock(&environment_mutex);
-   return 0;
+   return environment_get_int32(value, &environment_values.gas);
+}
+
+int environment_get_iaq(int32_t *value)
+{
+   return environment_get_int32(value, &environment_values.air_quality);
 }
 
 #else /* CONFIG_BME680_BSEC */
@@ -320,6 +329,11 @@ int environment_get_pressure(double *value)
 int environment_get_gas(int32_t *value)
 {
    return environment_sensor_read(&gas_sensor, NULL, value, NULL);
+}
+
+int environment_get_iaq(int32_t *value)
+{
+   return -ENODATA;
 }
 
 #endif /* CONFIG_BME680_BSEC */
