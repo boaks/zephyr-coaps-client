@@ -259,6 +259,15 @@ read_from_peer(struct dtls_context_t *ctx,
    return 0;
 }
 
+static inline bool lte_lost_network()
+{
+#ifdef __LINUX_ERRNO_EXTENSIONS__
+   return (ENETDOWN == errno || ESHUTDOWN == errno);
+#else
+   return (ENETDOWN == errno);
+#endif
+}
+
 static int
 send_to_peer(struct dtls_context_t *ctx,
              session_t *session, uint8 *data, size_t len)
@@ -273,12 +282,12 @@ send_to_peer(struct dtls_context_t *ctx,
    res = sendto(*fd, data, len, MSG_DONTWAIT, &session->addr.sa, session->size);
    if (res < 0) {
       dtls_warn("send_to_peer failed: %d, errno %d (%s)", res, errno, strerror(errno));
-      if (ENETDOWN == errno) {
+      if (lte_lost_network()) {
          reopen_socket(ctx);
          res = sendto(*fd, data, len, MSG_DONTWAIT, &session->addr.sa, session->size);
          if (res < 0) {
             dtls_warn("retry send_to_peer failed: %d, errno %d (%s)", res, errno, strerror(errno));
-            if (ENETDOWN == errno) {
+            if (lte_lost_network()) {
                network_connected = 0;
             }
          }
@@ -599,7 +608,9 @@ int dtls_loop(void)
          network_connected = 1;
       }
 #ifdef CONFIG_LOCATION_ENABLE
-      modem_location_loop();
+      if (dtls_connected) {
+         modem_location_loop();
+      }
 #endif
 
       FD_ZERO(&rfds);

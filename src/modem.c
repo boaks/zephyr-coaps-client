@@ -275,11 +275,12 @@ int modem_init(wakeup_callback_handler_t handler)
       if (err > 0) {
          LOG_INF("rev: %s", buf);
       }
+#if 0
       err = modem_at_cmd("AT%%REL14FEAT=0,1,0,0,0", buf, sizeof(buf), NULL);
       if (err > 0) {
          LOG_INF("rel14feat: %s", buf);
       }
-
+#endif
       err = lte_lc_init();
       if (err) {
          if (err == -EFAULT) {
@@ -299,9 +300,12 @@ int modem_init(wakeup_callback_handler_t handler)
    return err;
 }
 
-int modem_start(k_timeout_t timeout)
+int modem_start(const k_timeout_t timeout)
 {
    int err = 0;
+   k_timeout_t interval = K_MSEC(1500);
+   k_timeout_t save = K_SECONDS(60);
+   k_timeout_t time = K_MSEC(0);
 
 #ifdef CONFIG_LTE_MODE_PREFERENCE_LTE_M
    LOG_INF("LTE-M preference.");
@@ -325,7 +329,7 @@ int modem_start(k_timeout_t timeout)
    }
    if (!err) {
       int led_on = 1;
-      while (!lte_connection_wait(K_MSEC(1500))) {
+      while (!lte_connection_wait(interval)) {
          led_on = !led_on;
          if (led_on) {
             ui_led_op(LED_COLOR_BLUE, LED_SET);
@@ -334,13 +338,17 @@ int modem_start(k_timeout_t timeout)
             ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
          }
-         timeout.ticks -= K_MSEC(1500).ticks;
-         if (0 > timeout.ticks) {
+         time.ticks += interval.ticks;
+         if ((time.ticks - timeout.ticks) >  0) {
             err = 1;
             break;
          }
       }
-
+      if ((time.ticks - save.ticks) > 0) {
+         LOG_INF("Modem save ...");
+         modem_power_off();
+         modem_set_normal();
+      }
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
    }

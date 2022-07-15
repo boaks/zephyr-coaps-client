@@ -55,7 +55,7 @@ menu "Extra Functions"
 
 config LOCATION_ENABLE
 	bool "Enable GNSS Loaction"
-	default y
+	default n
 	select LOCATION_METHOD_GNSS
 	select LOCATION
 	select CJSON_LIB
@@ -85,7 +85,7 @@ if ADXL362
 
 config ADXL362_MOTION_DETECTION
 	bool "Enable ADXL362 Motion Detection"
-	default y
+	default n
 	help
 	   Enable (indirect) motion detection using accelerometer.
 	   More configuration options are available at 
