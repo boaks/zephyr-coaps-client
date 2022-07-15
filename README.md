@@ -135,6 +135,8 @@ After flashing, the `Thingy:91` starts to blink slow (purple) and after attachin
 
 Press the `Thingy:91`'s call-button (the symbolic "N" in the center of the orange cover). The LED should start with blue and changes very fast to lightblue. If it is re-attached at the mobile-network, it switches to green. And if the response from the server is received, the LED switches off again. On error, the LED is switched to red. Usually it takes all together 1 second (LTE-M/CAT-M1) and only 2 ip-messages are exchanged.
 
+(If you use the [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK), then press "Button 1".)
+
 Done.
 
 The demo client exchanges encrypted messages with the coap-server. These messages are only for demonstration, the data is considered to be replaced by your own ideas.
@@ -209,7 +211,7 @@ cd ..
 west update
 ```
 
-In many cases, the next build the requires to use 
+In many cases, the next build requires to use 
 
 ```sh
 cd coaps-client
