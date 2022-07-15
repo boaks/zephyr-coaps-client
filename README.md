@@ -193,6 +193,32 @@ As mentioned at the introduction, the demo is intended as groundwork for your ow
 
 See also [Roadmap](./ROADMAP.md) for the plan of the next months.
 
+### Updating to a Newer Versions
+
+First update the project itself using 
+
+```sh
+cd coaps-client
+git pull
+```
+
+then update the other modules using
+
+```sh
+cd ..
+west update
+```
+
+In many cases, the next build the requires to use 
+
+```sh
+cd coaps-client
+west build -b thingy91_nrf9160_ns --pristine
+```
+
+The `--pristine` resets the current configuration. You may need to configure it again.
+In some rare cases it may be even required to remove the "build" folder before.
+
 ## Licenses
 
 This demo itself is licensed under [EPL-2.0](./licenses/EPL-2.0.txt).
