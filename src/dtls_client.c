@@ -262,9 +262,9 @@ read_from_peer(struct dtls_context_t *ctx,
 static inline bool lte_lost_network()
 {
 #ifdef __LINUX_ERRNO_EXTENSIONS__
-   return (ENETDOWN == errno || ESHUTDOWN == errno);
+   return (ENETDOWN == errno || ESHUTDOWN == errno || ENETUNREACH == errno);
 #else
-   return (ENETDOWN == errno);
+   return (ENETDOWN == errno || ENETUNREACH == errno);
 #endif
 }
 
