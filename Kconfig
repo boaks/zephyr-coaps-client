@@ -19,7 +19,7 @@ config COAP_SERVER_HOSTNAME
 
 config COAP_SERVER_ADDRESS_STATIC
 	string "CoAP server IP address (alternative, if DNS is not available)"
-	default "35.185.40.182"
+	default "20.47.97.44"
 
 config COAP_SERVER_PORT
 	int "CoAP server port number (DTLS)"
