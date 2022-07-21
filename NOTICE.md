@@ -60,13 +60,13 @@ Eclipse/TinyDtls comes with some modified files from micro-ecc
 
 Please consider also [tinydtls - ABOUT](https://github.com/eclipse/tinydtls/blob/main/ABOUT.md) for more details about eclipse/tinydtls and used licenses and content.
 
-Nordic Semiconductor Connect SDK (ncs) 1.9.1
+Nordic Semiconductor Connect SDK (ncs) 2.0.1
 
 * License: Nordic-5-Clause
 * Project: https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/index.html
 * Source: https://github.com/nrfconnect/sdk-nrf
 
-Zephyr (2.7.99, referenced by ncs 1.9.1)
+Zephyr (3.0.99, referenced by ncs 2.0.1)
 
 * License: Apache License 2.0
 * Project: https://zephyrproject.org

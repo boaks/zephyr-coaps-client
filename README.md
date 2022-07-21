@@ -27,8 +27,9 @@ The demo client is considered to use CoAP/DTLS CID. Without server-side support 
 | For now, only the<br/> [Nordic Semiconductor Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91)<br/> is supported. | ![Thingy:91](./docu_images/thingy91.jpg) |
 | :- | - |
 
-The `Thingy:91` demo works with [ncs-1.9.1](https://github.com/nrfconnect/sdk-nrf/tree/v1.9.1) and [ncs-2.0.0](https://github.com/nrfconnect/sdk-nrf/tree/v2.0.0).
-To benefit from the newer modem features, please consider to use the modem firmware [1.3.1](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.1.zip) or [1.3.2](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.2.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
+The `Thingy:91` demo works with [ncs-2.0.1](https://github.com/nrfconnect/sdk-nrf/tree/v2.0.1).
+
+To benefit from the newer modem features, please consider to use the modem firmware [1.3.2](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.2.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
 Maybe other modems and devices gets supported over the time as well.
 
@@ -228,4 +229,4 @@ This demo itself is licensed under [EPL-2.0](./licenses/EPL-2.0.txt).
 Some files are used especially for the `Thingy:91` and are licensed under [Nordic-5](./licenses/Nordic-5.txt). This files are only licensed to be used with Nordic Semiconductor devices.
 See [boards](./boards) and [child_image](./child_image).
 
-The demo uses several third-party content, please refer to [NOTICE](NOTICE.md) for details.
+The demo uses several third-party content, please refer to [NOTICE](./NOTICE.md) for details.
