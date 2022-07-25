@@ -12,10 +12,12 @@
  */
 
 #include "ui.h"
-#include <device.h>
-#include <devicetree.h>
-#include <drivers/gpio.h>
 #include <zephyr.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/gpio.h>
+
 
 #define LED_RED_NODE DT_ALIAS(led0)
 #define LED_GREEN_NODE DT_ALIAS(led1)
@@ -79,31 +81,29 @@ static const struct device *button_dev;
 static struct gpio_callback button_cb_data;
 static ui_callback_handler_t button_callback;
 
-static struct k_timer led_red_timer;
-static struct k_timer led_green_timer;
-static struct k_timer led_blue_timer;
+static void led_timer_expiry_fn(struct k_work *work);
+static void button_pressed_fn(struct k_work *work);
+
+static K_WORK_DEFINE(button_pressed_work, button_pressed_fn);
+static K_WORK_DELAYABLE_DEFINE(led_red_timer_work, led_timer_expiry_fn);
+static K_WORK_DELAYABLE_DEFINE(led_green_timer_work, led_timer_expiry_fn);
+static K_WORK_DELAYABLE_DEFINE(led_blue_timer_work, led_timer_expiry_fn);
 
 static K_MUTEX_DEFINE(led_mutex);
 
-static void timer_expiry_function(struct k_timer *timer_id)
-{
-   if (&led_red_timer == timer_id) {
-      ui_led_op(LED_COLOR_RED, LED_CLEAR);
-   } else if (&led_green_timer == timer_id) {
-      ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-   } else if (&led_blue_timer == timer_id) {
-      ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
+static void button_pressed_fn(struct k_work *work) {
+
+   ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
+
+   if (button_callback != NULL) {
+      button_callback();
    }
 }
 
 static void button_pressed(const struct device *dev, struct gpio_callback *cb,
                            uint32_t pins)
 {
-   ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
-
-   if (button_callback != NULL) {
-      button_callback();
-   }
+   k_work_submit(&button_pressed_work);
 }
 
 static void initButton(void)
@@ -128,11 +128,24 @@ static void initButton(void)
    }
 }
 
-static void ui_op(const struct device *port, gpio_pin_t pin, led_op_t op, struct k_timer *timer)
+static void led_timer_expiry_fn(struct k_work *work)
 {
-//   k_mutex_lock(&led_mutex, K_FOREVER);
+   struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+
+   if (&led_red_timer_work == dwork) {
+      ui_led_op(LED_COLOR_RED, LED_CLEAR);
+   } else if (&led_green_timer_work == dwork) {
+      ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
+   } else if (&led_blue_timer_work == dwork) {
+      ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
+   }
+}
+
+static void ui_op(const struct device *port, gpio_pin_t pin, led_op_t op, struct k_work_delayable *timer)
+{
+   k_mutex_lock(&led_mutex, K_FOREVER);
    if (timer) {
-      k_timer_stop(timer);
+      k_work_cancel_delayable(timer);
    }
    if (port != NULL) {
       switch (op) {
@@ -148,25 +161,25 @@ static void ui_op(const struct device *port, gpio_pin_t pin, led_op_t op, struct
          case LED_BLINK:
             if (timer) {
                gpio_pin_set(port, pin, 1);
-               k_timer_start(timer, K_MSEC(500), K_NO_WAIT);
+               k_work_schedule(timer, K_MSEC(500));
             }
             break;
       }
    }
-//   k_mutex_unlock(&led_mutex);
+   k_mutex_unlock(&led_mutex);
 }
 
 void ui_led_op(led_t led, led_op_t op)
 {
    switch (led) {
       case LED_COLOR_RED:
-         ui_op(led_red_dev, PIN_RED, op, &led_red_timer);
+         ui_op(led_red_dev, PIN_RED, op, &led_red_timer_work);
          break;
       case LED_COLOR_BLUE:
-         ui_op(led_blue_dev, PIN_BLUE, op, &led_blue_timer);
+         ui_op(led_blue_dev, PIN_BLUE, op, &led_blue_timer_work);
          break;
       case LED_COLOR_GREEN:
-         ui_op(led_green_dev, PIN_GREEN, op, &led_green_timer);
+         ui_op(led_green_dev, PIN_GREEN, op, &led_green_timer_work);
          break;
    }
 }
@@ -204,8 +217,5 @@ int ui_init(ui_callback_handler_t button_handler)
    }
    button_callback = button_handler;
    initButton();
-   k_timer_init(&led_red_timer, timer_expiry_function, NULL);
-   k_timer_init(&led_green_timer, timer_expiry_function, NULL);
-   k_timer_init(&led_blue_timer, timer_expiry_function, NULL);
    return 0;
 }

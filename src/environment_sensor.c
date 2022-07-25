@@ -251,7 +251,7 @@ static int environment_sensor_fetch(void)
    static int err = 0;
    int64_t now = k_uptime_get();
    if ((now - environment_sensor_next_fetch) > 0) {
-      environment_sensor_next_fetch = now + (CONFIG_BME680_SAMPLE_INTERVAL_S)*1000;
+      environment_sensor_next_fetch = now + (CONFIG_BME680_SAMPLE_INTERVAL_S) * MSEC_PER_SEC;
       for (int index1 = 0; index1 < all_sensors_size; ++index1) {
          const struct device *dev = all_sensors[index1]->dev;
          for (int index2 = 0; index2 < index1; ++index2) {
