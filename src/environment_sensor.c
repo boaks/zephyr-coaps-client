@@ -17,9 +17,60 @@
 
 #include "environment_sensor.h"
 
+#if defined(CONFIG_BME680_BSEC) || defined(CONFIG_BME680) 
+
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 static const float temperature_offset = (CONFIG_BME680_TEMPERATURE_OFFSET / 100.0);
+
+static K_MUTEX_DEFINE(environment_mutex);
+static int64_t s_temperature_next = 0;
+static uint8_t s_temperature_size = 0;
+static double s_temperature_history[ENVIRONMENT_HISTORY_SIZE];
+
+int environment_get_temperature_history(double *values, uint8_t size)
+{
+   uint8_t index;
+
+   k_mutex_lock(&environment_mutex, K_FOREVER);
+   if (s_temperature_size < size) {
+      size = s_temperature_size;
+   }
+   for (index = 0; index < size; ++index) {
+      values[index] = s_temperature_history[index];
+   }
+   k_mutex_unlock(&environment_mutex);
+
+   return size;
+}
+
+static void environment_init_temperature_history(void)
+{
+   uint8_t index;
+   k_mutex_lock(&environment_mutex, K_FOREVER);
+   s_temperature_size = 0;
+   s_temperature_next = 0;
+   for (index = 0; index < ENVIRONMENT_HISTORY_SIZE; ++index) {
+      s_temperature_history[index] = 0.0;
+   }
+   k_mutex_unlock(&environment_mutex);
+}
+
+static void environment_add_temperature_history(double value)
+{
+   uint8_t index;
+   int64_t now = k_uptime_get();
+   if ((now - s_temperature_next) >= 0) {
+      if (s_temperature_size < ENVIRONMENT_HISTORY_SIZE) {
+         ++s_temperature_size;
+      }
+      for (index = s_temperature_size; index > 0; --index) {
+         s_temperature_history[index] = s_temperature_history[index - 1];
+      }
+      s_temperature_history[0] = value;
+      s_temperature_next = now + ENVIRONMENT_HISTORY_INTERVAL * MSEC_PER_SEC;
+   }
+}
 
 #ifdef CONFIG_BME680_BSEC
 
@@ -39,7 +90,6 @@ static const float temperature_offset = (CONFIG_BME680_TEMPERATURE_OFFSET / 100.
 
 K_THREAD_STACK_DEFINE(thread_stack, CONFIG_BME680_BSEC_THREAD_STACK_SIZE);
 
-static K_MUTEX_DEFINE(environment_mutex);
 static struct k_thread environment_thread;
 static const struct device *environment_i2c = DEVICE_DT_GET(DT_BUS(DT_ALIAS(environment_sensor)));
 
@@ -92,6 +142,7 @@ static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_a
    environment_values.gas = gas;
    environment_values.air_quality = iaq;
 
+   environment_add_temperature_history(environment_values.temperature);
    k_mutex_unlock(&environment_mutex);
 }
 
@@ -127,6 +178,7 @@ int environment_init(void)
       LOG_ERR("%s device is not ready", environment_i2c->name);
       return -ENOTSUP;
    }
+   environment_init_temperature_history();
 
    bsec_ret = bsec_iot_init(BSEC_SAMPLE_RATE, temperature_offset, environment_bus_write, environment_bus_read, environment_delay_ms,
                             environment_state_load, environment_config_load);
@@ -220,6 +272,19 @@ static const struct environment_sensor *all_sensors[] = {
 
 static const unsigned int all_sensors_size = sizeof(all_sensors) / sizeof(void *);
 
+static void environment_history_work_fn(struct k_work *work);
+
+static K_WORK_DELAYABLE_DEFINE(environment_history_work, environment_history_work_fn);
+
+static void environment_history_work_fn(struct k_work *work)
+{
+   double temperature = 0.0;
+   if (environment_get_temperature(&temperature) == 0) {
+      environment_add_temperature_history(temperature);
+   }
+   k_work_schedule(&environment_history_work, K_MSEC(ENVIRONMENT_HISTORY_INTERVAL));
+}
+
 static int environment_sensor_init(const struct device *dev)
 {
    if (!device_is_ready(dev)) {
@@ -241,6 +306,8 @@ int environment_init(void)
          return err;
       }
    }
+   environment_init_temperature_history();
+   environment_history_work_fn(NULL);
 
    return 0;
 }
@@ -337,3 +404,4 @@ int environment_get_iaq(int32_t *value)
 }
 
 #endif /* CONFIG_BME680_BSEC */
+#endif /* CONFIG_BME680_BSEC || CONFIG_BME680 */

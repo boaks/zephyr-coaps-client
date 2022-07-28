@@ -108,6 +108,9 @@ int coap_client_parse_data(uint8_t *data, size_t len)
 
    return PARSE_RESPONSE;
 }
+#ifdef ENVIRONMENT_SENSOR
+static double s_temperatures[ENVIRONMENT_HISTORY_SIZE];
+#endif
 
 int coap_client_prepare_post(void)
 {
@@ -264,7 +267,18 @@ int coap_client_prepare_post(void)
 #endif
 
 #ifdef ENVIRONMENT_SENSOR
-   if (environment_get_temperature(&value) == 0) {
+   int_value = environment_get_temperature_history(s_temperatures, ENVIRONMENT_HISTORY_SIZE);
+   if (int_value > 0) {
+      int history_index;
+      index += snprintf(buf + index, sizeof(buf) - index, "\n!");
+      start = index - 1;
+      for (history_index = 0; history_index < int_value; ++history_index) {
+         index += snprintf(buf + index, sizeof(buf) - index, "%.2f,", s_temperatures[history_index]);
+      }
+      --index;
+      index += snprintf(buf + index, sizeof(buf) - index, " C");
+      dtls_info("%s", buf + start);
+   } else if (environment_get_temperature(&value) == 0) {
       start = index + 1;
       index += snprintf(buf + index, sizeof(buf) - index, "\n%.2f C", value);
       dtls_info("%s", buf + start);

@@ -20,6 +20,9 @@
 
 #include <stdbool.h>
 
+#define ENVIRONMENT_HISTORY_SIZE     10
+#define ENVIRONMENT_HISTORY_INTERVAL 30
+
 int environment_init(void);
 
 int environment_get_temperature(double *value);
@@ -31,6 +34,8 @@ int environment_get_pressure(double *value);
 int environment_get_gas(int32_t *value);
 
 int environment_get_iaq(int32_t *value);
+
+int environment_get_temperature_history(double *values, uint8_t size);
 
 #endif /* CONFIG_BME680_BSEC || CONFIG_BME680 */
 
