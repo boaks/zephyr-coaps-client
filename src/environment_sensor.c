@@ -198,7 +198,7 @@ struct environment_sensor {
 
 static const struct environment_sensor temperature_sensor = {
     .channel = SENSOR_CHAN_AMBIENT_TEMP,
-    .dev = DEVICE_DT_GET(DT_ALIAS(temp_sensor))};
+    .dev = DEVICE_DT_GET(DT_ALIAS(temperature_sensor))};
 
 static const struct environment_sensor humidity_sensor = {
     .channel = SENSOR_CHAN_HUMIDITY,
@@ -250,8 +250,8 @@ static int environment_sensor_fetch(void)
    static int64_t environment_sensor_next_fetch = 0;
    static int err = 0;
    int64_t now = k_uptime_get();
-   if ((now - environment_sensor_next_fetch) > 0) {
-      environment_sensor_next_fetch = now + (CONFIG_BME680_SAMPLE_INTERVAL_S) * MSEC_PER_SEC;
+   if ((now - environment_sensor_next_fetch) >= 0) {
+      environment_sensor_next_fetch = now + (CONFIG_BME680_SAMPLE_INTERVAL_S)*MSEC_PER_SEC;
       for (int index1 = 0; index1 < all_sensors_size; ++index1) {
          const struct device *dev = all_sensors[index1]->dev;
          for (int index2 = 0; index2 < index1; ++index2) {

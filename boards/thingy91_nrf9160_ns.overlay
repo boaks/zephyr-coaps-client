@@ -18,7 +18,7 @@
 / {
 	aliases {	
 		/* alias for sensor with SENSOR_CHAN_AMBIENT_TEMP channel */
-		temperatur-sensor = &bme680;
+		temperature-sensor = &bme680;
 		/* alias for sensor with SENSOR_CHAN_HUMIDITY channel */
 		humidity-sensor = &bme680;
 		/* alias for sensor with SENSOR_CHAN_PRESS channel */
