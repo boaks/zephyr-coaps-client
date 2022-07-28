@@ -19,7 +19,6 @@ project(coaps-client)
 
 # APP START
 target_sources(app PRIVATE 
-	src/main.c 
 	src/modem.c 
 	src/power_manager.c 
 	src/ui.c 
@@ -27,9 +26,9 @@ target_sources(app PRIVATE
 	src/dtls_credentials.c 
 	src/coap_client.c)
 
-target_sources_ifdef(CONFIG_ADXL362_MOTION_DETECTION app PRIVATE src/accelerometer_sensor.c)
+target_sources_ifdef(CONFIG_LOCATION_ENABLE app PRIVATE src/location.c)
 
-target_sources_ifdef(CONFIG_LOCATION_ENABLE app PRIVATE src/modem_location.c)
+target_sources_ifdef(CONFIG_ADXL362_MOTION_DETECTION app PRIVATE src/accelerometer_sensor.c)
 
 target_sources_ifdef(CONFIG_BME680 app PRIVATE src/environment_sensor.c)
 

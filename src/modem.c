@@ -14,6 +14,7 @@
 #include <kernel.h>
 #include <logging/log.h>
 #include <modem/lte_lc.h>
+#include <modem/modem_key_mgmt.h>
 #include <modem/nrf_modem_lib.h>
 #include <nrf_modem_at.h>
 #include <stdio.h>
@@ -276,6 +277,13 @@ int modem_init(wakeup_callback_handler_t handler)
          LOG_INF("rev: %s", buf);
       }
 #if 0
+      err = modem_at_cmd("AT%%XFACTORYRESET=0", buf, sizeof(buf), NULL);
+      if (err > 0) {
+         LOG_INF("Factory reset: %s", buf);
+      }
+#endif
+
+#if 0
       err = modem_at_cmd("AT%%REL14FEAT=0,1,0,0,0", buf, sizeof(buf), NULL);
       if (err > 0) {
          LOG_INF("rel14feat: %s", buf);
@@ -339,7 +347,7 @@ int modem_start(const k_timeout_t timeout)
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
          }
          time.ticks += interval.ticks;
-         if ((time.ticks - timeout.ticks) >  0) {
+         if ((time.ticks - timeout.ticks) > 0) {
             err = 1;
             break;
          }
@@ -410,7 +418,7 @@ int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
 int modem_set_power_modes(int enable)
 {
    int err = 0;
-   char buf[96];
+   char buf[128];
 
    if (enable) {
 #if defined(CONFIG_UDP_PSM_ENABLE)
@@ -419,15 +427,30 @@ int modem_set_power_modes(int enable)
       if (err) {
          LOG_WRN("lte_lc_psm_req, error: %d", err);
       } else {
-         LOG_INF("lte_lc_psm_req, enabled. %d s", psm_status.tau);
          if (k_sem_take(&ptau_update, K_SECONDS(10)) == 0) {
+#if 1
             if (modem_at_cmd("AT+CPSMS?", buf, sizeof(buf), "+CPSMS:") > 0) {
-               LOG_INF(">> %s", buf);
+               LOG_INF("CPSMS >> %s", buf);
             }
+#endif
             if (modem_at_cmd("AT%%XMONITOR", buf, sizeof(buf), "%XMONITOR:") > 0) {
-               LOG_INF(">> %s", buf);
+               LOG_INF("MON >> %s", buf);
             }
+#if 1
+            if (modem_at_cmd("AT+CEREG?", buf, sizeof(buf), "+CEREG:") > 0) {
+               LOG_INF("CEREG >> %s", buf);
+            }
+#endif
+#if 1
+            if (modem_at_cmd("AT+CPSMS=0", buf, sizeof(buf), NULL) > 0) {
+               LOG_INF("CPSMS=0 >> %s", buf);
+            }
+            if (modem_at_cmd("AT+CPSMS=1,,,\"00100100\",\"00000010\"", buf, sizeof(buf), NULL) > 0) {
+               LOG_INF("CPSMS=1 >> %s", buf);
+            }
+#endif
          }
+         LOG_INF("lte_lc_psm_req, enabled. %d s", psm_status.tau);
       }
 #endif
 #if defined(CONFIG_UDP_RAI_ENABLE)

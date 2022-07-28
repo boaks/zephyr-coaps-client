@@ -25,7 +25,7 @@
 #include "environment_sensor.h"
 
 #ifdef CONFIG_LOCATION_ENABLE
-#include "modem_location.h"
+#include "location.h"
 #endif
 
 #define APP_COAP_MAX_MSG_LEN 1280
@@ -119,7 +119,10 @@ int coap_client_prepare_post(void)
    int32_t int_value = 0;
 #endif
 #ifdef CONFIG_LOCATION_ENABLE
-   struct location_data location;
+   static uint32_t max_satellites_time = 0;
+   static uint32_t max_execution_time = 0;
+   struct modem_gnss_state result;
+   bool pending;
 #endif
 
    power_manager_status_t battery_status = POWER_UNKNOWN;
@@ -127,7 +130,7 @@ int coap_client_prepare_post(void)
    uint8_t battery_level = 0xff;
 
    const char *p;
-   char buf[256];
+   char buf[512];
    int err;
    int index;
    int start;
@@ -232,37 +235,70 @@ int coap_client_prepare_post(void)
    dtls_info("%s", buf + start);
 
 #ifdef CONFIG_LOCATION_ENABLE
-   err = 0;
-   switch (modem_location_get(0, &location)) {
-      case NO_LOCATION:
-         index += snprintf(buf + index, sizeof(buf) - index, "\n*POS=n.a.");
-         dtls_info("No location");
+   err = 1;
+   start = index + 1;
+   p = "???";
+   switch (location_get(&result, &pending)) {
+      case MODEM_GNSS_NOT_AVAILABLE:
+         p = "n.a.";
          break;
-      case PENDING_LOCATION:
-         index += snprintf(buf + index, sizeof(buf) - index, "\n*POS=pending");
-         dtls_info("No location - pending");
+      case MODEM_GNSS_TIMEOUT:
+         p = "timeout";
          break;
-      case TIMEOUT_LOCATION:
-         index += snprintf(buf + index, sizeof(buf) - index, "\n*POS=timeout");
-         dtls_info("No location - timeout");
+      case MODEM_GNSS_ERROR:
+         p = "error";
          break;
-      case PREVIOUS_LOCATION:
-         err = 1;
-      case CURRENT_LOCATION:
-         if (location.datetime.valid) {
-            index += snprintf(buf + index, sizeof(buf) - index, "\n%sPOS=%.06f,%.06f,%.01f,%04d-%02d-%02dT%02d:%02d:%02dZ",
-                              err ? "*" : "",
-                              location.latitude, location.longitude, location.accuracy, location.datetime.year, location.datetime.month, location.datetime.day, location.datetime.hour, location.datetime.minute, location.datetime.second);
-         } else {
-            index += snprintf(buf + index, sizeof(buf) - index, "\n%sPOS=%.06f,%.06f,%.01f",
-                              err ? "*" : "",
-                              location.latitude, location.longitude, location.accuracy);
-         }
-         dtls_info("URL: https://maps.google.com/?q=%.06f,%.06f,%.01f",
-                   location.latitude, location.longitude, location.accuracy);
+      case MODEM_GNSS_INVISIBLE:
+         p = "invisible";
+         break;
+      case MODEM_GNSS_POSITION:
+         p = "valid";
+         err = 0;
          break;
       default:
          break;
+   }
+   if (max_satellites_time < result.satellites_time) {
+      max_satellites_time = result.satellites_time;
+   }
+
+   if (result.valid) {
+      index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.1=%s%s,%u-sats,%us-vis,%us-vis-max",
+                        p, pending ? ",pending" : "", result.max_satellites, result.satellites_time / 1000, max_satellites_time / 1000);
+      dtls_info("%s", buf + start);
+      start = index + 1;
+      if (!err) {
+         if (!max_execution_time) {
+            /* skip the first */
+            max_execution_time = 1;
+            index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.2=%us-pos",
+                              result.execution_time / 1000);
+         } else {
+            if (max_execution_time < result.execution_time) {
+               max_execution_time = result.execution_time;
+            }
+            index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.2=%us-pos,%us-pos-max",
+                              result.execution_time / 1000, max_execution_time / 1000);
+         }
+      } else if (max_execution_time > 1) {
+         index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.2=%us-pos-max",
+                           max_execution_time / 1000);
+      }
+      if (index > start) {
+         dtls_info("%s", buf + start);
+         start = index + 1;
+      }
+      index += snprintf(buf + index, sizeof(buf) - index, "\n!%sGNSS.3=%.06f,%.06f,%.01f,%.02f,%.01f",
+                        err ? "*" : "",
+                        result.position.latitude, result.position.longitude, result.position.accuracy,
+                        result.position.altitude, result.position.altitude_accuracy);
+      index += snprintf(buf + index, sizeof(buf) - index, ",%04d-%02d-%02dT%02d:%02d:%02dZ",
+                        result.position.datetime.year, result.position.datetime.month, result.position.datetime.day,
+                        result.position.datetime.hour, result.position.datetime.minute, result.position.datetime.seconds);
+      dtls_info("%s", buf + start);
+   } else {
+      index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.1=%s%s", p, pending ? ",pending" : "");
+      dtls_info("%s", buf + start);
    }
 #endif
 

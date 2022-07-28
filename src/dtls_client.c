@@ -30,7 +30,7 @@
 #include "ui.h"
 
 #ifdef CONFIG_LOCATION_ENABLE
-#include "modem_location.h"
+#include "location.h"
 #endif
 
 #ifdef CONFIG_ADXL362_MOTION_DETECTION
@@ -42,7 +42,7 @@
 #define COAP_ACK_TIMEOUT 3
 #define ADD_ACK_TIMEOUT 3
 
-LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
+LOG_MODULE_REGISTER(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 typedef enum {
    NONE,
@@ -55,9 +55,13 @@ typedef enum {
 static volatile int network_connected = 0;
 static volatile int dtls_connected = 0;
 static volatile int lte_connected = 0;
+static volatile bool lte_connected_send = false;
 static volatile unsigned int lte_connections = 0;
 static volatile request_state_t request_state = NONE;
 static volatile unsigned long connected_time = 0;
+#ifdef CONFIG_ADXL362_MOTION_DETECTION
+static volatile bool moved = false;
+#endif
 static unsigned long connect_time = 0;
 static unsigned long response_time = 0;
 static unsigned int transmission = 0;
@@ -65,7 +69,7 @@ static int timeout = 0;
 
 /* the wakeup send interval is only effecitve on PSM wakeup */
 /* the granularity of this time is therefore the PSM time */
-#define NETWORK_WAKEUP_SEND_INTERVAL_S (3600 * 4 - 100) /* approx. 4h */
+#define NETWORK_WAKEUP_SEND_INTERVAL_S (3600 * 1 - 100) /* approx. 1h */
 
 #if (defined CONFIG_LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO || defined CONFIG_LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO)
 #define NETWORK_TIMEOUT_S 360
@@ -77,8 +81,8 @@ static int timeout = 0;
 #define RTT_INTERVAL 2000
 static unsigned int rtts[RTT_SLOTS + 2] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20};
 
-K_SEM_DEFINE(lte_connected_send, 0, 1);
 K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
+K_SEM_DEFINE(dtls_trigger_search, 0, 1);
 
 static void reboot()
 {
@@ -103,6 +107,9 @@ static void reconnect()
 {
    int timeout_seconds = NETWORK_TIMEOUT_S;
    int sleep_minutes = 15;
+
+   k_sem_reset(&dtls_trigger_search);
+
    while (!network_connected) {
       dtls_info("> modem offline (%d minutes)", sleep_minutes);
       modem_set_offline();
@@ -110,7 +117,7 @@ static void reconnect()
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
       ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-      if (k_sem_take(&dtls_trigger_msg, K_MINUTES(sleep_minutes)) == 0) {
+      if (k_sem_take(&dtls_trigger_search, K_MINUTES(sleep_minutes)) == 0) {
          dtls_info("> modem normal (manual)");
          sleep_minutes = 15;
       } else if (sleep_minutes < 61) {
@@ -158,8 +165,8 @@ static void dtls_coap_success(void)
    if (time2 < 0) {
       time2 = -1;
    }
-   k_sem_take(&lte_connected_send, K_NO_WAIT);
-   k_sem_take(&dtls_trigger_msg, K_NO_WAIT);
+   lte_connected_send = false;
+   k_sem_reset(&dtls_trigger_msg);
    request_state = NONE;
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
@@ -211,8 +218,8 @@ static void dtls_coap_failure(void)
    if (time2 < 0) {
       time2 = -1;
    }
-   k_sem_take(&lte_connected_send, K_NO_WAIT);
-   k_sem_take(&dtls_trigger_msg, K_NO_WAIT);
+   lte_connected_send = false;
+   k_sem_reset(&dtls_trigger_msg);
    request_state = NONE;
    ui_led_op(LED_COLOR_RED, LED_SET);
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
@@ -276,7 +283,7 @@ send_to_peer(struct dtls_context_t *ctx,
    int *fd = (int *)dtls_get_app_data(ctx);
    int res = 0;
 
-   k_sem_take(&lte_connected_send, K_NO_WAIT);
+   lte_connected_send = false;
    connect_time = (unsigned long)k_uptime_get();
 
    res = sendto(*fd, data, len, MSG_DONTWAIT, &session->addr.sa, session->size);
@@ -439,7 +446,7 @@ void dtls_lte_connected(enum dtls_lte_connect_type type, int connected)
       if (connected) {
          connected_time = (unsigned long)k_uptime_get();
          ++lte_connections;
-         k_sem_give(&lte_connected_send);
+         lte_connected_send = true;
       }
    }
 }
@@ -509,6 +516,7 @@ static void dtls_trigger(void)
 static void dtls_manual_trigger(void)
 {
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
+   k_sem_give(&dtls_trigger_search);
    dtls_trigger();
 }
 
@@ -539,6 +547,7 @@ static K_WORK_DELAYABLE_DEFINE(dtls_timer_trigger_work, dtls_timer_trigger_fn);
 #ifdef CONFIG_ADXL362_MOTION_DETECTION
 static void accelerometer_handler(const struct accelerometer_evt *const evt)
 {
+   moved = true;
    dtls_info("accelerometer trigger, x %.02f, y %.02f, z %.02f", evt->values[0], evt->values[1], evt->values[2]);
 #ifdef CONFIG_ADXL362_MOTION_DETECTION_LED
    ui_led_op(LED_COLOR_GREEN, LED_BLINK);
@@ -560,25 +569,9 @@ int dtls_loop(void)
    int loops = 0;
    long time;
 
-   dtls_set_log_level(DTLS_LOG_INFO);
-   ui_init(dtls_manual_trigger);
-
-   modem_init(dtls_wakeup_trigger);
 #ifdef CONFIG_LOCATION_ENABLE
-   modem_location_init(dtls_trigger);
-#else
-   dtls_warn("no location");
+   bool location_init = true;
 #endif
-#ifdef CONFIG_ADXL362_MOTION_DETECTION
-   accelerometer_init(accelerometer_handler);
-   accelerometer_enable(true);
-#endif
-#ifdef ENVIRONMENT_SENSOR
-   environment_init();
-#endif
-   if (modem_start(K_SECONDS(NETWORK_TIMEOUT_S)) != 0) {
-      reconnect();
-   }
 
    memset(&dst, 0, sizeof(session_t));
    dtls_init_destination(&dst);
@@ -616,9 +609,32 @@ int dtls_loop(void)
          reopen_socket(dtls_context);
          network_connected = 1;
       }
+
 #ifdef CONFIG_LOCATION_ENABLE
-      if (dtls_connected) {
-         modem_location_loop();
+      uint8_t battery_level = 0xff;
+      bool force = false;
+#ifdef CONFIG_ADXL362_MOTION_DETECTION
+      force = moved;
+      moved = false;
+#endif
+      power_manager_status(&battery_level, NULL, NULL);
+      if (location_enabled()) {
+         if (battery_level < 20) {
+            dtls_info("Low battery, switch off GNSS");
+            location_stop();
+         } else if (force) {
+            dtls_info("Motion detected, force GNSS");
+            location_start(force);
+         }
+      } else if (dtls_connected) {
+         if (battery_level > 80 && battery_level < 0xff) {
+            dtls_info("High battery, switch on GNSS");
+            location_start(false);
+         } else if (location_init && (battery_level == 0xff || battery_level >= 20)) {
+            location_init = false;
+            dtls_info("Starting, switch on GNSS");
+            location_start(false);
+         }
       }
 #endif
 
@@ -661,15 +677,15 @@ int dtls_loop(void)
          }
       } else if (result == 0) { /* timeout */
          if (request_state == SEND || request_state == RESEND) {
-            if (k_sem_take(&lte_connected_send, K_NO_WAIT) == 0) {
+            if (lte_connected_send) {
                loops = 0;
                time = connected_time - connect_time;
                if (time < 0)
                   time = -1;
                if (request_state == SEND) {
-                  dtls_info("%d/%d/%u-%ld ms: connected => sent", lte_connected, k_sem_count_get(&lte_connected_send), lte_connections, time);
+                  dtls_info("%d/%d/%u-%ld ms: connected => sent", lte_connected, lte_connected_send, lte_connections, time);
                } else {
-                  dtls_info("%d/%d/%u-%ld ms: connected => resent", lte_connected, k_sem_count_get(&lte_connected_send), lte_connections, time);
+                  dtls_info("%d/%d/%u-%ld ms: connected => resent", lte_connected, lte_connected_send, lte_connections, time);
                }
                request_state = RECEIVE;
             } else if (loops < 60) {
@@ -721,4 +737,41 @@ int dtls_loop(void)
 
    dtls_free_context(dtls_context);
    return 0;
+}
+
+void main(void)
+{
+   LOG_INF("CoAP/DTLS CID sample " CLIENT_VERSION " has started");
+
+   dtls_set_log_level(DTLS_LOG_INFO);
+
+   ui_init(dtls_manual_trigger);
+
+   modem_init(dtls_wakeup_trigger);
+
+#ifdef CONFIG_LOCATION_ENABLE
+#ifdef CONFIG_LOCATION_ENABLE_TRIGGER_MESSAGE
+   dtls_info("location with trigger");
+   location_init(dtls_trigger);
+#else  /* CONFIG_LOCATION_ENABLE_TRIGGER_MESSAGE */
+   dtls_info("location without trigger");
+   location_init(NULL);
+#endif /* CONFIG_LOCATION_ENABLE_TRIGGER_MESSAGE */
+#else  /* CONFIG_LOCATION_ENABLE */
+   dtls_warn("no location");
+#endif
+
+#ifdef CONFIG_ADXL362_MOTION_DETECTION
+   accelerometer_init(accelerometer_handler);
+   accelerometer_enable(true);
+#endif
+
+#ifdef ENVIRONMENT_SENSOR
+   environment_init();
+#endif
+
+   if (modem_start(K_SECONDS(NETWORK_TIMEOUT_S)) != 0) {
+      reconnect();
+   }
+   dtls_loop();
 }

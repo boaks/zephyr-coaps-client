@@ -23,7 +23,7 @@ typedef void (*wakeup_callback_handler_t)(void);
 
 int modem_init(wakeup_callback_handler_t handler);
 
-int modem_start(k_timeout_t timeout);
+int modem_start(const k_timeout_t timeout);
 
 const char* modem_get_network_mode(void);
 
