@@ -56,7 +56,7 @@ static const unsigned char ecdsa_pub_key_y[] = {
 /* The PSK information for DTLS */
 static unsigned char psk_id[32];
 static size_t psk_id_length = sizeof(psk_id);
-static unsigned char psk_key[] = ".fornium";
+static unsigned char psk_key[] = CONFIG_DTLS_PSK_SECRET;
 static size_t psk_key_length = sizeof(psk_key) - 1;
 
 /* This function is the "key store" for tinyDTLS. It is called to
@@ -104,12 +104,18 @@ get_psk_info(struct dtls_context_t *ctx UNUSED_PARAM,
 
 void dtls_credentials_init_psk(const char *imei)
 {
-   if (imei) {
-      snprintf(psk_id, sizeof(psk_id), "cali.%s", imei);
-   } else {
-      uint32_t id = 0;
-      dtls_prng((unsigned char *)&id, sizeof(id));
-      snprintf(psk_id, sizeof(psk_id), "cali.%u", id);
+   unsigned char *cur;
+
+   strncpy(psk_id, CONFIG_DTLS_PSK_IDENTITY, psk_id_length);
+   cur = (unsigned char *) strstr(psk_id, "${imei}");
+   if (cur) {
+      if (imei) {
+         snprintf(cur, sizeof(psk_id) - (cur - psk_id), "%s", imei);
+      } else {
+         uint32_t id = 0;
+         dtls_prng((unsigned char *)&id, sizeof(id));
+         snprintf(cur, sizeof(psk_id) - (cur - psk_id), "%u", id);
+      }
    }
    dtls_info("psk-id: %s\n", psk_id);
    psk_id_length = strlen(psk_id);
