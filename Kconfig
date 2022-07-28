@@ -33,6 +33,10 @@ config DTLS_PSK_SECRET
 	string "CoAP/DTLS PSK secret"
 	default ".fornium"
 
+config COAP_SEND_INTERVAL
+	int "CoAP send interval in seconds. 0 disable"
+	default 0
+
 config COAP_RESOURCE
 	string "CoAP resource - defaults to Californium's echo resource"
 	default "echo"

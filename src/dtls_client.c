@@ -524,8 +524,17 @@ static void dtls_wakeup_trigger(void)
          return;
       }
    }
-   wakeup_next_sent = now + ((NETWORK_WAKEUP_SEND_INTERVAL_S)*1000);
+   wakeup_next_sent = now + ((NETWORK_WAKEUP_SEND_INTERVAL_S)*MSEC_PER_SEC);
 }
+
+#if CONFIG_COAP_SEND_INTERVAL > 0
+static void dtls_timer_trigger_fn(struct k_work *work)
+{
+   dtls_trigger();
+}
+
+static K_WORK_DELAYABLE_DEFINE(dtls_timer_trigger_work, dtls_timer_trigger_fn);
+#endif
 
 #ifdef CONFIG_ADXL362_MOTION_DETECTION
 static void accelerometer_handler(const struct accelerometer_evt *const evt)
@@ -625,6 +634,9 @@ int dtls_loop(void)
       } else {
          result = 0;
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
+#if CONFIG_COAP_SEND_INTERVAL > 0
+            k_work_reschedule(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
+#endif
             request_state = SEND;
             loops = 0;
             transmission = 0;
