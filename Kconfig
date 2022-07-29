@@ -63,14 +63,14 @@ menu "Extra Functions"
 
 config LOCATION_ENABLE
 	bool "Enable GNSS Location"
-	default y
+	default n
 	depends on LTE_NETWORK_MODE_LTE_M_NBIOT_GPS || LTE_NETWORK_MODE_LTE_M_GPS || LTE_NETWORK_MODE_NBIOT_GPS
 	help
 	   Enable GNSS location. Early development stage.
 	   Does not support A-GPS for now. To start GNSS,
 	   place the Thingy:91 outside in an open space.
 	   Once the almanac data is downloaded from satelites, 
-	   positions are start to be reported. 
+	   positions are start to be reported.
 
 if LOCATION_ENABLE
 config LOCATION_ENABLE_CONTINUES_MODE
@@ -85,6 +85,7 @@ config LOCATION_ENABLE_CONTINUES_MODE
 config LOCATION_ENABLE_TRIGGER_MESSAGE
 	bool "Enable GNSS Location Triggers Message"
 	default n
+	depends on !LOCATION_ENABLE_CONTINUES_MODE
 	help
 	   Enable GNSS location to trigger a message
 endif   
