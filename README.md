@@ -25,7 +25,7 @@ The demo client is considered to use CoAP/DTLS CID. Without server-side support 
 
 ## Supported Devices
 
-| For now, only the<br/> [Nordic Semiconductor Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91)<br/> is supported. | ![Thingy:91](./docu_images/thingy91.jpg) |
+| For now, only the<br/> [Nordic Semiconductor Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91)<br/> is supported. | ![Thingy:91](./docu/thingy91.jpg) |
 | :- | - |
 
 The `Thingy:91` demo works with [ncs-2.0.1](https://github.com/nrfconnect/sdk-nrf/tree/v2.0.1).
@@ -48,7 +48,7 @@ In order to use this demo with your `Thingy:91`, you need:
 
 It's not recommended, but you may start with using a pre-build firmware binary. Usually that will take about 1h to send a first message with your `Thingy:91`.
 
-[Fast Track](./FASTTRACK.md)
+[Fast Track](./docu/FASTTRACK.md)
 
 ## Build
 
@@ -63,7 +63,7 @@ Please check the proper installation of your tools building some of the provided
 
 **Note:** both, the zephyr's "developing" and Nordic Semiconductor's "getting started" has changed and may change over time and so it's hard to give good advice. Currently I have good experience with [Nordic Semiconductor - Installing manually](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/gs_installing.html) and Ubuntu 20.04. Installing [nRF Connect for Desktop](https://www.nordicsemi.com/Products/Development-tools/nrf-connect-for-desktop/download#infotabs) and apply the "Toolchain Manager" app works as well on Ubuntu 20.04  (support for 18.04 has been removed for the `nRF Connect for Desktop`). To use this toolchain-manager-installation after installing, start a terminal from that app to get a command console with an setup environment.
 
-![Toolchain Manager](./docu_images/toolchain_manager.png)
+![Toolchain Manager](./docu/toolchain_manager.png)
 
 The toolchain-manager-installation also requires a slightly modified sources download, see ["Download the Sources into an available zephyr workspace"](#download-the-sources-into-an-available-zephyr-workspace)
 
@@ -152,11 +152,11 @@ RSSI: 255,255
 Network: CAT-M1
 ```
 
-It starts with the up-time in seconds in the first line, followed by the label "Thingy:91" and a sent statistic. "`0*3`" := 43 exchanges without retransmission, "`1*0`" := no (0) exchanges with 1 retransmission. The current exchange is not included in this statistic. The second line contains the battery status and the third the receiving signal strength. The next line contains the network mode (CAT-M1 or NB-IoT).
+It starts with the up-time in seconds in the first line, followed by the label "Thingy:91" and a sent statistic. "`0*43`" := 43 exchanges without retransmission, "`1*0`" := no (0) exchanges with 1 retransmission. The current exchange is not included in this statistic. The second line contains the battery status and the third the receiving signal strength. The next line contains the network mode (CAT-M1 or NB-IoT).
 
 The demo uses the "echo" resource of the plugtest-server, therefore the response contains just the same message.
 
-If you want to see, what your `Thingy:91` has sent to the server, see [cf-browser](./CFBROWSER.md).
+If you want to see, what your `Thingy:91` has sent to the server, see [cf-browser](./docu/CFBROWSER.md).
 
 ## Configuration
 
@@ -174,30 +174,18 @@ west build -b thingy91_nrf9160_ns -t guiconfig
 
 for the GUI variant.
 
-Please read the provided help for this settings.
+For details please read the provided help for this settings and the [Configuration](./docu/CONFIGURATION.md) page.
 
-For the usage of the environment sensor [BME680 (Bosch)](https://www.bosch-sensortec.com/products/environmental-sensors/gas-sensors/bme680/) two options are available:
-
-- **zephyr bme680 driver**, access to temperature, humidity, pressure, and the "gas sensor resistance". No additional source are required. Enabled at
-`Zephyr Kernel > Device Drivers > Sensor Drivers > BME680 sensor`.
-
-- **Bosch bme680 BSEC library**, access to temperature, humidity, pressure, and the IAQ (Index Air Quality).
-The [BSEC](https://www.bosch-sensortec.com/software-tools/software/bsec/) must be downloaded from Bosch and comes with its own [license](https://www.bosch-sensortec.com/media/boschsensortec/downloads/bsec/2017-07-17_clickthrough_license_terms_environmentalib_sw_clean.pdf). Unzip the downloaded archive into the `zephyr-coaps-client/nrf/ext/` (or `<ncs>/nrf/ext/`). The resulting path must be `nrf/ext/BSEC_1.4.8.0_Generic_Release_updated_v3`.
-If the preparation is done, disable 
-`Zephyr Kernel > Device Drivers > Sensor Drivers > BME680 sensor` (if enabled),
-and then enable
-`Extra Functions > BME680 BSEC`.
-instead.
 
 ## Next Steps
 
 As mentioned at the introduction, the demo is intended as groundwork for your own ideas. 
 
-[Next Steps](./NEXTSTEPS.md)  
+[Next Steps](./docu/NEXTSTEPS.md)  
 
-See also [Roadmap](./ROADMAP.md) for the plan of the next months.
+See also [Roadmap](./docu/ROADMAP.md) for the plan of the next months.
 
-If you want ot consider the pwoer consumption in your idea, please see [Power Consumption](./POWERCONSUMPTION.md)
+If you want ot consider the pwoer consumption in your idea, please see [Power Consumption](./docu/POWERCONSUMPTION.md)
 
 ### Updating to a Newer Versions
 

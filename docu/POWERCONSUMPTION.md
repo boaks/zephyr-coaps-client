@@ -29,7 +29,7 @@ All these are taking randomly amount of time and may occur also unintended. So t
 
 **LTE-M Wakeup:**
 
-![LTE-M network reregistration](./docu_images/lte-m-wakeup.png)
+![LTE-M network reregistration](./lte-m-wakeup.png)
 
 This chart shows the frequently wakeup from PSM. Depending on the network provider, this happens every hour or at longer intervals. Without sending data, it depends mainly on the "active time", which is set to 8s for this test.
 
@@ -37,7 +37,7 @@ It takes about 12s, with an average current of 6mA at 5V. That results in 0.1 mW
 
 **LTE-M Exchanging messages:**
 
-![LTE-M message exchange](./docu_images/lte-m-send.png)
+![LTE-M message exchange](./lte-m-send.png)
 
 This chart shows the complete power consumption of an message exchange (about 200 bytes request, 200 bytes response) including a wakeup from PSM. Additional to the wakeup itself, it depends on the message exchange (0,8s) and the time being "connected" (10s, without RAI, which is not availabel in my setup). The "active time", is set also to 8s for this test.
 
@@ -47,7 +47,7 @@ It takes about 22s, with an average current of 5mA at 5V. That results in 0.152 
 
 **NB-IoT Wakeup:**
 
-![NB-IoT network reregistration](./docu_images/nb-iot-wakeup.png)
+![NB-IoT network reregistration](./nb-iot-wakeup.png)
 
 This chart shows the frequently wakeup from PSM. Depending on the network provider, this happens every hour or at longer intervals. Without sending data, it depends mainly on the "active time", which is set to 8s for this test.
 
@@ -55,7 +55,7 @@ Here it takes about 10s, but in my experience this sometimes takes up to 60s and
 
 **NB-IoT Exchanging messages:**
 
-![NB-IoT message exchange](./docu_images/nb-iot-send.png)
+![NB-IoT message exchange](./nb-iot-send.png)
 
 This chart shows the complete power consumption of an message exchange (about 200 bytes request, 200 bytes response) including a wakeup from PSM. Additional to the wakeup itself, it depends on the message exchange (1,5s) and the time being "connected" (1s, with RAI). The "active time", is set also to 8s for this test.
 
