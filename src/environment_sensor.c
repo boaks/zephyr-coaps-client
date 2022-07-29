@@ -17,7 +17,7 @@
 
 #include "environment_sensor.h"
 
-#if defined(CONFIG_BME680_BSEC) || defined(CONFIG_BME680) 
+#if defined(CONFIG_BME680_BSEC) || defined(CONFIG_BME680)
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
@@ -280,9 +280,37 @@ static void environment_history_work_fn(struct k_work *work)
 {
    double temperature = 0.0;
    if (environment_get_temperature(&temperature) == 0) {
+      k_mutex_lock(&environment_mutex, K_FOREVER);
       environment_add_temperature_history(temperature);
+      k_mutex_unlock(&environment_mutex);
    }
    k_work_schedule(&environment_history_work, K_MSEC(ENVIRONMENT_HISTORY_INTERVAL));
+}
+
+static int environment_sensor_fetch(bool force)
+{
+   static int64_t environment_sensor_next_fetch = 0;
+   static int err = 0;
+   int64_t now = k_uptime_get();
+   if (force || (now - environment_sensor_next_fetch) >= 0) {
+      environment_sensor_next_fetch = now + (CONFIG_BME680_SAMPLE_INTERVAL_S)*MSEC_PER_SEC;
+      for (int index1 = 0; index1 < all_sensors_size; ++index1) {
+         const struct device *dev = all_sensors[index1]->dev;
+         for (int index2 = 0; index2 < index1; ++index2) {
+            if (dev == all_sensors[index2]->dev) {
+               dev = NULL;
+               break;
+            }
+         }
+         if (dev) {
+            err = sensor_sample_fetch_chan(dev, SENSOR_CHAN_ALL);
+            if (err) {
+               break;
+            }
+         }
+      }
+   }
+   return err;
 }
 
 static int environment_sensor_init(const struct device *dev)
@@ -306,36 +334,11 @@ int environment_init(void)
          return err;
       }
    }
+   environment_sensor_fetch(true);
    environment_init_temperature_history();
    environment_history_work_fn(NULL);
 
    return 0;
-}
-
-static int environment_sensor_fetch(void)
-{
-   static int64_t environment_sensor_next_fetch = 0;
-   static int err = 0;
-   int64_t now = k_uptime_get();
-   if ((now - environment_sensor_next_fetch) >= 0) {
-      environment_sensor_next_fetch = now + (CONFIG_BME680_SAMPLE_INTERVAL_S)*MSEC_PER_SEC;
-      for (int index1 = 0; index1 < all_sensors_size; ++index1) {
-         const struct device *dev = all_sensors[index1]->dev;
-         for (int index2 = 0; index2 < index1; ++index2) {
-            if (dev == all_sensors[index2]->dev) {
-               dev = NULL;
-               break;
-            }
-         }
-         if (dev) {
-            err = sensor_sample_fetch_chan(dev, SENSOR_CHAN_ALL);
-            if (err) {
-               break;
-            }
-         }
-      }
-   }
-   return err;
 }
 
 static int environment_sensor_read(const struct environment_sensor *sensor, double *value, int32_t *high_value, int32_t *low_value)
@@ -343,7 +346,7 @@ static int environment_sensor_read(const struct environment_sensor *sensor, doub
    int err;
    struct sensor_value data = {0};
 
-   err = environment_sensor_fetch();
+   err = environment_sensor_fetch(false);
    if (err) {
       LOG_ERR("Failed to fetch data from %s, error: %d",
               sensor->dev->name, err);
