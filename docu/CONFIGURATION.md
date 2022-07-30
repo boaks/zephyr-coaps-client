@@ -48,3 +48,5 @@ If the preparation is done, disable
 and then enable
 `Extra Functions > BME680 BSEC`.
 instead.
+
+**NOTE:** the BME680 is mounted inside the Thingy:91 and is therefore only weakly coupled to the environment. On battery charging, the temperature gets up to 30°. If you want more realisitc values, please remove the board from the case.
