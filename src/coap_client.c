@@ -217,13 +217,14 @@ int coap_client_prepare_post(void)
    }
    p = modem_get_network_mode();
    start = index + 1;
-   index += snprintf(buf + index, sizeof(buf) - index, "\nNetwork: %s", p);
+   index += snprintf(buf + index, sizeof(buf) - index, "\nNetwork: %s ", p);
+   index += modem_read_provider(buf + index, sizeof(buf) - index);
    dtls_info("%s", buf + start);
 
    index += snprintf(buf + index, sizeof(buf) - index, "\n");
    start = index;
    if (modem_get_psm_status(&psm) == 0) {
-      index += snprintf(buf + index, sizeof(buf) - index, "PSM: %d s", psm.tau);
+      index += snprintf(buf + index, sizeof(buf) - index, "PSM: %d/%d [s]", psm.tau,psm.active_time);
    }
    err = modem_get_release_time();
    if (err > 0) {

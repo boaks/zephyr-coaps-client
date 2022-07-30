@@ -27,6 +27,7 @@
 #include "dtls_debug.h"
 #include "global.h"
 #include "modem.h"
+#include "power_manager.h"
 #include "ui.h"
 
 #ifdef CONFIG_LOCATION_ENABLE
@@ -74,7 +75,7 @@ static int timeout = 0;
 #if (defined CONFIG_LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO || defined CONFIG_LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO)
 #define NETWORK_TIMEOUT_S 360
 #else
-#define NETWORK_TIMEOUT_S 180
+#define NETWORK_TIMEOUT_S 360
 #endif
 
 #define RTT_SLOTS 9

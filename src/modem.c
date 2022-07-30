@@ -44,6 +44,8 @@ static const char *volatile network_mode = "init";
 
 static struct lte_lc_edrx_cfg edrx_status = {LTE_LC_LTE_MODE_NONE, 0.0, 0.0};
 static struct lte_lc_psm_cfg psm_status = {0, 0};
+static bool plmn_lock = false;
+static char provider[12] = "00,00000(*)";
 static unsigned long transmission_time = 0;
 
 static volatile int rai_time = -1;
@@ -92,6 +94,66 @@ static int64_t get_transmission_time(void)
    time = transmission_time;
    k_mutex_unlock(&lte_mutex);
    return time;
+}
+
+static const char *modem_next_string(const char *value)
+{
+   if (value) {
+      while (*value && *value != '"') {
+         ++value;
+      }
+      if (*value == '"') {
+         ++value;
+         if (*value) {
+            return value;
+         }
+      }
+   }
+   return NULL;
+}
+
+static void modem_read_operator_info()
+{
+   int index;
+   char buf[96];
+   char temp[12];
+   const char *cur = buf;
+   char *t = temp;
+
+   if (!modem_at_cmd("AT%%XMONITOR", buf, sizeof(buf), "%XMONITOR: ")) {
+      return;
+   }
+
+   memset(temp, 0, sizeof(temp));
+
+   for (index = 0; index < 3; ++index) {
+      if (*cur != ',') {
+         *t++ = *cur++;
+      }
+   }
+   if (*cur == ',') {
+      *t++ = *cur++;
+      // skip 2 parameter "...", find start of 3th parameter.
+      for (index = 0; index < 5; ++index) {
+         cur = modem_next_string(cur);
+      }
+      if (cur) {
+         for (index = 0; index < 5; ++index) {
+            if (*cur != '"') {
+               *t++ = *cur++;
+            }
+         }
+      }
+   }
+   if (plmn_lock) {
+      strcpy(t, "(#)");
+   } else {
+      strcpy(t, "(*)");
+   }
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   strncpy(provider, temp, sizeof(temp));
+   k_mutex_unlock(&lte_mutex);
+   LOG_INF("PLMN: %s", provider);
 }
 
 static void lte_registration(enum lte_lc_nw_reg_status reg_status)
@@ -199,8 +261,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          LOG_INF("LTE Tracking area Update");
          break;
       case LTE_LC_EVT_CELL_UPDATE:
-         LOG_INF("LTE cell changed: Cell ID: %d, Tracking area: %d",
-                 evt->cell.id, evt->cell.tac);
+         LOG_INF("LTE cell changed: Cell ID: %d, Tracking area: %d", evt->cell.id, evt->cell.tac);
          break;
       case LTE_LC_EVT_MODEM_SLEEP_ENTER:
          LOG_INF("LTE modem sleeps");
@@ -267,7 +328,6 @@ int modem_init(wakeup_callback_handler_t handler)
    } else if (!initialized) {
       char buf[32];
       nrf_modem_lib_init(NORMAL_MODE);
-
       err = modem_at_cmd("AT%%HWVERSION", buf, sizeof(buf), "%HWVERSION: ");
       if (err > 0) {
          LOG_INF("hw: %s", buf);
@@ -278,15 +338,28 @@ int modem_init(wakeup_callback_handler_t handler)
       }
 #if 0
       err = modem_at_cmd("AT%%XFACTORYRESET=0", buf, sizeof(buf), NULL);
-      if (err > 0) {
-         LOG_INF("Factory reset: %s", buf);
-      }
+      LOG_INF("Factory reset: %s", buf);
+      k_sleep(K_MINUTES(5));
 #endif
-
 #if 0
       err = modem_at_cmd("AT%%REL14FEAT=0,1,0,0,0", buf, sizeof(buf), NULL);
       if (err > 0) {
          LOG_INF("rel14feat: %s", buf);
+      }
+#endif
+#ifdef CONFIG_UDP_PSM_ENABLE
+      err = lte_lc_psm_req(true);
+      if (err) {
+         if (err == -EFAULT) {
+            LOG_WRN("Modem set power mode failed, AT cmd failed!");
+         } else {
+            LOG_WRN("Modem set power mode failed, error: %d!", err);
+         }
+      } else {
+         err = modem_at_cmd("AT+CPSMS?", buf, sizeof(buf), "+CPSMS: ");
+         if (err > 0) {
+            LOG_INF("psm: %s", buf);
+         }
       }
 #endif
       err = lte_lc_init();
@@ -311,9 +384,11 @@ int modem_init(wakeup_callback_handler_t handler)
 int modem_start(const k_timeout_t timeout)
 {
    int err = 0;
-   k_timeout_t interval = K_MSEC(1500);
-   k_timeout_t save = K_SECONDS(60);
    k_timeout_t time = K_MSEC(0);
+   k_timeout_t interval = K_MSEC(1500);
+#if CONFIG_MODEM_SAVE_CONFIG_THRESHOLD > 0
+   k_timeout_t save = K_SECONDS(CONFIG_MODEM_SAVE_CONFIG_THRESHOLD);
+#endif
 
 #ifdef CONFIG_LTE_MODE_PREFERENCE_LTE_M
    LOG_INF("LTE-M preference.");
@@ -323,6 +398,14 @@ int modem_start(const k_timeout_t timeout)
    LOG_INF("LTE-M PLMN preference.");
 #elif CONFIG_LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO
    LOG_INF("NB-IoT PLMN preference.");
+#endif
+
+#ifdef CONFIG_LTE_LOCK_PLMN
+   LOG_INF("Lock PLMN %s", CONFIG_LTE_LOCK_PLMN_STRING);
+   plmn_lock = true;
+#else
+   LOG_INF("All PLMN");
+   plmn_lock = false;
 #endif
 
    ui_led_op(LED_COLOR_BLUE, LED_SET);
@@ -352,11 +435,16 @@ int modem_start(const k_timeout_t timeout)
             break;
          }
       }
+#if CONFIG_MODEM_SAVE_CONFIG_THRESHOLD > 0
       if ((time.ticks - save.ticks) > 0) {
-         LOG_INF("Modem save ...");
-         modem_power_off();
-         modem_set_normal();
+         LOG_INF("Modem saving ...");
+         lte_lc_offline();
+         lte_lc_normal();
+         LOG_INF("Modem saved.");
+      } else {
+         LOG_INF("Modem not saved.");
       }
+#endif
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
    }
@@ -389,12 +477,26 @@ int modem_get_release_time(void)
    return rai_time;
 }
 
+int modem_get_provider(char *buf, size_t len)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   strncpy(buf, provider, len);
+   k_mutex_unlock(&lte_mutex);
+   return strlen(buf);
+}
+
 void modem_set_transmission_time(void)
 {
    int64_t now = k_uptime_get();
    k_mutex_lock(&lte_mutex, K_FOREVER);
    transmission_time = now;
    k_mutex_unlock(&lte_mutex);
+}
+
+int modem_read_provider(char *buf, size_t len)
+{
+   modem_read_operator_info();
+   return modem_get_provider(buf, len);
 }
 
 int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
@@ -418,7 +520,6 @@ int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
 int modem_set_power_modes(int enable)
 {
    int err = 0;
-   char buf[128];
 
    if (enable) {
 #if defined(CONFIG_UDP_PSM_ENABLE)
@@ -427,48 +528,29 @@ int modem_set_power_modes(int enable)
       if (err) {
          LOG_WRN("lte_lc_psm_req, error: %d", err);
       } else {
-         if (k_sem_take(&ptau_update, K_SECONDS(10)) == 0) {
-#if 1
-            if (modem_at_cmd("AT+CPSMS?", buf, sizeof(buf), "+CPSMS:") > 0) {
-               LOG_INF("CPSMS >> %s", buf);
-            }
-#endif
-            if (modem_at_cmd("AT%%XMONITOR", buf, sizeof(buf), "%XMONITOR:") > 0) {
-               LOG_INF("MON >> %s", buf);
-            }
-#if 1
-            if (modem_at_cmd("AT+CEREG?", buf, sizeof(buf), "+CEREG:") > 0) {
-               LOG_INF("CEREG >> %s", buf);
-            }
-#endif
-#if 1
-            if (modem_at_cmd("AT+CPSMS=0", buf, sizeof(buf), NULL) > 0) {
-               LOG_INF("CPSMS=0 >> %s", buf);
-            }
-            if (modem_at_cmd("AT+CPSMS=1,,,\"00100100\",\"00000010\"", buf, sizeof(buf), NULL) > 0) {
-               LOG_INF("CPSMS=1 >> %s", buf);
-            }
-#endif
-         }
-         LOG_INF("lte_lc_psm_req, enabled. %d s", psm_status.tau);
+         k_sem_take(&ptau_update, K_SECONDS(10));
+         LOG_INF("lte_lc_psm_req, enabled. TAU: %d s, Act: %d s", psm_status.tau, psm_status.active_time);
       }
 #endif
 #if defined(CONFIG_UDP_RAI_ENABLE)
       /** Release Assistance Indication  */
-      if (modem_at_cmd("AT%%XRAI=" CONFIG_LTE_RAI_REQ_VALUE, buf, sizeof(buf), NULL) > 0) {
-         LOG_INF(">> RAI: %s", buf);
+      err = lte_lc_rai_req(true);
+      if (err) {
+         LOG_WRN("lte_lc_rai_req, error: %d", err);
+      } else {
+         LOG_INF("lte_lc_rai_req, enabled.");
       }
 #endif
    } else {
       err = lte_lc_psm_req(false);
       if (err) {
-         LOG_WRN("lte_lc_psm_req, error: %d", err);
+         LOG_WRN("lte_lc_psm_req disable, error: %d", err);
       } else {
          LOG_INF("lte_lc_psm_req, disabled.");
       }
       err = lte_lc_rai_req(false);
       if (err) {
-         LOG_WRN("lte_lc_rai_req, error: %d", err);
+         LOG_WRN("lte_lc_rai_req disable, error: %d", err);
       } else {
          LOG_INF("lte_lc_rai_req, disabled.");
       }

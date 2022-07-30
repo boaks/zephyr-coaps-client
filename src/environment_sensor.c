@@ -276,17 +276,6 @@ static void environment_history_work_fn(struct k_work *work);
 
 static K_WORK_DELAYABLE_DEFINE(environment_history_work, environment_history_work_fn);
 
-static void environment_history_work_fn(struct k_work *work)
-{
-   double temperature = 0.0;
-   if (environment_get_temperature(&temperature) == 0) {
-      k_mutex_lock(&environment_mutex, K_FOREVER);
-      environment_add_temperature_history(temperature);
-      k_mutex_unlock(&environment_mutex);
-   }
-   k_work_schedule(&environment_history_work, K_MSEC(ENVIRONMENT_HISTORY_INTERVAL));
-}
-
 static int environment_sensor_fetch(bool force)
 {
    static int64_t environment_sensor_next_fetch = 0;
@@ -313,6 +302,19 @@ static int environment_sensor_fetch(bool force)
    return err;
 }
 
+static void environment_history_work_fn(struct k_work *work)
+{
+   double temperature = 0.0;
+
+   environment_sensor_fetch(true);
+   if (environment_get_temperature(&temperature) == 0) {
+      k_mutex_lock(&environment_mutex, K_FOREVER);
+      environment_add_temperature_history(temperature);
+      k_mutex_unlock(&environment_mutex);
+   }
+   k_work_schedule(&environment_history_work, K_SECONDS(ENVIRONMENT_HISTORY_INTERVAL));
+}
+
 static int environment_sensor_init(const struct device *dev)
 {
    if (!device_is_ready(dev)) {
@@ -336,7 +338,7 @@ int environment_init(void)
    }
    environment_sensor_fetch(true);
    environment_init_temperature_history();
-   environment_history_work_fn(NULL);
+   k_work_schedule(&environment_history_work, K_SECONDS(2));
 
    return 0;
 }

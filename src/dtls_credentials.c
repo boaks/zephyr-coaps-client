@@ -13,7 +13,6 @@
 
 #include "dtls_credentials.h"
 
-//#include <string.h>
 #include <stdio.h>
 
 #include "dtls_debug.h"

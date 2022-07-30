@@ -31,9 +31,13 @@ int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx);
 
 int modem_get_psm_status(struct lte_lc_psm_cfg *psm);
 
+int modem_get_provider(char* buf, size_t len);
+
 int modem_get_release_time(void);
 
 void modem_set_transmission_time(void);
+
+int modem_read_provider(char* buf, size_t len);
 
 int modem_at_cmd(const char* cmd, char* buf, size_t max_len, const char *skip);
 
