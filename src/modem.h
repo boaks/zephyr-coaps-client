@@ -15,13 +15,20 @@
 #define MODEM_H
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <sys_clock.h>
 
 #include <modem/lte_lc.h>
 
-typedef void (*wakeup_callback_handler_t)(void);
+enum dtls_lte_connect_type {
+	LTE_CONNECT_NETWORK,
+	LTE_CONNECT_TRANSMISSION
+};
 
-int modem_init(wakeup_callback_handler_t handler);
+typedef void (*wakeup_callback_handler_t)(void);
+typedef void (*connect_callback_handler_t)(enum dtls_lte_connect_type type, bool connected);
+
+int modem_init(wakeup_callback_handler_t wakeup_handler, connect_callback_handler_t connect_handler);
 
 int modem_start(const k_timeout_t timeout);
 
@@ -29,7 +36,7 @@ const char* modem_get_network_mode(void);
 
 int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx);
 
-int modem_get_psm_status(struct lte_lc_psm_cfg *psm);
+int modem_get_psm_status(struct lte_lc_psm_cfg *psm, uint32_t* delays);
 
 int modem_get_provider(char* buf, size_t len);
 
@@ -39,9 +46,11 @@ void modem_set_transmission_time(void);
 
 int modem_read_provider(char* buf, size_t len);
 
+int modem_read_statistic(char *buf, size_t len);
+
 int modem_at_cmd(const char* cmd, char* buf, size_t max_len, const char *skip);
 
-int modem_set_power_modes(int enable);
+int modem_set_rai(int enable);
 
 int modem_set_offline(void);
 

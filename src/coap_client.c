@@ -139,6 +139,7 @@ int coap_client_prepare_post(void)
    uint8_t *token = (uint8_t *)&coap_current_token;
    struct coap_packet request;
    struct lte_lc_psm_cfg psm;
+   uint32_t psm_delays;
 
 #ifdef CONFIG_COAP_QUERY_DELAY_ENABLE
    static int query_delay = 0;
@@ -223,8 +224,8 @@ int coap_client_prepare_post(void)
 
    index += snprintf(buf + index, sizeof(buf) - index, "\n");
    start = index;
-   if (modem_get_psm_status(&psm) == 0) {
-      index += snprintf(buf + index, sizeof(buf) - index, "PSM: %d/%d [s]", psm.tau,psm.active_time);
+   if (modem_get_psm_status(&psm, &psm_delays) == 0) {
+      index += snprintf(buf + index, sizeof(buf) - index, "PSM: TAU %d [s], Act %d [s], Delays %d", psm.tau, psm.active_time, psm_delays);
    }
    err = modem_get_release_time();
    if (err > 0) {
@@ -233,6 +234,10 @@ int coap_client_prepare_post(void)
       }
       index += snprintf(buf + index, sizeof(buf) - index, "Released: %d ms", err);
    }
+   dtls_info("%s", buf + start);
+   start = index + 1;      
+   index += snprintf(buf + index, sizeof(buf) - index, "\nStat: ");
+   index += modem_read_statistic(buf + index, sizeof(buf) - index);
    dtls_info("%s", buf + start);
 
 #ifdef CONFIG_LOCATION_ENABLE

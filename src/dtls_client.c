@@ -22,7 +22,6 @@
 
 #include "coap_client.h"
 #include "dtls.h"
-#include "dtls_client.h"
 #include "dtls_credentials.h"
 #include "dtls_debug.h"
 #include "global.h"
@@ -70,19 +69,20 @@ static int timeout = 0;
 
 /* the wakeup send interval is only effecitve on PSM wakeup */
 /* the granularity of this time is therefore the PSM time */
-#define NETWORK_WAKEUP_SEND_INTERVAL_S (3600 * 1 - 100) /* approx. 1h */
+
+//#define NETWORK_WAKEUP_SEND_INTERVAL_S (3600 * 1 - 100) /* approx. 1h */
 
 #if (defined CONFIG_LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO || defined CONFIG_LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO)
 #define NETWORK_TIMEOUT_S 360
 #else
-#define NETWORK_TIMEOUT_S 360
+#define NETWORK_TIMEOUT_S 240
 #endif
 
 #define RTT_SLOTS 9
 #define RTT_INTERVAL 2000
 static unsigned int rtts[RTT_SLOTS + 2] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20};
 
-K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
+K_SEM_DEFINE(dtls_trigger_msg, 1, 1);
 K_SEM_DEFINE(dtls_trigger_search, 0, 1);
 
 static void reboot()
@@ -141,7 +141,7 @@ static void reopen_socket(struct dtls_context_t *ctx)
 {
    int err;
    dtls_warn("> reconnect modem");
-   modem_set_power_modes(0);
+   modem_set_rai(0);
    err = modem_start(K_SECONDS(NETWORK_TIMEOUT_S));
    if (err) {
       reconnect();
@@ -153,8 +153,46 @@ static void reopen_socket(struct dtls_context_t *ctx)
       dtls_warn("> reopen UDP socket failed, %d, errno %d (%s), reboot", *fd, errno, strerror(errno));
       reboot();
    }
-   modem_set_power_modes(1);
+   modem_set_rai(1);
 }
+static void dtls_trigger(void)
+{
+   if (request_state == NONE) {
+      k_sem_give(&dtls_trigger_msg);
+   }
+}
+
+static void dtls_manual_trigger(void)
+{
+   ui_led_op(LED_COLOR_RED, LED_CLEAR);
+   k_sem_give(&dtls_trigger_search);
+   dtls_trigger();
+}
+
+#if CONFIG_COAP_SEND_INTERVAL > 0
+static void dtls_timer_trigger_fn(struct k_work *work)
+{
+   dtls_trigger();
+}
+
+static K_WORK_DELAYABLE_DEFINE(dtls_timer_trigger_work, dtls_timer_trigger_fn);
+
+#elif CONFIG_COAP_WAKEUP_SEND_INTERVAL > 0
+static void dtls_wakeup_trigger(void)
+{
+   static unsigned long wakeup_next_sent = 0;
+   unsigned long now = (unsigned long)k_uptime_get();
+
+   if (request_state == NONE) {
+      if (wakeup_next_sent <= now) {
+         dtls_trigger();
+      } else {
+         return;
+      }
+   }
+   wakeup_next_sent = now + ((CONFIG_COAP_WAKEUP_SEND_INTERVAL)*MSEC_PER_SEC);
+}
+#endif
 
 static void dtls_coap_success(void)
 {
@@ -207,6 +245,9 @@ static void dtls_coap_success(void)
       dtls_info("vbat: %u, %u, %u, %u, %u", bat_level[0], bat_level[1], bat_level[2], bat_level[3], bat_level[4]);
       dtls_info("      %u, %u, %u, %u, %u", bat_level[5], bat_level[6], bat_level[7], bat_level[8], bat_level[9]);
    }
+#if CONFIG_COAP_SEND_INTERVAL > 0
+   k_work_schedule(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
+#endif
 }
 
 static void dtls_coap_failure(void)
@@ -227,6 +268,9 @@ static void dtls_coap_failure(void)
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    dtls_info("%u/%ldms/%ldms: failure", lte_connections, time1, time2);
    transmissions[COAP_MAX_RETRANSMISSION + 1]++;
+#if CONFIG_COAP_SEND_INTERVAL > 0
+   k_work_schedule(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
+#endif
 }
 
 static int
@@ -359,14 +403,14 @@ dtls_handle_event(struct dtls_context_t *ctx, session_t *session,
       request_state = NONE;
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
       ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-      modem_set_power_modes(1);
+      modem_set_rai(1);
    } else if (DTLS_EVENT_CONNECT == code) {
       dtls_info("dtls connect ...");
       dtls_connected = 0;
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_SET);
       ui_led_op(LED_COLOR_GREEN, LED_SET);
-      modem_set_power_modes(0);
+      modem_set_rai(0);
    }
    return 0;
 }
@@ -415,7 +459,7 @@ static dtls_handler_t cb = {
     .event = dtls_handle_event,
 };
 
-void dtls_lte_connected(enum dtls_lte_connect_type type, int connected)
+static void dtls_lte_connected(enum dtls_lte_connect_type type, bool connected)
 {
    if (type == LTE_CONNECT_NETWORK) {
       network_connected = connected;
@@ -507,44 +551,6 @@ static int dtls_init_destination(session_t *destination)
    return 0;
 }
 
-static void dtls_trigger(void)
-{
-   if (request_state == NONE) {
-      k_sem_give(&dtls_trigger_msg);
-   }
-}
-
-static void dtls_manual_trigger(void)
-{
-   ui_led_op(LED_COLOR_RED, LED_CLEAR);
-   k_sem_give(&dtls_trigger_search);
-   dtls_trigger();
-}
-
-static void dtls_wakeup_trigger(void)
-{
-   static unsigned long wakeup_next_sent = 0;
-   unsigned long now = (unsigned long)k_uptime_get();
-
-   if (request_state == NONE) {
-      if (wakeup_next_sent <= now) {
-         dtls_trigger();
-      } else {
-         return;
-      }
-   }
-   wakeup_next_sent = now + ((NETWORK_WAKEUP_SEND_INTERVAL_S)*MSEC_PER_SEC);
-}
-
-#if CONFIG_COAP_SEND_INTERVAL > 0
-static void dtls_timer_trigger_fn(struct k_work *work)
-{
-   dtls_trigger();
-}
-
-static K_WORK_DELAYABLE_DEFINE(dtls_timer_trigger_work, dtls_timer_trigger_fn);
-#endif
-
 #ifdef CONFIG_ADXL362_MOTION_DETECTION
 static void accelerometer_handler(const struct accelerometer_evt *const evt)
 {
@@ -584,7 +590,7 @@ int dtls_loop(void)
       reboot();
    }
 
-   modem_set_power_modes(0);
+   modem_set_rai(0);
    imei_len = modem_at_cmd("AT+CGSN", imei, sizeof(imei), NULL);
    dtls_credentials_init_psk(0 < imei_len ? imei : NULL);
    dtls_credentials_init_handler(&cb);
@@ -748,7 +754,11 @@ void main(void)
 
    ui_init(dtls_manual_trigger);
 
-   modem_init(dtls_wakeup_trigger);
+#if CONFIG_COAP_WAKEUP_SEND_INTERVAL > 0 && CONFIG_COAP_SEND_INTERVAL == 0
+   modem_init(dtls_wakeup_trigger, dtls_lte_connected);
+#else
+   modem_init(NULL, dtls_lte_connected);
+#endif
 
 #ifdef CONFIG_LOCATION_ENABLE
 #ifdef CONFIG_LOCATION_ENABLE_TRIGGER_MESSAGE

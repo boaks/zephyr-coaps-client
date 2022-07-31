@@ -14,28 +14,51 @@
 menu "CoAP tinyDTLS Settings"
 
 config COAP_SERVER_HOSTNAME
-	string "CoAP server hostname"
+	string "CoAP server hostname."
 	default "californium.eclipseprojects.io"
 
 config COAP_SERVER_ADDRESS_STATIC
-	string "CoAP server IP address (alternative, if DNS is not available)"
+	string "CoAP server IP address (alternative, if DNS is not available)."
 	default "20.47.97.44"
 
 config COAP_SERVER_PORT
-	int "CoAP server port number (DTLS)"
+	int "CoAP server port number (DTLS)."
 	default "5684"
 
 config DTLS_PSK_IDENTITY
-	string "CoAP/DTLS PSK identity"
+	string "CoAP/DTLS PSK identity."
 	default "cali.${imei}"
+	help
+	   "${imei}" is replaced by the modem's IMEI.
+	   This only work with Californium's PlugTestServer,
+	   which implements "wildcard" identities to
+	   make it easier to connect.
+	   Don't use this on production or other security
+	   relevant use-cases. 
 
 config DTLS_PSK_SECRET
-	string "CoAP/DTLS PSK secret"
+	string "CoAP/DTLS PSK secret."
 	default ".fornium"
+	help
+	   This only work with Californium's PlugTestServer,
+	   and the "cali.*" wildcard identity.
+	   Don't use this on production or other security
+	   relevant use-cases. 
 
 config COAP_SEND_INTERVAL
 	int "CoAP send interval in seconds. 0 disable"
 	default 0
+
+config COAP_WAKEUP_SEND_INTERVAL
+	int "Wakeup CoAP send interval in seconds. 0 disable."
+	default 3500
+	depends on UDP_PSM_ENABLE
+	help
+	   Using PSM (Power Sleeping Mode) the modem frequently wakesup to refresh
+	   the network registration. This interval is used to exchange messages
+	   piggybacked on such an wakeup. The interval doesn't trigger such a wakeup,
+	   so it's usully chosen a little smaller than the PSM interval.
+	   Ignored, if COAP_SEND_INTERVAL is enabled.
 
 config COAP_RESOURCE
 	string "CoAP resource - defaults to Californium's echo resource"
@@ -49,6 +72,9 @@ config COAP_QUERY_KEEP_ENABLE
 	bool "Enable CoAP query - keep"
 	default y
 
+endmenu
+
+menu "Modem Settings"
 config UDP_PSM_ENABLE
 	bool "Enable LTE Power Saving Mode"
 	default y
@@ -58,7 +84,7 @@ config UDP_RAI_ENABLE
 	default y
 
 config MODEM_SAVE_CONFIG_THRESHOLD
-	int "Modem save configuration threshold in seconds. Default 60s"
+	int "Modem save configuration threshold in seconds. 0s, don't save, 1s always save. Default 60s"
 	default 60
 	help
 	   If the initial network connect takes more than the threshold,

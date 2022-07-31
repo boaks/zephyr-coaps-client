@@ -87,3 +87,31 @@ if (COPY_PREBUILDS)
    file(COPY_FILE ${CMAKE_BINARY_DIR}/zephyr/merged.hex ${CMAKE_BINARY_DIR}/../prebuild/${BOARD}_full.hex)
    file(COPY_FILE ${CMAKE_BINARY_DIR}/zephyr/app_signed.hex ${CMAKE_BINARY_DIR}/../prebuild/${BOARD}_app_signed.hex)
 endif()
+
+if (CONFIG_COAP_SEND_INTERVAL)
+set(BUILD_SUMUP1 "Build with send interval ${CONFIG_COAP_SEND_INTERVAL} s.")
+elseif (CONFIG_COAP_WAKEUP_SEND_INTERVAL)
+set(BUILD_SUMUP1 "Build with wakeup send interval ${CONFIG_COAP_WAKEUP_SEND_INTERVAL} s.")
+else()
+set(BUILD_SUMUP1 "Build without send interval.")
+endif()
+
+if (CONFIG_LOCATION_ENABLE)
+set(BUILD_SUMUP2 "Build with GNSS.")
+else()
+set(BUILD_SUMUP2 "Build without GNSS.")
+endif()
+
+if (CONFIG_BME680)
+set(BUILD_SUMUP3 "Build with BME680.")
+elseif (CONFIG_BME680_BSEC)
+set(BUILD_SUMUP3 "Build with BME680 BSEC.")
+else()
+set(BUILD_SUMUP3 "Build without BME680.")
+endif()
+
+add_custom_command(TARGET app POST_BUILD
+                   COMMAND echo "${BUILD_SUMUP1}"
+                   COMMAND echo "${BUILD_SUMUP2}"
+                   COMMAND echo "${BUILD_SUMUP3}"
+                   )
