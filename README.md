@@ -2,6 +2,10 @@
 
 # Zephyr - Coaps Demo Client with Eclipse/TinyDtls
 
+## Reliable - Efficient - Encrypted
+
+Version 0.4 - August 2022
+
 This [zephyr](https://www.zephyrproject.org/) client demonstrates to use coaps ([CoAP](https://tools.ietf.org/html/rfc7252) over [DTLS 1.2](https://tools.ietf.org/html/rfc6347)) with the [Eclipse/TinyDtls Library](https://github.com/eclipse/tinydtls). In combination with [Eclipse/Californium](https://github.com/eclipse/californium) as Cloud-Server, it enables a device to use [DTLS 1.2 Connection ID](https://tools.ietf.org/html/rfc9146), which obsolete the commonly used frequently DTLS handshakes and eliminates that expensive overhead.
 Reducing the messages exchange mostly down to two ip-messages (one request, one response), it enables your device for
 
@@ -15,7 +19,7 @@ In combination, CoAP / DTLS CID and LTE-M/NB-IoT, enables to build mobile applic
 - zero-install and 
 - high cost-efficiency.
 
-The demo client itself is in early development stage. In "good weather", the `Thingy:91` flies from battery for 4 weeks. In "storm" it may require the be switched off and on again. That should be rare exceptions. With version 0.2 the main cause of longer periods of lost connectivity to the mobile network is fixed.
+The demo client itself is in early development stage. In "good weather", the `Thingy:91` flies from battery for 4 weeks. In "storm" it may require the be switched off and on again. That should be rare exceptions.
 
 The demo client is intended as groundwork for your own ideas. "Out-of-the-box" this application is only useful to easily check, if mobile IoT works at the locations and environment you want to use it. To build products and applications on this protocol stack requires to implement a production client and to adapt the coap-server for your function. The demo targets therefore people, which are already common with [zephyr](https://www.zephyrproject.org/), or, even better, common with the development for the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) itself.
 Without that knowledge it will be hard an time consuming to make benefit out of this demo.
@@ -146,13 +150,15 @@ The demo client exchanges encrypted messages with the coap-server. These message
 Demo message:
 
 ```
-15641 s, Thingy:91 v0.2, 0*43, 1*0, 2*0, 3*0, failures 0
-4160 mV 95% charging (V)
-RSSI: 255,255
-Network: CAT-M1
+124 s, Thingy:91 v0.4, 0*3, 1*0, 2*0, 3*0, failures 0
+4156 mV 94% battery
+RSSI q,p: 17,30
+Network: CAT-M1 5,26201(*)
+PSM: TAU 3600 [s], Act 16 [s], Delays 0, Released: 11189 ms
+Stat: 1,1,280,159
 ```
 
-It starts with the up-time in seconds in the first line, followed by the label "Thingy:91" and a sent statistic. "`0*43`" := 43 exchanges without retransmission, "`1*0`" := no (0) exchanges with 1 retransmission. The current exchange is not included in this statistic. The second line contains the battery status and the third the receiving signal strength. The next line contains the network mode (CAT-M1 or NB-IoT).
+It starts with the up-time in seconds in the first line, followed by the label "Thingy:91" and a sent statistic. "`0*43`" := 43 exchanges without retransmission, "`1*0`" := no (0) exchanges with 1 retransmission. The current exchange is not included in this statistic. The second line contains the battery status and the third the receiving signal strength. The next line contains the network mode (CAT-M1 or NB-IoT) and the provider. Followed by a line with the PSM setup and finally a transmission statistic (kB transmitted, kB received, max. packet size, avg. packet size).
 
 The demo uses the "echo" resource of the plugtest-server, therefore the response contains just the same message.
 

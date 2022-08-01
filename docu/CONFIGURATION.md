@@ -4,6 +4,20 @@
 
 # Configuration
 
+The demo client comes with some configuration values, which are setup using:
+
+```
+west build -b thingy91_nrf9160_ns -t menuconfig
+```
+
+for the console variant, and
+
+```
+west build -b thingy91_nrf9160_ns -t guiconfig
+```
+
+for the GUI variant.
+
 ## Basic
 
 - **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox at `californium.eclipseprojects.io`.
@@ -18,6 +32,8 @@
 
 - **COAP_SEND_INTERVAL**, coap send interval in seconds. Used, if messages are send frequently. Default 0s, disabled.
 
+- **COAP_WAKEUP_SEND_INTERVAL**, coap wakeup send interval in seconds. Used, if messages are send piggybacked with PSM wakeups. Default 0s, disabled.
+
 ## Extensions
 
 ### GPS/GNSS (experimental)
@@ -27,6 +43,8 @@
 - **LOCATION_ENABLE_CONTINUES_MODE**, enable to continously receive GPS/GNSS signals. With that the Thingy:91 receives the best positions but also requires the most energy (50mA). Default enabled.
 
 - **LOCATION_ENABLE_TRIGGER_MESSAGE**, send a message, when a position is reported by GPS/GNSS. The not continues mode is still experimental. It the most cases, it stops working after something as 30 minutes and requires also 30 minutes to wokr again. So it still requires a lot of work. Default disabled.
+
+**NOTE:** Using GPS/GNSS without assistance data requires to place the `Thingy:91` with free sight to the sky to start. Once the first statelites are detected and the UTC time is available, the `Thingy:91` is able to optimize the GNSS receiving and continues to work also with less signals. The very best results are achieved, when the GPS/GNSS is mostly on. That requires unfortunately 50mA and so works only for about 20h without charging. 
 
 ### Sensors
 
@@ -49,4 +67,4 @@ and then enable
 `Extra Functions > BME680 BSEC`.
 instead.
 
-**NOTE:** the BME680 is mounted inside the Thingy:91 and is therefore only weakly coupled to the environment. On battery charging, the temperature gets up to 30°. If you want more realisitc values, please remove the board from the case.
+**NOTE:** the BME680 is mounted inside the Thingy:91 and is therefore only weakly coupled with the environment. On battery charging, the temperature gets up to 30°. If you want more realistic values, please remove the board from the case.
