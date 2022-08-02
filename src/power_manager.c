@@ -101,6 +101,20 @@ int power_manager_init(void)
    }
 }
 
+int power_manager_voltage(uint16_t *voltage){
+   if (i2c_dev) {
+      if (voltage) {
+         power_manager_read_voltage(voltage);
+      }
+      LOG_DBG("%umV", *voltage);
+      return 0;
+   } else {
+      LOG_WRN("Failed to read battery level!");
+   }
+   return -1;
+
+}
+
 int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status)
 {
    if (i2c_dev) {
@@ -113,6 +127,7 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
       if (status) {
          power_manager_read_status(status);
       }
+      LOG_DBG("%u%% %umV %d", *level, *voltage, *status);
       return 0;
    } else {
       LOG_WRN("Failed to read battery level!");

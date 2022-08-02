@@ -56,11 +56,11 @@ static void environment_init_temperature_history(void)
    k_mutex_unlock(&environment_mutex);
 }
 
-static void environment_add_temperature_history(double value)
+static void environment_add_temperature_history(double value, bool force)
 {
    uint8_t index;
    int64_t now = k_uptime_get();
-   if ((now - s_temperature_next) >= 0) {
+   if (force || (now - s_temperature_next) >= 0) {
       if (s_temperature_size < ENVIRONMENT_HISTORY_SIZE) {
          ++s_temperature_size;
       }
@@ -142,7 +142,7 @@ static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_a
    environment_values.gas = gas;
    environment_values.air_quality = iaq;
 
-   environment_add_temperature_history(environment_values.temperature);
+   environment_add_temperature_history(environment_values.temperature, false);
    k_mutex_unlock(&environment_mutex);
 }
 
@@ -309,7 +309,7 @@ static void environment_history_work_fn(struct k_work *work)
    environment_sensor_fetch(true);
    if (environment_get_temperature(&temperature) == 0) {
       k_mutex_lock(&environment_mutex, K_FOREVER);
-      environment_add_temperature_history(temperature);
+      environment_add_temperature_history(temperature, true);
       k_mutex_unlock(&environment_mutex);
    }
    k_work_schedule(&environment_history_work, K_SECONDS(ENVIRONMENT_HISTORY_INTERVAL));

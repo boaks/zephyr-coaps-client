@@ -72,6 +72,13 @@ config COAP_QUERY_KEEP_ENABLE
 	bool "Enable CoAP query - keep"
 	default y
 
+config COAP_WAIT_ON_POWERMANAGER
+	bool "Enable CoAP to wait for power-manager before sending"
+	default n
+	help
+	   On startup, the power manager takes up to 30s to get the first 
+	   battery values. Delay exchanging application message until that.
+
 endmenu
 
 menu "Modem Settings"
@@ -217,6 +224,12 @@ config BME680_SAMPLE_INTERVAL_S
 endif # BME680
 
 endif # SENSOR
+
+config SHT21
+	bool "SHT21 external temperature sensor"
+	depends on I2C && !BME680 && !BME680_BSEC
+	help
+	  Use external SHT21 for temperature. 
 
 endmenu
 

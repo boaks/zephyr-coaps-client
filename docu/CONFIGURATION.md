@@ -34,6 +34,8 @@ for the GUI variant.
 
 - **COAP_WAKEUP_SEND_INTERVAL**, coap wakeup send interval in seconds. Used, if messages are send piggybacked with PSM wakeups. Default 0s, disabled.
 
+- **COAP_WAIT_ON_POWERMANAGER**, coap waits for the power-manager to start exchanging application data. Takes up to 30 s and delays the first exchange. Default disabled.
+
 ## Extensions
 
 ### GPS/GNSS (experimental)

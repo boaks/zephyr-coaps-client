@@ -448,7 +448,6 @@ int coap_client_send_post(struct dtls_context_t *ctx, session_t *dst)
 
 int coap_client_init(void)
 {
-   power_manager_init();
    coap_current_token = sys_rand32_get();
    return 0;
 }

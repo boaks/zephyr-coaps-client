@@ -14,7 +14,7 @@
 #ifndef ENVIRONMENT_SENSOR_H
 #define ENVIRONMENT_SENSOR_H
 
-#if (defined CONFIG_BME680_BSEC) || (defined CONFIG_BME680)
+#if (defined CONFIG_BME680_BSEC) || (defined CONFIG_BME680) || (defined CONFIG_SHT21)
 
 #define ENVIRONMENT_SENSOR
 
@@ -37,6 +37,6 @@ int environment_get_iaq(int32_t *value);
 
 int environment_get_temperature_history(double *values, uint8_t size);
 
-#endif /* CONFIG_BME680_BSEC || CONFIG_BME680 */
+#endif /* CONFIG_BME680_BSEC || CONFIG_BME680 || CONFIG_SHT21 */
 
 #endif /* ENVIRONMENT_SENSOR_H */

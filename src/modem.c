@@ -494,22 +494,24 @@ int modem_start(const k_timeout_t timeout)
       time = k_uptime_get() - time;
       if (!err) {
          LOG_INF("LTE connected in %ld [ms]", (long)time);
-      }
+
 #if CONFIG_MODEM_SAVE_CONFIG_THRESHOLD > 0
 #if CONFIG_MODEM_SAVE_CONFIG_THRESHOLD == 1
-      if (1) {
+         if (1) {
 #else
-      if (time > CONFIG_MODEM_SAVE_CONFIG_THRESHOLD * MSEC_PER_SEC) {
+         if (time > CONFIG_MODEM_SAVE_CONFIG_THRESHOLD * MSEC_PER_SEC) {
 #endif
-         LOG_INF("Modem saving ...");
-         lte_lc_power_off();
-         lte_lc_normal();
-         LOG_INF("Modem saved.");
-         err = modem_connection_wait(timeout);
-      } else {
-         LOG_INF("Modem not saved.");
+            LOG_INF("Modem saving ...");
+            lte_lc_power_off();
+            lte_lc_normal();
+            LOG_INF("Modem saved.");
+            err = modem_connection_wait(timeout);
+         } else {
+            LOG_INF("Modem not saved.");
+         }
+#endif
       }
-#endif
+
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
    }

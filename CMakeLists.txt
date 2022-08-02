@@ -32,6 +32,8 @@ target_sources_ifdef(CONFIG_ADXL362_MOTION_DETECTION app PRIVATE src/acceleromet
 
 target_sources_ifdef(CONFIG_BME680 app PRIVATE src/environment_sensor.c)
 
+target_sources_ifdef(CONFIG_SHT21 app PRIVATE src/environment_sht21.c)
+
 if (CONFIG_BME680_BSEC)
         set(bsec_version "BSEC_1.4.8.0_Generic_Release_updated_v3")
         set(bsec_dir "${ZEPHYR_NRF_MODULE_DIR}/ext/${bsec_version}")
@@ -82,7 +84,11 @@ zephyr_library_link_libraries(tinydtls)
 # APP END
 
 if (COPY_PREBUILDS)
-   # enable west build -b ... -- -DCOPY_PREBUILDS=On
+   # Enable west build -b ... -- -DCOPY_PREBUILDS=On
+   # Copies the .hex files before the build! 
+   # Therefore build it fist without, 
+   # and a second time with -DCOPY_PREBUILDS=On
+
    message(NOTICE "copy prebuild binaries into ${CMAKE_BINARY_DIR}/../prebuild")
    file(COPY_FILE ${CMAKE_BINARY_DIR}/zephyr/merged.hex ${CMAKE_BINARY_DIR}/../prebuild/${BOARD}_full.hex)
    file(COPY_FILE ${CMAKE_BINARY_DIR}/zephyr/app_signed.hex ${CMAKE_BINARY_DIR}/../prebuild/${BOARD}_app_signed.hex)
@@ -106,12 +112,21 @@ if (CONFIG_BME680)
 set(BUILD_SUMUP3 "Build with BME680.")
 elseif (CONFIG_BME680_BSEC)
 set(BUILD_SUMUP3 "Build with BME680 BSEC.")
+elseif (CONFIG_SHT21)
+set(BUILD_SUMUP3 "Build with SHT21.")
 else()
 set(BUILD_SUMUP3 "Build without BME680.")
+endif()
+
+if (CONFIG_COAP_WAIT_ON_POWERMANAGER)
+set(BUILD_SUMUP4 "Build with waiting for power-manager.")
+else()
+set(BUILD_SUMUP4 "Build without waiting for power-manager.")
 endif()
 
 add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP1}"
                    COMMAND echo "${BUILD_SUMUP2}"
                    COMMAND echo "${BUILD_SUMUP3}"
+                   COMMAND echo "${BUILD_SUMUP4}"
                    )

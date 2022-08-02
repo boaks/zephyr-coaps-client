@@ -82,7 +82,7 @@ static int timeout = 0;
 #define RTT_INTERVAL 2000
 static unsigned int rtts[RTT_SLOTS + 2] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20};
 
-K_SEM_DEFINE(dtls_trigger_msg, 1, 1);
+K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
 K_SEM_DEFINE(dtls_trigger_search, 0, 1);
 
 static void reboot()
@@ -575,6 +575,10 @@ int dtls_loop(void)
    session_t dst;
    int loops = 0;
    long time;
+   
+#ifdef CONFIG_COAP_WAIT_ON_POWERMANAGER
+   uint16_t battery_voltage = 0xffff;
+#endif
 
 #ifdef CONFIG_LOCATION_ENABLE
    bool location_init = true;
@@ -655,6 +659,18 @@ int dtls_loop(void)
          io_timeout.tv_usec = 0;
          result = select(fd + 1, &rfds, &wfds, 0, &io_timeout);
       } else {
+#ifdef CONFIG_COAP_WAIT_ON_POWERMANAGER
+         if (0xffff == battery_voltage || 0 == battery_voltage) {
+            /* wait until the power manager starts to report the battery voltage */
+            if (!power_manager_voltage(&battery_voltage)) {
+               if (0 == battery_voltage || 0xffff == battery_voltage) {
+                  k_sleep(K_MSEC(200));
+                  continue;
+               }
+               LOG_INF("Power-manager ready: %umV", battery_voltage);
+            }
+         }
+#endif
          result = 0;
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
 #if CONFIG_COAP_SEND_INTERVAL > 0
@@ -759,6 +775,8 @@ void main(void)
 #else
    modem_init(NULL, dtls_lte_connected);
 #endif
+
+   power_manager_init();
 
 #ifdef CONFIG_LOCATION_ENABLE
 #ifdef CONFIG_LOCATION_ENABLE_TRIGGER_MESSAGE
