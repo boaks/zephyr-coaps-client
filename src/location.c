@@ -20,7 +20,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-#include "dtls_client.h"
 #include "location.h"
 #include "ui.h"
 

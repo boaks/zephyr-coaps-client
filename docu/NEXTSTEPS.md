@@ -28,9 +28,9 @@ This is usually the easier part. It requires that you are common enough with [ze
 
 # Adapting the Server
 
-Anyway, in many cases, it's also required to adapt the server. While this adaption itself isn't that hard, the pain comes with running an own server.
+In many cases, it's also required to adapt the server. While this adaption itself isn't that hard, the pain comes with running an own server.
 
-Californium's sandbox runs the [plugtest-server](https://github.com/eclipse/californium/tree/main/demo-apps/cf-plugtest-server)
+Californium's sandbox runs the [cf-plugtest-server](https://github.com/eclipse/californium/tree/main/demo-apps/cf-plugtest-server). For your own setup a [cf-cloud-demo-server](https://github.com/boaks/californium/tree/add_cloud_demo_server/demo-apps/cf-cloud-demo-server) is in preparation. It comes with configured `DTLS graceful restart` and a simple integrated HTTPs server to read the last posted data of your devices. This cloud-demo-server enables to add your own resources, see
 
 [server - add a resource](https://github.com/eclipse/californium/tree/main/californium-core#server---add-a-resource)
 

@@ -489,6 +489,8 @@ int modem_start(const k_timeout_t timeout)
 
    err = modem_connect();
    if (!err) {
+      char buf[64];
+
       time = k_uptime_get();
       err = modem_connection_wait(timeout);
       time = k_uptime_get() - time;
@@ -514,6 +516,10 @@ int modem_start(const k_timeout_t timeout)
 
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
+      err = modem_at_cmd("AT%%XICCID", buf, sizeof(buf), "%XICCID: ");
+      if (err > 0) {
+         LOG_INF("xiccid: %s", buf);
+      }
    }
    return err;
 }
