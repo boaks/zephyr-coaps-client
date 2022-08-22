@@ -299,7 +299,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
             if (delayed) {
                lte_inc_psm_delays();
             }
-            LOG_INF("LTE modem sleeps after %lld ms idle%s", time, delayed ? ", delaye" : "");
+            LOG_INF("LTE modem sleeps after %lld ms idle%s", time, delayed ? ", delayed" : "");
          } else {
             LOG_INF("LTE modem sleeps");
          }

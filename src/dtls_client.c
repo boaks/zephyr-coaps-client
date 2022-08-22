@@ -49,7 +49,8 @@ typedef enum {
    SEND,
    RESEND,
    RECEIVE,
-   WAIT_RESPONSE
+   WAIT_RESPONSE,
+   SEND_ACK
 } request_state_t;
 
 static volatile int network_connected = 0;
@@ -155,6 +156,7 @@ static void reopen_socket(struct dtls_context_t *ctx)
    }
    modem_set_rai(1);
 }
+
 static void dtls_trigger(void)
 {
    if (request_state == NONE) {
@@ -170,12 +172,19 @@ static void dtls_manual_trigger(void)
 }
 
 #if CONFIG_COAP_SEND_INTERVAL > 0
-static void dtls_timer_trigger_fn(struct k_work *work)
-{
-   dtls_trigger();
-}
+
+static void dtls_timer_trigger_fn(struct k_work *work);
 
 static K_WORK_DELAYABLE_DEFINE(dtls_timer_trigger_work, dtls_timer_trigger_fn);
+
+static void dtls_timer_trigger_fn(struct k_work *work)
+{
+   if (request_state == NONE) {
+      dtls_trigger();
+   } else {
+      k_work_schedule(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
+   }
+}
 
 #elif CONFIG_COAP_WAKEUP_SEND_INTERVAL > 0
 static void dtls_wakeup_trigger(void)
@@ -304,6 +313,12 @@ read_from_peer(struct dtls_context_t *ctx,
          if (NONE != request_state) {
             response_time = (unsigned long)k_uptime_get();
             dtls_coap_success();
+         }
+         break;
+      case PARSE_CON_RESPONSE:
+         if (NONE != request_state) {
+            response_time = (unsigned long)k_uptime_get();
+            request_state = SEND_ACK;
          }
          break;
    }
@@ -575,7 +590,7 @@ int dtls_loop(void)
    session_t dst;
    int loops = 0;
    long time;
-   
+
 #ifdef CONFIG_COAP_WAIT_ON_POWERMANAGER
    uint16_t battery_voltage = 0xffff;
 #endif
@@ -618,7 +633,7 @@ int dtls_loop(void)
    while (1) {
       if (!network_connected) {
          reopen_socket(dtls_context);
-         network_connected = 1;
+         continue;
       }
 
 #ifdef CONFIG_LOCATION_ENABLE
@@ -681,7 +696,7 @@ int dtls_loop(void)
             transmission = 0;
             timeout = COAP_ACK_TIMEOUT;
             if (dtls_connected) {
-               if (coap_client_prepare_post() >= 0 && coap_client_send_post(dtls_context, &dst) >= 0) {
+               if (coap_client_prepare_post() >= 0 && coap_client_send_message(dtls_context, &dst) >= 0) {
                   ui_led_op(LED_COLOR_GREEN, LED_SET);
                } else {
                   dtls_coap_failure();
@@ -731,7 +746,7 @@ int dtls_loop(void)
                   request_state = RESEND;
                   if (dtls_connected) {
                      dtls_info("CoAP request resend, timeout %d", timeout);
-                     result = coap_client_send_post(dtls_context, &dst);
+                     result = coap_client_send_message(dtls_context, &dst);
                   } else {
                      dtls_info("hs resend, timeout %d", timeout);
                      dtls_check_retransmit(dtls_context, NULL);
@@ -754,6 +769,14 @@ int dtls_loop(void)
             /* FIXME */;
          else if (FD_ISSET(fd, &rfds)) {
             dtls_handle_read(dtls_context);
+            if (request_state == SEND_ACK) {
+               unsigned long temp_time = connect_time;
+               result = coap_client_send_message(dtls_context, &dst);
+               connect_time = temp_time;
+               request_state = NONE;
+               dtls_coap_success();
+               dtls_info("CoAP ACK sent.");
+            }
          }
       }
    }
@@ -774,6 +797,7 @@ void main(void)
    modem_init(dtls_wakeup_trigger, dtls_lte_connected);
 #else
    modem_init(NULL, dtls_lte_connected);
+   dtls_trigger();
 #endif
 
    power_manager_init();
@@ -802,5 +826,6 @@ void main(void)
    if (modem_start(K_SECONDS(NETWORK_TIMEOUT_S)) != 0) {
       reconnect();
    }
+
    dtls_loop();
 }
