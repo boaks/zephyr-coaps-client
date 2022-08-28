@@ -26,7 +26,7 @@ static const float temperature_offset = (CONFIG_BME680_TEMPERATURE_OFFSET / 100.
 static K_MUTEX_DEFINE(environment_mutex);
 static int64_t s_temperature_next = 0;
 static uint8_t s_temperature_size = 0;
-static double s_temperature_history[ENVIRONMENT_HISTORY_SIZE];
+static double s_temperature_history[CONFIG_ENVIRONMENT_HISTORY_SIZE];
 
 int environment_get_temperature_history(double *values, uint8_t size)
 {
@@ -50,7 +50,7 @@ static void environment_init_temperature_history(void)
    k_mutex_lock(&environment_mutex, K_FOREVER);
    s_temperature_size = 0;
    s_temperature_next = 0;
-   for (index = 0; index < ENVIRONMENT_HISTORY_SIZE; ++index) {
+   for (index = 0; index < CONFIG_ENVIRONMENT_HISTORY_SIZE; ++index) {
       s_temperature_history[index] = 0.0;
    }
    k_mutex_unlock(&environment_mutex);
@@ -61,14 +61,14 @@ static void environment_add_temperature_history(double value, bool force)
    uint8_t index;
    int64_t now = k_uptime_get();
    if (force || (now - s_temperature_next) >= 0) {
-      if (s_temperature_size < ENVIRONMENT_HISTORY_SIZE) {
+      if (s_temperature_size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
          ++s_temperature_size;
       }
       for (index = s_temperature_size; index > 0; --index) {
          s_temperature_history[index] = s_temperature_history[index - 1];
       }
       s_temperature_history[0] = value;
-      s_temperature_next = now + ENVIRONMENT_HISTORY_INTERVAL * MSEC_PER_SEC;
+      s_temperature_next = now + CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S * MSEC_PER_SEC;
    }
 }
 
@@ -312,7 +312,7 @@ static void environment_history_work_fn(struct k_work *work)
       environment_add_temperature_history(temperature, true);
       k_mutex_unlock(&environment_mutex);
    }
-   k_work_schedule(&environment_history_work, K_SECONDS(ENVIRONMENT_HISTORY_INTERVAL));
+   k_work_schedule(&environment_history_work, K_SECONDS(CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S));
 }
 
 static int environment_sensor_init(const struct device *dev)

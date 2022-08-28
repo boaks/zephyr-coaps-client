@@ -127,7 +127,7 @@ int coap_client_parse_data(uint8_t *data, size_t len)
 }
 
 #ifdef ENVIRONMENT_SENSOR
-static double s_temperatures[ENVIRONMENT_HISTORY_SIZE];
+static double s_temperatures[CONFIG_ENVIRONMENT_HISTORY_SIZE];
 #endif
 
 int coap_client_prepare_post(void)
@@ -338,7 +338,7 @@ int coap_client_prepare_post(void)
 #endif
 
 #ifdef ENVIRONMENT_SENSOR
-   int_value = environment_get_temperature_history(s_temperatures, ENVIRONMENT_HISTORY_SIZE);
+   int_value = environment_get_temperature_history(s_temperatures, CONFIG_ENVIRONMENT_HISTORY_SIZE);
    if (int_value > 0) {
       int history_index;
       index += snprintf(buf + index, sizeof(buf) - index, "\n!");

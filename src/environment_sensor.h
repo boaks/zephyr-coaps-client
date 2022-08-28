@@ -14,14 +14,16 @@
 #ifndef ENVIRONMENT_SENSOR_H
 #define ENVIRONMENT_SENSOR_H
 
-#if (defined CONFIG_BME680_BSEC) || (defined CONFIG_BME680) || (defined CONFIG_SHT21)
+#if (defined CONFIG_BME680_BSEC) || (defined CONFIG_BME680) || defined(CONFIG_SHT3XD) || (defined CONFIG_SHT21)
 
 #define ENVIRONMENT_SENSOR
 
 #include <stdbool.h>
 
-#define ENVIRONMENT_HISTORY_SIZE     10
-#define ENVIRONMENT_HISTORY_INTERVAL 30
+// requires:
+// #define CONFIG_ENVIRONMENT_HISTORY_SIZE 20
+// #define CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S 30
+// defined in Kconfig
 
 int environment_init(void);
 

@@ -237,6 +237,18 @@ config SHT21
 
 endmenu
 
+if BME680_BSEC || BME680 || SHT21 || SHT3XD
+
+config ENVIRONMENT_HISTORY_INTERVAL_S
+	int "Environment history interval in seconds"
+	default 30
+
+config ENVIRONMENT_HISTORY_SIZE
+	int "Environment history size"
+	default 20
+
+endif
+
 # Logging
 module = COAP_CLIENT
 module-str = CoAP Client

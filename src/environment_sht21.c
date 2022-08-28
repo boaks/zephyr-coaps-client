@@ -22,7 +22,7 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 static K_MUTEX_DEFINE(environment_mutex);
 static uint8_t s_temperature_size = 0;
-static double s_temperature_history[ENVIRONMENT_HISTORY_SIZE];
+static double s_temperature_history[CONFIG_ENVIRONMENT_HISTORY_SIZE];
 
 static const struct device *sht21_i2c;
 
@@ -123,15 +123,20 @@ static int read_temperature(const struct device *i2c_dev, const uint16_t addr, c
       if (hold) {
          err = read_reg(i2c_dev, addr, SHT21_CMD_READ_TEMPERATURE_HOLD, temperature, sizeof(temperature));
       } else {
-         int waits = 3;
+         int waits = 0;
          err = write_cmd(i2c_dev, addr, SHT21_CMD_READ_TEMPERATURE_NO_HOLD);
          if (!err) {
             while (i2c_read(i2c_dev, temperature, sizeof(temperature), addr)) {
-               --waits;
-               if (!waits) {
+               ++waits;
+               LOG_INF("SHT21 i2c error/nack %d. => waiting for temperature", waits);
+               if (waits > 4) {
                   err = -ENODATA;
+                  break;
                }
                k_sleep(K_MSEC(35));
+            }
+            if (!err) {
+               LOG_INF("SHT21 i2c ack => temperature available");
             }
          }
       }
@@ -176,7 +181,7 @@ static void environment_init_temperature_history(void)
    uint8_t index;
    k_mutex_lock(&environment_mutex, K_FOREVER);
    s_temperature_size = 0;
-   for (index = 0; index < ENVIRONMENT_HISTORY_SIZE; ++index) {
+   for (index = 0; index < CONFIG_ENVIRONMENT_HISTORY_SIZE; ++index) {
       s_temperature_history[index] = 0.0;
    }
    k_mutex_unlock(&environment_mutex);
@@ -185,7 +190,7 @@ static void environment_init_temperature_history(void)
 static void environment_add_temperature_history(double value)
 {
    uint8_t index;
-   if (s_temperature_size < ENVIRONMENT_HISTORY_SIZE) {
+   if (s_temperature_size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
       ++s_temperature_size;
    }
    for (index = s_temperature_size; index > 0; --index) {
@@ -207,7 +212,7 @@ static void environment_history_work_fn(struct k_work *work)
       environment_add_temperature_history(temperature);
       k_mutex_unlock(&environment_mutex);
    }
-   k_work_schedule(&environment_history_work, K_SECONDS(ENVIRONMENT_HISTORY_INTERVAL));
+   k_work_schedule(&environment_history_work, K_SECONDS(CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S));
 }
 
 int environment_init(void)
@@ -217,13 +222,13 @@ int environment_init(void)
    sht21_i2c = device_get_binding("I2C_2");
    if (sht21_i2c == NULL) {
       LOG_INF("Could not get I2C_2 device\n");
-      return -ENOTSUP;;
+      return -ENOTSUP;
    }
    if (!device_is_ready(sht21_i2c)) {
       LOG_ERR("%s device is not ready", sht21_i2c->name);
       return -ENOTSUP;
    }
-   if (!write_cmd(sht21_i2c, SHT21_I2C_ADDR, SHT21_CMD_RESET)) {
+   if (write_cmd(sht21_i2c, SHT21_I2C_ADDR, SHT21_CMD_RESET)) {
       LOG_ERR("SHT21 reset failed!");
    }
    environment_init_temperature_history();

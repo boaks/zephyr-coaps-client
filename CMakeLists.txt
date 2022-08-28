@@ -34,6 +34,8 @@ target_sources_ifdef(CONFIG_BME680 app PRIVATE src/environment_sensor.c)
 
 target_sources_ifdef(CONFIG_SHT21 app PRIVATE src/environment_sht21.c)
 
+target_sources_ifdef(CONFIG_SHT3XD app PRIVATE src/environment_sht31.c)
+
 if (CONFIG_BME680_BSEC)
         set(bsec_version "BSEC_1.4.8.0_Generic_Release_updated_v3")
         set(bsec_dir "${ZEPHYR_NRF_MODULE_DIR}/ext/${bsec_version}")
@@ -112,10 +114,12 @@ if (CONFIG_BME680)
 set(BUILD_SUMUP3 "Build with BME680.")
 elseif (CONFIG_BME680_BSEC)
 set(BUILD_SUMUP3 "Build with BME680 BSEC.")
+elseif (CONFIG_SHT3XD)
+set(BUILD_SUMUP3 "Build with SHT31.")
 elseif (CONFIG_SHT21)
 set(BUILD_SUMUP3 "Build with SHT21.")
 else()
-set(BUILD_SUMUP3 "Build without BME680.")
+set(BUILD_SUMUP3 "Build without BME680/SHT21/SHT31.")
 endif()
 
 if (CONFIG_COAP_WAIT_ON_POWERMANAGER)
