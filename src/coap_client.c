@@ -391,7 +391,7 @@ int coap_client_prepare_post(void)
             desc = "extremely polluted";
             break;
       }
-      index += snprintf(buf + index, sizeof(buf) - index, "\n%d Q (%s)", int_value, desc);
+      index += snprintf(buf + index, sizeof(buf) - index, "\n!%d Q (%s)", int_value, desc);
       dtls_info("%s", buf + start);
    }
 #endif

@@ -245,7 +245,7 @@ config ENVIRONMENT_HISTORY_INTERVAL_S
 
 config ENVIRONMENT_HISTORY_SIZE
 	int "Environment history size"
-	default 20
+	default 12
 
 endif
 

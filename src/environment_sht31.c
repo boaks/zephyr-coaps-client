@@ -56,7 +56,7 @@ static void environment_add_temperature_history(double value)
    if (s_temperature_size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
       ++s_temperature_size;
    }
-   for (index = s_temperature_size; index > 0; --index) {
+   for (index = s_temperature_size - 1; index > 0; --index) {
       s_temperature_history[index] = s_temperature_history[index - 1];
    }
    s_temperature_history[0] = value;

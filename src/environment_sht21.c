@@ -63,7 +63,7 @@ static double calc_temperature(uint8_t *data)
 
    //-- calculate temperature [°C] --
    // T= -46.85 + 175.72 * ST/2^16
-   return SHT21_TEMPERATURE_OFFSET + SHT21_TEMPERATURE_RANGE * value / 65536;
+   return SHT21_TEMPERATURE_OFFSET + (SHT21_TEMPERATURE_RANGE * value) / 65536;
 }
 
 static int read_memory(const struct device *i2c_dev, uint16_t addr, uint16_t mem_addr,
@@ -119,6 +119,8 @@ static int read_temperature(const struct device *i2c_dev, const uint16_t addr, c
    int err = -ENODATA;
    uint8_t temperature[3];
 
+   LOG_INF("SHT21 reading temparature ...");
+
    for (int count = 0; count < 3; ++count) {
       if (hold) {
          err = read_reg(i2c_dev, addr, SHT21_CMD_READ_TEMPERATURE_HOLD, temperature, sizeof(temperature));
@@ -142,6 +144,9 @@ static int read_temperature(const struct device *i2c_dev, const uint16_t addr, c
       }
       if (err) {
          LOG_INF("SHT21 cmd failure");
+      } else if (temperature[1] & 0x3 != 0) {
+         LOG_INF("SHT21 status bits %02x", temperature[1] & 0x3);
+         err = -ENODATA;
       } else {
          uint8_t crc = calc_crc(temperature, sizeof(uint16_t));
          if (crc == temperature[2]) {
@@ -156,6 +161,7 @@ static int read_temperature(const struct device *i2c_dev, const uint16_t addr, c
       LOG_WRN("SHT21 read failure");
    } else if (value) {
       *value = calc_temperature(temperature);
+      LOG_INF("SHT21 temparature %0.2f", *value);
    }
    return err;
 }
@@ -193,7 +199,7 @@ static void environment_add_temperature_history(double value)
    if (s_temperature_size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
       ++s_temperature_size;
    }
-   for (index = s_temperature_size; index > 0; --index) {
+   for (index = s_temperature_size - 1; index > 0; --index) {
       s_temperature_history[index] = s_temperature_history[index - 1];
    }
    s_temperature_history[0] = value;
