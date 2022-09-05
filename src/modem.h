@@ -54,6 +54,8 @@ int modem_set_rai(int enable);
 
 int modem_set_offline(void);
 
+int modem_set_lte_offline(void);
+
 int modem_set_normal(void);
 
 int modem_power_off(void);

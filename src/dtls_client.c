@@ -114,7 +114,7 @@ static void reconnect()
 
    while (!network_connected) {
       dtls_info("> modem offline (%d minutes)", sleep_minutes);
-      modem_set_offline();
+      modem_set_lte_offline();
       k_sleep(K_MSEC(2000));
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
@@ -193,13 +193,13 @@ static void dtls_wakeup_trigger(void)
    unsigned long now = (unsigned long)k_uptime_get();
 
    if (request_state == NONE) {
-      if (wakeup_next_sent <= now) {
+      if ((now - wakeup_next_sent) > 0) {
          dtls_trigger();
-      } else {
-         return;
+         wakeup_next_sent = now + ((CONFIG_COAP_WAKEUP_SEND_INTERVAL)*MSEC_PER_SEC);
       }
+   } else {
+      dtls_info("Wakeup with request state %d", request_state);
    }
-   wakeup_next_sent = now + ((CONFIG_COAP_WAKEUP_SEND_INTERVAL)*MSEC_PER_SEC);
 }
 #endif
 
@@ -828,4 +828,11 @@ void main(void)
    }
 
    dtls_loop();
+}
+
+void main_(void)
+{
+   modem_power_off();
+   k_sleep(K_MSEC(1000));
+   NRF_REGULATORS->SYSTEMOFF = 1;
 }

@@ -76,6 +76,10 @@ config COAP_QUERY_ACK_ENABLE
 	bool "Enable CoAP query - ack (request separate response)"
 	default n
 
+config COAP_QUERY_SERIES_ENABLE
+	bool "Enable CoAP query - series (keep payload series)"
+	default n
+
 config COAP_WAIT_ON_POWERMANAGER
 	bool "Enable CoAP to wait for power-manager before sending"
 	default n

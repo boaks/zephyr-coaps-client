@@ -457,6 +457,15 @@ int coap_client_prepare_post(void)
       return err;
    }
 #endif
+#ifdef CONFIG_COAP_QUERY_SERIES_ENABLE
+   err = coap_packet_append_option(&request, COAP_OPTION_URI_QUERY,
+                                   (uint8_t *)"series",
+                                   strlen("series"));
+   if (err < 0) {
+      dtls_warn("Failed to encode CoAP URI-QUERY option 'series', %d", err);
+      return err;
+   }
+#endif
    err = coap_packet_append_payload_marker(&request);
    if (err < 0) {
       dtls_warn("Failed to encode CoAP payload-marker, %d", err);

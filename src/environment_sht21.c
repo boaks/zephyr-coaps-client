@@ -144,7 +144,7 @@ static int read_temperature(const struct device *i2c_dev, const uint16_t addr, c
       }
       if (err) {
          LOG_INF("SHT21 cmd failure");
-      } else if (temperature[1] & 0x3 != 0) {
+      } else if ((temperature[1] & 0x2) != 0) {
          LOG_INF("SHT21 status bits %02x", temperature[1] & 0x3);
          err = -ENODATA;
       } else {

@@ -422,8 +422,6 @@ int modem_init(wakeup_callback_handler_t wakeup_handler, connect_callback_handle
       }
       initialized = true;
 
-      s_wakeup_handler = wakeup_handler;
-      s_connect_handler = connect_handler;
       LOG_INF("modem initialized");
    }
    if (initialized) {
@@ -648,6 +646,11 @@ int modem_set_normal(void)
    return lte_lc_normal();
 }
 
+int modem_set_lte_offline(void)
+{
+   return  lte_lc_func_mode_set(LTE_LC_FUNC_MODE_DEACTIVATE_LTE) ? -EFAULT : 0;
+}
+
 int modem_power_off(void)
 {
    return lte_lc_power_off();
@@ -711,6 +714,11 @@ int modem_set_rai(int enable)
 }
 
 int modem_set_offline(void)
+{
+   return 0;
+}
+
+int modem_set_lte_offline(void)
 {
    return 0;
 }
