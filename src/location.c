@@ -107,6 +107,9 @@ static void location_gnss_event_handler(int event)
       case NRF_MODEM_GNSS_EVT_AGPS_REQ:
          LOG_INF("GNSS: A-GPS request!");
          break;
+      default:
+         LOG_INF("GNSS: %d", event);
+         break;
    }
 }
 

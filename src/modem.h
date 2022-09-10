@@ -20,6 +20,26 @@
 
 #include <modem/lte_lc.h>
 
+typedef struct lte_network_info {
+   const char* reg_status;
+   bool registered;
+   int16_t rsrp;
+   uint8_t band;
+   char provider[6];
+   char tac[5];
+   char cell[9];
+} lte_network_info_t;
+
+typedef struct lte_network_statistic {
+   uint32_t searchs;
+   uint32_t searchs_done;
+   uint32_t psm_delays;
+   uint32_t transmitted;
+   uint32_t received;
+   uint16_t max_packet_size;
+   uint16_t average_packet_size;
+} lte_network_statistic_t;
+
 enum dtls_lte_connect_type {
 	LTE_CONNECT_NETWORK,
 	LTE_CONNECT_TRANSMISSION
@@ -36,17 +56,17 @@ const char* modem_get_network_mode(void);
 
 int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx);
 
-int modem_get_psm_status(struct lte_lc_psm_cfg *psm, uint32_t* delays);
+int modem_get_psm_status(struct lte_lc_psm_cfg *psm);
 
-int modem_get_provider(char* buf, size_t len);
+int modem_get_network_info(struct lte_network_info* info);
 
 int modem_get_release_time(void);
 
 void modem_set_transmission_time(void);
 
-int modem_read_provider(char* buf, size_t len);
+int modem_read_network_info(struct lte_network_info* info);
 
-int modem_read_statistic(char *buf, size_t len);
+int modem_read_statistic(struct lte_network_statistic* statistic);
 
 int modem_at_cmd(const char* cmd, char* buf, size_t max_len, const char *skip);
 

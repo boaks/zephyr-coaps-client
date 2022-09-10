@@ -23,54 +23,6 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 static const float temperature_offset = (CONFIG_BME680_TEMPERATURE_OFFSET / 100.0);
 
-static K_MUTEX_DEFINE(environment_mutex);
-static int64_t s_temperature_next = 0;
-static uint8_t s_temperature_size = 0;
-static double s_temperature_history[CONFIG_ENVIRONMENT_HISTORY_SIZE];
-
-int environment_get_temperature_history(double *values, uint8_t size)
-{
-   uint8_t index;
-
-   k_mutex_lock(&environment_mutex, K_FOREVER);
-   if (s_temperature_size < size) {
-      size = s_temperature_size;
-   }
-   for (index = 0; index < size; ++index) {
-      values[index] = s_temperature_history[index];
-   }
-   k_mutex_unlock(&environment_mutex);
-
-   return size;
-}
-
-static void environment_init_temperature_history(void)
-{
-   uint8_t index;
-   k_mutex_lock(&environment_mutex, K_FOREVER);
-   s_temperature_size = 0;
-   s_temperature_next = 0;
-   for (index = 0; index < CONFIG_ENVIRONMENT_HISTORY_SIZE; ++index) {
-      s_temperature_history[index] = 0.0;
-   }
-   k_mutex_unlock(&environment_mutex);
-}
-
-static void environment_add_temperature_history(double value, bool force)
-{
-   uint8_t index;
-   int64_t now = k_uptime_get();
-   if (force || (now - s_temperature_next) >= 0) {
-      if (s_temperature_size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
-         ++s_temperature_size;
-      }
-      for (index = s_temperature_size - 1; index > 0; --index) {
-         s_temperature_history[index] = s_temperature_history[index - 1];
-      }
-      s_temperature_history[0] = value;
-      s_temperature_next = now + CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S * MSEC_PER_SEC;
-   }
-}
 
 #ifdef CONFIG_BME680_BSEC
 
@@ -87,6 +39,8 @@ static void environment_add_temperature_history(double value, bool force)
 #elif defined(CONFIG_BME680_BSEC_SAMPLE_MODE_LOW_POWER)
 #define BSEC_SAMPLE_RATE BSEC_SAMPLE_RATE_LP
 #endif
+
+static K_MUTEX_DEFINE(environment_mutex);
 
 K_THREAD_STACK_DEFINE(thread_stack, CONFIG_BME680_BSEC_THREAD_STACK_SIZE);
 
@@ -134,6 +88,7 @@ static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_a
                                      float gas, bsec_library_return_t bsec_status, float static_iaq,
                                      float co2_equivalent, float breath_voc_equivalent)
 {
+   double temp;
    k_mutex_lock(&environment_mutex, K_FOREVER);
 
    environment_values.temperature = temperature - temperature_offset; /* compensate self heating */
@@ -141,9 +96,10 @@ static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_a
    environment_values.pressure = pressure / 100.0; /* hPA */
    environment_values.gas = gas;
    environment_values.air_quality = iaq;
-
-   environment_add_temperature_history(environment_values.temperature, false);
+   temp = environment_values.temperature;
    k_mutex_unlock(&environment_mutex);
+
+   environment_add_temperature_history(temp, false);
 }
 
 static uint32_t environment_state_load(uint8_t *state_buffer, uint32_t n_buffer)
@@ -308,9 +264,7 @@ static void environment_history_work_fn(struct k_work *work)
 
    environment_sensor_fetch(true);
    if (environment_get_temperature(&temperature) == 0) {
-      k_mutex_lock(&environment_mutex, K_FOREVER);
       environment_add_temperature_history(temperature, true);
-      k_mutex_unlock(&environment_mutex);
    }
    k_work_schedule(&environment_history_work, K_SECONDS(CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S));
 }

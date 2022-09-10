@@ -195,11 +195,11 @@ static void dtls_wakeup_trigger(void)
    if (request_state == NONE) {
       if ((now - wakeup_next_sent) > 0) {
          dtls_trigger();
-         wakeup_next_sent = now + ((CONFIG_COAP_WAKEUP_SEND_INTERVAL)*MSEC_PER_SEC);
       }
    } else {
       dtls_info("Wakeup with request state %d", request_state);
    }
+   wakeup_next_sent = now + ((CONFIG_COAP_WAKEUP_SEND_INTERVAL) * MSEC_PER_SEC);
 }
 #endif
 

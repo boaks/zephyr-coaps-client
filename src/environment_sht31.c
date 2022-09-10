@@ -19,49 +19,6 @@
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
-static K_MUTEX_DEFINE(environment_mutex);
-static uint8_t s_temperature_size = 0;
-static double s_temperature_history[CONFIG_ENVIRONMENT_HISTORY_SIZE];
-
-int environment_get_temperature_history(double *values, uint8_t size)
-{
-   uint8_t index;
-
-   k_mutex_lock(&environment_mutex, K_FOREVER);
-   if (s_temperature_size < size) {
-      size = s_temperature_size;
-   }
-   for (index = 0; index < size; ++index) {
-      values[index] = s_temperature_history[index];
-   }
-   k_mutex_unlock(&environment_mutex);
-
-   return size;
-}
-
-static void environment_init_temperature_history(void)
-{
-   uint8_t index;
-   k_mutex_lock(&environment_mutex, K_FOREVER);
-   s_temperature_size = 0;
-   for (index = 0; index < CONFIG_ENVIRONMENT_HISTORY_SIZE; ++index) {
-      s_temperature_history[index] = 0.0;
-   }
-   k_mutex_unlock(&environment_mutex);
-}
-
-static void environment_add_temperature_history(double value)
-{
-   uint8_t index;
-   if (s_temperature_size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
-      ++s_temperature_size;
-   }
-   for (index = s_temperature_size - 1; index > 0; --index) {
-      s_temperature_history[index] = s_temperature_history[index - 1];
-   }
-   s_temperature_history[0] = value;
-}
-
 struct environment_sensor {
    const enum sensor_channel channel;
    const struct device *dev;
@@ -117,9 +74,7 @@ static void environment_history_work_fn(struct k_work *work)
 
    environment_sensor_fetch(true);
    if (environment_get_temperature(&temperature) == 0) {
-      k_mutex_lock(&environment_mutex, K_FOREVER);
-      environment_add_temperature_history(temperature);
-      k_mutex_unlock(&environment_mutex);
+      environment_add_temperature_history(temperature, true);
    }
    k_work_schedule(&environment_history_work, K_SECONDS(CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S));
 }

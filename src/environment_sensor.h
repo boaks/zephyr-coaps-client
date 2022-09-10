@@ -20,11 +20,6 @@
 
 #include <stdbool.h>
 
-// requires:
-// #define CONFIG_ENVIRONMENT_HISTORY_SIZE 20
-// #define CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S 30
-// defined in Kconfig
-
 int environment_init(void);
 
 int environment_get_temperature(double *value);
@@ -37,8 +32,21 @@ int environment_get_gas(int32_t *value);
 
 int environment_get_iaq(int32_t *value);
 
+#if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
+
 int environment_get_temperature_history(double *values, uint8_t size);
 
-#endif /* CONFIG_BME680_BSEC || CONFIG_BME680 || CONFIG_SHT21 */
+void environment_add_temperature_history(double value, bool force);
+
+void environment_init_temperature_history(void);
+#else
+
+#define environment_get_temperature_history(X,S) -1
+#define environment_add_temperature_history(X,S)
+#define environment_init_temperature_history()
+
+#endif /* CONFIG_ENVIRONMENT_HISTORY_SIZE > 0 */
+
+#endif /* CONFIG_BME680_BSEC || CONFIG_BME680 || CONFIG_SHT3XD || CONFIG_SHT21 */
 
 #endif /* ENVIRONMENT_SENSOR_H */

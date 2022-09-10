@@ -17,6 +17,7 @@
 #include <modem/nrf_modem_lib.h>
 #include <nrf_modem_at.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <zephyr.h>
 
@@ -42,12 +43,21 @@ static const char *volatile network_mode = "init";
 
 static struct lte_lc_edrx_cfg edrx_status = {LTE_LC_LTE_MODE_NONE, 0.0, 0.0};
 static struct lte_lc_psm_cfg psm_status = {0, 0};
-static uint32_t psm_delays = 0;
-static bool plmn_lock = false;
-static char provider[12] = "00,00000(*)";
+static uint32_t lte_searchs = 0;
+static uint32_t lte_searchs_done = 0;
+static uint32_t lte_psm_delays = 0;
+static bool lte_plmn_lock = false;
+static struct lte_network_info network_info;
 static int64_t transmission_time = 0;
 
 static volatile int rai_time = -1;
+
+static void modem_read_network_info_work_fn(struct k_work *work)
+{
+   modem_read_network_info(NULL);
+}
+
+static K_WORK_DEFINE(modem_read_network_info_work, modem_read_network_info_work_fn);
 
 static void lte_connection_set(int connected)
 {
@@ -89,7 +99,18 @@ static void lte_set_psm_status(const struct lte_lc_psm_cfg *psm)
 static void lte_inc_psm_delays(void)
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
-   ++psm_delays;
+   ++lte_psm_delays;
+   k_mutex_unlock(&lte_mutex);
+}
+
+static void lte_inc_searchs(bool done)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (done) {
+      ++lte_searchs_done;
+   } else {
+      ++lte_searchs;
+   }
    k_mutex_unlock(&lte_mutex);
 }
 
@@ -140,42 +161,6 @@ static int modem_strncpy(char *buf, const char *value, char end, int size)
    return index;
 }
 
-static void modem_read_operator_info()
-{
-   int index;
-   char buf[96];
-   char temp[12];
-   const char *cur = buf;
-   char *t = temp;
-
-   if (!modem_at_cmd("AT%%XMONITOR", buf, sizeof(buf), "%XMONITOR: ")) {
-      return;
-   }
-
-   memset(temp, 0, sizeof(temp));
-
-   index = modem_strncpy(t, cur, ',', 3);
-   t += index;
-   cur += index;
-   if (*cur == ',') {
-      *t++ = *cur++;
-      // skip 2 parameter "...", find start of 3th parameter.
-      cur = modem_next_chars(cur, '"', 5);
-      if (cur) {
-         t += modem_strncpy(t, cur, '"', 5);
-      }
-   }
-   if (plmn_lock) {
-      strcpy(t, "(#)");
-   } else {
-      strcpy(t, "(*)");
-   }
-   k_mutex_lock(&lte_mutex, K_FOREVER);
-   strncpy(provider, temp, sizeof(temp));
-   k_mutex_unlock(&lte_mutex);
-   LOG_INF("PLMN: %s", provider);
-}
-
 static void lte_registration(enum lte_lc_nw_reg_status reg_status)
 {
    const char *description = "unknown";
@@ -191,6 +176,7 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
          break;
       case LTE_LC_NW_REG_SEARCHING:
          description = "Searching ...";
+         lte_inc_searchs(false);
          break;
       case LTE_LC_NW_REG_REGISTRATION_DENIED:
          description = "Not Connected - denied";
@@ -214,6 +200,7 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
    if (s_connect_handler) {
       s_connect_handler(LTE_CONNECT_NETWORK, connected);
    }
+   k_work_submit(&modem_read_network_info_work);
    LOG_INF("Network registration status: %s", description);
 }
 
@@ -270,6 +257,9 @@ static void lte_handler(const struct lte_lc_evt *const evt)
                if (s_connect_handler) {
                   s_connect_handler(LTE_CONNECT_TRANSMISSION, true);
                }
+               if (lte_connected_state) {
+                  k_work_submit(&modem_read_network_info_work);
+               }
             } else {
                int64_t time = get_transmission_time();
                idle_time = now;
@@ -288,9 +278,15 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          }
       case LTE_LC_EVT_TAU_PRE_WARNING:
          LOG_INF("LTE Tracking area Update");
+         if (lte_connected_state) {
+            k_work_submit(&modem_read_network_info_work);
+         }
          break;
       case LTE_LC_EVT_CELL_UPDATE:
          LOG_INF("LTE cell changed: Cell ID: %d, Tracking area: %d", evt->cell.id, evt->cell.tac);
+         if (lte_connected_state) {
+            k_work_submit(&modem_read_network_info_work);
+         }
          break;
       case LTE_LC_EVT_MODEM_SLEEP_ENTER:
          if (idle_time) {
@@ -300,6 +296,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
                lte_inc_psm_delays();
             }
             LOG_INF("LTE modem sleeps after %lld ms idle%s", time, delayed ? ", delayed" : "");
+            idle_time = 0;
          } else {
             LOG_INF("LTE modem sleeps");
          }
@@ -319,8 +316,10 @@ static void lte_handler(const struct lte_lc_evt *const evt)
             LOG_INF("LTE modem Reset Loop!");
          } else if (evt->modem_evt == LTE_LC_MODEM_EVT_SEARCH_DONE) {
             LOG_INF("LTE modem search done.");
+            lte_inc_searchs(true);
          } else if (evt->modem_evt == LTE_LC_MODEM_EVT_LIGHT_SEARCH_DONE) {
             LOG_INF("LTE modem light search done.");
+            lte_inc_searchs(true);
          }
          break;
       default:
@@ -476,11 +475,13 @@ int modem_start(const k_timeout_t timeout)
 
 #ifdef CONFIG_LTE_LOCK_PLMN
    LOG_INF("Lock PLMN %s", CONFIG_LTE_LOCK_PLMN_STRING);
-   plmn_lock = true;
+   lte_plmn_lock = true;
 #else
    LOG_INF("All PLMN");
-   plmn_lock = false;
+   lte_plmn_lock = false;
 #endif
+
+   memset(&network_info, 0, sizeof(network_info));
 
    ui_led_op(LED_COLOR_BLUE, LED_SET);
    ui_led_op(LED_COLOR_RED, LED_SET);
@@ -535,16 +536,13 @@ int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx)
    return (edrx->mode != LTE_LC_LTE_MODE_NONE) ? 0 : -ENODATA;
 }
 
-int modem_get_psm_status(struct lte_lc_psm_cfg *psm, uint32_t *delays)
+int modem_get_psm_status(struct lte_lc_psm_cfg *psm)
 {
    int tau;
    k_mutex_lock(&lte_mutex, K_FOREVER);
    tau = psm_status.tau;
    if (psm) {
       *psm = psm_status;
-   }
-   if (delays) {
-      *delays = psm_delays;
    }
    k_mutex_unlock(&lte_mutex);
    return (tau >= 0) ? 0 : -ENODATA;
@@ -555,12 +553,12 @@ int modem_get_release_time(void)
    return rai_time;
 }
 
-int modem_get_provider(char *buf, size_t len)
+int modem_get_network_info(struct lte_network_info *info)
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
-   strncpy(buf, provider, len);
+   *info = network_info;
    k_mutex_unlock(&lte_mutex);
-   return strlen(buf);
+   return 0;
 }
 
 void modem_set_transmission_time(void)
@@ -571,26 +569,132 @@ void modem_set_transmission_time(void)
    k_mutex_unlock(&lte_mutex);
 }
 
-int modem_read_provider(char *buf, size_t len)
+int modem_read_network_info(struct lte_network_info *info)
 {
-   modem_read_operator_info();
-   return modem_get_provider(buf, len);
-}
+   char buf[96];
+   struct lte_network_info temp;
+   const char *cur = buf;
+   char *t = NULL;
 
-int modem_read_statistic(char *data, size_t len)
-{
-   int err;
-   char buf[92];
+   if (!modem_at_cmd("AT%%XMONITOR", buf, sizeof(buf), "%XMONITOR: ")) {
+      return -ENODATA;
+   }
+   LOG_INF(">> %s", buf);
 
-   memset(data, 0, len);
-   err = modem_at_cmd("AT%%XCONNSTAT?", buf, sizeof(buf), "%XCONNSTAT: ");
-   if (err > 0) {
-      const char *cur = modem_next_chars(buf, ',', 2);
+   memset(&temp, 0, sizeof(temp));
+
+   switch ((int)strtol(cur, &t, 10)) {
+      case 0:
+         temp.reg_status = "not registered";
+         break;
+      case 1:
+         temp.reg_status = "home";
+         temp.registered = true;
+         break;
+      case 2:
+         temp.reg_status = "searching";
+         break;
+      case 3:
+         temp.reg_status = "denied";
+         break;
+      case 5:
+         temp.reg_status = "roaming";
+         temp.registered = true;
+         break;
+      case 91:
+         temp.reg_status = "not registered (UICC)";
+         break;
+      default:
+         temp.reg_status = "unknown";
+         break;
+   }
+   if (temp.registered && *t == ',') {
+      cur = t + 1;
+      // skip 2 parameter "...", find start of 3th parameter.
+      cur = modem_next_chars(cur, '"', 5);
       if (cur) {
-         strncpy(data, cur, len);
+         // copy 5 character plmn
+         cur += modem_strncpy(temp.provider, cur, '"', 5);
+         // skip  "," find start of next parameter
+         cur = modem_next_chars(cur, '"', 2);
+      }
+      if (cur) {
+         // copy 4 character tac
+         cur += modem_strncpy(temp.tac, cur, '"', 4);
+         // skip parameter by ,
+         cur = modem_next_chars(cur, ',', 2);
+      }
+      if (cur) {
+         temp.band = (int)strtol(cur, &t, 10);
+         if (cur == t) {
+            temp.band = 0;
+         }
+      }
+      if (cur && *t == ',') {
+         // skip ,"
+         cur = t + 2;
+         // copy 8 character cell
+         cur += modem_strncpy(temp.cell, cur, '"', 8);
+         // skip 3 parameter by ,
+         cur = modem_next_chars(cur, ',', 3);
+         if (cur) {
+            temp.rsrp = (int)strtol(cur, &t, 10) - 140;
+            if (cur == t) {
+               temp.rsrp = 0;
+            }
+         }
       }
    }
-   return strlen(data);
+
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   network_info = temp;
+   k_mutex_unlock(&lte_mutex);
+   if (info) {
+      *info = temp;
+   }
+   return 0;
+}
+
+int modem_read_statistic(struct lte_network_statistic *statistic)
+{
+   int err;
+   const char *cur;
+   char *t;
+   char buf[92];
+
+   memset(statistic, 0, sizeof(struct lte_network_statistic));
+   err = modem_at_cmd("AT%%XCONNSTAT?", buf, sizeof(buf), "%XCONNSTAT: ");
+   if (err > 0) {
+      LOG_INF("%s", buf);
+      cur = modem_next_chars(buf, ',', 2);
+      if (cur) {
+         statistic->transmitted = (uint32_t)strtol(cur, &t, 10);
+         cur = t;
+      }
+      if (cur) {
+         // skip the ,
+         cur++;
+         statistic->received = (uint32_t)strtol(cur, &t, 10);
+         cur = t;
+      }
+      if (cur) {
+         // skip the ,
+         cur++;
+         statistic->max_packet_size = (uint16_t)strtol(cur, &t, 10);
+         cur = t;
+      }
+      if (cur) {
+         // skip the ,
+         cur++;
+         statistic->average_packet_size = (uint16_t)strtol(cur, &t, 10);
+      }
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      statistic->searchs = lte_searchs;
+      statistic->searchs_done = lte_searchs_done;
+      statistic->psm_delays = lte_psm_delays;
+      k_mutex_unlock(&lte_mutex);
+   }
+   return err;
 }
 
 int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
@@ -648,7 +752,7 @@ int modem_set_normal(void)
 
 int modem_set_lte_offline(void)
 {
-   return  lte_lc_func_mode_set(LTE_LC_FUNC_MODE_DEACTIVATE_LTE) ? -EFAULT : 0;
+   return lte_lc_func_mode_set(LTE_LC_FUNC_MODE_DEACTIVATE_LTE) ? -EFAULT : 0;
 }
 
 int modem_power_off(void)
@@ -686,6 +790,24 @@ int modem_get_psm_status(struct lte_lc_psm_cfg *psm, uint32_t *delays)
 {
    (void)psm;
    (void)delays;
+   return -ENODATA;
+}
+
+int modem_get_network_info(struct lte_network_info *info)
+{
+   (void)info;
+   return -ENODATA;
+}
+
+int modem_read_network_info(struct lte_network_info *info)
+{
+   (void)info;
+   return -ENODATA;
+}
+
+int modem_read_statistic(struct lte_network_statistic *statistic)
+{
+   (void)statistic;
    return -ENODATA;
 }
 

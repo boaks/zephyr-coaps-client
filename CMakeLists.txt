@@ -30,11 +30,11 @@ target_sources_ifdef(CONFIG_LOCATION_ENABLE app PRIVATE src/location.c)
 
 target_sources_ifdef(CONFIG_ADXL362_MOTION_DETECTION app PRIVATE src/accelerometer_sensor.c)
 
-target_sources_ifdef(CONFIG_BME680 app PRIVATE src/environment_sensor.c)
+target_sources_ifdef(CONFIG_BME680 app PRIVATE src/environment_sensor.c src/environment_history.c)
 
-target_sources_ifdef(CONFIG_SHT21 app PRIVATE src/environment_sht21.c)
+target_sources_ifdef(CONFIG_SHT21 app PRIVATE src/environment_sht21.c src/environment_history.c)
 
-target_sources_ifdef(CONFIG_SHT3XD app PRIVATE src/environment_sht31.c)
+target_sources_ifdef(CONFIG_SHT3XD app PRIVATE src/environment_sht31.c src/environment_history.c)
 
 if (CONFIG_BME680_BSEC)
         set(bsec_version "BSEC_1.4.8.0_Generic_Release_updated_v3")
@@ -63,6 +63,7 @@ if (CONFIG_BME680_BSEC)
 
         target_sources(app PRIVATE 
                 src/environment_sensor.c
+                 src/environment_history.c
                 ${BSEC_CONFIG_DIR}/bsec_serialized_configurations_iaq.c
                 ${bsec_dir}/examples/bsec_iot_example/bsec_integration.c
                 ${bsec_dir}/examples/bsec_iot_example/bme680.c)

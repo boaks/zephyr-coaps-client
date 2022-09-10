@@ -36,6 +36,7 @@ static uint32_t coap_current_token;
 static uint16_t coap_current_mid;
 static uint16_t coap_message_len = 0;
 static uint8_t coap_message_buf[APP_COAP_MAX_MSG_LEN];
+static uint8_t iccid[24];
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
@@ -137,8 +138,10 @@ int coap_client_prepare_post(void)
    int32_t int_value = 0;
 #endif
 #ifdef CONFIG_LOCATION_ENABLE
-   static uint32_t max_satellites_time = 0;
+#ifdef GNSS_EXECUTION_TIMES
    static uint32_t max_execution_time = 0;
+#endif /* GNSS_EXECUTION_TIMES */
+   static uint32_t max_satellites_time = 0;
    struct modem_gnss_state result;
    bool pending;
 #endif
@@ -146,6 +149,9 @@ int coap_client_prepare_post(void)
    power_manager_status_t battery_status = POWER_UNKNOWN;
    uint16_t battery_voltage = 0xffff;
    uint8_t battery_level = 0xff;
+
+   struct lte_network_info network_info;
+   struct lte_network_statistic network_statistic;
 
    const char *p;
    char buf[512];
@@ -157,7 +163,6 @@ int coap_client_prepare_post(void)
    uint8_t *token = (uint8_t *)&coap_current_token;
    struct coap_packet request;
    struct lte_lc_psm_cfg psm;
-   uint32_t psm_delays;
 
 #ifdef CONFIG_COAP_QUERY_DELAY_ENABLE
    static int query_delay = 0;
@@ -179,21 +184,6 @@ int coap_client_prepare_post(void)
       }
    }
 
-   err = modem_at_cmd("AT+CESQ", coap_message_buf, sizeof(coap_message_buf), "+CESQ: ");
-   if (err < 0) {
-      dtls_warn("Failed to read signal level!");
-   }
-   if (err > 0) {
-      p = coap_message_buf;
-      index = 0;
-      while (*p && index < 4) {
-         if (*p++ == ',') {
-            ++index;
-         }
-      }
-   } else {
-      p = NULL;
-   }
    start = 0;
    index = snprintf(buf, sizeof(buf), "%u s, Thingy:91 %s, 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
                     uptime, CLIENT_VERSION, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
@@ -229,32 +219,33 @@ int coap_client_prepare_post(void)
       dtls_info("%s", buf + start);
    }
 
-   index += snprintf(buf + index, sizeof(buf) - index, "\n");
-   start = index;
+   start = index + 1;
+   index += snprintf(buf + index, sizeof(buf) - index, "\nICCID: %s", iccid);
+   dtls_info("%s", buf + start);
 
-   err = modem_at_cmd("AT%%XICCID", buf + index, sizeof(buf) - index, "%X");
-   if (err < 0) {
-      dtls_warn("Failed to read ICCID.");
-   } else {
-      index += err;
-   }
-
-   if (p) {
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nRSSI q,p: %s", p);
-      dtls_info("%s", buf + start);
-   }
    p = modem_get_network_mode();
    start = index + 1;
-   index += snprintf(buf + index, sizeof(buf) - index, "\nNetwork: %s ", p);
-   index += modem_read_provider(buf + index, sizeof(buf) - index);
+   index += snprintf(buf + index, sizeof(buf) - index, "\n!Network: %s", p);
+
+   if (!modem_get_network_info(&network_info)) {
+      index += snprintf(buf + index, sizeof(buf) - index, ",%s", network_info.reg_status);
+      if (network_info.registered) {
+         index += snprintf(buf + index, sizeof(buf) - index, ",Band %d", network_info.band);
+         index += snprintf(buf + index, sizeof(buf) - index, ",PLMN %s", network_info.provider);
+         index += snprintf(buf + index, sizeof(buf) - index, ",TAC %s", network_info.tac);
+         index += snprintf(buf + index, sizeof(buf) - index, ",Cell %s", network_info.cell);
+         if (network_info.rsrp) {
+            index += snprintf(buf + index, sizeof(buf) - index, ",RSRP %d dBm", network_info.rsrp);
+         }
+      }
+   }
    dtls_info("%s", buf + start);
 
    index += snprintf(buf + index, sizeof(buf) - index, "\n");
    start = index;
 
-   if (modem_get_psm_status(&psm, &psm_delays) == 0) {
-      index += snprintf(buf + index, sizeof(buf) - index, "PSM: TAU %d [s], Act %d [s], Delays %d", psm.tau, psm.active_time, psm_delays);
+   if (modem_get_psm_status(&psm) == 0) {
+      index += snprintf(buf + index, sizeof(buf) - index, "!PSM: TAU %d [s], Act %d [s]", psm.tau, psm.active_time);
    }
    err = modem_get_release_time();
    if (err > 0) {
@@ -264,11 +255,15 @@ int coap_client_prepare_post(void)
       index += snprintf(buf + index, sizeof(buf) - index, "Released: %d ms", err);
    }
    dtls_info("%s", buf + start);
-   start = index + 1;
-   index += snprintf(buf + index, sizeof(buf) - index, "\nStat: ");
-   index += modem_read_statistic(buf + index, sizeof(buf) - index);
-   dtls_info("%s", buf + start);
 
+   if (modem_read_statistic(&network_statistic) >= 0) {
+      start = index + 1;
+      index += snprintf(buf + index, sizeof(buf) - index, "\nStat: tx %ukB, rx %ukB, max %uB, avg %uB, searchs %u/%u, PSM delays %u",
+                        network_statistic.transmitted, network_statistic.received, network_statistic.max_packet_size,
+                        network_statistic.average_packet_size, network_statistic.searchs, network_statistic.searchs_done,
+                        network_statistic.psm_delays);
+      dtls_info("%s", buf + start);
+   }
 #ifdef CONFIG_LOCATION_ENABLE
    err = 1;
    start = index + 1;
@@ -302,6 +297,7 @@ int coap_client_prepare_post(void)
                         p, pending ? ",pending" : "", result.max_satellites, result.satellites_time / 1000, max_satellites_time / 1000);
       dtls_info("%s", buf + start);
       start = index + 1;
+#ifdef GNSS_EXECUTION_TIMES
       if (!err) {
          if (!max_execution_time) {
             /* skip the first */
@@ -319,6 +315,7 @@ int coap_client_prepare_post(void)
          index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.2=%us-pos-max",
                            max_execution_time / 1000);
       }
+#endif
       if (index > start) {
          dtls_info("%s", buf + start);
          start = index + 1;
@@ -498,6 +495,17 @@ int coap_client_send_message(struct dtls_context_t *ctx, session_t *dst)
 
 int coap_client_init(void)
 {
+   char buf[64];
+   int err;
+
+   memset(iccid, 0, sizeof(iccid));
    coap_current_token = sys_rand32_get();
+   err = modem_at_cmd("AT%%XICCID", buf, sizeof(buf), "%XICCID: ");
+   if (err < 0) {
+      dtls_warn("Failed to read ICCID.");
+   } else {
+      dtls_info("%s", buf);
+      strncpy(iccid, buf, sizeof(iccid));
+   }
    return 0;
 }
