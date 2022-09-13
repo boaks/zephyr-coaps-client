@@ -515,9 +515,12 @@ int modem_start(const k_timeout_t timeout)
 
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
-      err = modem_at_cmd("AT%%XICCID", buf, sizeof(buf), "%XICCID: ");
-      if (err > 0) {
-         LOG_INF("xiccid: %s", buf);
+
+      err = modem_at_cmd("AT%%PERIODICSEARCHCONF=1", buf, sizeof(buf), "%PERIODICSEARCHCONF: ");
+      if (err < 0) {
+         LOG_WRN("Failed to read PERIODICSEARCHCONF.");
+      } else {
+         LOG_INF("search-conf: '%s'", buf);
       }
    }
    return err;

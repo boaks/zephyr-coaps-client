@@ -65,6 +65,21 @@ It takes about 11s, with an average current of 5mA at 5V. That results in 0.076 
 
 In my experiments, the first question is, which quiescent current does your device have itself. Only if that is low enough, the consumption of the reregistartion and message exchanges build the calculation base for the runtime. ["All theory is gray"](https://quotethedayaway.wordpress.com/2013/06/05/all-theory-is-gray-my-friend-but-forever-green-is-the-tree-of-life/), so I'm looking forward to complete my tooling, do the measurements for the Thingy:91 itself and then have a live-longterm-test run.
 
+### Results of first longterm-tests
+
+Two devices has been used for a longterm-test, one with NB-IoT and one with LTE-M.
+One device stopped at 50% battery after 4 weeks with a software bug.
+The other device reached 16% battery after 42 days (6 weeks).
+
+> 3665840 s, Thingy:91 v0.4, 0*972, 1*44, 2*1, 3*0, failures 1
+> 3709 mV 16% battery
+> RSSI q,p: 255,255
+> Network: CAT-M1 5,26201(*)
+> PSM: TAU 3600 [s], Act 8 [s], Delays 0, Released: 10643 ms
+> Stat: 289,270,291,279
+
+6 weeks with about 1000 exchange, one send error, and 289+270 kBytes are used.
+
 ## Disclaimer
 
 Other studies have other results. There are studies, which demonstrates the effect of the amount of data, there are studies, which use always a DTLS handshake for each couple of bytes. Using DTLS 1.2 CID doesn't require that handshake and my measurements shows a larger influence of the reregistration than the amount of bytes.

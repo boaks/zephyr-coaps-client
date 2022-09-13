@@ -32,21 +32,80 @@
 #define APP_COAP_VERSION 1
 #define APP_COAP_LOG_PAYLOAD_SIZE 128
 
+#define CUSTOM_COAP_OPTION_TIME 0xff02
+
 static uint32_t coap_current_token;
 static uint16_t coap_current_mid;
 static uint16_t coap_message_len = 0;
 static uint8_t coap_message_buf[APP_COAP_MAX_MSG_LEN];
 static uint8_t iccid[24];
 
+/* last coap-time in milliseconds since 1.1.1970 */
+static uint64_t coap_time = 0;
+/* uptime of last coap-time exchange */
+static int64_t coap_uptime = 0;
+
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
 unsigned int bat_level[BAT_LEVEL_SLOTS] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
+static int coap_client_encode_time(struct coap_packet *request)
+{
+   uint64_t time = coap_time;
+   uint8_t data[8];
+   uint8_t index = 0;
+
+   if (coap_uptime) {
+      time += (k_uptime_get() - coap_uptime);
+   }
+
+   sys_put_be64(time, data);
+   // skip leading 0s
+   for (index = 0; index < sizeof(data); ++index) {
+      if (data[index]) {
+         break;
+      }
+   }
+   // adjust negative numbers
+   if (index > 0 && (data[index] & 0x80)) {
+      --index;
+   }
+   int err = coap_packet_append_option(request, CUSTOM_COAP_OPTION_TIME, &data[index], sizeof(data) - index);
+   if (err < 0) {
+      dtls_warn("Failed to encode CoAP TIME option, %d", err);
+   } else {
+      dtls_info("Send CoAP TIME option %lld %llx (%d bytes)", time, time, sizeof(data) - index);
+   }
+   return err;
+}
+
+static void coap_client_decode_time(const struct coap_option *option)
+{
+   uint8_t len = option->len;
+   uint8_t index = len;
+   uint64_t time = 0;
+
+   if (len == 0) {
+      dtls_info("Recv CoAP TIME option, empty");
+      return;
+   }
+
+   for (index = 0; index < len; ++index) {
+      time <<= 8;
+      time |= (option->value[index] & 0xff);
+   }
+
+   dtls_info("Recv CoAP TIME option %lld %llx (%d bytes)", time, time, len);
+   coap_time = time;
+   coap_uptime = k_uptime_get();
+}
+
 int coap_client_parse_data(uint8_t *data, size_t len)
 {
    int err;
    struct coap_packet reply;
+   struct coap_option time_option;
    const uint8_t *payload;
    uint16_t mid;
    uint16_t payload_len;
@@ -95,6 +154,12 @@ int coap_client_parse_data(uint8_t *data, size_t len)
 
    coap_message_len = 0;
 
+   err = coap_find_options(&reply, CUSTOM_COAP_OPTION_TIME, &time_option, 1);
+   dtls_info("CoAP TIME option %d", err);
+   if (err == 1) {
+      coap_client_decode_time(&time_option);
+   }
+
    payload = coap_packet_get_payload(&reply, &payload_len);
 
    if (COAP_TYPE_ACK == type) {
@@ -141,7 +206,9 @@ int coap_client_prepare_post(void)
 #ifdef GNSS_EXECUTION_TIMES
    static uint32_t max_execution_time = 0;
 #endif /* GNSS_EXECUTION_TIMES */
+#ifdef GNSS_VISIBILITY
    static uint32_t max_satellites_time = 0;
+#endif /* GNSS_VISIBILITY */
    struct modem_gnss_state result;
    bool pending;
 #endif
@@ -154,7 +221,7 @@ int coap_client_prepare_post(void)
    struct lte_network_statistic network_statistic;
 
    const char *p;
-   char buf[512];
+   char buf[640];
    int err;
    int index;
    int start;
@@ -176,7 +243,7 @@ int coap_client_prepare_post(void)
    }
    bat_level[0] = 1;
 
-   uptime = (unsigned int)(k_uptime_get() / 1000);
+   uptime = (unsigned int)(k_uptime_get() / MSEC_PER_SEC);
 
    if (!power_manager_status(&battery_level, &battery_voltage, &battery_status)) {
       if (battery_voltage != 0xffff) {
@@ -218,6 +285,15 @@ int coap_client_prepare_post(void)
       index += snprintf(buf + index, sizeof(buf) - index, " %s", msg);
       dtls_info("%s", buf + start);
    }
+
+#if 0
+   err = modem_at_cmd("AT%%CONEVAL", buf + index, sizeof(buf) - index, "%CONEVAL: ");
+   if (err < 0) {
+      dtls_warn("Failed to read CONEVAL.");
+   } else {
+      dtls_info("CONEVAL: %s", buf + index);
+   }
+#endif
 
    start = index + 1;
    index += snprintf(buf + index, sizeof(buf) - index, "\nICCID: %s", iccid);
@@ -288,15 +364,19 @@ int coap_client_prepare_post(void)
       default:
          break;
    }
+#ifdef GNSS_VISIBILITY
    if (max_satellites_time < result.satellites_time) {
       max_satellites_time = result.satellites_time;
    }
+#endif
 
    if (result.valid) {
+#ifdef GNSS_VISIBILITY
       index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.1=%s%s,%u-sats,%us-vis,%us-vis-max",
                         p, pending ? ",pending" : "", result.max_satellites, result.satellites_time / 1000, max_satellites_time / 1000);
       dtls_info("%s", buf + start);
       start = index + 1;
+#endif
 #ifdef GNSS_EXECUTION_TIMES
       if (!err) {
          if (!max_execution_time) {
@@ -335,6 +415,7 @@ int coap_client_prepare_post(void)
 #endif
 
 #ifdef ENVIRONMENT_SENSOR
+   p = "";
    int_value = environment_get_temperature_history(s_temperatures, CONFIG_ENVIRONMENT_HISTORY_SIZE);
    if (int_value > 0) {
       int history_index;
@@ -348,17 +429,18 @@ int coap_client_prepare_post(void)
       dtls_info("%s", buf + start);
    } else if (environment_get_temperature(&value) == 0) {
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\n%.2f C", value);
+      index += snprintf(buf + index, sizeof(buf) - index, "\n!%.2f C", value);
       dtls_info("%s", buf + start);
+      p = "!";
    }
    if (environment_get_humidity(&value) == 0) {
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\n%.2f %%H", value);
+      index += snprintf(buf + index, sizeof(buf) - index, "\n%s%.2f %%H", p, value);
       dtls_info("%s", buf + start);
    }
    if (environment_get_pressure(&value) == 0) {
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\n%.1f hPa", value);
+      index += snprintf(buf + index, sizeof(buf) - index, "\n%s%.1f hPa", p, value);
       dtls_info("%s", buf + start);
    }
    if (environment_get_iaq(&int_value) == 0) {
@@ -463,6 +545,10 @@ int coap_client_prepare_post(void)
       return err;
    }
 #endif
+   err = coap_client_encode_time(&request);
+   if (err < 0) {
+      return err;
+   }
    err = coap_packet_append_payload_marker(&request);
    if (err < 0) {
       dtls_warn("Failed to encode CoAP payload-marker, %d", err);
@@ -500,11 +586,12 @@ int coap_client_init(void)
 
    memset(iccid, 0, sizeof(iccid));
    coap_current_token = sys_rand32_get();
+
    err = modem_at_cmd("AT%%XICCID", buf, sizeof(buf), "%XICCID: ");
    if (err < 0) {
       dtls_warn("Failed to read ICCID.");
    } else {
-      dtls_info("%s", buf);
+      dtls_info("iccid: %s", buf);
       strncpy(iccid, buf, sizeof(iccid));
    }
    return 0;
