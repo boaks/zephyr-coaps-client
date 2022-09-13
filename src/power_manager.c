@@ -25,6 +25,14 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #define ADP536X_I2C_ADDR 0x46
 
+#define ADP536X_I2C_REG_STATUS 0x8
+#define ADP536X_I2C_REG_LEVEL 0x21
+#define ADP536X_I2C_REG_VOLTAGE_HIGH_BYTE 0x25
+#define ADP536X_I2C_REG_VOLTAGE_LOW_BYTE 0x26
+#define ADP536X_I2C_REG_FUEL_GAUGE_MODE 0x27
+#define ADP536X_I2C_REG_BUCK_CONFIG 0x29
+#define ADP536X_I2C_REG_BUCK_BOOST_CONFIG 0x2B
+
 static const struct device *i2c_dev;
 
 static int adp536x_reg_read(uint8_t reg, uint8_t *buff)
@@ -39,7 +47,7 @@ static int adp536x_reg_write(uint8_t reg, uint8_t val)
 
 static void power_manager_read_level(uint8_t *level)
 {
-   adp536x_reg_read(0x21, level);
+   adp536x_reg_read(ADP536X_I2C_REG_LEVEL, level);
 }
 
 static void power_manager_read_voltage(uint16_t *voltage)
@@ -47,7 +55,8 @@ static void power_manager_read_voltage(uint16_t *voltage)
    uint8_t value1 = 0xff;
    uint8_t value2 = 0xff;
 
-   if (!adp536x_reg_read(0x25, &value1) && !adp536x_reg_read(0x26, &value2)) {
+   if (!adp536x_reg_read(ADP536X_I2C_REG_VOLTAGE_HIGH_BYTE, &value1) &&
+       !adp536x_reg_read(ADP536X_I2C_REG_VOLTAGE_LOW_BYTE, &value2)) {
       uint16_t value = value1;
       value <<= 5;
       value |= ((value2 >> 3) & 0x1f);
@@ -59,7 +68,7 @@ static void power_manager_read_status(power_manager_status_t *status)
 {
    uint8_t value = 0xff;
 
-   if (!adp536x_reg_read(0x8, &value)) {
+   if (!adp536x_reg_read(ADP536X_I2C_REG_STATUS, &value)) {
       switch (value & 0x7) {
          case 0:
             *status = FROM_BATTERY;
@@ -93,7 +102,7 @@ int power_manager_init(void)
       /*
        * 11%, 10mA, 8 min, enable
        */
-      adp536x_reg_write(0x27, 0x59);
+      adp536x_reg_write(ADP536X_I2C_REG_FUEL_GAUGE_MODE, 0x59);
       return 0;
    } else {
       LOG_WRN("Failed to initialize battery monitor.");
@@ -101,18 +110,18 @@ int power_manager_init(void)
    }
 }
 
-int power_manager_3v3(uint8_t enable)
+static int power_manager_xvy(uint8_t config_register, bool enable)
 {
    if (i2c_dev) {
-      uint8_t buckbst_config = 0;
+      uint8_t buck_config = 0;
 
-      if (!adp536x_reg_read(0x2B, &buckbst_config)) {
+      if (!adp536x_reg_read(config_register, &buck_config)) {
          if (enable) {
-            buckbst_config |= 1;
+            buck_config |= 1;
          } else {
-            buckbst_config &= (~1);
+            buck_config &= (~1);
          }
-         adp536x_reg_write(0x2B, buckbst_config);
+         adp536x_reg_write(config_register, buck_config);
          return 0;
       } else {
          LOG_WRN("Failed to read buckbst_cfg.");
@@ -122,6 +131,16 @@ int power_manager_3v3(uint8_t enable)
       LOG_WRN("Failed to initialize battery monitor.");
       return -1;
    }
+}
+
+int power_manager_3v3(bool enable)
+{
+   return power_manager_xvy(ADP536X_I2C_REG_BUCK_BOOST_CONFIG, enable);
+}
+
+int power_manager_1v8(bool enable)
+{
+   return power_manager_xvy(ADP536X_I2C_REG_BUCK_CONFIG, enable);
 }
 
 int power_manager_voltage(uint16_t *voltage)
@@ -170,7 +189,13 @@ int power_manager_init(void)
    return 0;
 }
 
-int power_manager_3v3(uint8_t enable)
+int power_manager_3v3(bool enable)
+{
+   (void)enable;
+   return 0;
+}
+
+int power_manager_1v8(bool enable)
 {
    (void)enable;
    return 0;

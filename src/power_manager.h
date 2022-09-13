@@ -15,6 +15,7 @@
 #define POWER_MANAGER_H
 
 #include <stddef.h>
+#include <stdbool.h>
 
 typedef enum {
    POWER_UNKNOWN,
@@ -27,7 +28,9 @@ typedef enum {
 
 int power_manager_init(void);
 
-int power_manager_3v3(uint8_t enable);
+int power_manager_3v3(bool enable);
+
+int power_manager_1v8(bool enable);
 
 int power_manager_voltage(uint16_t *voltage);
 

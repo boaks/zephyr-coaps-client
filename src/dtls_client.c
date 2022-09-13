@@ -833,6 +833,8 @@ void main(void)
 void main_(void)
 {
    modem_power_off();
+   power_manager_3v3(false);
+//   power_manager_1v8(false);
    k_sleep(K_MSEC(1000));
    NRF_REGULATORS->SYSTEMOFF = 1;
 }

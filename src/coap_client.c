@@ -334,10 +334,9 @@ int coap_client_prepare_post(void)
 
    if (modem_read_statistic(&network_statistic) >= 0) {
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nStat: tx %ukB, rx %ukB, max %uB, avg %uB, searchs %u/%u, PSM delays %u",
+      index += snprintf(buf + index, sizeof(buf) - index, "\nStat: tx %ukB, rx %ukB, max %uB, avg %uB, searchs %u, PSM delays %u",
                         network_statistic.transmitted, network_statistic.received, network_statistic.max_packet_size,
-                        network_statistic.average_packet_size, network_statistic.searchs, network_statistic.searchs_done,
-                        network_statistic.psm_delays);
+                        network_statistic.average_packet_size, network_statistic.searchs, network_statistic.psm_delays);
       dtls_info("%s", buf + start);
    }
 #ifdef CONFIG_LOCATION_ENABLE

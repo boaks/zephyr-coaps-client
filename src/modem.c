@@ -45,7 +45,6 @@ static const char *volatile network_mode = "init";
 static struct lte_lc_edrx_cfg edrx_status = {LTE_LC_LTE_MODE_NONE, 0.0, 0.0};
 static struct lte_lc_psm_cfg psm_status = {0, 0};
 static uint32_t lte_searchs = 0;
-static uint32_t lte_searchs_done = 0;
 static uint32_t lte_psm_delays = 0;
 static bool lte_plmn_lock = false;
 static struct lte_network_info network_info;
@@ -58,7 +57,7 @@ static volatile bool lte_power_management_3v3 = true;
 
 static void modem_power_management_3v3_work_fn(struct k_work *work)
 {
-   power_manager_3v3(lte_power_management_3v3 ? 1 : 0);
+   power_manager_3v3(lte_power_management_3v3);
 }
 
 static K_WORK_DEFINE(modem_power_management_3v3_work, modem_power_management_3v3_work_fn);
@@ -115,14 +114,10 @@ static void lte_inc_psm_delays(void)
    k_mutex_unlock(&lte_mutex);
 }
 
-static void lte_inc_searchs(bool done)
+static void lte_inc_searchs()
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
-   if (done) {
-      ++lte_searchs_done;
-   } else {
-      ++lte_searchs;
-   }
+   ++lte_searchs;
    k_mutex_unlock(&lte_mutex);
 }
 
@@ -188,7 +183,7 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
          break;
       case LTE_LC_NW_REG_SEARCHING:
          description = "Searching ...";
-         lte_inc_searchs(false);
+         lte_inc_searchs();
          break;
       case LTE_LC_NW_REG_REGISTRATION_DENIED:
          description = "Not Connected - denied";
@@ -340,10 +335,8 @@ static void lte_handler(const struct lte_lc_evt *const evt)
             LOG_INF("LTE modem Reset Loop!");
          } else if (evt->modem_evt == LTE_LC_MODEM_EVT_SEARCH_DONE) {
             LOG_INF("LTE modem search done.");
-            lte_inc_searchs(true);
          } else if (evt->modem_evt == LTE_LC_MODEM_EVT_LIGHT_SEARCH_DONE) {
             LOG_INF("LTE modem light search done.");
-            lte_inc_searchs(true);
          }
          break;
       default:
@@ -512,8 +505,6 @@ int modem_start(const k_timeout_t timeout)
 
    err = modem_connect();
    if (!err) {
-      char buf[64];
-
       time = k_uptime_get();
       err = modem_connection_wait(timeout);
       time = k_uptime_get() - time;
@@ -539,13 +530,18 @@ int modem_start(const k_timeout_t timeout)
 
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
+#if 1
+      {
+         char buf[64];
 
-      err = modem_at_cmd("AT%%PERIODICSEARCHCONF=1", buf, sizeof(buf), "%PERIODICSEARCHCONF: ");
-      if (err < 0) {
-         LOG_WRN("Failed to read PERIODICSEARCHCONF.");
-      } else {
-         LOG_INF("search-conf: '%s'", buf);
+         err = modem_at_cmd("AT%%PERIODICSEARCHCONF=1", buf, sizeof(buf), "%PERIODICSEARCHCONF: ");
+         if (err < 0) {
+            LOG_WRN("Failed to read PERIODICSEARCHCONF.");
+         } else {
+            LOG_INF("search-conf: '%s'", buf);
+         }
       }
+#endif
    }
    return err;
 }
@@ -717,7 +713,6 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
       }
       k_mutex_lock(&lte_mutex, K_FOREVER);
       statistic->searchs = lte_searchs;
-      statistic->searchs_done = lte_searchs_done;
       statistic->psm_delays = lte_psm_delays;
       k_mutex_unlock(&lte_mutex);
    }
