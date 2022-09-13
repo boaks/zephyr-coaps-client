@@ -110,6 +110,9 @@ endmenu
 
 menu "Extra Functions"
 
+config LOW_POWER
+	bool "Low power mode, disable 3.3V"
+
 config LOCATION_ENABLE
 	bool "Enable GNSS Location"
 	default n

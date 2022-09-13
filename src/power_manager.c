@@ -101,7 +101,31 @@ int power_manager_init(void)
    }
 }
 
-int power_manager_voltage(uint16_t *voltage){
+int power_manager_3v3(uint8_t enable)
+{
+   if (i2c_dev) {
+      uint8_t buckbst_config = 0;
+
+      if (!adp536x_reg_read(0x2B, &buckbst_config)) {
+         if (enable) {
+            buckbst_config |= 1;
+         } else {
+            buckbst_config &= (~1);
+         }
+         adp536x_reg_write(0x2B, buckbst_config);
+         return 0;
+      } else {
+         LOG_WRN("Failed to read buckbst_cfg.");
+         return -1;
+      }
+   } else {
+      LOG_WRN("Failed to initialize battery monitor.");
+      return -1;
+   }
+}
+
+int power_manager_voltage(uint16_t *voltage)
+{
    if (i2c_dev) {
       if (voltage) {
          power_manager_read_voltage(voltage);
@@ -112,7 +136,6 @@ int power_manager_voltage(uint16_t *voltage){
       LOG_WRN("Failed to read battery level!");
    }
    return -1;
-
 }
 
 int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status)
@@ -147,7 +170,13 @@ int power_manager_init(void)
    return 0;
 }
 
-int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status)
+int power_manager_3v3(uint8_t enable)
+{
+   (void)enable;
+   return 0;
+}
+
+int power_manager_voltage(uint16_t *voltage)
 {
    char buf[32];
 
@@ -158,13 +187,18 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
    } else {
       *voltage = atoi(buf);
    }
+   return 0;
+}
+
+int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status)
+{
    if (level) {
       *level = 0xff;
    }
    if (status) {
       *status = POWER_UNKNOWN;
    }
-   return 0;
+   return power_manager_voltage(voltage);
 }
 
 #endif

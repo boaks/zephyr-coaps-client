@@ -6,7 +6,9 @@
 
 # Power Consumption
 
-The measurements presented here are done using the [Nordic Semiconductor - Power Profiler Kit II (PPK2)](https://www.nordicsemi.com/Products/Development-hardware/Power-Profiler-Kit-2). Currently these measurements are done using the [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) instead of the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91), mainly because the measurements with the DK could be done with plug-and-play. The values for the `Thingy:91` will follow later, when my tooling gets completed to do so. For now, the only measurement done for the `Thingy:91` itself is the quiescent current with enabled sensors. That's about 0.8 mA. Assuming a 80% efficiency and a battery of 1350 mAh, that results in 1350h (or about 56 days) runtime without sending any data.
+The measurements presented here are done using the [Nordic Semiconductor - Power Profiler Kit II (PPK2)](https://www.nordicsemi.com/Products/Development-hardware/Power-Profiler-Kit-2). Currently these measurements are done using the [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) instead of the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91), mainly because the measurements with the DK could be done with plug-and-play.
+
+The values for the `Thingy:91` are measurement replacing the battery with the PPK2 as source using about 4.1V. Disabling the UART and the 3.3V results in quiescent current of 0.08 mA (0.03 mA with peaks, average is measured by the PPK2 with 0.08 mA). Assuming a 80% efficiency and a battery of 1350 mAh, that results in 13500h (or about 562 days) runtime without sending any data. 10x times more than without disabling the UART and the 3.3V.
 
 ## General Considerations for LTE-M/NB-IoT
 
@@ -61,6 +63,18 @@ This chart shows the complete power consumption of an message exchange (about 20
 
 It takes about 11s, with an average current of 5mA at 5V. That results in 0.076 mWh. A message exchange every hour reduces the runtime of a Thingy:91 about 1 days. If the message exchange is done piggybacked on a PSM wakeup (e.g. alive messages), then it reduces it only about 0,5 day.  
 
+## Thingy:91, LTE-M
+
+**LTE-M Exchanging messages:**
+
+![Thingy:91 LTE-M message exchange](./thingy-lte-m-send.png)
+
+This chart shows the complete power consumption of an message exchange (about 200 bytes request, 200 bytes response) including a wakeup from PSM. Additional to the wakeup itself, it depends on the message exchange (0,8s) and the time being "connected" (10s, without RAI, which is not availabel in my setup). The "active time", is set also to 8s for this test.
+
+It takes about 22s, with an average current of 8.6mA at 4.1V. That results in 0.215 mWh. A message exchange every hour reduces the runtime of a Thingy:91 about 223 days, resulting in a theoretical runtime of 340 days.
+
+We will see, how many bugs will prevent proofing that timespan ;-).
+
 ## Sumup:
 
 In my experiments, the first question is, which quiescent current does your device have itself. Only if that is low enough, the consumption of the reregistartion and message exchanges build the calculation base for the runtime. ["All theory is gray"](https://quotethedayaway.wordpress.com/2013/06/05/all-theory-is-gray-my-friend-but-forever-green-is-the-tree-of-life/), so I'm looking forward to complete my tooling, do the measurements for the Thingy:91 itself and then have a live-longterm-test run.
@@ -68,6 +82,7 @@ In my experiments, the first question is, which quiescent current does your devi
 ### Results of first longterm-tests
 
 Two devices has been used for a longterm-test, one with NB-IoT and one with LTE-M.
+Both with enabled UART and 3.3V (tests with disable UART and 3.3V will follow).
 One device stopped at 50% battery after 4 weeks with a software bug.
 The other device reached 16% battery after 42 days (6 weeks).
 

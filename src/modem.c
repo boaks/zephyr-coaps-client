@@ -22,6 +22,7 @@
 #include <zephyr.h>
 
 #include "modem.h"
+#include "power_manager.h"
 #include "ui.h"
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
@@ -51,6 +52,17 @@ static struct lte_network_info network_info;
 static int64_t transmission_time = 0;
 
 static volatile int rai_time = -1;
+
+#ifdef CONFIG_LOW_POWER
+static volatile bool lte_power_management_3v3 = true;
+
+static void modem_power_management_3v3_work_fn(struct k_work *work)
+{
+   power_manager_3v3(lte_power_management_3v3 ? 1 : 0);
+}
+
+static K_WORK_DEFINE(modem_power_management_3v3_work, modem_power_management_3v3_work_fn);
+#endif
 
 static void modem_read_network_info_work_fn(struct k_work *work)
 {
@@ -273,6 +285,10 @@ static void lte_handler(const struct lte_lc_evt *const evt)
                if (s_connect_handler) {
                   s_connect_handler(LTE_CONNECT_TRANSMISSION, false);
                }
+#ifdef CONFIG_LOW_POWER
+               lte_power_management_3v3 = false;
+               k_work_submit(&modem_power_management_3v3_work);
+#endif
             }
             break;
          }
@@ -300,8 +316,16 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          } else {
             LOG_INF("LTE modem sleeps");
          }
+#ifdef CONFIG_LOW_POWER
+         lte_power_management_3v3 = false;
+         k_work_submit(&modem_power_management_3v3_work);
+#endif
          break;
       case LTE_LC_EVT_MODEM_SLEEP_EXIT:
+#ifdef CONFIG_LOW_POWER
+         lte_power_management_3v3 = true;
+         k_work_submit(&modem_power_management_3v3_work);
+#endif
          LOG_INF("LTE modem wakes up");
          if (s_wakeup_handler) {
             s_wakeup_handler();
