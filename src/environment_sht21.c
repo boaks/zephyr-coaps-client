@@ -162,20 +162,6 @@ static int read_temperature(const struct device *i2c_dev, const uint16_t addr, c
    return err;
 }
 
-static void environment_history_work_fn(struct k_work *work);
-
-static K_WORK_DELAYABLE_DEFINE(environment_history_work, environment_history_work_fn);
-
-static void environment_history_work_fn(struct k_work *work)
-{
-   double temperature = 0.0;
-
-   if (environment_get_temperature(&temperature) == 0) {
-      environment_add_temperature_history(temperature, true);
-   }
-   k_work_schedule(&environment_history_work, K_SECONDS(CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S));
-}
-
 int environment_init(void)
 {
    LOG_INF("SHT21 initialize");
@@ -193,8 +179,13 @@ int environment_init(void)
       LOG_ERR("SHT21 reset failed!");
    }
    environment_init_temperature_history();
-   k_work_schedule(&environment_history_work, K_SECONDS(2));
 
+   return 0;
+}
+
+int environment_sensor_fetch(bool force)
+{
+   (void)force;
    return 0;
 }
 

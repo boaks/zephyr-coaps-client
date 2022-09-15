@@ -563,6 +563,8 @@ int coap_client_prepare_post(void)
    coap_message_len = request.offset;
    dtls_info("CoAP request prepared, token 0x%02x%02x%02x%02x, %u bytes", token[0], token[1], token[2], token[3], coap_message_len);
 
+   power_manager_3v3(true);
+
    return err;
 }
 

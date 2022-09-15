@@ -38,11 +38,7 @@ static const struct environment_sensor *all_sensors[] = {
 
 static const unsigned int all_sensors_size = sizeof(all_sensors) / sizeof(void *);
 
-static void environment_history_work_fn(struct k_work *work);
-
-static K_WORK_DELAYABLE_DEFINE(environment_history_work, environment_history_work_fn);
-
-static int environment_sensor_fetch(bool force)
+int environment_sensor_fetch(bool force)
 {
    static int64_t environment_sensor_next_fetch = 0;
    static int err = 0;
@@ -68,17 +64,6 @@ static int environment_sensor_fetch(bool force)
    return err;
 }
 
-static void environment_history_work_fn(struct k_work *work)
-{
-   double temperature = 0.0;
-
-   environment_sensor_fetch(true);
-   if (environment_get_temperature(&temperature) == 0) {
-      environment_add_temperature_history(temperature, true);
-   }
-   k_work_schedule(&environment_history_work, K_SECONDS(CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S));
-}
-
 static int environment_sensor_init(const struct device *dev)
 {
    if (!device_is_ready(dev)) {
@@ -102,7 +87,6 @@ int environment_init(void)
    }
    environment_sensor_fetch(true);
    environment_init_temperature_history();
-   k_work_schedule(&environment_history_work, K_SECONDS(2));
 
    return 0;
 }

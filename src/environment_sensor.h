@@ -22,6 +22,8 @@
 
 int environment_init(void);
 
+int environment_sensor_fetch(bool force);
+
 int environment_get_temperature(double *value);
 
 int environment_get_humidity(double *value);
@@ -39,6 +41,11 @@ int environment_get_temperature_history(double *values, uint8_t size);
 void environment_add_temperature_history(double value, bool force);
 
 void environment_init_temperature_history(void);
+
+#ifdef CONFIG_BME680_BSEC
+#define NO_ENVIRONMENT_HISTORY_WORKER
+#endif
+
 #else
 
 #define environment_get_temperature_history(X,S) -1

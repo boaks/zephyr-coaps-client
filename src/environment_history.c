@@ -27,6 +27,23 @@ static int64_t s_temperature_next = 0;
 static uint8_t s_temperature_size = 0;
 static double s_temperature_history[CONFIG_ENVIRONMENT_HISTORY_SIZE];
 
+#ifndef NO_ENVIRONMENT_HISTORY_WORKER
+static void environment_history_work_fn(struct k_work *work);
+
+static K_WORK_DELAYABLE_DEFINE(environment_history_work, environment_history_work_fn);
+
+static void environment_history_work_fn(struct k_work *work)
+{
+   double temperature = 0.0;
+
+   environment_sensor_fetch(true);
+   if (environment_get_temperature(&temperature) == 0) {
+      environment_add_temperature_history(temperature, true);
+   }
+   k_work_schedule(&environment_history_work, K_SECONDS(CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S));
+}
+#endif
+
 int environment_get_temperature_history(double *values, uint8_t size)
 {
    uint8_t index;
@@ -53,6 +70,9 @@ void environment_init_temperature_history(void)
       s_temperature_history[index] = 0.0;
    }
    k_mutex_unlock(&environment_history_mutex);
+#ifndef NO_ENVIRONMENT_HISTORY_WORKER
+   k_work_schedule(&environment_history_work, K_SECONDS(2));
+#endif
 }
 
 void environment_add_temperature_history(double value, bool force)
