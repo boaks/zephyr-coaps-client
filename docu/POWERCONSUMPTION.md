@@ -8,7 +8,7 @@
 
 The measurements presented here are done using the [Nordic Semiconductor - Power Profiler Kit II (PPK2)](https://www.nordicsemi.com/Products/Development-hardware/Power-Profiler-Kit-2). Currently these measurements are done using the [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) instead of the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91), mainly because the measurements with the DK could be done with plug-and-play.
 
-The values for the `Thingy:91` are measurement replacing the battery with the PPK2 as source using about 4.1V. Disabling the UART and the 3.3V results in quiescent current of 0.04 mA. Assuming a 80% efficiency and a battery of 1350 mAh, that results in 27000h (or about 1125 days) runtime without sending any data. 20x times more than without disabling the UART and the 3.3V. The self-discarge is unknown, but may reduce that time significantly.
+The values for the `Thingy:91` are measurement replacing the battery with the PPK2 as source using about 4.1V. The test until September 2022 have been done with enabled UART and 3.3V. With that the device runs only for 56 days from battery. Disabling the UART and the 3.3V results in quiescent current of 0.04 mA. Assuming a 80% efficiency and a battery of 1350 mAh, that results in 27000h (or about 1125 days) runtime without sending any data. 20x times more than without disabling the UART and the 3.3V. The self-discarge is unknown, but may reduce that time significantly.
 
 ## General Considerations for LTE-M/NB-IoT
 

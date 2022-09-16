@@ -60,12 +60,14 @@ static void location_gnss_pvt_work_fn(struct k_work *work);
 static void location_gnss_timeout_work_fn(struct k_work *work);
 static void location_gnss_start_work_fn(struct k_work *work);
 static void location_scan_start_work_fn(struct k_work *work);
+static void location_gnss_watchdog_work_fn(struct k_work *work);
 
 static K_WORK_DEFINE(location_lte_start_work, location_lte_start_work_fn);
 static K_WORK_DEFINE(location_gnss_pvt_work, location_gnss_pvt_work_fn);
 static K_WORK_DEFINE(location_scan_start_work, location_scan_start_work_fn);
 static K_WORK_DELAYABLE_DEFINE(location_gnss_timeout_work, location_gnss_timeout_work_fn);
 static K_WORK_DELAYABLE_DEFINE(location_gnss_start_work, location_gnss_start_work_fn);
+static K_WORK_DELAYABLE_DEFINE(location_gnss_watchdog_work, location_gnss_watchdog_work_fn);
 
 static location_callback_handler_t s_location_handler;
 
@@ -80,7 +82,9 @@ static volatile int64_t s_location_last_request;
 static volatile int64_t s_location_last_result;
 static volatile location_state_t s_location_state = LOCATION_NONE;
 static volatile bool s_modem_sleeping;
+static volatile bool s_gnss_blocked;
 static volatile bool s_location_init;
+static volatile uint16_t s_gnss_pvt_counter;
 
 static bool s_location_visibility_detection = false;
 
@@ -103,12 +107,22 @@ static void location_gnss_event_handler(int event)
       case NRF_MODEM_GNSS_EVT_PVT:
          k_work_submit(&location_gnss_pvt_work);
          break;
-
+      case NRF_MODEM_GNSS_EVT_FIX:
+         k_work_submit(&location_gnss_pvt_work);
+         break;
       case NRF_MODEM_GNSS_EVT_AGPS_REQ:
          LOG_INF("GNSS: A-GPS request!");
          break;
+      case NRF_MODEM_GNSS_EVT_BLOCKED:
+         LOG_INF("GNSS: blocked by LTE!");
+         s_gnss_blocked = true;
+         break;
+      case NRF_MODEM_GNSS_EVT_UNBLOCKED:
+         LOG_INF("GNSS: unblocked by LTE!");
+         s_gnss_blocked = false;
+         break;
       default:
-         LOG_INF("GNSS: %d", event);
+         LOG_INF("GNSS event: %d", event);
          break;
    }
 }
@@ -147,9 +161,11 @@ static int location_stop_works(void)
 #ifdef CONFIG_LOCATION_ENABLE_CONTINUES_MODE
    if (atomic_get(&s_location_start) == 0) {
       err = nrf_modem_gnss_stop();
+      k_work_cancel_delayable(&location_gnss_watchdog_work);
    }
 #else
    err = nrf_modem_gnss_stop();
+   k_work_cancel_delayable(&location_gnss_watchdog_work);
 #endif
    if ((err != 0) && (err != -NRF_EPERM)) {
       LOG_ERR("Failed to stop GNSS");
@@ -159,7 +175,7 @@ static int location_stop_works(void)
    s_location_state = LOCATION_DONE;
 
    /* Cancel any work that has not been started yet */
-   (void)k_work_cancel(&location_gnss_pvt_work);
+   k_work_cancel(&location_gnss_pvt_work);
    (void)k_work_cancel(&location_lte_start_work);
    (void)k_work_cancel(&location_scan_start_work);
    (void)k_work_cancel_delayable(&location_gnss_start_work);
@@ -177,7 +193,7 @@ static void location_event_handler(const struct modem_gnss_state *gnss_state)
 
    switch (state) {
       case MODEM_GNSS_POSITION:
-         LOG_INF("GNSS:%s", gnss_state->valid ? " valid" : "");
+         LOG_INF("GNSS:%s", gnss_state->valid ? " valid position" : "");
          break;
       case MODEM_GNSS_ERROR:
          LOG_INF("GNSS error");
@@ -320,12 +336,21 @@ static void location_gnss_pvt_work_fn(struct k_work *item)
       return;
    }
 
+   k_work_reschedule(&location_gnss_watchdog_work, K_SECONDS(10));
+
    if (nrf_modem_gnss_read(&s_location_gnss_result.position, sizeof(s_location_gnss_result.position), NRF_MODEM_GNSS_DATA_PVT) != 0) {
       LOG_ERR("Failed to read PVT data from GNSS");
       return;
    }
 
    tracked = location_tracked_satellites(&s_location_gnss_result.position);
+   s_gnss_pvt_counter++;
+   if (s_gnss_pvt_counter > 60) {
+      s_gnss_pvt_counter = 0;
+      LOG_INF("GNSS PVT, tracked satellites: %d, flags: %02x, fix %d", tracked, s_location_gnss_result.position.flags,
+           s_location_gnss_result.position.flags & NRF_MODEM_GNSS_PVT_FLAG_FIX_VALID ? 1 : 0);
+   }
+
    s_location_gnss_result.execution_time = now - s_location_last_request;
    if (s_location_gnss_result.max_satellites < tracked) {
       s_location_gnss_result.max_satellites = tracked;
@@ -420,19 +445,21 @@ static void location_gnss_start(void)
       s_location_state = LOCATION_GNSS_RUNNING;
       err = nrf_modem_gnss_start();
       if (err) {
-         LOG_ERR("Failed to start GNSS");
+         LOG_ERR("Failed to start GNSS, err %d", err);
          location_event_handler(&s_location_gnss_result);
          return;
       }
+      k_work_reschedule(&location_gnss_watchdog_work, K_SECONDS(10));
+      LOG_INF("GNSS request started.");
    } else {
       s_location_state = LOCATION_GNSS_RUNNING;
+      k_work_schedule(&location_gnss_watchdog_work, K_SECONDS(10));
+      LOG_INF("GNSS request continued.");
    }
    if (timeout > 0) {
       LOG_DBG("Starting timer with timeout=%d", timeout);
       k_work_reschedule(&location_gnss_timeout_work, K_SECONDS(timeout));
    }
-
-   LOG_INF("GNSS request started.");
 }
 
 static void location_gnss_start_work_fn(struct k_work *work)
@@ -458,6 +485,21 @@ static void location_lte_start_work_fn(struct k_work *work)
       LOG_INF("GNSS modem sleeping ...");
       location_gnss_start();
    }
+}
+
+static void location_gnss_watchdog_work_fn(struct k_work *work)
+{
+   if (s_gnss_blocked) {
+      LOG_INF("GNSS blocked by modem.");
+   } else if (s_modem_sleeping) {
+      int err = nrf_modem_gnss_start();
+      if (err) {
+         LOG_ERR("Failed to start GNSS for watchdog, err: %d", err);
+      }
+   } else {
+      LOG_INF("NO GNSS, modem awake.");
+   }
+   k_work_reschedule(&location_gnss_watchdog_work, K_SECONDS(10));
 }
 
 int location_init(location_callback_handler_t handler)

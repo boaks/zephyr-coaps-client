@@ -116,7 +116,7 @@ static int power_manager_xvy(uint8_t config_register, bool enable)
       uint8_t buck_config = 0;
 
       if (!adp536x_reg_read(config_register, &buck_config)) {
-         LOG_INF("buck_conf: %02x %02x", config_register, buck_config);
+/*         LOG_INF("buck_conf: %02x %02x", config_register, buck_config); */
          buck_config |= 0xC0; // softstart to 11 => 512ms
          if (enable) {
             buck_config |= 1;

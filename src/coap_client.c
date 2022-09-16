@@ -203,12 +203,8 @@ int coap_client_prepare_post(void)
    int32_t int_value = 0;
 #endif
 #ifdef CONFIG_LOCATION_ENABLE
-#ifdef GNSS_EXECUTION_TIMES
    static uint32_t max_execution_time = 0;
-#endif /* GNSS_EXECUTION_TIMES */
-#ifdef GNSS_VISIBILITY
    static uint32_t max_satellites_time = 0;
-#endif /* GNSS_VISIBILITY */
    struct modem_gnss_state result;
    bool pending;
 #endif
@@ -363,20 +359,20 @@ int coap_client_prepare_post(void)
       default:
          break;
    }
-#ifdef GNSS_VISIBILITY
+
    if (max_satellites_time < result.satellites_time) {
       max_satellites_time = result.satellites_time;
    }
-#endif
 
    if (result.valid) {
-#ifdef GNSS_VISIBILITY
       index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.1=%s%s,%u-sats,%us-vis,%us-vis-max",
                         p, pending ? ",pending" : "", result.max_satellites, result.satellites_time / 1000, max_satellites_time / 1000);
       dtls_info("%s", buf + start);
+#ifdef GNSS_VISIBILITY
       start = index + 1;
+#else 
+      index = start - 1;      
 #endif
-#ifdef GNSS_EXECUTION_TIMES
       if (!err) {
          if (!max_execution_time) {
             /* skip the first */
@@ -394,10 +390,13 @@ int coap_client_prepare_post(void)
          index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.2=%us-pos-max",
                            max_execution_time / 1000);
       }
-#endif
       if (index > start) {
          dtls_info("%s", buf + start);
+#ifdef GNSS_EXECUTION_TIMES
          start = index + 1;
+#else
+         index = start - 1;
+#endif
       }
       index += snprintf(buf + index, sizeof(buf) - index, "\n!%sGNSS.3=%.06f,%.06f,%.01f,%.02f,%.01f",
                         err ? "*" : "",

@@ -123,10 +123,21 @@ else()
 set(BUILD_SUMUP3 "Build without BME680/SHT21/SHT31.")
 endif()
 
-if (CONFIG_COAP_WAIT_ON_POWERMANAGER)
-set(BUILD_SUMUP4 "Build with waiting for power-manager.")
+if (CONFIG_BME680 OR CONFIG_BME680_BSEC OR CONFIG_SHT3XD OR CONFIG_SHT21)
+if (CONFIG_ENVIRONMENT_HISTORY_SIZE GREATER 0)
+set(BUILD_SUMUP4 "Build with history using ${CONFIG_ENVIRONMENT_HISTORY_SIZE} values.")
 else()
-set(BUILD_SUMUP4 "Build without waiting for power-manager.")
+set(BUILD_SUMUP4 "Build without history.")
+endif()
+else()
+set(BUILD_SUMUP4 "Build without history, no BME680/SHT21/SHT31.")
+endif()
+
+
+if (CONFIG_COAP_WAIT_ON_POWERMANAGER)
+set(BUILD_SUMUP5 "Build with waiting for power-manager.")
+else()
+set(BUILD_SUMUP5 "Build without waiting for power-manager.")
 endif()
 
 add_custom_command(TARGET app POST_BUILD
@@ -134,4 +145,5 @@ add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP2}"
                    COMMAND echo "${BUILD_SUMUP3}"
                    COMMAND echo "${BUILD_SUMUP4}"
+                   COMMAND echo "${BUILD_SUMUP5}"
                    )

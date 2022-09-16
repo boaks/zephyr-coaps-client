@@ -479,8 +479,11 @@ int modem_start(const k_timeout_t timeout)
 {
    int err = 0;
    int64_t time;
-
-#ifdef CONFIG_LTE_MODE_PREFERENCE_LTE_M
+#ifdef CONFIG_LTE_NETWORK_MODE_NBIOT
+   LOG_INF("NB-IoT");
+#elif CONFIG_LTE_NETWORK_MODE_LTE_M
+   LOG_INF("LTE-M");
+#elif CONFIG_LTE_MODE_PREFERENCE_LTE_M
    LOG_INF("LTE-M preference.");
 #elif CONFIG_LTE_MODE_PREFERENCE_NBIOT
    LOG_INF("NB-IoT preference.");
