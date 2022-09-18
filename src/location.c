@@ -39,7 +39,11 @@ typedef enum location_state {
 
 #define GNSS_TIMEOUT_INITIAL 180
 #define GNSS_TIMEOUT_MAXIMUM 300
+#ifdef CONFIG_LOCATION_ENABLE_CONTINUES_MODE
+#define GNSS_TIMEOUT_SCAN 180
+#else
 #define GNSS_TIMEOUT_SCAN 30
+#endif
 
 #define GNSS_INTERVAL_INITIAL_PROBE 300
 #define GNSS_INTERVAL_MAXIMUM_PROBE 3600
@@ -154,12 +158,12 @@ static void location_lte_ind_handler(const struct lte_lc_evt *const evt)
    }
 }
 
-static int location_stop_works(void)
+static int location_stop_works(bool timeout)
 {
    int err = 0;
 
 #ifdef CONFIG_LOCATION_ENABLE_CONTINUES_MODE
-   if (atomic_get(&s_location_start) == 0) {
+   if (timeout || atomic_get(&s_location_start) == 0) {
       err = nrf_modem_gnss_stop();
       k_work_cancel_delayable(&location_gnss_watchdog_work);
    }
@@ -188,8 +192,7 @@ static void location_event_handler(const struct modem_gnss_state *gnss_state)
 {
    int64_t now = k_uptime_get();
    modem_gnss_result_t state = gnss_state->result;
-
-   location_stop_works();
+   bool timeout = false;
 
    switch (state) {
       case MODEM_GNSS_POSITION:
@@ -197,9 +200,11 @@ static void location_event_handler(const struct modem_gnss_state *gnss_state)
          break;
       case MODEM_GNSS_ERROR:
          LOG_INF("GNSS error");
+         timeout = true;
          break;
       case MODEM_GNSS_TIMEOUT:
          LOG_INF("GNSS timeout");
+         timeout = true;
          break;
       case MODEM_GNSS_INVISIBLE:
          LOG_INF("GNSS invisible");
@@ -207,6 +212,8 @@ static void location_event_handler(const struct modem_gnss_state *gnss_state)
       default:
          break;
    }
+
+   location_stop_works(timeout);
 
    k_mutex_lock(&location_mutex, K_FOREVER);
    s_location_last_result = now;
@@ -490,14 +497,14 @@ static void location_lte_start_work_fn(struct k_work *work)
 static void location_gnss_watchdog_work_fn(struct k_work *work)
 {
    if (s_gnss_blocked) {
-      LOG_INF("GNSS blocked by modem.");
+      LOG_INF("GNSS watchdog, blocked by modem.");
    } else if (s_modem_sleeping) {
       int err = nrf_modem_gnss_start();
       if (err) {
-         LOG_ERR("Failed to start GNSS for watchdog, err: %d", err);
+         LOG_ERR("GNSS watchdog, failed to start GNSS, err: %d", err);
       }
    } else {
-      LOG_INF("NO GNSS, modem awake.");
+      LOG_INF("GNSS watchdog, modem awake.");
    }
    k_work_reschedule(&location_gnss_watchdog_work, K_SECONDS(10));
 }
@@ -559,7 +566,7 @@ void location_stop(void)
    atomic_set(&s_location_start, 0);
    s_location_init = false;
    s_location_state = LOCATION_NONE;
-   location_stop_works();
+   location_stop_works(false);
    k_work_cancel(&location_scan_start_work);
 }
 
