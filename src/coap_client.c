@@ -19,6 +19,7 @@
 #include "coap_client.h"
 #include "dtls_debug.h"
 #include "modem.h"
+#include "parse.h"
 #include "power_manager.h"
 #include "ui.h"
 
@@ -32,13 +33,15 @@
 #define APP_COAP_VERSION 1
 #define APP_COAP_LOG_PAYLOAD_SIZE 128
 
-#define CUSTOM_COAP_OPTION_TIME 0xff02
+#define CUSTOM_COAP_OPTION_TIME 0xff3c
+#define CUSTOM_COAP_OPTION_READ_ETAG 0xff5c
 
 static uint32_t coap_current_token;
 static uint16_t coap_current_mid;
 static uint16_t coap_message_len = 0;
 static uint8_t coap_message_buf[APP_COAP_MAX_MSG_LEN];
 static uint8_t iccid[24];
+static uint8_t read_etag[9];
 
 /* last coap-time in milliseconds since 1.1.1970 */
 static uint64_t coap_time = 0;
@@ -101,11 +104,37 @@ static void coap_client_decode_time(const struct coap_option *option)
    coap_uptime = k_uptime_get();
 }
 
+static void coap_client_decode_read_etag(const struct coap_option *option)
+{
+   uint8_t index = 0;
+   uint8_t len = option->len;
+   read_etag[0] = len;
+
+   if (len == 0) {
+      dtls_info("Recv CoAP etag option, empty");
+      return;
+   }
+
+   if (len > sizeof(read_etag) - 1) {
+      len = sizeof(read_etag) - 1;
+   }
+
+   for (index = 0; index < len; ++index) {
+      read_etag[1 + index] = option->value[index];
+   }
+
+   dtls_info("Recv CoAP etag option (%d bytes)", len);
+}
+
+static void coap_client_decode_payload(const uint8_t *payload, uint16_t len)
+{
+}
+
 int coap_client_parse_data(uint8_t *data, size_t len)
 {
    int err;
    struct coap_packet reply;
-   struct coap_option time_option;
+   struct coap_option custom_option;
    const uint8_t *payload;
    uint16_t mid;
    uint16_t payload_len;
@@ -154,10 +183,15 @@ int coap_client_parse_data(uint8_t *data, size_t len)
 
    coap_message_len = 0;
 
-   err = coap_find_options(&reply, CUSTOM_COAP_OPTION_TIME, &time_option, 1);
+   err = coap_find_options(&reply, CUSTOM_COAP_OPTION_TIME, &custom_option, 1);
    dtls_info("CoAP TIME option %d", err);
    if (err == 1) {
-      coap_client_decode_time(&time_option);
+      coap_client_decode_time(&custom_option);
+   }
+   err = coap_find_options(&reply, CUSTOM_COAP_OPTION_READ_ETAG, &custom_option, 1);
+   dtls_info("CoAP read-etag option %d", err);
+   if (err == 1) {
+      coap_client_decode_read_etag(&custom_option);
    }
 
    payload = coap_packet_get_payload(&reply, &payload_len);
@@ -177,6 +211,7 @@ int coap_client_parse_data(uint8_t *data, size_t len)
       coap_message_buf[payload_len] = 0;
       dtls_info("  payload: %s", (const char *)coap_message_buf);
    }
+   coap_client_decode_payload(payload, payload_len);
 
    if (COAP_TYPE_CON == type) {
       struct coap_packet ack;
@@ -196,6 +231,25 @@ int coap_client_parse_data(uint8_t *data, size_t len)
 static double s_temperatures[CONFIG_ENVIRONMENT_HISTORY_SIZE];
 #endif
 
+#ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE
+static int coap_client_add_uri_query_read_subresource(struct coap_packet *request)
+{
+   int err;
+   char read_subresource[30];
+   snprintf(read_subresource, sizeof(read_subresource), "read=%s", CONFIG_COAP_QUERY_READ_SUBRESOURCE);
+   dtls_info("CoAP request query: %s", read_subresource);
+
+   err = coap_packet_append_option(request, COAP_OPTION_URI_QUERY,
+                                   (uint8_t *)read_subresource,
+                                   strlen(read_subresource));
+   if (err < 0) {
+      dtls_warn("Failed to encode CoAP URI-QUERY option '%s', %d", read_subresource, err);
+      return err;
+   }
+   return 0;
+}
+#endif
+
 int coap_client_prepare_post(void)
 {
 #ifdef ENVIRONMENT_SENSOR
@@ -208,7 +262,9 @@ int coap_client_prepare_post(void)
    struct modem_gnss_state result;
    bool pending;
 #endif
-
+#ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE
+   bool sub_resource = strlen(CONFIG_COAP_QUERY_READ_SUBRESOURCE);
+#endif
    power_manager_status_t battery_status = POWER_UNKNOWN;
    uint16_t battery_voltage = 0xffff;
    uint8_t battery_level = 0xff;
@@ -226,6 +282,7 @@ int coap_client_prepare_post(void)
    uint8_t *token = (uint8_t *)&coap_current_token;
    struct coap_packet request;
    struct lte_lc_psm_cfg psm;
+   struct lte_lc_edrx_cfg edrx;
 
 #ifdef CONFIG_COAP_QUERY_DELAY_ENABLE
    static int query_delay = 0;
@@ -317,7 +374,11 @@ int coap_client_prepare_post(void)
    start = index;
 
    if (modem_get_psm_status(&psm) == 0) {
-      index += snprintf(buf + index, sizeof(buf) - index, "!PSM: TAU %d [s], Act %d [s]", psm.tau, psm.active_time);
+      if (psm.active_time >= 0) {
+         index += snprintf(buf + index, sizeof(buf) - index, "!PSM: TAU %d [s], Act %d [s]", psm.tau, psm.active_time);
+      } else {
+         index += snprintf(buf + index, sizeof(buf) - index, "PSM: n.a.");
+      }
    }
    err = modem_get_release_time();
    if (err > 0) {
@@ -326,7 +387,29 @@ int coap_client_prepare_post(void)
       }
       index += snprintf(buf + index, sizeof(buf) - index, "Released: %d ms", err);
    }
-   dtls_info("%s", buf + start);
+   if (index > start) {
+      dtls_info("%s", buf + start);
+   } else {
+      index = start - 1;
+   }
+   if (modem_get_edrx_status(&edrx) == 0) {
+      start = index + 1;
+      switch (edrx.mode) {
+         case LTE_LC_LTE_MODE_NONE:
+            index += snprintf(buf + index, sizeof(buf) - index, "\neDRX: n.a.");
+            break;
+         case LTE_LC_LTE_MODE_LTEM:
+            index += snprintf(buf + index, sizeof(buf) - index, "!eDRX: LTE-M %0.2f [s], page %0.2f [s]", edrx.edrx, edrx.ptw);
+            break;
+         case LTE_LC_LTE_MODE_NBIOT:
+            index += snprintf(buf + index, sizeof(buf) - index, "!eDRX: NB-IoT %0.2f [s], page %0.2f [s]", edrx.edrx, edrx.ptw);
+            break;
+      }
+      dtls_info("%s", buf + start);
+      if (edrx.mode == LTE_LC_LTE_MODE_NONE) {
+         index = start - 1;
+      }
+   }
 
    if (modem_read_statistic(&network_statistic) >= 0) {
       start = index + 1;
@@ -370,8 +453,8 @@ int coap_client_prepare_post(void)
       dtls_info("%s", buf + start);
 #ifdef GNSS_VISIBILITY
       start = index + 1;
-#else 
-      index = start - 1;      
+#else
+      index = start - 1;
 #endif
       if (!err) {
          if (!max_execution_time) {
@@ -501,13 +584,13 @@ int coap_client_prepare_post(void)
 
 #ifdef CONFIG_COAP_QUERY_DELAY_ENABLE
    err = snprintf(query, sizeof(query), "delay=%d", query_delay);
-   dtls_info("CoAP request, delay %d", query_delay);
+   dtls_info("CoAP request, %s", query);
 
    err = coap_packet_append_option(&request, COAP_OPTION_URI_QUERY,
                                    (uint8_t *)query,
                                    strlen(query));
    if (err < 0) {
-      dtls_warn("Failed to encode CoAP URI-QUERY option 'delay=%d', %d", query_delay, err);
+      dtls_warn("Failed to encode CoAP URI-QUERY option '%s', %d", query, err);
       return err;
    }
    if (query_delay > 30000) {
@@ -543,10 +626,39 @@ int coap_client_prepare_post(void)
       return err;
    }
 #endif
+
+#ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE
+   if (sub_resource) {
+      err = coap_client_add_uri_query_read_subresource(&request);
+      if (err < 0) {
+         return err;
+      }
+   }
+#endif
+
    err = coap_client_encode_time(&request);
    if (err < 0) {
       return err;
    }
+
+#ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE
+   if (sub_resource) {
+      if (read_etag[0]) {
+         err = coap_packet_append_option(&request, CUSTOM_COAP_OPTION_READ_ETAG,
+                                         &read_etag[1],
+                                         read_etag[0]);
+         if (err < 0) {
+            dtls_warn("Failed to encode CoAP read-etag option, %d", err);
+            return err;
+         } else {
+            dtls_info("Send CoAP read-etag option (%u bytes)", read_etag[0]);
+         }
+      } else {
+         dtls_info("Send CoAP no read-etag option");
+      }
+   }
+#endif
+
    err = coap_packet_append_payload_marker(&request);
    if (err < 0) {
       dtls_warn("Failed to encode CoAP payload-marker, %d", err);

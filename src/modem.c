@@ -22,6 +22,7 @@
 #include <zephyr.h>
 
 #include "modem.h"
+#include "parse.h"
 #include "power_manager.h"
 #include "ui.h"
 
@@ -130,44 +131,6 @@ static int64_t get_transmission_time(void)
    return time;
 }
 
-static const char *modem_next_char(const char *value, char sep)
-{
-   if (value) {
-      while (*value && *value != sep) {
-         ++value;
-      }
-      if (*value == sep) {
-         ++value;
-         if (*value) {
-            return value;
-         }
-      }
-   }
-   return NULL;
-}
-
-static const char *modem_next_chars(const char *value, char sep, int count)
-{
-   for (int index = 0; index < count; ++index) {
-      value = modem_next_char(value, sep);
-   }
-   return value;
-}
-
-static int modem_strncpy(char *buf, const char *value, char end, int size)
-{
-   int index;
-   for (index = 0; index < size; ++index) {
-      char cur = *value;
-      if (!cur || cur == end) {
-         break;
-      }
-      buf[index] = cur;
-      value++;
-   }
-   return index;
-}
-
 static void lte_registration(enum lte_lc_nw_reg_status reg_status)
 {
    const char *description = "unknown";
@@ -235,8 +198,8 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          LOG_INF("PSM parameter update: TAU: %d s, Active time: %d s",
                  evt->psm_cfg.tau, evt->psm_cfg.active_time);
          active_time = evt->psm_cfg.active_time;
+         lte_set_psm_status(&evt->psm_cfg);
          if (evt->psm_cfg.active_time >= 0) {
-            lte_set_psm_status(&evt->psm_cfg);
             k_sem_give(&ptau_update);
          }
          break;
@@ -250,9 +213,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
             if (len > 0) {
                LOG_INF("%s", log_buf);
             }
-            if (evt->edrx_cfg.mode != LTE_LC_LTE_MODE_NONE) {
-               lte_set_edrx_status(&evt->edrx_cfg);
-            }
+            lte_set_edrx_status(&evt->edrx_cfg);
             break;
          }
       case LTE_LC_EVT_RRC_UPDATE:
@@ -376,7 +337,7 @@ static int modem_connect(void)
    return err;
 }
 
-int modem_init(wakeup_callback_handler_t wakeup_handler, connect_callback_handler_t connect_handler)
+int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_callback_handler_t connect_handler)
 {
    int err = 0;
 
@@ -384,6 +345,7 @@ int modem_init(wakeup_callback_handler_t wakeup_handler, connect_callback_handle
       /* Do nothing, modem is already configured and LTE connected. */
    } else if (!initialized) {
       char buf[32];
+      const char *plmn = NULL;
 
       nrf_modem_lib_init(NORMAL_MODE);
       err = modem_at_cmd("AT%%HWVERSION", buf, sizeof(buf), "%HWVERSION: ");
@@ -410,6 +372,39 @@ int modem_init(wakeup_callback_handler_t wakeup_handler, connect_callback_handle
          LOG_INF("stat: %s", buf);
       }
 
+#ifdef CONFIG_LTE_LOCK_PLMN
+      plmn = CONFIG_LTE_LOCK_PLMN_STRING;
+#else
+      switch (config) {
+         case 0:
+            break;
+         case 1:
+            plmn = "26201";
+            break;
+         case 2:
+            plmn = "26202";
+            break;
+         case 3:
+            plmn = "26203";
+            break;
+      }
+#endif
+      if (plmn) {
+         LOG_INF("Lock PLMN %s", plmn);
+         lte_plmn_lock = true;
+#ifdef CONFIG_LTE_LOCK_PLMN
+         err = 0;
+#else
+         err = nrf_modem_at_printf("AT+COPS=1,2,\"%s\"", plmn);
+#endif
+      } else {
+         LOG_INF("Unlock PLMN");
+         err = nrf_modem_at_printf("AT+COPS=0");
+         lte_plmn_lock = false;
+      }
+      if (err) {
+         LOG_WRN("Failed to lock PLMN, err %d", err);
+      }
 #ifdef CONFIG_UDP_PSM_ENABLE
       err = lte_lc_psm_req(true);
       if (err) {
@@ -425,6 +420,23 @@ int modem_init(wakeup_callback_handler_t wakeup_handler, connect_callback_handle
          }
       }
 #endif
+
+#ifdef CONFIG_UDP_EDRX_ENABLE
+      err = lte_lc_edrx_req(true);
+      if (err) {
+         if (err == -EFAULT) {
+            LOG_WRN("Modem set eDRX failed, AT cmd failed!");
+         } else {
+            LOG_WRN("Modem set eDRX failed, error: %d!", err);
+         }
+      } else {
+         err = modem_at_cmd("AT+CEDRXS?", buf, sizeof(buf), "+CEDRXS: ");
+         if (err > 0) {
+            LOG_INF("eDRX: %s", buf);
+         }
+      }
+#endif
+
       err = lte_lc_init();
       if (err) {
          if (err == -EFAULT) {
@@ -493,14 +505,6 @@ int modem_start(const k_timeout_t timeout)
    LOG_INF("NB-IoT PLMN preference.");
 #endif
 
-#ifdef CONFIG_LTE_LOCK_PLMN
-   LOG_INF("Lock PLMN %s", CONFIG_LTE_LOCK_PLMN_STRING);
-   lte_plmn_lock = true;
-#else
-   LOG_INF("All PLMN");
-   lte_plmn_lock = false;
-#endif
-
    memset(&network_info, 0, sizeof(network_info));
 
    ui_led_op(LED_COLOR_BLUE, LED_SET);
@@ -533,7 +537,7 @@ int modem_start(const k_timeout_t timeout)
 
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
-#if 1
+#if 0
       {
          char buf[64];
 
@@ -556,22 +560,22 @@ const char *modem_get_network_mode(void)
 
 int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx)
 {
-   k_mutex_lock(&lte_mutex, K_FOREVER);
-   *edrx = edrx_status;
-   k_mutex_unlock(&lte_mutex);
-   return (edrx->mode != LTE_LC_LTE_MODE_NONE) ? 0 : -ENODATA;
+   if (edrx) {
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      *edrx = edrx_status;
+      k_mutex_unlock(&lte_mutex);
+   }
+   return 0;
 }
 
 int modem_get_psm_status(struct lte_lc_psm_cfg *psm)
 {
-   int tau;
-   k_mutex_lock(&lte_mutex, K_FOREVER);
-   tau = psm_status.tau;
    if (psm) {
+      k_mutex_lock(&lte_mutex, K_FOREVER);
       *psm = psm_status;
+      k_mutex_unlock(&lte_mutex);
    }
-   k_mutex_unlock(&lte_mutex);
-   return (tau >= 0) ? 0 : -ENODATA;
+   return 0;
 }
 
 int modem_get_release_time(void)
@@ -605,7 +609,7 @@ int modem_read_network_info(struct lte_network_info *info)
    if (!modem_at_cmd("AT%%XMONITOR", buf, sizeof(buf), "%XMONITOR: ")) {
       return -ENODATA;
    }
-   LOG_INF(">> %s", buf);
+   LOG_INF("XMONITOR: %s", buf);
 
    memset(&temp, 0, sizeof(temp));
 
@@ -637,18 +641,18 @@ int modem_read_network_info(struct lte_network_info *info)
    if (temp.registered && *t == ',') {
       cur = t + 1;
       // skip 2 parameter "...", find start of 3th parameter.
-      cur = modem_next_chars(cur, '"', 5);
+      cur = parse_next_chars(cur, '"', 5);
       if (cur) {
          // copy 5 character plmn
-         cur += modem_strncpy(temp.provider, cur, '"', 5);
+         cur += parse_strncpy(temp.provider, cur, '"', 5);
          // skip  "," find start of next parameter
-         cur = modem_next_chars(cur, '"', 2);
+         cur = parse_next_chars(cur, '"', 2);
       }
       if (cur) {
          // copy 4 character tac
-         cur += modem_strncpy(temp.tac, cur, '"', 4);
+         cur += parse_strncpy(temp.tac, cur, '"', 4);
          // skip parameter by ,
-         cur = modem_next_chars(cur, ',', 2);
+         cur = parse_next_chars(cur, ',', 2);
       }
       if (cur) {
          temp.band = (int)strtol(cur, &t, 10);
@@ -660,9 +664,9 @@ int modem_read_network_info(struct lte_network_info *info)
          // skip ,"
          cur = t + 2;
          // copy 8 character cell
-         cur += modem_strncpy(temp.cell, cur, '"', 8);
+         cur += parse_strncpy(temp.cell, cur, '"', 8);
          // skip 3 parameter by ,
-         cur = modem_next_chars(cur, ',', 3);
+         cur = parse_next_chars(cur, ',', 3);
          if (cur) {
             temp.rsrp = (int)strtol(cur, &t, 10) - 140;
             if (cur == t) {
@@ -692,7 +696,7 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
    err = modem_at_cmd("AT%%XCONNSTAT?", buf, sizeof(buf), "%XCONNSTAT: ");
    if (err > 0) {
       LOG_INF("%s", buf);
-      cur = modem_next_chars(buf, ',', 2);
+      cur = parse_next_chars(buf, ',', 2);
       if (cur) {
          statistic->transmitted = (uint32_t)strtol(cur, &t, 10);
          cur = t;

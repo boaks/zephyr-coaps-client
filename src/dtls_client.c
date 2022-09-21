@@ -787,16 +787,18 @@ int dtls_loop(void)
 
 void main(void)
 {
+   int config = 0;
    LOG_INF("CoAP/DTLS CID sample " CLIENT_VERSION " has started");
 
    dtls_set_log_level(DTLS_LOG_INFO);
 
    ui_init(dtls_manual_trigger);
-
+   config = ui_config();
+   
 #if CONFIG_COAP_WAKEUP_SEND_INTERVAL > 0 && CONFIG_COAP_SEND_INTERVAL == 0
-   modem_init(dtls_wakeup_trigger, dtls_lte_connected);
+   modem_init(config, dtls_wakeup_trigger, dtls_lte_connected);
 #else
-   modem_init(NULL, dtls_lte_connected);
+   modem_init(config, NULL, dtls_lte_connected);
    dtls_trigger();
 #endif
 

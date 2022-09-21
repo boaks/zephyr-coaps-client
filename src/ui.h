@@ -22,5 +22,6 @@ typedef enum { LED_SET, LED_CLEAR, LED_TOGGLE, LED_BLINK } led_op_t;
 
 void ui_led_op(led_t led, led_op_t op);
 int ui_init(ui_callback_handler_t button_callback);
+int ui_config(void);
 
 #endif /* UI_H */

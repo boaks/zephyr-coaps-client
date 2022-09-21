@@ -19,6 +19,7 @@ project(coaps-client)
 
 # APP START
 target_sources(app PRIVATE 
+	src/parse.c 
 	src/modem.c 
 	src/power_manager.c 
 	src/ui.c 

@@ -47,7 +47,7 @@ enum dtls_lte_connect_type {
 typedef void (*wakeup_callback_handler_t)(void);
 typedef void (*connect_callback_handler_t)(enum dtls_lte_connect_type type, bool connected);
 
-int modem_init(wakeup_callback_handler_t wakeup_handler, connect_callback_handler_t connect_handler);
+int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_callback_handler_t connect_handler);
 
 int modem_start(const k_timeout_t timeout);
 
