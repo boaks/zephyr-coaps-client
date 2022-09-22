@@ -83,7 +83,6 @@ config COAP_QUERY_SERIES_ENABLE
 config COAP_QUERY_READ_SUBRESOURCE
 	string "Enable CoAP query - read sub-resource"
 
-
 config COAP_WAIT_ON_POWERMANAGER
 	bool "Enable CoAP to wait for power-manager before sending"
 	default n

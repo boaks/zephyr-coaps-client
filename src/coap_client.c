@@ -40,7 +40,6 @@ static uint32_t coap_current_token;
 static uint16_t coap_current_mid;
 static uint16_t coap_message_len = 0;
 static uint8_t coap_message_buf[APP_COAP_MAX_MSG_LEN];
-static uint8_t iccid[24];
 static uint8_t read_etag[9];
 
 /* last coap-time in milliseconds since 1.1.1970 */
@@ -335,7 +334,12 @@ int coap_client_prepare_post(void)
          default:
             break;
       }
-      index += snprintf(buf + index, sizeof(buf) - index, " %s", msg);
+      if (strlen(msg)) {
+         index += snprintf(buf + index, sizeof(buf) - index, " %s", msg);
+      }
+#ifdef CONFIG_LOW_POWER
+      index += snprintf(buf + index, sizeof(buf) - index, " (low-power)");
+#endif
       dtls_info("%s", buf + start);
    }
 
@@ -349,8 +353,24 @@ int coap_client_prepare_post(void)
 #endif
 
    start = index + 1;
-   index += snprintf(buf + index, sizeof(buf) - index, "\nICCID: %s", iccid);
+   index += snprintf(buf + index, sizeof(buf) - index, "\nICCID: ");
+   err = modem_get_iccid(buf + index, sizeof(buf) - index);
    dtls_info("%s", buf + start);
+   if (err) {
+      index += err;
+   } else {
+      index = start - 1;
+   }
+
+   start = index + 1;
+   index += snprintf(buf + index, sizeof(buf) - index, "\nIMSI: ");
+   err = modem_get_imsi(buf + index, sizeof(buf) - index);
+   dtls_info("%s", buf + start);
+   if (err) {
+      index += err;
+   } else {
+      index = start - 1;
+   }
 
    p = modem_get_network_mode();
    start = index + 1;
@@ -360,7 +380,11 @@ int coap_client_prepare_post(void)
       index += snprintf(buf + index, sizeof(buf) - index, ",%s", network_info.reg_status);
       if (network_info.registered) {
          index += snprintf(buf + index, sizeof(buf) - index, ",Band %d", network_info.band);
-         index += snprintf(buf + index, sizeof(buf) - index, ",PLMN %s", network_info.provider);
+         if (network_info.plmn_lock) {
+            index += snprintf(buf + index, sizeof(buf) - index, ",#PLMN %s", network_info.provider);
+         } else {
+            index += snprintf(buf + index, sizeof(buf) - index, ",PLMN %s", network_info.provider);
+         }
          index += snprintf(buf + index, sizeof(buf) - index, ",TAC %s", network_info.tac);
          index += snprintf(buf + index, sizeof(buf) - index, ",Cell %s", network_info.cell);
          if (network_info.rsrp) {
@@ -399,10 +423,10 @@ int coap_client_prepare_post(void)
             index += snprintf(buf + index, sizeof(buf) - index, "\neDRX: n.a.");
             break;
          case LTE_LC_LTE_MODE_LTEM:
-            index += snprintf(buf + index, sizeof(buf) - index, "!eDRX: LTE-M %0.2f [s], page %0.2f [s]", edrx.edrx, edrx.ptw);
+            index += snprintf(buf + index, sizeof(buf) - index, "\n!eDRX: LTE-M %0.2f [s], page %0.2f [s]", edrx.edrx, edrx.ptw);
             break;
          case LTE_LC_LTE_MODE_NBIOT:
-            index += snprintf(buf + index, sizeof(buf) - index, "!eDRX: NB-IoT %0.2f [s], page %0.2f [s]", edrx.edrx, edrx.ptw);
+            index += snprintf(buf + index, sizeof(buf) - index, "\n!eDRX: NB-IoT %0.2f [s], page %0.2f [s]", edrx.edrx, edrx.ptw);
             break;
       }
       dtls_info("%s", buf + start);
@@ -693,18 +717,7 @@ int coap_client_send_message(struct dtls_context_t *ctx, session_t *dst)
 
 int coap_client_init(void)
 {
-   char buf[64];
-   int err;
-
-   memset(iccid, 0, sizeof(iccid));
    coap_current_token = sys_rand32_get();
 
-   err = modem_at_cmd("AT%%XICCID", buf, sizeof(buf), "%XICCID: ");
-   if (err < 0) {
-      dtls_warn("Failed to read ICCID.");
-   } else {
-      dtls_info("iccid: %s", buf);
-      strncpy(iccid, buf, sizeof(iccid));
-   }
    return 0;
 }

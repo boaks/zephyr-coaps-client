@@ -48,8 +48,12 @@ static struct lte_lc_psm_cfg psm_status = {0, 0};
 static uint32_t lte_searchs = 0;
 static uint32_t lte_psm_delays = 0;
 static bool lte_plmn_lock = false;
+static bool lte_force_nb_iot = false;
+static bool lte_force_lte_m = false;
 static struct lte_network_info network_info;
 static int64_t transmission_time = 0;
+static uint8_t iccid[24];
+static uint8_t imsi[24];
 
 static volatile int rai_time = -1;
 
@@ -70,6 +74,22 @@ static void modem_read_network_info_work_fn(struct k_work *work)
 }
 
 static K_WORK_DEFINE(modem_read_network_info_work, modem_read_network_info_work_fn);
+
+static void modem_read_sim_work_fn(struct k_work *work)
+{
+   char buf[32];
+   int err = modem_at_cmd("AT+CIMI", buf, sizeof(buf), NULL);
+   if (err < 0) {
+      LOG_INF("Failed to read IMSI.");
+   } else {
+      LOG_INF("imsi: %s", buf);
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      strncpy(imsi, buf, sizeof(imsi));
+      k_mutex_unlock(&lte_mutex);
+   }
+}
+
+static K_WORK_DEFINE(modem_read_sim_work, modem_read_sim_work_fn);
 
 static void lte_connection_set(int connected)
 {
@@ -147,6 +167,7 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
       case LTE_LC_NW_REG_SEARCHING:
          description = "Searching ...";
          lte_inc_searchs();
+         k_work_submit(&modem_read_sim_work);
          break;
       case LTE_LC_NW_REG_REGISTRATION_DENIED:
          description = "Not Connected - denied";
@@ -344,7 +365,7 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_cal
    if (IS_ENABLED(CONFIG_LTE_AUTO_INIT_AND_CONNECT)) {
       /* Do nothing, modem is already configured and LTE connected. */
    } else if (!initialized) {
-      char buf[32];
+      char buf[128];
       const char *plmn = NULL;
 
       nrf_modem_lib_init(NORMAL_MODE);
@@ -356,26 +377,41 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_cal
       if (err > 0) {
          LOG_INF("rev: %s", buf);
       }
-#if 0
-      err = modem_at_cmd("AT%%XFACTORYRESET=0", buf, sizeof(buf), NULL);
-      LOG_INF("Factory reset: %s", buf);
-      k_sleep(K_SECONDS(10));
-#endif
+      if ((config & 3) == 3) {
+         err = modem_at_cmd("AT%%XFACTORYRESET=0", buf, sizeof(buf), NULL);
+         LOG_INF("Factory reset: %s", buf);
+         k_sleep(K_SECONDS(10));
+      } else if (config & 2) {
+         // force NB-IoT only
+         lte_force_nb_iot = true;
+         lte_lc_system_mode_set(LTE_LC_SYSTEM_MODE_NBIOT, LTE_LC_SYSTEM_MODE_NBIOT);
+      } else if (config & 1) {
+         // force LTE-M only
+         lte_force_lte_m = true;
+         lte_lc_system_mode_set(LTE_LC_SYSTEM_MODE_LTEM, LTE_LC_SYSTEM_MODE_LTEM);
+      }
 #if 0
       err = modem_at_cmd("AT%%REL14FEAT=0,1,0,0,0", buf, sizeof(buf), NULL);
       if (err > 0) {
          LOG_INF("rel14feat: %s", buf);
       }
 #endif
-      int err = modem_at_cmd("AT%%XCONNSTAT=1", buf, sizeof(buf), NULL);
+      err = modem_at_cmd("AT%%XCONNSTAT=1", buf, sizeof(buf), NULL);
       if (err > 0) {
          LOG_INF("stat: %s", buf);
       }
 
+#ifndef CONFIG_LTE_LOCK_BANDS
+      err = modem_at_cmd("AT%%XBANDLOCK?", buf, sizeof(buf), "%XBANDLOCK: ");
+      if (err > 0) {
+         LOG_INF("band-lock: %s", buf);
+      }
+#endif
+
 #ifdef CONFIG_LTE_LOCK_PLMN
       plmn = CONFIG_LTE_LOCK_PLMN_STRING;
 #else
-      switch (config) {
+      switch ((config >> 2) & 3) {
          case 0:
             break;
          case 1:
@@ -409,15 +445,20 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_cal
       err = lte_lc_psm_req(true);
       if (err) {
          if (err == -EFAULT) {
-            LOG_WRN("Modem set power mode failed, AT cmd failed!");
+            LOG_WRN("Modem set PSM failed, AT cmd failed!");
          } else {
-            LOG_WRN("Modem set power mode failed, error: %d!", err);
+            LOG_WRN("Modem set PSM failed, error: %d!", err);
          }
       } else {
          err = modem_at_cmd("AT+CPSMS?", buf, sizeof(buf), "+CPSMS: ");
          if (err > 0) {
             LOG_INF("psm: %s", buf);
          }
+      }
+#else
+      err = lte_lc_psm_req(false);
+      if (err) {
+         LOG_WRN("Modem disable PSM failed!");
       }
 #endif
 
@@ -434,6 +475,11 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_cal
          if (err > 0) {
             LOG_INF("eDRX: %s", buf);
          }
+      }
+#else
+      err = lte_lc_edrx_req(false);
+      if (err) {
+         LOG_WRN("Modem disable eDRX failed!");
       }
 #endif
 
@@ -491,21 +537,30 @@ int modem_start(const k_timeout_t timeout)
 {
    int err = 0;
    int64_t time;
-#ifdef CONFIG_LTE_NETWORK_MODE_NBIOT
-   LOG_INF("NB-IoT");
-#elif CONFIG_LTE_NETWORK_MODE_LTE_M
-   LOG_INF("LTE-M");
-#elif CONFIG_LTE_MODE_PREFERENCE_LTE_M
-   LOG_INF("LTE-M preference.");
-#elif CONFIG_LTE_MODE_PREFERENCE_NBIOT
-   LOG_INF("NB-IoT preference.");
-#elif CONFIG_LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO
-   LOG_INF("LTE-M PLMN preference.");
-#elif CONFIG_LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO
-   LOG_INF("NB-IoT PLMN preference.");
-#endif
+   char buf[32];
 
+   if (lte_force_nb_iot) {
+      LOG_INF("NB-IoT (config button 1)");
+   } else if (lte_force_lte_m) {
+      LOG_INF("LTE-M (call button)");
+   } else {
+#ifdef CONFIG_LTE_NETWORK_MODE_NBIOT
+      LOG_INF("NB-IoT");
+#elif CONFIG_LTE_NETWORK_MODE_LTE_M
+      LOG_INF("LTE-M");
+#elif CONFIG_LTE_MODE_PREFERENCE_LTE_M
+      LOG_INF("LTE-M preference.");
+#elif CONFIG_LTE_MODE_PREFERENCE_NBIOT
+      LOG_INF("NB-IoT preference.");
+#elif CONFIG_LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO
+      LOG_INF("LTE-M PLMN preference.");
+#elif CONFIG_LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO
+      LOG_INF("NB-IoT PLMN preference.");
+#endif
+   }
    memset(&network_info, 0, sizeof(network_info));
+   memset(&imsi, 0, sizeof(imsi));
+   memset(&iccid, 0, sizeof(iccid));
 
    ui_led_op(LED_COLOR_BLUE, LED_SET);
    ui_led_op(LED_COLOR_RED, LED_SET);
@@ -533,6 +588,16 @@ int modem_start(const k_timeout_t timeout)
             LOG_INF("Modem not saved.");
          }
 #endif
+         err = modem_at_cmd("AT%%XICCID", buf, sizeof(buf), "%XICCID: ");
+         if (err < 0) {
+            LOG_INF("Failed to read ICCID.");
+         } else {
+            LOG_INF("iccid: %s", buf);
+            k_mutex_lock(&lte_mutex, K_FOREVER);
+            strncpy(iccid, buf, sizeof(iccid));
+            k_mutex_unlock(&lte_mutex);
+            err = 0;
+         }
       }
 
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
@@ -560,22 +625,34 @@ const char *modem_get_network_mode(void)
 
 int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx)
 {
+   enum lte_lc_lte_mode mode;
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   mode = edrx_status.mode;
    if (edrx) {
-      k_mutex_lock(&lte_mutex, K_FOREVER);
       *edrx = edrx_status;
-      k_mutex_unlock(&lte_mutex);
    }
+   k_mutex_unlock(&lte_mutex);
+#ifdef CONFIG_UDP_EDRX_ENABLE
    return 0;
+#else
+   return LTE_LC_LTE_MODE_NONE == mode ? -ENODATA : 0;
+#endif
 }
 
 int modem_get_psm_status(struct lte_lc_psm_cfg *psm)
 {
+   int active_time;
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   active_time = psm_status.active_time;
    if (psm) {
-      k_mutex_lock(&lte_mutex, K_FOREVER);
       *psm = psm_status;
-      k_mutex_unlock(&lte_mutex);
    }
+   k_mutex_unlock(&lte_mutex);
+#ifdef CONFIG_UDP_PSM_ENABLE
    return 0;
+#else
+   return active_time < 0 ? -ENODATA : 0;
+#endif
 }
 
 int modem_get_release_time(void)
@@ -585,10 +662,37 @@ int modem_get_release_time(void)
 
 int modem_get_network_info(struct lte_network_info *info)
 {
-   k_mutex_lock(&lte_mutex, K_FOREVER);
-   *info = network_info;
-   k_mutex_unlock(&lte_mutex);
+   if (info) {
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      *info = network_info;
+      info->plmn_lock = lte_plmn_lock;
+      k_mutex_unlock(&lte_mutex);
+   }
    return 0;
+}
+
+int modem_get_imsi(char *buf, size_t len)
+{
+   int result = 0;
+   if (buf) {
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      strncpy(buf, imsi, len);
+      k_mutex_unlock(&lte_mutex);
+      result = strlen(buf);
+   }
+   return result;
+}
+
+int modem_get_iccid(char *buf, size_t len)
+{
+   int result = 0;
+   if (buf) {
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      strncpy(buf, iccid, len);
+      k_mutex_unlock(&lte_mutex);
+      result = strlen(buf);
+   }
+   return result;
 }
 
 void modem_set_transmission_time(void)
@@ -826,6 +930,20 @@ int modem_get_network_info(struct lte_network_info *info)
 {
    (void)info;
    return -ENODATA;
+}
+
+int modem_get_imsi(char *buf, size_t len)
+{
+   (void)buf;
+   (void)len;
+   return 0;
+}
+
+int modem_get_iccid(char *buf, size_t len)
+{
+   (void)buf;
+   (void)len;
+   return 0;
 }
 
 int modem_read_network_info(struct lte_network_info *info)

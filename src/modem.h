@@ -23,6 +23,7 @@
 typedef struct lte_network_info {
    const char* reg_status;
    bool registered;
+   bool plmn_lock;
    int16_t rsrp;
    uint8_t band;
    char provider[6];
@@ -58,6 +59,10 @@ int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx);
 int modem_get_psm_status(struct lte_lc_psm_cfg *psm);
 
 int modem_get_network_info(struct lte_network_info* info);
+
+int modem_get_imsi(char* buf, size_t len);
+
+int modem_get_iccid(char* buf, size_t len);
 
 int modem_get_release_time(void);
 

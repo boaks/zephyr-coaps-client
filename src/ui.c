@@ -24,8 +24,9 @@
 
 #define CALL_BUTTON_NODE DT_ALIAS(sw0)
 
-#define CONFIG_BUTTON_NODE_1 DT_ALIAS(sw2)
-#define CONFIG_BUTTON_NODE_2 DT_ALIAS(sw3)
+#define CONFIG_BUTTON_NODE_1 DT_ALIAS(sw1)
+#define CONFIG_SWITCH_NODE_1 DT_ALIAS(sw2)
+#define CONFIG_SWITCH_NODE_2 DT_ALIAS(sw3)
 
 #if DT_NODE_HAS_STATUS(LED_RED_NODE, okay)
 #define LED_RED DT_GPIO_LABEL(LED_RED_NODE, gpios)
@@ -75,15 +76,19 @@
 #define CALL_BUTTON_GPIO_FLAGS 0
 #endif
 
-#if DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_2, okay)
+#if DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_2, okay)
 #define CONFIG_BUTTON_1_GPIO_LABEL DT_GPIO_LABEL(CONFIG_BUTTON_NODE_1, gpios)
 #define CONFIG_BUTTON_1_GPIO_PIN DT_GPIO_PIN(CONFIG_BUTTON_NODE_1, gpios)
 #define CONFIG_BUTTON_1_GPIO_FLAGS (GPIO_INPUT | DT_GPIO_FLAGS(CONFIG_BUTTON_NODE_1, gpios))
-#define CONFIG_BUTTON_2_GPIO_LABEL DT_GPIO_LABEL(CONFIG_BUTTON_NODE_2, gpios)
-#define CONFIG_BUTTON_2_GPIO_PIN DT_GPIO_PIN(CONFIG_BUTTON_NODE_2, gpios)
-#define CONFIG_BUTTON_2_GPIO_FLAGS (GPIO_INPUT | DT_GPIO_FLAGS(CONFIG_BUTTON_NODE_2, gpios))
-static const struct device *config_button_1;
-static const struct device *config_button_2;
+#define CONFIG_SWITCH_1_GPIO_LABEL DT_GPIO_LABEL(CONFIG_SWITCH_NODE_1, gpios)
+#define CONFIG_SWITCH_1_GPIO_PIN DT_GPIO_PIN(CONFIG_SWITCH_NODE_1, gpios)
+#define CONFIG_SWITCH_1_GPIO_FLAGS (GPIO_INPUT | DT_GPIO_FLAGS(CONFIG_SWITCH_NODE_1, gpios))
+#define CONFIG_SWITCH_2_GPIO_LABEL DT_GPIO_LABEL(CONFIG_SWITCH_NODE_2, gpios)
+#define CONFIG_SWITCH_2_GPIO_PIN DT_GPIO_PIN(CONFIG_SWITCH_NODE_2, gpios)
+#define CONFIG_SWITCH_2_GPIO_FLAGS (GPIO_INPUT | DT_GPIO_FLAGS(CONFIG_SWITCH_NODE_2, gpios))
+static const struct device *config_button_1_dev;
+static const struct device *config_switch_1_dev;
+static const struct device *config_switch_2_dev;
 #endif
 
 static const struct device *led_red_dev;
@@ -140,24 +145,33 @@ static void initButton(void)
    if (ret < 0) {
       return;
    }
-#if DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_2, okay)
+#if DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_2, okay)
 
-   config_button_1 = device_get_binding(CONFIG_BUTTON_1_GPIO_LABEL);
-   if (config_button_1 == NULL) {
+   config_button_1_dev = device_get_binding(CONFIG_BUTTON_1_GPIO_LABEL);
+   if (config_button_1_dev == NULL) {
       return;
    }
-   ret = gpio_pin_configure(config_button_1, CONFIG_BUTTON_1_GPIO_PIN, CONFIG_BUTTON_1_GPIO_FLAGS);
+   ret = gpio_pin_configure(config_button_1_dev, CONFIG_BUTTON_1_GPIO_PIN, CONFIG_BUTTON_1_GPIO_FLAGS);
    if (ret < 0) {
-      config_button_1 = NULL;
+      config_button_1_dev = NULL;
       return;
    }
-   config_button_2 = device_get_binding(CONFIG_BUTTON_2_GPIO_LABEL);
-   if (config_button_2 == NULL) {
+   config_switch_1_dev = device_get_binding(CONFIG_SWITCH_1_GPIO_LABEL);
+   if (config_switch_1_dev == NULL) {
       return;
    }
-   ret = gpio_pin_configure(config_button_2, CONFIG_BUTTON_2_GPIO_PIN, CONFIG_BUTTON_2_GPIO_FLAGS);
+   ret = gpio_pin_configure(config_switch_1_dev, CONFIG_SWITCH_1_GPIO_PIN, CONFIG_SWITCH_1_GPIO_FLAGS);
    if (ret < 0) {
-      config_button_2 = NULL;
+      config_switch_1_dev = NULL;
+      return;
+   }
+   config_switch_2_dev = device_get_binding(CONFIG_SWITCH_2_GPIO_LABEL);
+   if (config_switch_2_dev == NULL) {
+      return;
+   }
+   ret = gpio_pin_configure(config_switch_2_dev, CONFIG_SWITCH_2_GPIO_PIN, CONFIG_SWITCH_2_GPIO_FLAGS);
+   if (ret < 0) {
+      config_switch_2_dev = NULL;
       return;
    }
 #endif
@@ -257,12 +271,14 @@ int ui_init(ui_callback_handler_t button_handler)
 
 int ui_config(void)
 {
-#if DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_2, okay)
-   if (config_button_1 && config_button_2) {
-      int pin1 = gpio_pin_get(config_button_1, CONFIG_BUTTON_1_GPIO_PIN);
-      int pin2 = gpio_pin_get(config_button_2, CONFIG_BUTTON_2_GPIO_PIN);
-      if (pin1 >= 0 && pin2 >= 0) {
-         return pin2 << 1 | pin1;
+#if DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_2, okay)
+   if (button_dev && config_button_1_dev && config_switch_1_dev && config_switch_2_dev) {
+      int pin1 = gpio_pin_get(button_dev, CALL_BUTTON_GPIO_PIN);
+      int pin2 = gpio_pin_get(config_button_1_dev, CONFIG_BUTTON_1_GPIO_PIN);
+      int pin3 = gpio_pin_get(config_switch_1_dev, CONFIG_SWITCH_1_GPIO_PIN);
+      int pin4 = gpio_pin_get(config_switch_2_dev, CONFIG_SWITCH_2_GPIO_PIN);
+      if (pin1 >= 0 && pin2 >= 0 && pin3 >= 0 && pin4 >= 0) {
+         return pin4 << 3 | pin3 << 2 | pin2 << 1 | pin1;
       }
    }
 #endif
