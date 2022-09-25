@@ -46,4 +46,19 @@
 			label = "Green LED 4";
 		};
 	};
+
+	leds4 {
+		compatible = "gpio-leds";
+		status = "okay";
+		label = "LED4";
+		led4: led_4 {
+			gpios = <&gpio0 10 0>;
+			label = "LTE LED 5";
+		};
+	};
+
+	aliases {
+		led4 = &led4;
+	};
+
 };

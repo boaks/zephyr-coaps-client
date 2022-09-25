@@ -208,7 +208,7 @@ static void dtls_wakeup_trigger(void)
 
 static void dtls_coap_next(void)
 {
-   ui_lte_op(LED_CLEAR);
+   ui_lte_1_op(LED_CLEAR);
 #ifdef CONFIG_UDP_POWER_ON_OFF_ENABLE
    lte_power_off = true;
    modem_power_off();
@@ -355,9 +355,10 @@ send_to_peer(struct dtls_context_t *ctx,
    int *fd = (int *)dtls_get_app_data(ctx);
    int res = 0;
 
+#ifndef CONFIG_UDP_POWER_ON_OFF_ENABLE
    lte_connected_send = false;
    connect_time = (unsigned long)k_uptime_get();
-
+#endif
    res = sendto(*fd, data, len, MSG_DONTWAIT, &session->addr.sa, session->size);
    if (res < 0) {
       dtls_warn("send_to_peer failed: %d, errno %d (%s)", res, errno, strerror(errno));
@@ -497,8 +498,14 @@ static void dtls_lte_connected(enum dtls_lte_connect_type type, bool connected)
          }
       } else {
          lte_connected = connected;
-         ui_led_op(LED_COLOR_BLUE, LED_SET);
-         ui_led_op(LED_COLOR_RED, LED_SET);
+         led_op_t op = LED_SET;
+#ifdef CONFIG_UDP_POWER_ON_OFF_ENABLE
+         if (lte_power_off) {
+            op = LED_CLEAR;
+         }
+#endif
+         ui_led_op(LED_COLOR_BLUE, op);
+         ui_led_op(LED_COLOR_RED, op);
          ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
       }
    } else if (type == LTE_CONNECT_TRANSMISSION) {
@@ -702,6 +709,7 @@ int dtls_loop(void)
 #endif
          result = 0;
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
+            ui_lte_1_op(LED_SET);
 #if CONFIG_COAP_SEND_INTERVAL > 0
             k_work_reschedule(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
 #endif
@@ -709,7 +717,8 @@ int dtls_loop(void)
             if (lte_power_off) {
                dtls_info("modem on");
                lte_power_off = false;
-               ui_lte_op(LED_SET);
+               lte_connected_send = false;
+               connect_time = (unsigned long)k_uptime_get();
                modem_set_normal();
                reopen_socket(dtls_context);
             }

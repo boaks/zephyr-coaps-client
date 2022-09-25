@@ -22,7 +22,8 @@
 #define LED_GREEN_NODE DT_ALIAS(led1)
 #define LED_BLUE_NODE DT_ALIAS(led2)
 
-#define LED_LTE_NODE DT_ALIAS(led3)
+#define LED_LTE_NODE_1 DT_ALIAS(led3)
+#define LED_LTE_NODE_2 DT_ALIAS(led4)
 
 #define CALL_BUTTON_NODE DT_ALIAS(sw0)
 
@@ -66,10 +67,16 @@
 #define FLAGS_BLUE 0
 #endif
 
-#if DT_NODE_HAS_STATUS(LED_LTE_NODE, okay)
-#define LED_LTE DT_GPIO_LABEL(LED_LTE_NODE, gpios)
-#define PIN_LTE DT_GPIO_PIN(LED_LTE_NODE, gpios)
-#define FLAGS_LTE DT_GPIO_FLAGS(LED_LTE_NODE, gpios)
+#if DT_NODE_HAS_STATUS(LED_LTE_NODE_1, okay)
+#define LED_LTE_1 DT_GPIO_LABEL(LED_LTE_NODE_1, gpios)
+#define PIN_LTE_1 DT_GPIO_PIN(LED_LTE_NODE_1, gpios)
+#define FLAGS_LTE_1 DT_GPIO_FLAGS(LED_LTE_NODE_1, gpios)
+#endif
+
+#if DT_NODE_HAS_STATUS(LED_LTE_NODE_2, okay)
+#define LED_LTE_2 DT_GPIO_LABEL(LED_LTE_NODE_2, gpios)
+#define PIN_LTE_2 DT_GPIO_PIN(LED_LTE_NODE_2, gpios)
+#define FLAGS_LTE_2 DT_GPIO_FLAGS(LED_LTE_NODE_2, gpios)
 #endif
 
 #if DT_NODE_HAS_STATUS(CALL_BUTTON_NODE, okay)
@@ -102,8 +109,11 @@ static const struct device *config_switch_2_dev;
 static const struct device *led_red_dev;
 static const struct device *led_green_dev;
 static const struct device *led_blue_dev;
-#if DT_NODE_HAS_STATUS(LED_LTE_NODE, okay)
-static const struct device *led_lte_dev;
+#if DT_NODE_HAS_STATUS(LED_LTE_NODE_1, okay)
+static const struct device *led_lte_dev_1;
+#endif
+#if DT_NODE_HAS_STATUS(LED_LTE_NODE_2, okay)
+static const struct device *led_lte_dev_2;
 #endif
 static const struct device *button_dev;
 
@@ -244,10 +254,17 @@ void ui_led_op(led_t led, led_op_t op)
    }
 }
 
-void ui_lte_op(led_op_t op)
+void ui_lte_1_op(led_op_t op)
 {
-#if DT_NODE_HAS_STATUS(LED_LTE_NODE, okay)
-   ui_op(led_lte_dev, PIN_LTE, op, NULL);
+#if DT_NODE_HAS_STATUS(LED_LTE_NODE_1, okay)
+   ui_op(led_lte_dev_1, PIN_LTE_1, op, NULL);
+#endif
+}
+
+void ui_lte_2_op(led_op_t op)
+{
+#if DT_NODE_HAS_STATUS(LED_LTE_NODE_2, okay)
+   ui_op(led_lte_dev_2, PIN_LTE_2, op, NULL);
 #endif
 }
 
@@ -283,17 +300,29 @@ int ui_init(ui_callback_handler_t button_handler)
       }
    }
 
-#if DT_NODE_HAS_STATUS(LED_LTE_NODE, okay)
-   led_lte_dev = device_get_binding(LED_LTE);
-   if (led_lte_dev != NULL) {
-      int ret = gpio_pin_configure(led_lte_dev, PIN_LTE, GPIO_OUTPUT_ACTIVE | FLAGS_LTE);
+#if DT_NODE_HAS_STATUS(LED_LTE_NODE_1, okay)
+   led_lte_dev_1 = device_get_binding(LED_LTE_1);
+   if (led_lte_dev_1 != NULL) {
+      int ret = gpio_pin_configure(led_lte_dev_1, PIN_LTE_1, GPIO_OUTPUT_ACTIVE | FLAGS_LTE_1);
       if (ret < 0) {
-         led_lte_dev = NULL;
+         led_lte_dev_1 = NULL;
       } else {
-         gpio_pin_set(led_lte_dev, PIN_LTE, 0);
+         gpio_pin_set(led_lte_dev_1, PIN_LTE_1, 0);
       }
    }
 #endif
+#if DT_NODE_HAS_STATUS(LED_LTE_NODE_2, okay)
+   led_lte_dev_2 = device_get_binding(LED_LTE_2);
+   if (led_lte_dev_2 != NULL) {
+      int ret = gpio_pin_configure(led_lte_dev_2, PIN_LTE_2, GPIO_OUTPUT_ACTIVE | FLAGS_LTE_2);
+      if (ret < 0) {
+         led_lte_dev_2 = NULL;
+      } else {
+         gpio_pin_set(led_lte_dev_2, PIN_LTE_2, 0);
+      }
+   }
+#endif
+
    button_callback = button_handler;
    initButton();
    return 0;
