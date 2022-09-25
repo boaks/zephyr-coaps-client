@@ -93,8 +93,13 @@ config COAP_WAIT_ON_POWERMANAGER
 endmenu
 
 menu "Modem Settings"
+config UDP_POWER_ON_OFF_ENABLE
+	bool "Enable LTE Power On/Off Mode"
+	default n
+
 config UDP_PSM_ENABLE
 	bool "Enable LTE Power Saving Mode"
+	depends on !UDP_POWER_ON_OFF_ENABLE
 	default y
 
 config UDP_RAI_ENABLE

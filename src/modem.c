@@ -249,6 +249,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
                if (lte_connected_state) {
                   k_work_submit(&modem_read_network_info_work);
                }
+               ui_lte_op(LED_SET);
             } else {
                int64_t time = get_transmission_time();
                idle_time = now;
@@ -262,6 +263,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
                if (s_connect_handler) {
                   s_connect_handler(LTE_CONNECT_TRANSMISSION, false);
                }
+               ui_lte_op(LED_CLEAR);
 #ifdef CONFIG_LOW_POWER
                lte_power_management_3v3 = false;
                k_work_submit(&modem_power_management_3v3_work);

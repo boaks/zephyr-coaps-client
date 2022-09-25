@@ -60,6 +60,9 @@ static volatile bool lte_connected_send = false;
 static volatile unsigned int lte_connections = 0;
 static volatile request_state_t request_state = NONE;
 static volatile unsigned long connected_time = 0;
+#ifdef CONFIG_UDP_POWER_ON_OFF_ENABLE
+static volatile bool lte_power_off = false;
+#endif
 #ifdef CONFIG_ADXL362_MOTION_DETECTION
 static volatile bool moved = false;
 #endif
@@ -203,6 +206,19 @@ static void dtls_wakeup_trigger(void)
 }
 #endif
 
+static void dtls_coap_next(void)
+{
+   ui_lte_op(LED_CLEAR);
+#ifdef CONFIG_UDP_POWER_ON_OFF_ENABLE
+   lte_power_off = true;
+   modem_power_off();
+   dtls_info("modem off");
+#endif
+#if CONFIG_COAP_SEND_INTERVAL > 0
+   k_work_schedule(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
+#endif
+}
+
 static void dtls_coap_success(void)
 {
    long time1 = connected_time - connect_time;
@@ -254,9 +270,7 @@ static void dtls_coap_success(void)
       dtls_info("vbat: %u, %u, %u, %u, %u", bat_level[0], bat_level[1], bat_level[2], bat_level[3], bat_level[4]);
       dtls_info("      %u, %u, %u, %u, %u", bat_level[5], bat_level[6], bat_level[7], bat_level[8], bat_level[9]);
    }
-#if CONFIG_COAP_SEND_INTERVAL > 0
-   k_work_schedule(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
-#endif
+   dtls_coap_next();
 }
 
 static void dtls_coap_failure(void)
@@ -277,9 +291,7 @@ static void dtls_coap_failure(void)
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    dtls_info("%u/%ldms/%ldms: failure", lte_connections, time1, time2);
    transmissions[COAP_MAX_RETRANSMISSION + 1]++;
-#if CONFIG_COAP_SEND_INTERVAL > 0
-   k_work_schedule(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
-#endif
+   dtls_coap_next();
 }
 
 static int
@@ -631,10 +643,12 @@ int dtls_loop(void)
    dtls_connect(dtls_context, &dst);
 
    while (1) {
+#ifndef CONFIG_UDP_POWER_ON_OFF_ENABLE
       if (!network_connected) {
          reopen_socket(dtls_context);
          continue;
       }
+#endif
 
 #ifdef CONFIG_LOCATION_ENABLE
       uint8_t battery_level = 0xff;
@@ -690,6 +704,15 @@ int dtls_loop(void)
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
 #if CONFIG_COAP_SEND_INTERVAL > 0
             k_work_reschedule(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
+#endif
+#ifdef CONFIG_UDP_POWER_ON_OFF_ENABLE
+            if (lte_power_off) {
+               dtls_info("modem on");
+               lte_power_off = false;
+               ui_lte_op(LED_SET);
+               modem_set_normal();
+               reopen_socket(dtls_context);
+            }
 #endif
             request_state = SEND;
             loops = 0;
@@ -765,9 +788,9 @@ int dtls_loop(void)
             }
          }
       } else { /* ok */
-         if (FD_ISSET(fd, &wfds))
-            /* FIXME */;
-         else if (FD_ISSET(fd, &rfds)) {
+         if (FD_ISSET(fd, &wfds)) {
+            dtls_info("Ready to write.");
+         } else if (FD_ISSET(fd, &rfds)) {
             dtls_handle_read(dtls_context);
             if (request_state == SEND_ACK) {
                unsigned long temp_time = connect_time;
@@ -794,7 +817,7 @@ void main(void)
 
    ui_init(dtls_manual_trigger);
    config = ui_config();
-   
+
 #if CONFIG_COAP_WAKEUP_SEND_INTERVAL > 0 && CONFIG_COAP_SEND_INTERVAL == 0
    modem_init(config, dtls_wakeup_trigger, dtls_lte_connected);
 #else
@@ -836,7 +859,7 @@ void main_(void)
 {
    modem_power_off();
    power_manager_3v3(false);
-//   power_manager_1v8(false);
+   //   power_manager_1v8(false);
    k_sleep(K_MSEC(1000));
    NRF_REGULATORS->SYSTEMOFF = 1;
 }
