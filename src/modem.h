@@ -70,6 +70,8 @@ void modem_set_transmission_time(void);
 
 int modem_read_network_info(struct lte_network_info* info);
 
+int modem_read_pdn_info(char* buf, size_t len);
+
 int modem_read_statistic(struct lte_network_statistic* statistic);
 
 int modem_at_cmd(const char* cmd, char* buf, size_t max_len, const char *skip);

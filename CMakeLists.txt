@@ -147,4 +147,5 @@ add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP3}"
                    COMMAND echo "${BUILD_SUMUP4}"
                    COMMAND echo "${BUILD_SUMUP5}"
+                   COMMAND echo "Build with network search timeout ${CONFIG_MODEM_SEARCH_TIMEOUT}s"
                    )

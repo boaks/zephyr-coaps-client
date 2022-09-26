@@ -15,6 +15,7 @@
 #include <logging/log.h>
 #include <modem/lte_lc.h>
 #include <modem/nrf_modem_lib.h>
+#include <modem/pdn.h>
 #include <nrf_modem_at.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,6 +75,15 @@ static void modem_read_network_info_work_fn(struct k_work *work)
 }
 
 static K_WORK_DEFINE(modem_read_network_info_work, modem_read_network_info_work_fn);
+
+#ifdef CONFIG_PDN
+static void modem_read_pdn_info_work_fn(struct k_work *work)
+{
+   modem_read_pdn_info(NULL, 0);
+}
+
+static K_WORK_DEFINE(modem_read_pdn_info_work, modem_read_pdn_info_work_fn);
+#endif
 
 static void modem_read_sim_work_fn(struct k_work *work)
 {
@@ -328,6 +338,31 @@ static void lte_handler(const struct lte_lc_evt *const evt)
    }
 }
 
+#ifdef CONFIG_PDN
+static void pdn_handler(uint8_t cid, enum pdn_event event,
+                        int reason)
+{
+   switch (event) {
+      case PDN_EVENT_CNEC_ESM:
+         LOG_INF("PDN CID %u, error %d", cid, reason);
+         break;
+      case PDN_EVENT_ACTIVATED:
+         LOG_INF("PDN CID %u, activated", cid);
+         k_work_submit(&modem_read_pdn_info_work);
+         break;
+      case PDN_EVENT_DEACTIVATED:
+         LOG_INF("PDN CID %u, deactivated", cid);
+         break;
+      case PDN_EVENT_IPV6_UP:
+         LOG_INF("PDN CID %u, IPv6 up", cid);
+         break;
+      case PDN_EVENT_IPV6_DOWN:
+         LOG_INF("PDN CID %u, IPv6 down", cid);
+         break;
+   }
+}
+#endif
+
 static void terminate_at_buffer(char *line, size_t len)
 {
    while (*line != 0 && *line != '\n' && *line != '\r' && len > 1) {
@@ -443,6 +478,7 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_cal
       if (err) {
          LOG_WRN("Failed to lock PLMN, err %d", err);
       }
+
 #ifdef CONFIG_UDP_PSM_ENABLE
       err = lte_lc_psm_req(true);
       if (err) {
@@ -482,6 +518,25 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_cal
       err = lte_lc_edrx_req(false);
       if (err) {
          LOG_WRN("Modem disable eDRX failed!");
+      }
+#endif
+
+#if 0
+      err = nrf_modem_at_printf("AT+CGDCONT=1,\"IPV4V6\",\"flolive.net\"");
+      if (err) {
+         LOG_WRN("Failed to set CGDCONT, err %d", err);
+      }
+#endif
+
+#ifdef CONFIG_PDN
+      pdn_default_callback_set(pdn_handler);
+      err = nrf_modem_at_printf("AT+CGEREP=1");
+      if (err) {
+         LOG_WRN("Failed to enable CGEREP, err %d", err);
+      }
+      err = nrf_modem_at_printf("AT+CNEC=24");
+      if (err) {
+         LOG_WRN("Failed to enable CNEC, err %d", err);
       }
 #endif
 
@@ -676,24 +731,24 @@ int modem_get_network_info(struct lte_network_info *info)
 int modem_get_imsi(char *buf, size_t len)
 {
    int result = 0;
+   k_mutex_lock(&lte_mutex, K_FOREVER);
    if (buf) {
-      k_mutex_lock(&lte_mutex, K_FOREVER);
       strncpy(buf, imsi, len);
-      k_mutex_unlock(&lte_mutex);
-      result = strlen(buf);
    }
+   result = strlen(imsi);
+   k_mutex_unlock(&lte_mutex);
    return result;
 }
 
 int modem_get_iccid(char *buf, size_t len)
 {
    int result = 0;
+   k_mutex_lock(&lte_mutex, K_FOREVER);
    if (buf) {
-      k_mutex_lock(&lte_mutex, K_FOREVER);
       strncpy(buf, iccid, len);
-      k_mutex_unlock(&lte_mutex);
-      result = strlen(buf);
    }
+   result = strlen(iccid);
+   k_mutex_unlock(&lte_mutex);
    return result;
 }
 
@@ -788,46 +843,45 @@ int modem_read_network_info(struct lte_network_info *info)
    if (info) {
       *info = temp;
    }
+
    return 0;
+}
+
+int modem_read_pdn_info(char *info, size_t len)
+{
+   char buf[64];
+   if (!modem_at_cmd("AT+CGDCONT?", buf, sizeof(buf), "+CGDCONT: ")) {
+      LOG_INF("Failed to read CGDCONT.");
+      return -ENODATA;
+   } else {
+      LOG_INF("CGDCONT: %s", buf);
+      if (info) {
+         strncpy(info, buf, len);
+      }
+      return strlen(buf);
+   }
 }
 
 int modem_read_statistic(struct lte_network_statistic *statistic)
 {
    int err;
-   const char *cur;
-   char *t;
-   char buf[92];
+   char buf[64];
 
    memset(statistic, 0, sizeof(struct lte_network_statistic));
    err = modem_at_cmd("AT%%XCONNSTAT?", buf, sizeof(buf), "%XCONNSTAT: ");
    if (err > 0) {
       LOG_INF("%s", buf);
-      cur = parse_next_chars(buf, ',', 2);
-      if (cur) {
-         statistic->transmitted = (uint32_t)strtol(cur, &t, 10);
-         cur = t;
+      err = sscanf(buf, " %*u,%*u,%u,%u,%hu,%hu",
+                   &statistic->transmitted,
+                   &statistic->received,
+                   &statistic->max_packet_size,
+                   &statistic->average_packet_size);
+      if (err == 4) {
+         k_mutex_lock(&lte_mutex, K_FOREVER);
+         statistic->searchs = lte_searchs;
+         statistic->psm_delays = lte_psm_delays;
+         k_mutex_unlock(&lte_mutex);
       }
-      if (cur) {
-         // skip the ,
-         cur++;
-         statistic->received = (uint32_t)strtol(cur, &t, 10);
-         cur = t;
-      }
-      if (cur) {
-         // skip the ,
-         cur++;
-         statistic->max_packet_size = (uint16_t)strtol(cur, &t, 10);
-         cur = t;
-      }
-      if (cur) {
-         // skip the ,
-         cur++;
-         statistic->average_packet_size = (uint16_t)strtol(cur, &t, 10);
-      }
-      k_mutex_lock(&lte_mutex, K_FOREVER);
-      statistic->searchs = lte_searchs;
-      statistic->psm_delays = lte_psm_delays;
-      k_mutex_unlock(&lte_mutex);
    }
    return err;
 }

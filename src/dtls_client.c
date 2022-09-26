@@ -71,17 +71,6 @@ static unsigned long response_time = 0;
 static unsigned int transmission = 0;
 static int timeout = 0;
 
-/* the wakeup send interval is only effecitve on PSM wakeup */
-/* the granularity of this time is therefore the PSM time */
-
-//#define NETWORK_WAKEUP_SEND_INTERVAL_S (3600 * 1 - 100) /* approx. 1h */
-
-#if (defined CONFIG_LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO || defined CONFIG_LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO)
-#define NETWORK_TIMEOUT_S 360
-#else
-#define NETWORK_TIMEOUT_S 240
-#endif
-
 #define RTT_SLOTS 9
 #define RTT_INTERVAL 2000
 static unsigned int rtts[RTT_SLOTS + 2] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20};
@@ -110,7 +99,7 @@ static void reboot()
 
 static void reconnect()
 {
-   int timeout_seconds = NETWORK_TIMEOUT_S;
+   int timeout_seconds = CONFIG_MODEM_SEARCH_TIMEOUT;
    int sleep_minutes = 15;
 
    k_sem_reset(&dtls_trigger_search);
@@ -146,7 +135,7 @@ static void reopen_socket(struct dtls_context_t *ctx)
    int err;
    dtls_warn("> reconnect modem");
    modem_set_rai(0);
-   err = modem_start(K_SECONDS(NETWORK_TIMEOUT_S));
+   err = modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
    if (err) {
       reconnect();
    }
@@ -857,7 +846,7 @@ void main(void)
    environment_init();
 #endif
 
-   if (modem_start(K_SECONDS(NETWORK_TIMEOUT_S)) != 0) {
+   if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT)) != 0) {
       reconnect();
    }
 
