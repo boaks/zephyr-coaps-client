@@ -805,13 +805,13 @@ int modem_read_network_info(struct lte_network_info *info)
       cur = parse_next_chars(cur, '"', 5);
       if (cur) {
          // copy 5 character plmn
-         cur += parse_strncpy(temp.provider, cur, '"', 5);
+         cur += parse_strncpy(temp.provider, cur, '"', sizeof(temp.provider));
          // skip  ," find start of next parameter
          cur = parse_next_chars(cur, '"', 1);
       }
       if (cur) {
          // copy 4 character tac
-         cur += parse_strncpy(temp.tac, cur, '"', 4);
+         cur += parse_strncpy(temp.tac, cur, '"', sizeof(temp.tac));
          // skip parameter by ,
          cur = parse_next_chars(cur, ',', 2);
       }
@@ -825,7 +825,7 @@ int modem_read_network_info(struct lte_network_info *info)
          // skip ,"
          cur = t + 2;
          // copy 8 character cell
-         cur += parse_strncpy(temp.cell, cur, '"', 8);
+         cur += parse_strncpy(temp.cell, cur, '"', sizeof(temp.cell));
          // skip 3 parameter by ,
          cur = parse_next_chars(cur, ',', 3);
          if (cur) {

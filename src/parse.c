@@ -12,6 +12,7 @@
  */
 
 #include <stddef.h>
+#include <string.h>
 
 #include "parse.h"
 
@@ -43,18 +44,22 @@ int parse_strncpy(char *buf, const char *value, char end, int size)
 {
    char cur = 0;
    int index;
-   for (index = 0; index < size; ++index) {
-      cur = *value;
-      if (!cur || cur == end) {
-         buf[index] = 0;
+
+   for (index = 0; ;++index) {
+      cur = value[index];
+      if (!cur ||cur == end) {
          break;
       }
-      buf[index] = cur;
-      value++;
    }
-   while (cur && cur != end) {
-      cur = *value++;
-      index++;
+   if (index < size) {
+      strncpy(buf, value, index);
+      buf[index] = 0;
+   } else {
+      strncpy(buf, value, size);
+      buf[size - 1] = 0;
+   }
+   if (cur && cur == end) {
+      ++index;
    }
    return index;
 }
