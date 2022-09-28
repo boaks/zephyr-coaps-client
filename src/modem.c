@@ -806,8 +806,8 @@ int modem_read_network_info(struct lte_network_info *info)
       if (cur) {
          // copy 5 character plmn
          cur += parse_strncpy(temp.provider, cur, '"', 5);
-         // skip  "," find start of next parameter
-         cur = parse_next_chars(cur, '"', 2);
+         // skip  ," find start of next parameter
+         cur = parse_next_chars(cur, '"', 1);
       }
       if (cur) {
          // copy 4 character tac
@@ -838,6 +838,8 @@ int modem_read_network_info(struct lte_network_info *info)
    }
 
    k_mutex_lock(&lte_mutex, K_FOREVER);
+   strncpy(temp.apn, network_info.apn, sizeof(temp.apn));
+   strncpy(temp.local_ip, network_info.local_ip, sizeof(temp.local_ip));
    network_info = temp;
    k_mutex_unlock(&lte_mutex);
    if (info) {
@@ -850,14 +852,37 @@ int modem_read_network_info(struct lte_network_info *info)
 int modem_read_pdn_info(char *info, size_t len)
 {
    char buf[64];
+   char apn[16];
+   char ip[16];
+   const char *cur = buf;
+
    if (!modem_at_cmd("AT+CGDCONT?", buf, sizeof(buf), "+CGDCONT: ")) {
       LOG_INF("Failed to read CGDCONT.");
       return -ENODATA;
    } else {
+      memset(&apn, 0, sizeof(apn));
+      memset(&ip, 0, sizeof(ip));
+      // CGDCONT: 0,"IP","iot.1nce.net","10.223.63.3",0,0
       LOG_INF("CGDCONT: %s", buf);
       if (info) {
          strncpy(info, buf, len);
       }
+      // skip 1 parameter "...", find start of 3th parameter.
+      cur = parse_next_chars(cur, '"', 3);
+      if (cur) {
+         // copy apn
+         cur += parse_strncpy(apn, cur, '"', sizeof(apn));
+      }
+      // skip 1 ", find start of 4th parameter.
+      cur = parse_next_chars(cur, '"', 1);
+      if (cur) {
+         // copy ip
+         cur += parse_strncpy(ip, cur, '"', sizeof(ip));
+      }
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      strncpy(network_info.apn, apn, sizeof(network_info.apn));
+      strncpy(network_info.local_ip, ip, sizeof(network_info.local_ip));
+      k_mutex_unlock(&lte_mutex);
       return strlen(buf);
    }
 }

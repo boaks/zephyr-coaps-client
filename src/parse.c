@@ -41,14 +41,23 @@ const char *parse_next_chars(const char *value, char sep, int count)
 
 int parse_strncpy(char *buf, const char *value, char end, int size)
 {
+   char cur = 0;
    int index;
    for (index = 0; index < size; ++index) {
-      char cur = *value;
+      cur = *value;
       if (!cur || cur == end) {
+         buf[index] = 0;
          break;
       }
       buf[index] = cur;
       value++;
+   }
+   while (cur && cur != end) {
+      cur = *value++;
+      index++;
+   }
+   if (cur == end) {
+      ++index;
    }
    return index;
 }

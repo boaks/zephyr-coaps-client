@@ -227,7 +227,9 @@ int coap_client_parse_data(uint8_t *data, size_t len)
 }
 
 #ifdef ENVIRONMENT_SENSOR
+#if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
 static double s_temperatures[CONFIG_ENVIRONMENT_HISTORY_SIZE];
+#endif
 #endif
 
 #ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE
@@ -276,7 +278,7 @@ int coap_client_prepare_post(void)
    int err;
    int index;
    int start;
-   unsigned int uptime;
+   int64_t uptime;
 
    uint8_t *token = (uint8_t *)&coap_current_token;
    struct coap_packet request;
@@ -289,13 +291,14 @@ int coap_client_prepare_post(void)
 #endif
 
    coap_message_len = 0;
+   memset(&network_info, 0, sizeof(network_info));
 
    for (index = BAT_LEVEL_SLOTS - 1; index > 0; --index) {
       bat_level[index] = bat_level[index - 1];
    }
    bat_level[0] = 1;
 
-   uptime = (unsigned int)(k_uptime_get() / MSEC_PER_SEC);
+   uptime = k_uptime_get() / MSEC_PER_SEC;
 
    if (!power_manager_status(&battery_level, &battery_voltage, &battery_status)) {
       if (battery_voltage != 0xffff) {
@@ -304,8 +307,28 @@ int coap_client_prepare_post(void)
    }
 
    start = 0;
-   index = snprintf(buf, sizeof(buf), "%u s, Thingy:91 %s, 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
-                    uptime, CLIENT_VERSION, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
+   if ((uptime / 60) < 5) {
+      index = snprintf(buf, sizeof(buf), "%lu [s]", (unsigned long)uptime);
+   } else {
+      uint8_t secs = uptime % 60;
+      uptime = uptime / 60;
+      if (uptime < 60) {
+         index = snprintf(buf, sizeof(buf), "%u:%02u [m:ss]", (uint8_t)uptime, secs);
+      } else {
+         uint8_t mins = uptime % 60;
+         uptime = uptime / 60;
+         if (uptime < 24) {
+            index = snprintf(buf, sizeof(buf), "%u:%02u:%02u [h:mm:ss]", (uint8_t)uptime, mins, secs);
+         } else {
+            uint8_t hours = uptime % 24;
+            uptime = uptime / 24;
+            index = snprintf(buf, sizeof(buf), "%u-%02u:%02u:%02u [d-hh:mm:ss]", (uint8_t)uptime, hours, mins, secs);
+         }
+      }
+   }
+
+   index += snprintf(buf + index, sizeof(buf) - index, ", Thingy:91 %s, 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
+                     CLIENT_VERSION, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
    dtls_info("%s", buf + start);
 
    if (bat_level[0] > 1) {
@@ -393,6 +416,12 @@ int coap_client_prepare_post(void)
       }
    }
    dtls_info("%s", buf + start);
+
+   if (network_info.registered) {
+      start = index + 1;
+      index += snprintf(buf + index, sizeof(buf) - index, "\nPDN: %s,%s", network_info.apn, network_info.local_ip);
+      dtls_info("%s", buf + start);
+   }
 
    index += snprintf(buf + index, sizeof(buf) - index, "\n");
    start = index;
@@ -521,6 +550,8 @@ int coap_client_prepare_post(void)
 
 #ifdef ENVIRONMENT_SENSOR
    p = "";
+   int_value = 0;
+#if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
    int_value = environment_get_temperature_history(s_temperatures, CONFIG_ENVIRONMENT_HISTORY_SIZE);
    if (int_value > 0) {
       int history_index;
@@ -532,7 +563,9 @@ int coap_client_prepare_post(void)
       --index;
       index += snprintf(buf + index, sizeof(buf) - index, " C");
       dtls_info("%s", buf + start);
-   } else if (environment_get_temperature(&value) == 0) {
+   }
+#endif
+   if (!int_value && environment_get_temperature(&value) == 0) {
       start = index + 1;
       index += snprintf(buf + index, sizeof(buf) - index, "\n!%.2f C", value);
       dtls_info("%s", buf + start);

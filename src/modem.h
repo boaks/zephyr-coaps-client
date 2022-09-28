@@ -29,6 +29,8 @@ typedef struct lte_network_info {
    char provider[6];
    char tac[5];
    char cell[9];
+   char apn[16];
+   char local_ip[16];
 } lte_network_info_t;
 
 typedef struct lte_network_statistic {
