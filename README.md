@@ -32,7 +32,7 @@ The demo client is considered to use CoAP/DTLS CID. Without server-side support 
 | For now, only the<br/> [Nordic Semiconductor Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91)<br/> is supported. | ![Thingy:91](./docu/thingy91.jpg) |
 | :- | - |
 
-The `Thingy:91` demo works with [ncs-2.0.1](https://github.com/nrfconnect/sdk-nrf/tree/v2.0.1).
+The `Thingy:91` demo works with [ncs-2.1.0](https://github.com/nrfconnect/sdk-nrf/tree/v2.1.0).
 
 To benefit from the newer modem features, please consider to use the modem firmware [1.3.2](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.2.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
@@ -103,7 +103,7 @@ west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git zephyr-c
 ```
 
 from a toolchain-manager-installation, fails with an error message, that a workspace already exists.
-In order to add just this coaps-demo-app and the tinydtls module library to a workspace, open the workspace (for ncs the "ncs" installation folder and change to "v2.0.0" folder there). Here you find a ".west" folder, that contains the west-configuration for the workspace. Rename that ".west" folder into ".west.org" in order to replace that west-configuration by the one from this example. Now execute 
+In order to add just this coaps-demo-app and the tinydtls module library to a workspace, open the workspace (for ncs the "ncs" installation folder and change to "v2.1.0" folder there). Here you find a ".west" folder, that contains the west-configuration for the workspace. Rename that ".west" folder into ".west.org" in order to replace that west-configuration by the one from this example. Now execute 
 
 ```sh
 west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git

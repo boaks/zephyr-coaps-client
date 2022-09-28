@@ -17,21 +17,20 @@
 
 / {
 	aliases {	
+
 		/* alias for sensor with SENSOR_CHAN_AMBIENT_TEMP channel */
-		temperature-sensor = &bme680;
+		temperature-sensor-2 = &sht3xd;
 		/* alias for sensor with SENSOR_CHAN_HUMIDITY channel */
-		humidity-sensor = &bme680;
-		/* alias for sensor with SENSOR_CHAN_PRESS channel */
-		pressure-sensor = &bme680;
-		/* alias for sensor with SENSOR_CHAN_GAS_RES channel */
-		gas-sensor = &bme680;
-
-		/* alias for BME680 sensor to be used with Bosch BSEC library (IAQ Index Air Quality) */
-		environment-sensor = &bme680;
-
-		/* alias for sensor with SENSOR_CHAN_ACCEL_XYZ channels */
-		accelerometer-sensor = &adxl362;
+		humidity-sensor-2 = &sht3xd;
 
 	};
 	
+};
+
+&i2c2 {
+	sht3xd: sht3xd@44 { /* ALERT P1.10 */
+		compatible = "sensirion,sht3xd";
+		reg = <0x44>;
+		label = "SHT3XD";
+	};
 };

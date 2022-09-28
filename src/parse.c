@@ -56,9 +56,6 @@ int parse_strncpy(char *buf, const char *value, char end, int size)
       cur = *value++;
       index++;
    }
-   if (cur == end) {
-      ++index;
-   }
    return index;
 }
 

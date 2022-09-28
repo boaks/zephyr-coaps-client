@@ -1,0 +1,27 @@
+# basic build for nrf9160dk
+west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine
+
+# nb-iot build for nrf9160dk
+west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- -DOVERLAY_CONFIG=nbiot-prj.conf
+
+# basic build for thingy:91
+west build -d build_thingy91_nrf9160_ns -b thingy91_nrf9160_ns --pristine
+
+# low-power build for thingy:91, disable UART adn 3.3V
+west build -d build_thingy91_nrf9160_ns -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG=lowpower-prj.conf
+
+# sht3x environment sensor build for thingy:91
+west build -d build_thingy91_nrf9160_ns -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG=sht3x-prj.conf -DDTC_OVERLAY_FILE=sht3x.overlay
+
+# BME680 environment sensor build for thingy:91
+west build -d build_thingy91_nrf9160_ns -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG=bme-prj.conf
+
+# BME680 environment sensor with BSEC library build for thingy:91
+west build -d build_thingy91_nrf9160_ns -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG=bsec-prj.conf
+
+west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns -t guiconfig
+west build -d build_thingy91_nrf9160_ns -b thingy91_nrf9160_ns -t guiconfig
+
+west flash -d build_nrf9160dk_nrf9160_ns
+west flash -d build_thingy91_nrf9160_ns
+

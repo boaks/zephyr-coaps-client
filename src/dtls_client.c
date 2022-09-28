@@ -197,7 +197,7 @@ static void dtls_wakeup_trigger(void)
 
 static void dtls_coap_next(void)
 {
-   ui_lte_1_op(LED_CLEAR);
+   ui_lte_2_op(LED_CLEAR);
 #ifdef CONFIG_UDP_POWER_ON_OFF_ENABLE
    lte_power_off = true;
    modem_power_off();
@@ -698,7 +698,7 @@ int dtls_loop(void)
 #endif
          result = 0;
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
-            ui_lte_1_op(LED_SET);
+            ui_lte_2_op(LED_SET);
 #if CONFIG_COAP_SEND_INTERVAL > 0
             k_work_reschedule(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
 #endif

@@ -14,7 +14,18 @@
 #ifndef ENVIRONMENT_SENSOR_H
 #define ENVIRONMENT_SENSOR_H
 
-#if (defined CONFIG_BME680_BSEC) || (defined CONFIG_BME680) || defined(CONFIG_SHT3XD) || (defined CONFIG_SHT21)
+/*
+ * With NCS-2.1.0 / v3.1.99-ncs1 it seems, that the KConfig of 
+ * sensors in the Device Tree are automatically set to 'y'.
+ * That causes CONFIG_BME680 to be switched to 'y' by default
+ * for the Thingy:91. To use other sensors or the CONFIG_BME680_BSEC
+ * please switch CONFIG_BME680 or disable it in an overlay configuration.   
+ */
+
+#if (defined CONFIG_BME680_BSEC) || \
+    (defined CONFIG_BME680) || \
+    (defined CONFIG_SHT3XD) || \
+    (defined CONFIG_SHT21)
 
 #define ENVIRONMENT_SENSOR
 
