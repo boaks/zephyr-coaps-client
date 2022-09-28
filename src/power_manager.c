@@ -23,6 +23,8 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #include <zephyr/device.h>
 #include <zephyr/drivers/i2c.h>
 
+#define ADP536X_I2C_DEVICE DEVICE_DT_GET(DT_NODELABEL(i2c2))
+
 #define ADP536X_I2C_ADDR 0x46
 
 #define ADP536X_I2C_REG_STATUS 0x8
@@ -33,7 +35,7 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #define ADP536X_I2C_REG_BUCK_CONFIG 0x29
 #define ADP536X_I2C_REG_BUCK_BOOST_CONFIG 0x2B
 
-static const struct device *i2c_dev;
+static const struct device *i2c_dev = NULL;
 
 static int adp536x_reg_read(uint8_t reg, uint8_t *buff)
 {
@@ -97,8 +99,8 @@ static void power_manager_read_status(power_manager_status_t *status)
 
 int power_manager_init(void)
 {
-   i2c_dev = device_get_binding(CONFIG_ADP536X_BUS_NAME);
-   if (i2c_dev) {
+   if (device_is_ready(ADP536X_I2C_DEVICE)) {
+      i2c_dev = ADP536X_I2C_DEVICE;
       /*
        * 11%, 10mA, 8 min, enable
        */
@@ -116,7 +118,7 @@ static int power_manager_xvy(uint8_t config_register, bool enable)
       uint8_t buck_config = 0;
 
       if (!adp536x_reg_read(config_register, &buck_config)) {
-/*         LOG_INF("buck_conf: %02x %02x", config_register, buck_config); */
+         /*         LOG_INF("buck_conf: %02x %02x", config_register, buck_config); */
          buck_config |= 0xC0; // softstart to 11 => 512ms
          if (enable) {
             buck_config |= 1;
