@@ -22,6 +22,7 @@
 #include <string.h>
 #include <zephyr.h>
 
+#include "io_job_queue.h"
 #include "modem.h"
 #include "parse.h"
 #include "power_manager.h"
@@ -37,11 +38,11 @@ static K_CONDVAR_DEFINE(lte_condvar);
 static K_SEM_DEFINE(ptau_update, 0, 1);
 
 static wakeup_callback_handler_t s_wakeup_handler = NULL;
-static connect_callback_handler_t s_connect_handler = NULL;
+static lte_state_change_callback_handler_t s_lte_state_change_handler = NULL;
 static bool initialized = 0;
 
-static volatile int lte_connected_state = 0;
-
+static volatile bool lte_registered = false;
+static volatile bool lte_ready = false;
 static const char *volatile network_mode = "init";
 
 static struct lte_lc_edrx_cfg edrx_status = {LTE_LC_LTE_MODE_NONE, 0.0, 0.0};
@@ -55,6 +56,11 @@ static struct lte_network_info network_info;
 static int64_t transmission_time = 0;
 static uint8_t iccid[24];
 static uint8_t imsi[24];
+
+#ifdef CONFIG_PDN
+static bool lte_connected = false;
+static bool lte_pdn_active = false;
+#endif
 
 static volatile int rai_time = -1;
 
@@ -75,6 +81,40 @@ static void modem_read_network_info_work_fn(struct k_work *work)
 }
 
 static K_WORK_DEFINE(modem_read_network_info_work, modem_read_network_info_work_fn);
+
+static void modem_ready_work_fn(struct k_work *work)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (lte_ready) {
+      k_condvar_broadcast(&lte_condvar);
+   }
+   k_mutex_unlock(&lte_mutex);
+}
+
+static K_WORK_DEFINE(modem_ready_work, modem_ready_work_fn);
+
+static void modem_state_change_callback_work_fn(struct k_work *work);
+
+static K_WORK_DEFINE(modem_registered_callback_work, modem_state_change_callback_work_fn);
+static K_WORK_DEFINE(modem_unregistered_callback_work, modem_state_change_callback_work_fn);
+static K_WORK_DEFINE(modem_connected_callback_work, modem_state_change_callback_work_fn);
+static K_WORK_DEFINE(modem_idle_callback_work, modem_state_change_callback_work_fn);
+
+static void modem_state_change_callback_work_fn(struct k_work *work)
+{
+   lte_state_change_callback_handler_t callback = s_lte_state_change_handler;
+   if (callback) {
+      if (work == &modem_connected_callback_work) {
+         callback(LTE_STATE_CONNECT_NETWORK, true);
+      } else if (work == &modem_idle_callback_work) {
+         callback(LTE_STATE_CONNECT_NETWORK, false);
+      } else if (work == &modem_registered_callback_work) {
+         callback(LTE_STATE_REGISTER_NETWORK, true);
+      } else if (work == &modem_unregistered_callback_work) {
+         callback(LTE_STATE_REGISTER_NETWORK, false);
+      }
+   }
+}
 
 #ifdef CONFIG_PDN
 static void modem_read_pdn_info_work_fn(struct k_work *work)
@@ -101,24 +141,14 @@ static void modem_read_sim_work_fn(struct k_work *work)
 
 static K_WORK_DEFINE(modem_read_sim_work, modem_read_sim_work_fn);
 
-static void lte_connection_set(int connected)
+static bool lte_ready_wait(k_timeout_t timeout)
 {
-   k_mutex_lock(&lte_mutex, K_FOREVER);
-   lte_connected_state = connected;
-   if (connected) {
-      k_condvar_broadcast(&lte_condvar);
-   }
-   k_mutex_unlock(&lte_mutex);
-}
-
-static int lte_connection_wait(k_timeout_t timeout)
-{
-   int res = 0;
+   bool res = 0;
    k_mutex_lock(&lte_mutex, timeout);
-   res = lte_connected_state;
+   res = lte_ready;
    if (!res) {
       k_condvar_wait(&lte_condvar, &lte_mutex, timeout);
-      res = lte_connected_state;
+      res = lte_ready;
    }
    k_mutex_unlock(&lte_mutex);
    return res;
@@ -161,10 +191,80 @@ static int64_t get_transmission_time(void)
    return time;
 }
 
+static void lte_connection_status(bool ready)
+{
+   if (ready) {
+      ui_lte_1_op(LED_SET);
+      work_submit_to_io_queue(&modem_connected_callback_work);
+      work_submit_to_io_queue(&modem_read_network_info_work);
+#ifdef CONFIG_PDN
+      work_submit_to_io_queue(&modem_read_pdn_info_work);
+#endif
+      work_submit_to_io_queue(&modem_ready_work);
+      LOG_INF("modem ready.");
+   } else {
+      ui_lte_1_op(LED_CLEAR);
+      work_submit_to_io_queue(&modem_idle_callback_work);
+      LOG_INF("modem not ready. %d/%d/%d", lte_registered, lte_connected, lte_pdn_active);
+   }
+}
+
+static void lte_registration_set(bool registered)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (lte_registered != registered) {
+      lte_registered = registered;
+      if (registered) {
+         bool ready = lte_connected && lte_pdn_active;
+         if (lte_ready != ready) {
+            lte_ready = ready;
+            lte_connection_status(ready);
+         }
+      }
+   }
+   k_mutex_unlock(&lte_mutex);
+}
+
+static void lte_connection_status_set(bool connect)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (lte_connected != connect) {
+#ifdef CONFIG_PDN
+      bool ready = connect && lte_pdn_active && lte_registered;
+#else
+      bool_ready = connect && lte_registered;
+#endif
+      lte_connected = connect;
+      if (lte_ready != ready) {
+         lte_ready = ready;
+         lte_connection_status(ready);
+      }
+   }
+   k_mutex_unlock(&lte_mutex);
+}
+
+#ifdef CONFIG_PDN
+static void lte_pdn_status_set(bool pdn_active)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (lte_pdn_active != pdn_active) {
+      lte_pdn_active = pdn_active;
+      if (pdn_active) {
+         bool ready = lte_connected && lte_registered;
+         if (lte_ready != ready) {
+            lte_ready = ready;
+            lte_connection_status(ready);
+         }
+      }
+   }
+   k_mutex_unlock(&lte_mutex);
+}
+#endif
+
 static void lte_registration(enum lte_lc_nw_reg_status reg_status)
 {
    const char *description = "unknown";
-   bool connected = false;
+   bool registered = false;
 
    switch (reg_status) {
       case LTE_LC_NW_REG_NOT_REGISTERED:
@@ -172,7 +272,7 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
          break;
       case LTE_LC_NW_REG_REGISTERED_HOME:
          description = "Connected - home network";
-         connected = true;
+         registered = true;
          break;
       case LTE_LC_NW_REG_SEARCHING:
          description = "Searching ...";
@@ -186,22 +286,23 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
          break;
       case LTE_LC_NW_REG_REGISTERED_ROAMING:
          description = "Connected - roaming network";
-         connected = true;
+         registered = true;
          break;
       case LTE_LC_NW_REG_REGISTERED_EMERGENCY:
          description = "Connected - emergency network";
-         connected = true;
+         registered = true;
          break;
       case LTE_LC_NW_REG_UICC_FAIL:
          description = "Not Connected - UICC fail";
          break;
    }
 
-   lte_connection_set(connected);
-   if (s_connect_handler) {
-      s_connect_handler(LTE_CONNECT_NETWORK, connected);
+   lte_registration_set(registered);
+   if (registered) {
+      work_submit_to_io_queue(&modem_registered_callback_work);
+   } else {
+      work_submit_to_io_queue(&modem_unregistered_callback_work);
    }
-   k_work_submit(&modem_read_network_info_work);
    LOG_INF("Network registration status: %s", description);
 }
 
@@ -251,17 +352,12 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          {
             int64_t now = k_uptime_get();
             if (evt->rrc_mode == LTE_LC_RRC_MODE_CONNECTED) {
+               lte_connection_status_set(true);
                connect_time = now;
                LOG_INF("RRC mode: Connected");
-               if (s_connect_handler) {
-                  s_connect_handler(LTE_CONNECT_TRANSMISSION, true);
-               }
-               if (lte_connected_state) {
-                  k_work_submit(&modem_read_network_info_work);
-               }
-               ui_lte_1_op(LED_SET);
             } else {
                int64_t time = get_transmission_time();
+               lte_connection_status_set(false);
                idle_time = now;
                if ((time - connect_time) > 0) {
                   rai_time = (int)(now - time);
@@ -270,27 +366,23 @@ static void lte_handler(const struct lte_lc_evt *const evt)
                   rai_time = -1;
                   LOG_INF("RRC mode: Idle after %lld ms", now - connect_time);
                }
-               if (s_connect_handler) {
-                  s_connect_handler(LTE_CONNECT_TRANSMISSION, false);
-               }
-               ui_lte_1_op(LED_CLEAR);
 #ifdef CONFIG_LOW_POWER
                lte_power_management_3v3 = false;
-               k_work_submit(&modem_power_management_3v3_work);
+               work_submit_to_io_queue(&modem_power_management_3v3_work);
 #endif
             }
             break;
          }
       case LTE_LC_EVT_TAU_PRE_WARNING:
          LOG_INF("LTE Tracking area Update");
-         if (lte_connected_state) {
-            k_work_submit(&modem_read_network_info_work);
+         if (lte_registered) {
+            //            work_submit_to_io_queue(&modem_read_network_info_work);
          }
          break;
       case LTE_LC_EVT_CELL_UPDATE:
          LOG_INF("LTE cell changed: Cell ID: %d, Tracking area: %d", evt->cell.id, evt->cell.tac);
-         if (lte_connected_state) {
-            k_work_submit(&modem_read_network_info_work);
+         if (lte_registered) {
+            work_submit_to_io_queue(&modem_read_network_info_work);
          }
          break;
       case LTE_LC_EVT_MODEM_SLEEP_ENTER:
@@ -307,13 +399,13 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          }
 #ifdef CONFIG_LOW_POWER
          lte_power_management_3v3 = false;
-         k_work_submit(&modem_power_management_3v3_work);
+         work_submit_to_io_queue(&modem_power_management_3v3_work);
 #endif
          break;
       case LTE_LC_EVT_MODEM_SLEEP_EXIT:
 #ifdef CONFIG_LOW_POWER
          lte_power_management_3v3 = true;
-         k_work_submit(&modem_power_management_3v3_work);
+         work_submit_to_io_queue(&modem_power_management_3v3_work);
 #endif
          LOG_INF("LTE modem wakes up");
          if (s_wakeup_handler) {
@@ -348,10 +440,11 @@ static void pdn_handler(uint8_t cid, enum pdn_event event,
          break;
       case PDN_EVENT_ACTIVATED:
          LOG_INF("PDN CID %u, activated", cid);
-         k_work_submit(&modem_read_pdn_info_work);
+         lte_pdn_status_set(true);
          break;
       case PDN_EVENT_DEACTIVATED:
          LOG_INF("PDN CID %u, deactivated", cid);
+         lte_pdn_status_set(false);
          break;
       case PDN_EVENT_IPV6_UP:
          LOG_INF("PDN CID %u, IPv6 up", cid);
@@ -395,7 +488,7 @@ static int modem_connect(void)
    return err;
 }
 
-int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_callback_handler_t connect_handler)
+int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_change_callback_handler_t state_handler)
 {
    int err = 0;
 
@@ -427,7 +520,7 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_cal
          lte_force_lte_m = true;
          lte_lc_system_mode_set(LTE_LC_SYSTEM_MODE_LTEM, LTE_LC_SYSTEM_MODE_LTEM);
       }
-#if 0
+#ifdef CONFIG_UDP_AS_RAI_ENABLE
       err = modem_at_cmd("AT%%REL14FEAT=0,1,0,0,0", buf, sizeof(buf), NULL);
       if (err > 0) {
          LOG_INF("rel14feat: %s", buf);
@@ -447,18 +540,18 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_cal
 
 #ifdef CONFIG_LTE_LOCK_PLMN
       plmn = CONFIG_LTE_LOCK_PLMN_STRING;
-#else
+#elif CONFIG_LTE_LOCK_PLMN_CONFIG_SWITCH
       switch ((config >> 2) & 3) {
          case 0:
             break;
          case 1:
-            plmn = "26201";
+            plmn = CONFIG_LTE_LOCK_PLMN_CONFIG_SWITCH_STRING_1;
             break;
          case 2:
-            plmn = "26202";
+            plmn = CONFIG_LTE_LOCK_PLMN_CONFIG_SWITCH_STRING_2;
             break;
          case 3:
-            plmn = "26203";
+            plmn = CONFIG_LTE_LOCK_PLMN_CONFIG_SWITCH_STRING_3;
             break;
       }
 #endif
@@ -559,8 +652,8 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_cal
       if (wakeup_handler) {
          s_wakeup_handler = wakeup_handler;
       }
-      if (connect_handler) {
-         s_connect_handler = connect_handler;
+      if (state_handler) {
+         s_lte_state_change_handler = state_handler;
       }
    }
    return err;
@@ -572,7 +665,7 @@ static int modem_connection_wait(const k_timeout_t timeout)
    k_timeout_t time = K_MSEC(0);
    k_timeout_t interval = K_MSEC(1500);
    int led_on = 1;
-   while (!lte_connection_wait(interval)) {
+   while (!lte_ready_wait(interval)) {
       led_on = !led_on;
       if (led_on) {
          ui_led_op(LED_COLOR_BLUE, LED_SET);
@@ -619,6 +712,8 @@ int modem_start(const k_timeout_t timeout)
    memset(&imsi, 0, sizeof(imsi));
    memset(&iccid, 0, sizeof(iccid));
 
+   modem_set_rai(0);
+
    ui_led_op(LED_COLOR_BLUE, LED_SET);
    ui_led_op(LED_COLOR_RED, LED_SET);
 
@@ -628,7 +723,7 @@ int modem_start(const k_timeout_t timeout)
       err = modem_connection_wait(timeout);
       time = k_uptime_get() - time;
       if (!err) {
-         LOG_INF("LTE connected in %ld [ms]", (long)time);
+         LOG_INF("LTE attached in %ld [ms]", (long)time);
 
 #if CONFIG_MODEM_SAVE_CONFIG_THRESHOLD > 0
 #if CONFIG_MODEM_SAVE_CONFIG_THRESHOLD == 1
@@ -950,6 +1045,19 @@ int modem_set_rai(int enable)
          LOG_INF("lte_lc_rai_req, disabled.");
       }
    }
+#elif CONFIG_UDP_AS_RAI_ENABLE
+   if (enable) {
+      /** Release Assistance Indication  */
+      err = nrf_modem_at_printf("AT%%RAI=1");
+      if (err) {
+         LOG_WRN("Failed to enable RAI, err %d", err);
+      }
+   } else {
+      err = nrf_modem_at_printf("AT%%RAI=0");
+      if (err) {
+         LOG_WRN("Failed to disable RAI, err %d", err);
+      }
+   }
 #endif
    return err;
 }
@@ -976,8 +1084,9 @@ int modem_power_off(void)
 
 #else
 
-int modem_init(wakeup_callback_handler_t wakeup_handler, connect_callback_handler_t connect_handler)
+int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_change_callback_handler_t state_handler)
 {
+   (void)config;
    (void)wakeup_handler;
    (void)connect_handler;
    return 0;

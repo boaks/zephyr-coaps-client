@@ -33,8 +33,17 @@
 #define APP_COAP_VERSION 1
 #define APP_COAP_LOG_PAYLOAD_SIZE 128
 
+#define COAP_OPTION_NO_RESPONSE 0x102
+#define COAP_NO_RESPONSE_IGNORE_ALL 0x1a
+
 #define CUSTOM_COAP_OPTION_TIME 0xff3c
 #define CUSTOM_COAP_OPTION_READ_ETAG 0xff5c
+
+#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
+#define COAP_MESSAGE_TYPE COAP_TYPE_NON_CON
+#else
+#define COAP_MESSAGE_TYPE COAP_TYPE_CON
+#endif
 
 static uint32_t coap_current_token;
 static uint16_t coap_current_mid;
@@ -232,24 +241,31 @@ static double s_temperatures[CONFIG_ENVIRONMENT_HISTORY_SIZE];
 #endif
 #endif
 
-#ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE
-static int coap_client_add_uri_query_read_subresource(struct coap_packet *request)
+static int coap_client_add_uri_query(struct coap_packet *request, const char *query)
 {
-   int err;
-   char read_subresource[30];
-   snprintf(read_subresource, sizeof(read_subresource), "read=%s", CONFIG_COAP_QUERY_READ_SUBRESOURCE);
-   dtls_info("CoAP request query: %s", read_subresource);
+   if (query && strlen(query) > 0) {
+      int err;
 
-   err = coap_packet_append_option(request, COAP_OPTION_URI_QUERY,
-                                   (uint8_t *)read_subresource,
-                                   strlen(read_subresource));
-   if (err < 0) {
-      dtls_warn("Failed to encode CoAP URI-QUERY option '%s', %d", read_subresource, err);
-      return err;
+      err = coap_packet_append_option(request, COAP_OPTION_URI_QUERY,
+                                      (uint8_t *)query,
+                                      strlen(query));
+      if (err < 0) {
+         dtls_warn("Failed to encode CoAP URI-QUERY option '%s', %d", query, err);
+         return err;
+      }
    }
    return 0;
 }
-#endif
+
+static int coap_client_add_uri_query_param(struct coap_packet *request, const char *query, const char *value)
+{
+   if (query && strlen(query) > 0 && value && strlen(value) > 0) {
+      char buf[32];
+      snprintf(buf, sizeof(buf), "%s=%s", query, value);
+      return coap_client_add_uri_query(request, buf);
+   }
+   return 0;
+}
 
 int coap_client_prepare_post(void)
 {
@@ -616,9 +632,10 @@ int coap_client_prepare_post(void)
    coap_current_mid = coap_next_id();
 
    err = coap_packet_init(&request, coap_message_buf, sizeof(coap_message_buf),
-                          APP_COAP_VERSION, COAP_TYPE_CON,
+                          APP_COAP_VERSION, COAP_MESSAGE_TYPE,
                           sizeof(coap_current_token), token,
                           COAP_METHOD_POST, coap_current_mid);
+
    if (err < 0) {
       dtls_warn("Failed to create CoAP request, %d", err);
       return err;
@@ -656,40 +673,47 @@ int coap_client_prepare_post(void)
       query_delay += 2000;
    }
 #endif /* CONFIG_COAP_QUERY_DELAY_ENABLE */
-#ifdef CONFIG_COAP_QUERY_KEEP_ENABLE
-   err = coap_packet_append_option(&request, COAP_OPTION_URI_QUERY,
-                                   (uint8_t *)"keep",
-                                   strlen("keep"));
+
+#ifdef CONFIG_COAP_QUERY_RESPONSE_LENGTH
+   err = coap_client_add_uri_query_param(&request, "rlen", CONFIG_COAP_QUERY_RESPONSE_LENGTH);
    if (err < 0) {
-      dtls_warn("Failed to encode CoAP URI-QUERY option 'keep', %d", err);
+      return err;
+   }
+#endif /* CONFIG_COAP_QUERY_RESPONSE_LENGTH */
+#ifdef CONFIG_COAP_QUERY_KEEP_ENABLE
+   err = coap_client_add_uri_query(&request, "keep");
+   if (err < 0) {
       return err;
    }
 #endif
 #if CONFIG_COAP_QUERY_ACK_ENABLE
-   err = coap_packet_append_option(&request, COAP_OPTION_URI_QUERY,
-                                   (uint8_t *)"ack",
-                                   strlen("ack"));
+   err = coap_client_add_uri_query(&request, "ack");
    if (err < 0) {
-      dtls_warn("Failed to encode CoAP URI-QUERY option 'ack', %d", err);
       return err;
    }
 #endif
 #ifdef CONFIG_COAP_QUERY_SERIES_ENABLE
-   err = coap_packet_append_option(&request, COAP_OPTION_URI_QUERY,
-                                   (uint8_t *)"series",
-                                   strlen("series"));
+   err = coap_client_add_uri_query(&request, "series");
    if (err < 0) {
-      dtls_warn("Failed to encode CoAP URI-QUERY option 'series', %d", err);
       return err;
    }
 #endif
 
 #ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE
    if (sub_resource) {
-      err = coap_client_add_uri_query_read_subresource(&request);
+      err = coap_client_add_uri_query_param(&request, "read", CONFIG_COAP_QUERY_READ_SUBRESOURCE);
       if (err < 0) {
          return err;
       }
+   }
+#endif
+
+#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
+   err = coap_append_option_int(&request, COAP_OPTION_NO_RESPONSE,
+                                COAP_NO_RESPONSE_IGNORE_ALL);
+   if (err < 0) {
+      dtls_warn("Failed to encode CoAP NO_RESPONSE option, %d", err);
+      return err;
    }
 #endif
 

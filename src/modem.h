@@ -42,15 +42,15 @@ typedef struct lte_network_statistic {
    uint16_t average_packet_size;
 } lte_network_statistic_t;
 
-enum dtls_lte_connect_type {
-	LTE_CONNECT_NETWORK,
-	LTE_CONNECT_TRANSMISSION
+enum lte_state_type {
+	LTE_STATE_REGISTER_NETWORK,
+	LTE_STATE_CONNECT_NETWORK
 };
 
 typedef void (*wakeup_callback_handler_t)(void);
-typedef void (*connect_callback_handler_t)(enum dtls_lte_connect_type type, bool connected);
+typedef void (*lte_state_change_callback_handler_t)(enum lte_state_type type, bool connected);
 
-int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_callback_handler_t connect_handler);
+int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_change_callback_handler_t state_handler);
 
 int modem_start(const k_timeout_t timeout);
 

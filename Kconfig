@@ -60,6 +60,10 @@ config COAP_WAKEUP_SEND_INTERVAL
 	   so it's usully chosen a little smaller than the PSM interval.
 	   Ignored, if COAP_SEND_INTERVAL is enabled.
 
+config COAP_NO_RESPONSE_ENABLE
+	bool "Use CoAP NO_RESPONSE option for one-way message"
+	default n
+
 config COAP_RESOURCE
 	string "CoAP resource - defaults to Californium's echo resource"
 	default "echo"
@@ -67,6 +71,9 @@ config COAP_RESOURCE
 config COAP_QUERY_DELAY_ENABLE
 	bool "Enable CoAP query - delay=%d (delay response)"
 	default n
+
+config COAP_QUERY_RESPONSE_LENGTH
+	string "Enable CoAP query - rlen=%d (response length)"
 
 config COAP_QUERY_KEEP_ENABLE
 	bool "Enable CoAP query - keep (keep payload)"
@@ -93,9 +100,47 @@ config COAP_WAIT_ON_POWERMANAGER
 endmenu
 
 menu "Modem Settings"
-config UDP_POWER_ON_OFF_ENABLE
+
+config LTE_LOCK_PLMN_CONFIG_SWITCH
+	bool "LTE lock PLMN based on config switch"
+	depends on !LTE_LOCK_PLMN
+	default n
+
+config LTE_LOCK_PLMN_CONFIG_SWITCH_STRING_1
+	string "PLMN string for configuration switch 1"
+	default "26201"
+	depends on LTE_LOCK_PLMN_CONFIG_SWITCH
+	help
+		Mobile Country Code (MCC) and Mobile Network Code (MNC) values.
+		Only numeric string formats supported.
+		Default: Germany/Telekom
+
+config LTE_LOCK_PLMN_CONFIG_SWITCH_STRING_2
+	string "PLMN string for configuration switch 2"
+	default "26202"
+	depends on LTE_LOCK_PLMN_CONFIG_SWITCH
+	help
+		Mobile Country Code (MCC) and Mobile Network Code (MNC) values.
+		Only numeric string formats supported.
+		Default: Germany/Vodafone
+
+config LTE_LOCK_PLMN_CONFIG_SWITCH_STRING_3
+	string "PLMN string for configuration switch 3"
+	default "26203"
+	depends on LTE_LOCK_PLMN_CONFIG_SWITCH
+	help
+		Mobile Country Code (MCC) and Mobile Network Code (MNC) values.
+		Only numeric string formats supported.
+		Default: Germany/O2
+
+config LTE_POWER_ON_OFF_ENABLE
 	bool "Enable LTE Power On/Off Mode"
 	default n
+
+config LTE_POWER_ON_OFF_CONFIG_SWITCH
+	bool "Enable LTE Power On/Off configuration switch"
+	default n
+	depends on !LTE_LOCK_PLMN_CONFIG_SWITCH && !LTE_POWER_ON_OFF_ENABLE
 
 config UDP_PSM_ENABLE
 	bool "Enable LTE Power Saving Mode"
@@ -105,6 +150,11 @@ config UDP_PSM_ENABLE
 config UDP_RAI_ENABLE
 	bool "Enable LTE Release Assistance Indication"
 	default y
+
+config UDP_AS_RAI_ENABLE
+	bool "Enable LTE AS Release Assistance Indication"
+	depends on !UDP_RAI_ENABLE
+	default n
 
 config UDP_EDRX_ENABLE
 	bool "Enable LTE eDRX"
