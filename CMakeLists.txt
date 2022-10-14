@@ -25,7 +25,9 @@ target_sources(app PRIVATE
 	src/ui.c 
 	src/dtls_client.c 
 	src/dtls_credentials.c 
-	src/coap_client.c)
+	src/coap_client.c
+	src/https_client.c
+	)
 
 target_sources_ifdef(CONFIG_LOCATION_ENABLE app PRIVATE src/location.c)
 
@@ -90,7 +92,7 @@ zephyr_library_link_libraries(tinydtls)
 if (COPY_PREBUILDS)
    # Enable west build -b ... -- -DCOPY_PREBUILDS=On
    # Copies the .hex files before the build! 
-   # Therefore build it fist without, 
+   # Therefore build it first without, 
    # and a second time with -DCOPY_PREBUILDS=On
 
    message(NOTICE "copy prebuild binaries into ${CMAKE_BINARY_DIR}/../prebuild")

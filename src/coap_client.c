@@ -656,6 +656,15 @@ int coap_client_prepare_post(void)
       query_delay += 2000;
    }
 #endif /* CONFIG_COAP_QUERY_DELAY_ENABLE */
+#ifdef CONFIG_COAP_QUERY_RESPONSE_LENGTH_ENABLE
+   err = coap_packet_append_option(&request, COAP_OPTION_URI_QUERY,
+                                   (uint8_t *)"rlen=1",
+                                   strlen("rlen=1"));
+   if (err < 0) {
+      dtls_warn("Failed to encode CoAP URI-QUERY option 'rlen=1', %d", err);
+      return err;
+   }
+#endif /* CONFIG_COAP_QUERY_RESPONSE_LENGTH_ENABLE */
 #ifdef CONFIG_COAP_QUERY_KEEP_ENABLE
    err = coap_packet_append_option(&request, COAP_OPTION_URI_QUERY,
                                    (uint8_t *)"keep",

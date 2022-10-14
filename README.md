@@ -137,7 +137,7 @@ See also [Updating Firmware Through External Debug Probe](https://developer.nord
 
 ## Run It
 
-After flashing, the `Thingy:91` starts to blink slow (purple) and after attaching to the mobile-network it switches to green. If the LED is switched off, the device is also connected with the plugtest-server of the [Eclipse/Californium Sandbox](https://github.com/eclipse/californium#interop-server).
+After flashing, the `Thingy:91` starts to blink slow (purple) and after attaching to the mobile-network it switches to green. If the LED is switched off, the device is also connected with the plugtest-server of the [Eclipse/Californium Sandbox](https://github.com/eclipse-californium/californium#interop-server).
 
 **Note:** If the `Thingy:91` starts for the first time in a new area, it may take longer (2-3 minutes) to connect to a mobile network. The `Thingy:91` saves then the configuration and the next time, the startup is much faster, if the `Thingy:91` is not relocated too far.
 
@@ -226,6 +226,6 @@ In some rare cases it may be even required to remove the "build" folder before.
 This demo itself is licensed under [EPL-2.0](./licenses/EPL-2.0.txt).
 
 Some files are used especially for the `Thingy:91` and are licensed under [Nordic-5](./licenses/Nordic-5.txt). This files are only licensed to be used with Nordic Semiconductor devices.
-See [boards](./boards) and [child_image](./child_image).
+See [boards](./boards), [child_image](./child_image), [cert](./cert), and [https_client](./src/https_client.c).
 
 The demo uses several third-party content, please refer to [NOTICE](./NOTICE.md) for details.

@@ -29,6 +29,8 @@
 #include "power_manager.h"
 #include "ui.h"
 
+#include "https_client.h"
+
 #ifdef CONFIG_LOCATION_ENABLE
 #include "location.h"
 #endif
@@ -60,9 +62,10 @@ static volatile bool lte_connected_send = false;
 static volatile unsigned int lte_connections = 0;
 static volatile request_state_t request_state = NONE;
 static volatile unsigned long connected_time = 0;
-#ifdef CONFIG_UDP_POWER_ON_OFF_ENABLE
+
 static volatile bool lte_power_off = false;
-#endif
+static bool lte_power_on_off = false;
+
 #ifdef CONFIG_ADXL362_MOTION_DETECTION
 static volatile bool moved = false;
 #endif
@@ -134,7 +137,11 @@ static void reopen_socket(struct dtls_context_t *ctx)
 {
    int err;
    dtls_warn("> reconnect modem");
-   modem_set_rai(0);
+#ifdef CONFIG_UDP_RAI_ENABLE
+   if (!lte_power_on_off) {
+      modem_set_rai(0);
+   }
+#endif
    err = modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
    if (err) {
       reconnect();
@@ -146,7 +153,17 @@ static void reopen_socket(struct dtls_context_t *ctx)
       dtls_warn("> reopen UDP socket failed, %d, errno %d (%s), reboot", *fd, errno, strerror(errno));
       reboot();
    }
-   modem_set_rai(1);
+
+   if (!lte_power_on_off) {
+#ifdef CONFIG_UDP_RAI_ENABLE
+      modem_set_rai(1);
+#elif CONFIG_UDP_AS_RAI_ENABLE
+      dtls_info("RAI ongoing");
+      if (setsockopt(*fd, SOL_SOCKET, SO_RAI_ONGOING, NULL, 0)) {
+         dtls_warn("RAI error %d", errno);
+      }
+#endif
+   }
 }
 
 static void dtls_trigger(void)
@@ -198,14 +215,34 @@ static void dtls_wakeup_trigger(void)
 static void dtls_coap_next(void)
 {
    ui_lte_2_op(LED_CLEAR);
-#ifdef CONFIG_UDP_POWER_ON_OFF_ENABLE
-   lte_power_off = true;
-   modem_power_off();
-   dtls_info("modem off");
-#endif
+   if (lte_power_on_off) {
+      lte_power_off = true;
+      modem_power_off();
+      dtls_info("modem off");
+   }
 #if CONFIG_COAP_SEND_INTERVAL > 0
    k_work_schedule(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
 #endif
+}
+
+static void https_success(void)
+{
+   long time1 = connected_time - connect_time;
+   long time2 = response_time - connect_time;
+   if (time1 < 0) {
+      time1 = -1;
+   }
+   if (time2 < 0) {
+      time2 = -1;
+   }
+   lte_connected_send = false;
+   k_sem_reset(&dtls_trigger_msg);
+   request_state = NONE;
+   ui_led_op(LED_COLOR_RED, LED_CLEAR);
+   ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
+   ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
+   dtls_info("%ldms/%ldms: success", time1, time2);
+   dtls_coap_next();
 }
 
 static void dtls_coap_success(void)
@@ -344,10 +381,18 @@ send_to_peer(struct dtls_context_t *ctx,
    int *fd = (int *)dtls_get_app_data(ctx);
    int res = 0;
 
-#ifndef CONFIG_UDP_POWER_ON_OFF_ENABLE
-   lte_connected_send = false;
-   connect_time = (unsigned long)k_uptime_get();
+   if (!lte_power_on_off) {
+      lte_connected_send = false;
+      connect_time = (unsigned long)k_uptime_get();
+#ifdef CONFIG_UDP_AS_RAI_ENABLE
+      if (dtls_connected) {
+         dtls_info("RAI one response (%d)", SO_RAI_ONE_RESP);
+         if (setsockopt(*fd, SOL_SOCKET, SO_RAI_ONE_RESP, NULL, 0)) {
+            dtls_warn("RAI error %d", errno);
+         }
+      }
 #endif
+   }
    res = sendto(*fd, data, len, MSG_DONTWAIT, &session->addr.sa, session->size);
    if (res < 0) {
       dtls_warn("send_to_peer failed: %d, errno %d (%s)", res, errno, strerror(errno));
@@ -420,14 +465,30 @@ dtls_handle_event(struct dtls_context_t *ctx, session_t *session,
       request_state = NONE;
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
       ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-      modem_set_rai(1);
+      if (!lte_power_on_off) {
+#ifdef CONFIG_UDP_RAI_ENABLE
+         modem_set_rai(1);
+#endif
+      }
    } else if (DTLS_EVENT_CONNECT == code) {
       dtls_info("dtls connect ...");
       dtls_connected = 0;
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_SET);
       ui_led_op(LED_COLOR_GREEN, LED_SET);
-      modem_set_rai(0);
+      if (!lte_power_on_off) {
+#ifdef CONFIG_UDP_RAI_ENABLE
+         modem_set_rai(0);
+#elif CONFIG_UDP_AS_RAI_ENABLE
+         int *fd = (int *)dtls_get_app_data(ctx);
+         if (fd) {
+            dtls_info("RAI ongoing");
+            if (setsockopt(*fd, SOL_SOCKET, SO_RAI_ONGOING, NULL, 0)) {
+               dtls_warn("RAI error %d", errno);
+            }
+         }
+#endif
+      }
    }
    return 0;
 }
@@ -488,11 +549,9 @@ static void dtls_lte_connected(enum dtls_lte_connect_type type, bool connected)
       } else {
          lte_connected = connected;
          led_op_t op = LED_SET;
-#ifdef CONFIG_UDP_POWER_ON_OFF_ENABLE
          if (lte_power_off) {
             op = LED_CLEAR;
          }
-#endif
          ui_led_op(LED_COLOR_BLUE, op);
          ui_led_op(LED_COLOR_RED, op);
          ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
@@ -598,6 +657,7 @@ int dtls_loop(void)
    session_t dst;
    int loops = 0;
    long time;
+   bool send_request = false;
 
 #ifdef CONFIG_COAP_WAIT_ON_POWERMANAGER
    uint16_t battery_voltage = 0xffff;
@@ -616,8 +676,14 @@ int dtls_loop(void)
       dtls_warn("Failed to create UDP socket: %d", errno);
       reboot();
    }
+#ifdef CONFIG_UDP_AS_RAI_ENABLE
+   modem_set_rai(1);
+   dtls_info("RAI ongoing");
+   if (setsockopt(fd, SOL_SOCKET, SO_RAI_ONGOING, NULL, 0)) {
+      dtls_warn("RAI error %d", errno);
+   }
+#endif
 
-   modem_set_rai(0);
    imei_len = modem_at_cmd("AT+CGSN", imei, sizeof(imei), NULL);
    dtls_credentials_init_psk(0 < imei_len ? imei : NULL);
    dtls_credentials_init_handler(&cb);
@@ -639,12 +705,10 @@ int dtls_loop(void)
    dtls_connect(dtls_context, &dst);
 
    while (1) {
-#ifndef CONFIG_UDP_POWER_ON_OFF_ENABLE
-      if (!network_connected) {
+      if (!lte_power_off && !network_connected) {
          reopen_socket(dtls_context);
          continue;
       }
-#endif
 
 #ifdef CONFIG_LOCATION_ENABLE
       uint8_t battery_level = 0xff;
@@ -684,6 +748,10 @@ int dtls_loop(void)
          io_timeout.tv_usec = 0;
          result = select(fd + 1, &rfds, &wfds, 0, &io_timeout);
       } else {
+#ifdef CONFIG_UDP_AS_RAI_ENABLEx
+         dtls_info("RAI no data");
+         setsockopt(fd, SOL_SOCKET, SO_RAI_LAST, NULL, 0);
+#endif
 #ifdef CONFIG_COAP_WAIT_ON_POWERMANAGER
          if (0xffff == battery_voltage || 0 == battery_voltage) {
             /* wait until the power manager starts to report the battery voltage */
@@ -692,17 +760,20 @@ int dtls_loop(void)
                   k_sleep(K_MSEC(200));
                   continue;
                }
-               LOG_INF("Power-manager ready: %umV", battery_voltage);
+               dtls_info("Power-manager ready: %umV", battery_voltage);
             }
          }
 #endif
          result = 0;
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
+#ifdef CONFIG_UDP_AS_RAI_ENABLEx
+            dtls_info("RAI ongoing");
+            setsockopt(fd, SOL_SOCKET, SO_RAI_ONGOING, NULL, 0);
+#endif
             ui_lte_2_op(LED_SET);
 #if CONFIG_COAP_SEND_INTERVAL > 0
             k_work_reschedule(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
 #endif
-#ifdef CONFIG_UDP_POWER_ON_OFF_ENABLE
             if (lte_power_off) {
                dtls_info("modem on");
                lte_power_off = false;
@@ -711,25 +782,27 @@ int dtls_loop(void)
                modem_set_normal();
                reopen_socket(dtls_context);
             }
-#endif
             request_state = SEND;
             loops = 0;
             transmission = 0;
             timeout = COAP_ACK_TIMEOUT;
-            if (dtls_connected) {
-               if (coap_client_prepare_post() >= 0 && coap_client_send_message(dtls_context, &dst) >= 0) {
+            if (coap_client_prepare_post() < 0) {
+               dtls_coap_failure();
+            } else if (dtls_connected) {
+               if (coap_client_send_message(dtls_context, &dst) >= 0) {
                   ui_led_op(LED_COLOR_GREEN, LED_SET);
                } else {
                   dtls_coap_failure();
                }
             } else {
+               ui_led_op(LED_COLOR_GREEN, LED_SET);
+               send_request = true;
                dtls_peer_t *peer = dtls_get_peer(dtls_context, &dst);
                dtls_reset_peer(dtls_context, peer);
                dtls_connect(dtls_context, &dst);
             }
          }
       }
-
       if (result < 0) { /* error */
          if (errno != EINTR) {
             dtls_warn("select failed: errno %d (%s)", result, strerror(errno));
@@ -797,6 +870,17 @@ int dtls_loop(void)
                request_state = NONE;
                dtls_coap_success();
                dtls_info("CoAP ACK sent.");
+            } else if (dtls_connected && send_request) {
+               send_request = false;
+               request_state = SEND;
+               loops = 0;
+               transmission = 0;
+               timeout = COAP_ACK_TIMEOUT;
+               if (coap_client_send_message(dtls_context, &dst) >= 0) {
+                  ui_led_op(LED_COLOR_GREEN, LED_SET);
+               } else {
+                  dtls_coap_failure();
+               }
             }
          }
       }
@@ -809,12 +893,26 @@ int dtls_loop(void)
 void main(void)
 {
    int config = 0;
+   bool https = false;
+
    LOG_INF("CoAP/DTLS CID sample " CLIENT_VERSION " has started");
 
    dtls_set_log_level(DTLS_LOG_INFO);
 
    ui_init(dtls_manual_trigger);
    config = ui_config();
+
+#ifdef CONFIG_LTE_POWER_ON_OFF_ENABLE
+   dtls_info("LTE power on/off");
+   lte_power_on_off = true;
+#elif CONFIG_LTE_POWER_ON_OFF_CONFIG_SWITCH
+   lte_power_on_off = config & 4 ? true : false;
+   dtls_info("LTE power on/off %s.", lte_power_on_off ? "enabled" : "disabled");
+   if (config & 8) {
+      https = true;
+      https_cert_provision();
+   }
+#endif
 
 #if CONFIG_COAP_WAKEUP_SEND_INTERVAL > 0 && CONFIG_COAP_SEND_INTERVAL == 0
    modem_init(config, dtls_wakeup_trigger, dtls_lte_connected);
@@ -850,7 +948,29 @@ void main(void)
       reconnect();
    }
 
-   dtls_loop();
+   if (https) {
+      if (!https_init_destination()) {
+         k_sem_give(&dtls_trigger_msg);
+         while (true) {
+            if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
+               request_state = SEND;
+               connect_time = (unsigned long)k_uptime_get();
+               ui_lte_2_op(LED_SET);
+               if (lte_power_off) {
+                  lte_power_off = false;
+                  modem_set_normal();
+                  modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
+               }
+               https_get();
+               response_time = (unsigned long)k_uptime_get();
+               https_success();
+            }
+         }
+      }
+      return;
+   } else {
+      dtls_loop();
+   }
 }
 
 void main_(void)

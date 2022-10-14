@@ -427,7 +427,7 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_cal
          lte_force_lte_m = true;
          lte_lc_system_mode_set(LTE_LC_SYSTEM_MODE_LTEM, LTE_LC_SYSTEM_MODE_LTEM);
       }
-#if 0
+#ifdef CONFIG_UDP_AS_RAI_ENABLE
       err = modem_at_cmd("AT%%REL14FEAT=0,1,0,0,0", buf, sizeof(buf), NULL);
       if (err > 0) {
          LOG_INF("rel14feat: %s", buf);
@@ -447,18 +447,18 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, connect_cal
 
 #ifdef CONFIG_LTE_LOCK_PLMN
       plmn = CONFIG_LTE_LOCK_PLMN_STRING;
-#else
+#elif CONFIG_LTE_LOCK_PLMN_CONFIG_SWITCH
       switch ((config >> 2) & 3) {
          case 0:
             break;
          case 1:
-            plmn = "26201";
+            plmn = CONFIG_LTE_LOCK_PLMN_CONFIG_SWITCH_STRING_1;
             break;
          case 2:
-            plmn = "26202";
+            plmn = CONFIG_LTE_LOCK_PLMN_CONFIG_SWITCH_STRING_2;
             break;
          case 3:
-            plmn = "26203";
+            plmn = CONFIG_LTE_LOCK_PLMN_CONFIG_SWITCH_STRING_3;
             break;
       }
 #endif
@@ -619,6 +619,8 @@ int modem_start(const k_timeout_t timeout)
    memset(&imsi, 0, sizeof(imsi));
    memset(&iccid, 0, sizeof(iccid));
 
+   modem_set_rai(0);
+
    ui_led_op(LED_COLOR_BLUE, LED_SET);
    ui_led_op(LED_COLOR_RED, LED_SET);
 
@@ -628,7 +630,7 @@ int modem_start(const k_timeout_t timeout)
       err = modem_connection_wait(timeout);
       time = k_uptime_get() - time;
       if (!err) {
-         LOG_INF("LTE connected in %ld [ms]", (long)time);
+         LOG_INF("LTE attached in %ld [ms]", (long)time);
 
 #if CONFIG_MODEM_SAVE_CONFIG_THRESHOLD > 0
 #if CONFIG_MODEM_SAVE_CONFIG_THRESHOLD == 1
@@ -948,6 +950,19 @@ int modem_set_rai(int enable)
          LOG_WRN("lte_lc_rai_req disable, error: %d", err);
       } else {
          LOG_INF("lte_lc_rai_req, disabled.");
+      }
+   }
+#elif CONFIG_UDP_AS_RAI_ENABLE
+   if (enable) {
+      /** Release Assistance Indication  */
+      err = nrf_modem_at_printf("AT%%RAI=1");
+      if (err) {
+         LOG_WRN("Failed to enable RAI, err %d", err);
+      }
+   } else {
+      err = nrf_modem_at_printf("AT%%RAI=0");
+      if (err) {
+         LOG_WRN("Failed to disable RAI, err %d", err);
       }
    }
 #endif
