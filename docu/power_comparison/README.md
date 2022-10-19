@@ -83,7 +83,7 @@ Slide 7, LTE-M, full-attach
 
 ![LTE-M, full-attach](./lte-m-tls-on-off-attach.png)
 
-Slide 7, LTE-M, re-attach
+Slide 7, LTE-M, moving to connected mode
 
 ![LTE-M, re-attach](./lte-m-tls-psm-reattach.png)
 
