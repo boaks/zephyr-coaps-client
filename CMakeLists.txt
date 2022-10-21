@@ -18,7 +18,7 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(coaps-client)
 
 # APP START
-target_sources(app PRIVATE 
+target_sources(app PRIVATE
 	src/parse.c
 	src/modem.c
 	src/power_manager.c
@@ -91,8 +91,8 @@ zephyr_library_link_libraries(tinydtls)
 
 if (COPY_PREBUILDS)
    # Enable west build -b ... -- -DCOPY_PREBUILDS=On
-   # Copies the .hex files before the build! 
-   # Therefore build it first without, 
+   # Copies the .hex files before the build!
+   # Therefore build it first without,
    # and a second time with -DCOPY_PREBUILDS=On
 
    message(NOTICE "copy prebuild binaries into ${CMAKE_BINARY_DIR}/../prebuild")

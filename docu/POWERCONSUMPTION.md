@@ -8,14 +8,31 @@
 
 The measurements presented here are done using the [Nordic Semiconductor - Power Profiler Kit II (PPK2)](https://www.nordicsemi.com/Products/Development-hardware/Power-Profiler-Kit-2). The first part of these measurements are done using the [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK), the second with the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91).
 
-The values for the `Thingy:91` are measurement replacing the battery with the PPK2 as source using about 4.1V. The previous test in June 2022 have been done with enabled UART and 3.3V. With that the device runs only for 56 days from battery. See [Powerconsumption-2022-06](POWERCONSUMPTION-2022-06.md).
+The values for the `Thingy:91` are measurement replacing the battery with the PPK2 as source using about 4.1V. The previous test in June 2022 have been done with enabled UART and 3.3V. With that the device has a quiescent current of 0.8 mA and runs for 56 days from battery. See [Powerconsumption-2022-06](POWERCONSUMPTION-2022-06.md).
 Disabling the UART and the 3.3V results in quiescent current of 0.04 mA. Assuming a 80% efficiency and a battery of 1350 mAh, that results in 27000h (or about 1125 days) runtime without sending any data. 20x times more than without disabling the UART and the 3.3V. The self-discarge is unknown, but may reduce that time significantly.
 
 ## General Considerations for LTE-M/NB-IoT
 
-Using LTE-M or NB-IoT for a power constraint device mostly comes with the requirement to enable power saving functions. This tests uses PSM (Power Sleeping Mode) and RAI (Release Assistance Indication), if available. eDRX was not considered.
+Using LTE-M or NB-IoT for a power constraint device mostly comes with the requirement to enable power saving functions. This tests uses PSM (Power Saving Mode) and RAI (Release Assistance Indication), if available. eDRX was not considered. 
 
-As of summer 2022, in my setup only PSM works for both LTE-M and NB-IoT, RAI only for NB-IoT.
+PSM is defined by three parameters:
+
+- T???? (RRC Activity Timer, stopped by RAI, if available)
+- T3324 (PSM Activity Timer)
+- T3412 (TAU Timer)
+
+The first one is given by the mobile network operator, see e.g [NB-IoT Feature matrix and associated parameters](https://docs.iotcreators.com/docs/nb-iot-network-information#nb-iot-feature-matrix-and-associated-parameters) or
+[NB-IoT Feature matrix and associated parameters](https://docs.iotcreators.com/docs/lte-m-network-information#lte-m-feature-matrix-and-associated-parameters).
+
+The other two are negotiated by a request of the device and a response from the mobile network operator, which may deviate from the requested values. For the value range, consider the above references. 
+
+If T3412 (TAU Timer) expires without message exchange, the device wakeups up, moves to RRC connected mode, send a TAU (Tracking Area Update) message, moves back to idle mode, and goes to sleep.
+
+To exchange an application message, the devices wakes up, moves to RRC connected mode, exchanges the messages. It stays then in RRC connected mode until the RRC Activity Time expires or RAI indicates, that no more data is expected. Then the device moves back to the RRC idle mode. The device stays in idle mode for T3324 (PSM Activity Timer) until it goes back to power sleeping mode.
+
+As of summer 2022, in my setup in south Germany, LTE-M comes with PSM but no RAI, NB-IoT comes with both PSM and RAI.
+
+The tests are using a T3324 (PSM Activity Timer) of 0s.
 
 With that, the usage to send data is split into three phases:
 - moving to connected mode
@@ -23,7 +40,7 @@ With that, the usage to send data is split into three phases:
 - moving to idle mode
 
 There are also other phases, which are not considered here:
-- initial network registration (easiyl upto 3 minutes)
+- initial network registration (easily up to 3 minutes)
 - wakeup with cell change
 - wakeup changing from LTE-M to NB-IoT and visa versa
 
@@ -38,7 +55,8 @@ More details about PSM may be found in:
 
 ![NB-IoT wakeup](./nb-iot-psm-wakeup.png)
 
-This chart shows the frequently wakeup from PSM. Depending on the network provider, this happens every hour or at longer intervals. Without sending data, it mainly moves to connected mode and back to idle.
+This chart shows the frequently wakeup from PSM. The interval depends on
+the negotiated T3412 (TAU Timer). Without sending data, it mainly moves to connected mode and back to idle.
 
 It takes about 3s, with an average current of 17mA at 5V. That results in 0.07 mWh per wakeup. A wakeup every hour reduces the runtime of a Thingy:91 then to 830 days.
 
@@ -58,13 +76,14 @@ This chart shows the wakeup from PSM with RAI to send one message and wait for t
 
 It takes about 3.3s, with an average current of 31mA at 5V. That results in 0.14 mWh per message exchange. Exchanging every hour a message reduces the runtime of a Thingy:91 then to 657 days.
 
-## nRF9160-DK, LTE-M without RAI (not available in my region)
+## nRF9160-DK, LTE-M without RAI (not available in sommer 2022 in south Germany)
 
 **LTE-M Wakeup:**
 
 ![LTE-M wakeup](./lte-m-psm-wakeup.png)
 
-This chart shows the frequently wakeup from PSM. Depending on the network provider, this happens every hour or at longer intervals. Without sending data, it mainly moves to connected mode and back to idle.
+This chart shows the frequently wakeup from PSM. The interval depends on
+the negotiated T3412 (TAU Timer). Without sending data, it mainly moves to connected mode and back to idle.
 
 It takes about 2.4s, with an average current of 29mA at 5V. That results in 0.1 mWh per wakeup. A wakeup every hour reduces the runtime of a Thingy:91 then to 758 days.
 
@@ -74,7 +93,7 @@ It takes about 2.4s, with an average current of 29mA at 5V. That results in 0.1 
 
 This chart shows the wakeup from PSM without RAI to send one message without response. 
 
-It takes about 12s, with an average current of 8.5mA at 5V. That results in 0.15 mWh per message. Sending every hour a message reduces the runtime of a Thingy:91 then to 658 days. The large time of 12s depends on the "RRC Activity Timer", which is by the network. Using RAI will reduce this time, but RAI is not supported in my region (south germany) 
+It takes about 12s, with an average current of 8.5mA at 5V. That results in 0.15 mWh per message. Sending every hour a message reduces the runtime of a Thingy:91 then to 658 days. The large time of 12s depends on the "RRC Activity Timer" (10s at my mobile network provider), which is provided by the network. Using RAI will reduce this time, but RAI is not supported in my region (south Germany).
 
 **LTE-M Request-Response:**
 
@@ -82,7 +101,7 @@ It takes about 12s, with an average current of 8.5mA at 5V. That results in 0.15
 
 This chart shows the wakeup from PSM without RAI to send one message and wait for the response. 
 
-It takes about 12s, with an average current of 9mA at 5V. That results in 0.14 mWh per message exchange. Exchanging every hour a message reduces the runtime of a Thingy:91 then to 642 days. The large time of 12s depends on the "RRC Activity Timer", which is by the network. Using RAI will reduce this time, but RAI is not supported in my region (south germany)
+It takes about 12s, with an average current of 9mA at 5V. That results in 0.14 mWh per message exchange. Exchanging every hour a message reduces the runtime of a Thingy:91 then to 642 days.  The large time of 12s depends on the "RRC Activity Timer" (10s at my mobile network provider), which is provided by the network. Using RAI will reduce this time, but RAI is not supported in my region (south Germany) .
 
 ## Thingy:91, LTE-M
 

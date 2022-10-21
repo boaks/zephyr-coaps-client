@@ -42,7 +42,13 @@ static lte_state_change_callback_handler_t s_lte_state_change_handler = NULL;
 static bool initialized = 0;
 
 static volatile bool lte_registered = false;
-static volatile bool lte_ready = false;
+
+static bool lte_ready = false;
+static bool lte_connected = false;
+#ifdef CONFIG_PDN
+static bool lte_pdn_active = false;
+#endif
+
 static const char *volatile network_mode = "init";
 
 static struct lte_lc_edrx_cfg edrx_status = {LTE_LC_LTE_MODE_NONE, 0.0, 0.0};
@@ -56,11 +62,6 @@ static struct lte_network_info network_info;
 static int64_t transmission_time = 0;
 static uint8_t iccid[24];
 static uint8_t imsi[24];
-
-#ifdef CONFIG_PDN
-static bool lte_connected = false;
-static bool lte_pdn_active = false;
-#endif
 
 static volatile int rai_time = -1;
 
@@ -194,7 +195,7 @@ static int64_t get_transmission_time(void)
 static void lte_connection_status(bool ready)
 {
    if (ready) {
-      ui_lte_1_op(LED_SET);
+      ui_lte_3_op(LED_SET);
       work_submit_to_io_queue(&modem_connected_callback_work);
       work_submit_to_io_queue(&modem_read_network_info_work);
 #ifdef CONFIG_PDN
@@ -203,7 +204,7 @@ static void lte_connection_status(bool ready)
       work_submit_to_io_queue(&modem_ready_work);
       LOG_INF("modem ready.");
    } else {
-      ui_lte_1_op(LED_CLEAR);
+      ui_lte_3_op(LED_CLEAR);
       work_submit_to_io_queue(&modem_idle_callback_work);
       LOG_INF("modem not ready. %d/%d/%d", lte_registered, lte_connected, lte_pdn_active);
    }
@@ -213,13 +214,15 @@ static void lte_registration_set(bool registered)
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
    if (lte_registered != registered) {
+#ifdef CONFIG_PDN
+      bool ready = registered && lte_connected && lte_pdn_active;
+#else
+      bool_ready = registered && lte_connected;
+#endif
       lte_registered = registered;
-      if (registered) {
-         bool ready = lte_connected && lte_pdn_active;
-         if (lte_ready != ready) {
-            lte_ready = ready;
-            lte_connection_status(ready);
-         }
+      if (lte_ready != ready) {
+         lte_ready = ready;
+         lte_connection_status(ready);
       }
    }
    k_mutex_unlock(&lte_mutex);
@@ -229,6 +232,11 @@ static void lte_connection_status_set(bool connect)
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
    if (lte_connected != connect) {
+      if (connect) {
+         ui_lte_2_op(LED_SET);
+      } else {
+         ui_lte_2_op(LED_CLEAR);
+      }
 #ifdef CONFIG_PDN
       bool ready = connect && lte_pdn_active && lte_registered;
 #else
@@ -248,13 +256,11 @@ static void lte_pdn_status_set(bool pdn_active)
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
    if (lte_pdn_active != pdn_active) {
+      bool ready = pdn_active && lte_connected && lte_registered;
       lte_pdn_active = pdn_active;
-      if (pdn_active) {
-         bool ready = lte_connected && lte_registered;
-         if (lte_ready != ready) {
-            lte_ready = ready;
-            lte_connection_status(ready);
-         }
+      if (lte_ready != ready) {
+         lte_ready = ready;
+         lte_connection_status(ready);
       }
    }
    k_mutex_unlock(&lte_mutex);
@@ -712,7 +718,11 @@ int modem_start(const k_timeout_t timeout)
    memset(&imsi, 0, sizeof(imsi));
    memset(&iccid, 0, sizeof(iccid));
 
+#ifdef CONFIG_UDP_AS_RAI_ENABLE
+   modem_set_rai(1);
+#else
    modem_set_rai(0);
+#endif
 
    ui_led_op(LED_COLOR_BLUE, LED_SET);
    ui_led_op(LED_COLOR_RED, LED_SET);

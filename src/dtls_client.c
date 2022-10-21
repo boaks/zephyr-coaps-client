@@ -43,6 +43,8 @@
 #define COAP_ACK_TIMEOUT 3
 #define ADD_ACK_TIMEOUT 3
 
+//#define USE_SO_RAI_NO_DATA
+
 LOG_MODULE_REGISTER(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 typedef enum {
@@ -213,7 +215,7 @@ static void dtls_wakeup_trigger(void)
 
 static void dtls_coap_next(void)
 {
-   ui_lte_2_op(LED_CLEAR);
+   ui_lte_1_op(LED_CLEAR);
    if (lte_power_on_off) {
       lte_power_off = true;
       modem_power_off();
@@ -363,12 +365,19 @@ send_to_peer(struct dtls_context_t *ctx,
    if (!lte_power_on_off) {
       lte_connected_send = false;
       connect_time = (unsigned long)k_uptime_get();
-#ifdef CONFIG_UDP_AS_RAI_ENABLE
+#if defined(CONFIG_UDP_AS_RAI_ENABLE) && !defined(USE_SO_RAI_NO_DATA)
       if (dtls_connected) {
+#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
+         dtls_info("RAI no response (%d)", SO_RAI_LAST);
+         if (setsockopt(*fd, SOL_SOCKET, SO_RAI_LAST, NULL, 0)) {
+            dtls_warn("RAI error %d", errno);
+         }
+#else
          dtls_info("RAI one response (%d)", SO_RAI_ONE_RESP);
          if (setsockopt(*fd, SOL_SOCKET, SO_RAI_ONE_RESP, NULL, 0)) {
             dtls_warn("RAI error %d", errno);
          }
+#endif
       }
 #endif
    }
@@ -656,7 +665,6 @@ int dtls_loop(void)
       reboot();
    }
 #ifdef CONFIG_UDP_AS_RAI_ENABLE
-   modem_set_rai(1);
    dtls_info("RAI ongoing");
    if (setsockopt(fd, SOL_SOCKET, SO_RAI_ONGOING, NULL, 0)) {
       dtls_warn("RAI error %d", errno);
@@ -678,6 +686,11 @@ int dtls_loop(void)
    }
 
    dtls_set_handler(dtls_context, &cb);
+
+#if defined(CONFIG_UDP_AS_RAI_ENABLE) && defined(USE_SO_RAI_NO_DATA) 
+   // using SO_RAI_NO_DATA requires a destination, for what ever
+   connect(fd, (struct sockaddr *)&dst.addr.sin, sizeof(struct sockaddr_in));
+#endif
 
    request_state = SEND;
    timeout = COAP_ACK_TIMEOUT;
@@ -749,7 +762,7 @@ int dtls_loop(void)
             dtls_info("RAI ongoing");
             setsockopt(fd, SOL_SOCKET, SO_RAI_ONGOING, NULL, 0);
 #endif
-            ui_lte_2_op(LED_SET);
+            ui_lte_1_op(LED_SET);
 #if CONFIG_COAP_SEND_INTERVAL > 0
             work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
 #endif
@@ -866,6 +879,14 @@ int dtls_loop(void)
                   dtls_coap_failure();
                }
             }
+#if defined(CONFIG_UDP_AS_RAI_ENABLE) && defined(USE_SO_RAI_NO_DATA) 
+            if (request_state == NONE) {
+               dtls_info("RAI no data (%d)", SO_RAI_NO_DATA);
+               if (setsockopt(fd, SOL_SOCKET, SO_RAI_NO_DATA, NULL, 0)) {
+                  dtls_warn("RAI error %d", errno);
+               }
+            }
+#endif
          }
       }
    }

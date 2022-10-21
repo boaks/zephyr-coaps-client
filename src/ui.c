@@ -25,8 +25,9 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #define LED_GREEN_NODE DT_ALIAS(led1)
 #define LED_BLUE_NODE DT_ALIAS(led2)
 
-#define LED_LTE_NODE_1 DT_ALIAS(led3)
-#define LED_LTE_NODE_2 DT_ALIAS(led4)
+#define OUT_LTE_NODE_1 DT_ALIAS(led3)
+#define OUT_LTE_NODE_2 DT_ALIAS(out1)
+#define OUT_LTE_NODE_3 DT_ALIAS(out2)
 
 #define CALL_BUTTON_NODE DT_ALIAS(sw0)
 
@@ -73,11 +74,14 @@ static gpio_device_t config_switch_2_spec = GPIO_DEVICE_INIT(CONFIG_SWITCH_NODE_
 static gpio_device_t led_red_spec = GPIO_DEVICE_INIT(LED_RED_NODE);
 static gpio_device_t led_green_spec = GPIO_DEVICE_INIT(LED_GREEN_NODE);
 static gpio_device_t led_blue_spec = GPIO_DEVICE_INIT(LED_BLUE_NODE);
-#if DT_NODE_HAS_STATUS(LED_LTE_NODE_1, okay)
-static gpio_device_t led_lte_1_spec = GPIO_DEVICE_INIT(LED_LTE_NODE_1);
+#if DT_NODE_HAS_STATUS(OUT_LTE_NODE_1, okay)
+static gpio_device_t out_lte_1_spec = GPIO_DEVICE_INIT(OUT_LTE_NODE_1);
 #endif
-#if DT_NODE_HAS_STATUS(LED_LTE_NODE_2, okay)
-static gpio_device_t led_lte_2_spec = GPIO_DEVICE_INIT(LED_LTE_NODE_2);
+#if DT_NODE_HAS_STATUS(OUT_LTE_NODE_2, okay)
+static gpio_device_t out_lte_2_spec = GPIO_DEVICE_INIT(OUT_LTE_NODE_2);
+#endif
+#if DT_NODE_HAS_STATUS(OUT_LTE_NODE_3, okay)
+static gpio_device_t out_lte_3_spec = GPIO_DEVICE_INIT(OUT_LTE_NODE_3);
 #endif
 static gpio_device_t button_spec = GPIO_DEVICE_INIT(CALL_BUTTON_NODE);
 
@@ -195,15 +199,22 @@ void ui_led_op(led_t led, led_op_t op)
 
 void ui_lte_1_op(led_op_t op)
 {
-#if DT_NODE_HAS_STATUS(LED_LTE_NODE_1, okay)
-   ui_op(&led_lte_1_spec, op, NULL);
+#if DT_NODE_HAS_STATUS(OUT_LTE_NODE_1, okay)
+   ui_op(&out_lte_1_spec, op, NULL);
 #endif
 }
 
 void ui_lte_2_op(led_op_t op)
 {
-#if DT_NODE_HAS_STATUS(LED_LTE_NODE_2, okay)
-   ui_op(&led_lte_2_spec, op, NULL);
+#if DT_NODE_HAS_STATUS(OUT_LTE_NODE_2, okay)
+   ui_op(&out_lte_2_spec, op, NULL);
+#endif
+}
+
+void ui_lte_3_op(led_op_t op)
+{
+#if DT_NODE_HAS_STATUS(OUT_LTE_NODE_3, okay)
+   ui_op(&out_lte_3_spec, op, NULL);
 #endif
 }
 
@@ -238,16 +249,22 @@ int ui_init(ui_callback_handler_t button_handler)
       LOG_INF("UI init: LED blue failed! %d", ret);
    }
 
-#if DT_NODE_HAS_STATUS(LED_LTE_NODE_1, okay)
-   ret = ui_init_output(&led_lte_1_spec);
+#if DT_NODE_HAS_STATUS(OUT_LTE_NODE_1, okay)
+   ret = ui_init_output(&out_lte_1_spec);
    if (ret) {
-      LOG_INF("UI init: LED LTE 1 failed! %d", ret);
+      LOG_INF("UI init: OUT LTE 1 failed! %d", ret);
    }
 #endif
-#if DT_NODE_HAS_STATUS(LED_LTE_NODE_2, okay)
-   ret = ui_init_output(&led_lte_2_spec);
+#if DT_NODE_HAS_STATUS(OUT_LTE_NODE_2, okay)
+   ret = ui_init_output(&out_lte_2_spec);
    if (ret) {
-      LOG_INF("UI init: LED LTE 2 failed! %d", ret);
+      LOG_INF("UI init: OUT LTE 2 failed! %d", ret);
+   }
+#endif
+#if DT_NODE_HAS_STATUS(OUT_LTE_NODE_3, okay)
+   ret = ui_init_output(&out_lte_3_spec);
+   if (ret) {
+      LOG_INF("UI init: OUT LTE 3 failed! %d", ret);
    }
 #endif
 
