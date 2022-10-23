@@ -15,6 +15,7 @@
 #include <zephyr/logging/log.h>
 
 #include "environment_sensor.h"
+#include "io_job_queue.h"
 
 #ifdef ENVIRONMENT_SENSOR
 
@@ -36,11 +37,11 @@ static void environment_history_work_fn(struct k_work *work)
 {
    double temperature = 0.0;
 
+   work_schedule_for_io_queue(&environment_history_work, K_SECONDS(CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S));
    environment_sensor_fetch(true);
    if (environment_get_temperature(&temperature) == 0) {
       environment_add_temperature_history(temperature, true);
    }
-   k_work_schedule(&environment_history_work, K_SECONDS(CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S));
 }
 #endif
 
@@ -71,7 +72,7 @@ void environment_init_temperature_history(void)
    }
    k_mutex_unlock(&environment_history_mutex);
 #ifndef NO_ENVIRONMENT_HISTORY_WORKER
-   k_work_schedule(&environment_history_work, K_SECONDS(2));
+   work_schedule_for_io_queue(&environment_history_work, K_SECONDS(2));
 #endif
 }
 

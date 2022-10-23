@@ -20,6 +20,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include "io_job_queue.h"
 #include "location.h"
 #include "ui.h"
 
@@ -107,10 +108,10 @@ static void location_gnss_event_handler(int event)
 {
    switch (event) {
       case NRF_MODEM_GNSS_EVT_PVT:
-         k_work_submit(&location_gnss_pvt_work);
+         work_submit_to_io_queue(&location_gnss_pvt_work);
          break;
       case NRF_MODEM_GNSS_EVT_FIX:
-         k_work_submit(&location_gnss_pvt_work);
+         work_submit_to_io_queue(&location_gnss_pvt_work);
          break;
       case NRF_MODEM_GNSS_EVT_AGPS_REQ:
          LOG_INF("GNSS: A-GPS request!");
@@ -135,7 +136,7 @@ static void location_lte_ind_handler(const struct lte_lc_evt *const evt)
       case LTE_LC_EVT_MODEM_SLEEP_ENTER:
          if (evt->modem_sleep.type != LTE_LC_MODEM_SLEEP_FLIGHT_MODE) {
             s_modem_sleeping = true;
-            k_work_submit(&location_lte_start_work);
+            work_submit_to_io_queue(&location_lte_start_work);
          }
          break;
       case LTE_LC_EVT_MODEM_SLEEP_EXIT:
@@ -147,7 +148,7 @@ static void location_lte_ind_handler(const struct lte_lc_evt *const evt)
             s_modem_sleeping = false;
          } else {
             s_modem_sleeping = true;
-            k_work_submit(&location_lte_start_work);
+            work_submit_to_io_queue(&location_lte_start_work);
          }
          break;
 #endif
@@ -272,10 +273,10 @@ static void location_event_handler(const struct modem_gnss_state *gnss_state)
       }
       s_location_state = LOCATION_PENDING;
 #ifdef CONFIG_LOCATION_ENABLE_CONTINUES_MODE
-      k_work_schedule(&location_gnss_start_work, K_NO_WAIT);
+      work_schedule_for_io_queue(&location_gnss_start_work, K_NO_WAIT);
       LOG_INF("Location: continues mode, timeout %d[s]", s_location_gnss_timeout);
 #else
-      k_work_schedule(&location_gnss_start_work, K_MSEC(time));
+      work_schedule_for_io_queue(&location_gnss_start_work, K_MSEC(time));
       LOG_INF("Location: next request in %d[s], timeout %d[s]", time / MSEC_PER_SEC, s_location_gnss_timeout);
 #endif
    }
@@ -457,7 +458,7 @@ static void location_gnss_start(void)
    }
    if (timeout > 0) {
       LOG_DBG("Starting timer with timeout=%d", timeout);
-      k_work_reschedule(&location_gnss_timeout_work, K_SECONDS(timeout));
+      work_reschedule_for_io_queue(&location_gnss_timeout_work, K_SECONDS(timeout));
    }
 }
 
@@ -512,10 +513,10 @@ static void location_scan_start_work_fn(struct k_work *work)
       s_location_interval = GNSS_INTERVAL_INITIAL_PROBE;
       if (s_location_state == LOCATION_GNSS_RUNNING) {
          LOG_DBG("Restarting timer with timeout=%d", s_location_gnss_timeout);
-         k_work_reschedule(&location_gnss_timeout_work, K_SECONDS(s_location_gnss_timeout));
+         work_reschedule_for_io_queue(&location_gnss_timeout_work, K_SECONDS(s_location_gnss_timeout));
       } else {
          s_location_state = LOCATION_PENDING;
-         k_work_reschedule(&location_gnss_start_work, K_NO_WAIT);
+         work_reschedule_for_io_queue(&location_gnss_start_work, K_NO_WAIT);
       }
    }
 }
@@ -534,7 +535,7 @@ void location_start(bool force)
       LOG_INF("Location: force init");
    }
    if (atomic_cas(&s_location_start, 0, 1) || force) {
-      k_work_submit(&location_scan_start_work);
+      work_submit_to_io_queue(&location_scan_start_work);
    }
 }
 
