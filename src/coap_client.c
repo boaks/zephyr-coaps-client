@@ -391,6 +391,7 @@ int coap_client_prepare_post(void)
    }
 #endif
 
+#ifdef CONFIG_COAP_SEND_SIM_INFO
    start = index + 1;
    index += snprintf(buf + index, sizeof(buf) - index, "\nICCID: ");
    err = modem_get_iccid(buf + index, sizeof(buf) - index);
@@ -410,7 +411,9 @@ int coap_client_prepare_post(void)
    } else {
       index = start - 1;
    }
+#endif /* CONFIG_COAP_SEND_SIM_INFO */
 
+#ifdef CONFIG_COAP_SEND_NETWORK_INFO
    p = modem_get_network_mode();
    start = index + 1;
    index += snprintf(buf + index, sizeof(buf) - index, "\n!Network: %s", p);
@@ -487,6 +490,9 @@ int coap_client_prepare_post(void)
                         network_statistic.average_packet_size, network_statistic.searchs, network_statistic.psm_delays);
       dtls_info("%s", buf + start);
    }
+#endif /* CONFIG_COAP_SEND_NETWORK_INFO */
+
+
 #ifdef CONFIG_LOCATION_ENABLE
    err = 1;
    start = index + 1;

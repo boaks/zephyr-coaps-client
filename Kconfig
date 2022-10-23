@@ -60,6 +60,14 @@ config COAP_WAKEUP_SEND_INTERVAL
 	   so it's usully chosen a little smaller than the PSM interval.
 	   Ignored, if COAP_SEND_INTERVAL is enabled.
 
+config COAP_SEND_SIM_INFO
+	bool "Include SIM infos in message."
+	default y
+
+config COAP_SEND_NETWORK_INFO
+	bool "Include network infos in message."
+	default y
+
 config COAP_NO_RESPONSE_ENABLE
 	bool "Use CoAP NO_RESPONSE option for one-way message"
 	default n

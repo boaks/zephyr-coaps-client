@@ -13,15 +13,16 @@ Reducing the messages exchange mostly down to two ip-messages (one request, one 
 - efficient, and 
 - end-to-end encrypted
 
-mobile communication (LTE-M, NB-IoT) for messages up to a few hundred bytes.
-In combination, CoAP / DTLS CID and LTE-M/NB-IoT, enables to build mobile applications with 
+communication for messages up to a few hundred bytes.
+In combination with LTE-M/NB-IoT, CoAP / DTLS CID enables to build mobile applications with 
 
 - zero-install and 
 - high cost-efficiency.
 
-The demo client itself is in early development stage. In "good weather", the `Thingy:91` flies from battery for 4 weeks. In "storm" it may require the be switched off and on again. That should be rare exceptions.
+The demo client itself is in development stage. In "good weather", the `Thingy:91` flies from battery for 7 weeks. In "storm" it may require to be switched off and on again. That should be rare exceptions.
 
-The demo client is intended as groundwork for your own ideas. "Out-of-the-box" this application is only useful to easily check, if mobile IoT works at the locations and environment you want to use it. To build products and applications on this protocol stack requires to implement a production client and to adapt the coap-server for your function. The demo targets therefore people, which are already common with [zephyr](https://www.zephyrproject.org/), or, even better, common with the development for the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) itself.
+The demo client is intended as groundwork for your own ideas. "Out-of-the-box" this application is only useful to easily check, if mobile IoT works at the locations and environment you want to use it. The demo reports also some details about the mobile network. 
+To build products and applications on this protocol stack requires to implement a production client and to adapt the coap-server for your function. The demo targets therefore people, which are already common with [zephyr](https://www.zephyrproject.org/), or, even better, common with the development for the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) itself.
 Without that knowledge it will be hard an time consuming to make benefit out of this demo.
 
 **Note:**
@@ -127,6 +128,8 @@ cd coaps-client
 west build -b thingy91_nrf9160_ns
 ```
 
+(For the [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) use `west build -b nrf9160dk_nrf9160_ns`)
+
 and then flash that resulting firmware to your device
 
 ```sh
@@ -152,15 +155,21 @@ The demo client exchanges encrypted messages with the coap-server. These message
 Demo message:
 
 ```
-124 s, Thingy:91 v0.4, 0*3, 1*0, 2*0, 3*0, failures 0
-4156 mV 94% battery
-RSSI q,p: 17,30
-Network: CAT-M1 5,26201(*)
-PSM: TAU 3600 [s], Act 16 [s], Delays 0, Released: 11189 ms
-Stat: 1,1,280,159
+7:30:03 [h:mm:ss], Thingy:91 v0.5.99, 0*47, 1*0, 2*0, 3*0, failures 0
+3984 mV 72% battery
+ICCID: ??????????????
+IMSI: ??????????????
+!Network: CAT-M1,roaming,Band 3,PLMN 26201,TAC 67B9,Cell 01CC2B00,RSRP -103 dBm
+PDN: ??????,???.???.???.???
+!PSM: TAU 86400 [s], Act 0 [s], Released: 10853 ms
+!eDRX: LTE-M 81.92 [s], page 2.56 [s]
+Stat: tx 28kB, rx 3kB, max 611B, avg 313B, searchs 1, PSM delays 4
+!22.66,22.65,22.65,22.65,22.64,22.64,22.64,22.65,23.09,22.59,22.57,22.57 C
+57.38 %H
+984.0 hPa
 ```
 
-It starts with the up-time in seconds in the first line, followed by the label "Thingy:91" and a sent statistic. "`0*43`" := 43 exchanges without retransmission, "`1*0`" := no (0) exchanges with 1 retransmission. The current exchange is not included in this statistic. The second line contains the battery status and the third the receiving signal strength. The next line contains the network mode (CAT-M1 or NB-IoT) and the provider. Followed by a line with the PSM setup and finally a transmission statistic (kB transmitted, kB received, max. packet size, avg. packet size).
+It starts with the up-time in the first line, followed by the label "Thingy:91" and the client's version. The sent statistic. "`0*47`" := 47 exchanges without retransmission, "`1*0`" := no (0) exchanges with 1 retransmission finishs that first line. The current exchange is not included in this statistic. The second line contains the battery status and the third and fourth the information from the SIM-card. The fifth to ninth contains the network information. From the tenth line on, the value of the sensors are following.
 
 The demo uses the "echo" resource of the plugtest-server, therefore the response contains just the same message.
 

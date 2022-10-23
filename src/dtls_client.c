@@ -417,8 +417,14 @@ send_to_peer(struct dtls_context_t *ctx,
          }
       } else if (SEND == request_state) {
          if (lte_connected) {
-            request_state = RECEIVE;
             dtls_info("sent_to_peer %d", res);
+#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
+            request_state = NONE;
+            dtls_coap_success();
+#else
+            request_state = RECEIVE;
+#endif
+
          } else {
             dtls_info("send_to_peer %d", res);
          }
@@ -687,7 +693,7 @@ int dtls_loop(void)
 
    dtls_set_handler(dtls_context, &cb);
 
-#if defined(CONFIG_UDP_AS_RAI_ENABLE) && defined(USE_SO_RAI_NO_DATA) 
+#if defined(CONFIG_UDP_AS_RAI_ENABLE) && defined(USE_SO_RAI_NO_DATA)
    // using SO_RAI_NO_DATA requires a destination, for what ever
    connect(fd, (struct sockaddr *)&dst.addr.sin, sizeof(struct sockaddr_in));
 #endif
@@ -879,7 +885,7 @@ int dtls_loop(void)
                   dtls_coap_failure();
                }
             }
-#if defined(CONFIG_UDP_AS_RAI_ENABLE) && defined(USE_SO_RAI_NO_DATA) 
+#if defined(CONFIG_UDP_AS_RAI_ENABLE) && defined(USE_SO_RAI_NO_DATA)
             if (request_state == NONE) {
                dtls_info("RAI no data (%d)", SO_RAI_NO_DATA);
                if (setsockopt(fd, SOL_SOCKET, SO_RAI_NO_DATA, NULL, 0)) {
