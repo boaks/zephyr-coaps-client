@@ -158,7 +158,7 @@ It takes about 12s, with an average current of 9mA at 5V. That results in 0.14 m
 
 **LTE-M Request-Response:**
 
-![LTE-M response](./lte-m-psm-response.png)
+![LTE-M response on/off](./lte-m-on-off-response.png)
 
 This chart shows the power consumption, if the modem is switched on, a message is exchanged, and then the modem is switched off again.
 
