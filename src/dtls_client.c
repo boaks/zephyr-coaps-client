@@ -354,6 +354,27 @@ static inline bool lte_lost_network()
 #endif
 }
 
+static void prepare_socket(int fd)
+{
+   lte_connected_send = false;
+   connect_time = (unsigned long)k_uptime_get();
+#if defined(CONFIG_UDP_AS_RAI_ENABLE) && !defined(USE_SO_RAI_NO_DATA)
+   if (dtls_connected) {
+#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
+      dtls_info("RAI no response (%d)", SO_RAI_LAST);
+      if (setsockopt(fd, SOL_SOCKET, SO_RAI_LAST, NULL, 0)) {
+         dtls_warn("RAI error %d", errno);
+      }
+#else
+      dtls_info("RAI one response (%d)", SO_RAI_ONE_RESP);
+      if (setsockopt(fd, SOL_SOCKET, SO_RAI_ONE_RESP, NULL, 0)) {
+         dtls_warn("RAI error %d", errno);
+      }
+#endif
+   }
+#endif
+}
+
 static int
 send_to_peer(struct dtls_context_t *ctx,
              session_t *session, uint8 *data, size_t len)
@@ -363,29 +384,16 @@ send_to_peer(struct dtls_context_t *ctx,
    int res = 0;
 
    if (!lte_power_on_off) {
-      lte_connected_send = false;
-      connect_time = (unsigned long)k_uptime_get();
-#if defined(CONFIG_UDP_AS_RAI_ENABLE) && !defined(USE_SO_RAI_NO_DATA)
-      if (dtls_connected) {
-#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
-         dtls_info("RAI no response (%d)", SO_RAI_LAST);
-         if (setsockopt(*fd, SOL_SOCKET, SO_RAI_LAST, NULL, 0)) {
-            dtls_warn("RAI error %d", errno);
-         }
-#else
-         dtls_info("RAI one response (%d)", SO_RAI_ONE_RESP);
-         if (setsockopt(*fd, SOL_SOCKET, SO_RAI_ONE_RESP, NULL, 0)) {
-            dtls_warn("RAI error %d", errno);
-         }
-#endif
-      }
-#endif
+      prepare_socket(*fd);
    }
    res = sendto(*fd, data, len, MSG_DONTWAIT, &session->addr.sa, session->size);
    if (res < 0) {
       dtls_warn("send_to_peer failed: %d, errno %d (%s)", res, errno, strerror(errno));
       if (lte_lost_network()) {
          reopen_socket(ctx);
+         if (!lte_power_on_off) {
+            prepare_socket(*fd);
+         }
          res = sendto(*fd, data, len, MSG_DONTWAIT, &session->addr.sa, session->size);
          if (res < 0) {
             dtls_warn("retry send_to_peer failed: %d, errno %d (%s)", res, errno, strerror(errno));
@@ -563,11 +571,13 @@ static void dtls_lte_connected(enum lte_state_type type, bool connected)
             ui_led_op(LED_COLOR_GREEN, LED_SET);
          }
       }
-      lte_connected = connected;
-      if (connected) {
-         connected_time = (unsigned long)k_uptime_get();
-         ++lte_connections;
-         lte_connected_send = true;
+      if (lte_connected != connected) {
+         lte_connected = connected;
+         if (connected) {
+            connected_time = (unsigned long)k_uptime_get();
+            ++lte_connections;
+            lte_connected_send = true;
+         }
       }
    }
 }
@@ -834,6 +844,7 @@ int dtls_loop(void)
                temp += ADD_ACK_TIMEOUT;
             }
             ++loops;
+            dtls_info("CoAP wait %d/%d/%d", loops, timeout, temp);
             if (loops > temp) {
                result = -1;
                if (transmission < COAP_MAX_RETRANSMISSION) {

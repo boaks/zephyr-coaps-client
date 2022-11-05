@@ -286,10 +286,6 @@ int coap_client_prepare_post(void)
    uint16_t battery_voltage = 0xffff;
    uint8_t battery_level = 0xff;
 
-   struct lte_network_info network_info;
-   struct lte_network_statistic network_statistic;
-
-   const char *p;
    char buf[640];
    int err;
    int index;
@@ -298,16 +294,27 @@ int coap_client_prepare_post(void)
 
    uint8_t *token = (uint8_t *)&coap_current_token;
    struct coap_packet request;
-   struct lte_lc_psm_cfg psm;
-   struct lte_lc_edrx_cfg edrx;
 
 #ifdef CONFIG_COAP_QUERY_DELAY_ENABLE
    static int query_delay = 0;
    char query[30];
 #endif
 
-   coap_message_len = 0;
+#ifdef CONFIG_COAP_SEND_NETWORK_INFO
+   struct lte_lc_psm_cfg psm;
+   struct lte_lc_edrx_cfg edrx;
+   struct lte_network_info network_info;
+   struct lte_network_statistic network_statistic;
+   const char *p;
+
+   memset(&psm, 0, sizeof(psm));
+   memset(&edrx, 0, sizeof(edrx));
    memset(&network_info, 0, sizeof(network_info));
+   memset(&network_statistic, 0, sizeof(network_statistic));
+
+#endif
+
+   coap_message_len = 0;
 
    for (index = BAT_LEVEL_SLOTS - 1; index > 0; --index) {
       bat_level[index] = bat_level[index - 1];

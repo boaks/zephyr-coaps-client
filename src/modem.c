@@ -90,6 +90,7 @@ static void modem_ready_work_fn(struct k_work *work)
       k_condvar_broadcast(&lte_condvar);
    }
    k_mutex_unlock(&lte_mutex);
+   LOG_INF("modem signaled ready.");
 }
 
 static K_WORK_DEFINE(modem_ready_work, modem_ready_work_fn);
@@ -206,7 +207,7 @@ static void lte_connection_status(bool ready)
    } else {
       ui_lte_3_op(LED_CLEAR);
       work_submit_to_io_queue(&modem_idle_callback_work);
-      LOG_INF("modem not ready. %d/%d/%d", lte_registered, lte_connected, lte_pdn_active);
+      LOG_INF("modem not ready. con=%d/pdn=%d/reg=%d", lte_connected, lte_pdn_active, lte_registered);
    }
 }
 
