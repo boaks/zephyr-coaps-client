@@ -19,15 +19,19 @@
 	aliases {	
 
 		/* alias for sensor with SENSOR_CHAN_AMBIENT_TEMP channel */
-		temperature-sensor-2 = &sht3xd;
+		temperature-sensor = &sht3xd;
 		/* alias for sensor with SENSOR_CHAN_HUMIDITY channel */
-		humidity-sensor-2 = &sht3xd;
+		humidity-sensor = &sht3xd;
 
 	};
 	
 };
 
+/delete-node/ &bme680;
+
 &i2c2 {
+/*	/delete-node/ bme680@76; */
+
 	sht3xd: sht3xd@44 { /* ALERT P1.10 */
 		compatible = "sensirion,sht3xd";
 		reg = <0x44>;

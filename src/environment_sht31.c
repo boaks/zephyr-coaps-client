@@ -26,11 +26,11 @@ struct environment_sensor {
 
 static const struct environment_sensor temperature_sensor = {
     .channel = SENSOR_CHAN_AMBIENT_TEMP,
-    .dev = DEVICE_DT_GET(DT_ALIAS(temperature_sensor_2))};
+    .dev = DEVICE_DT_GET(DT_ALIAS(temperature_sensor))};
 
 static const struct environment_sensor humidity_sensor = {
     .channel = SENSOR_CHAN_HUMIDITY,
-    .dev = DEVICE_DT_GET(DT_ALIAS(humidity_sensor_2))};
+    .dev = DEVICE_DT_GET(DT_ALIAS(humidity_sensor))};
 
 static const struct environment_sensor *all_sensors[] = {
     &temperature_sensor,
