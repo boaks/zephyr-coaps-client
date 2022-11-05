@@ -267,6 +267,15 @@ static int coap_client_add_uri_query_param(struct coap_packet *request, const ch
    return 0;
 }
 
+static int coap_client_add_uri_query_param_opt(struct coap_packet *request, const char *query, const char *value)
+{
+   if (value && strlen(value) > 0) {
+      return coap_client_add_uri_query_param(request, query, value);
+   } else {
+      return coap_client_add_uri_query(request, query);
+   }
+}
+
 int coap_client_prepare_post(void)
 {
 #ifdef ENVIRONMENT_SENSOR
@@ -278,9 +287,6 @@ int coap_client_prepare_post(void)
    static uint32_t max_satellites_time = 0;
    struct modem_gnss_state result;
    bool pending;
-#endif
-#ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE
-   bool sub_resource = strlen(CONFIG_COAP_QUERY_READ_SUBRESOURCE);
 #endif
    power_manager_status_t battery_status = POWER_UNKNOWN;
    uint16_t battery_voltage = 0xffff;
@@ -499,7 +505,6 @@ int coap_client_prepare_post(void)
    }
 #endif /* CONFIG_COAP_SEND_NETWORK_INFO */
 
-
 #ifdef CONFIG_LOCATION_ENABLE
    err = 1;
    start = index + 1;
@@ -712,12 +717,17 @@ int coap_client_prepare_post(void)
    }
 #endif
 
-#ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE
-   if (sub_resource) {
-      err = coap_client_add_uri_query_param(&request, "read", CONFIG_COAP_QUERY_READ_SUBRESOURCE);
-      if (err < 0) {
-         return err;
-      }
+#ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE_ENABLE
+   err = coap_client_add_uri_query_param_opt(&request, "read", CONFIG_COAP_QUERY_READ_SUBRESOURCE);
+   if (err < 0) {
+      return err;
+   }
+#endif
+
+#ifdef CONFIG_COAP_QUERY_WRITE_SUBRESOURCE_ENABLE
+   err = coap_client_add_uri_query_param_opt(&request, "write", CONFIG_COAP_QUERY_WRITE_SUBRESOURCE);
+   if (err < 0) {
+      return err;
    }
 #endif
 
@@ -735,21 +745,19 @@ int coap_client_prepare_post(void)
       return err;
    }
 
-#ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE
-   if (sub_resource) {
-      if (read_etag[0]) {
-         err = coap_packet_append_option(&request, CUSTOM_COAP_OPTION_READ_ETAG,
-                                         &read_etag[1],
-                                         read_etag[0]);
-         if (err < 0) {
-            dtls_warn("Failed to encode CoAP read-etag option, %d", err);
-            return err;
-         } else {
-            dtls_info("Send CoAP read-etag option (%u bytes)", read_etag[0]);
-         }
+#ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE_ENABLE
+   if (read_etag[0]) {
+      err = coap_packet_append_option(&request, CUSTOM_COAP_OPTION_READ_ETAG,
+                                      &read_etag[1],
+                                      read_etag[0]);
+      if (err < 0) {
+         dtls_warn("Failed to encode CoAP read-etag option, %d", err);
+         return err;
       } else {
-         dtls_info("Send CoAP no read-etag option");
+         dtls_info("Send CoAP read-etag option (%u bytes)", read_etag[0]);
       }
+   } else {
+      dtls_info("Send CoAP no read-etag option");
    }
 #endif
 
