@@ -16,7 +16,13 @@ for the console variant, and
 west build -b thingy91_nrf9160_ns -t guiconfig
 ```
 
-for the GUI variant.
+for the GUI variant. That enables to select individual features.
+
+Alternatively you may use the project's configuration file [prj.conf](../prj.conf) to setup these features. If you want/need to uses several configuration variants, "overlays" work best. Such an overlay overwrittes the values of the standard project configuration. e.g.
+
+[10min-prj.conf](../10min-prj.conf) prepares to send a message every 10 minutes. Enables to use a environment history to store sensor data.
+
+For more information, see [overlays](#overlays).
 
 ## Basic
 
@@ -36,7 +42,76 @@ for the GUI variant.
 
 - **COAP_WAIT_ON_POWERMANAGER**, coap waits for the power-manager to start exchanging application data. Takes up to 30 s and delays the first exchange. Default disabled.
 
+- **COAP_SEND_SIM_INFO**, include information from the SIM-card. e.g. `ICCID: 89882280666025467840` and `IMSI: 901405102546784`.
+
+- **COAP_SEND_NETWORK_INFO**, include network information. e.g.
+
+```
+!Network: CAT-M1,roaming,Band 3,PLMN 26201,TAC 67B9,Cell 01CC2B06,RSRP -105 dBm
+PDN: ???,??.???.??.??
+!PSM: TAU 86400 [s], Act 8 [s], Released: 10874 ms
+Stat: tx 493kB, rx 67kB, max 532B, avg 289B, searchs 44, PSM delays 0
+```
+
+- **COAP_NO_RESPONSE_ENABLE**, send one-way coap message (request without response).
+
+- **COAP_RESOURCE**, resource name of request. Default "echo".
+
+## URI query parameter
+
+Configure used URI query parameter. Please note, that these query parameter must be supported by the server's resource implementation. 
+
+- **COAP_QUERY_DELAY_ENABLE**, request the server to respond delayed (use URI query parameter "delay=%d"). Only for NAT testing. Must also be enabled on server side.
+
+- **COAP_QUERY_RESPONSE_LENGTH**, request the server to respond with a specific payload length (use URI query parameter "rlen=%d"). Large values may require blockwise transfer, which is not supported.
+
+- **COAP_QUERY_KEEP_ENABLE**, request the server to keep the request (use URI query parameter "keep).
+
+- **COAP_QUERY_ACK_ENABLE**, request the server to use a separate empty ACK (use URI query parameter "ack).
+
+- **COAP_QUERY_SERIES_ENABLE**, request the server to append some of the data to a "series" (use URI query parameter "series). Currently only supported for text-payload. Lines starting with "!" are appended to the resource "series".
+
+- **COAP_QUERY_READ_SUBRESOURCE_ENABLE**, request the server to read a sub-resource (use URI query parameter "read").
+
+- **COAP_QUERY_READ_SUBRESOURCE**, name of the sub-resource. Default "config".
+
+- **COAP_QUERY_WRITE_SUBRESOURCE_ENABLE**, request the server to write to a sub-resource (use URI query parameter "write").
+
+- **COAP_QUERY_WRITE_SUBRESOURCE**, name of the sub-resource. Default "${now}".
+
 ## Extensions
+
+### Modem
+
+- **LTE_LOCK_PLMN_CONFIG_SWITCH**, use switch1 and switch2 of the nRf9160-DK to select the PLMN on start. on := GND, off := n.c.
+
+- **LTE_LOCK_PLMN_CONFIG_SWITCH_STRING_1**, PLMN for switch1 on and switch2 off.
+
+- **LTE_LOCK_PLMN_CONFIG_SWITCH_STRING_2**, PLMN for switch1 off and switch2 on.
+
+- **LTE_LOCK_PLMN_CONFIG_SWITCH_STRING_3**, PLMN for switch1 on and switch2 on.
+
+- **LTE_POWER_ON_OFF_ENABLE**, switch the modem on/off (AT+CFUN=0,AT+CFUN=x), when not in use. 
+
+- **LTE_POWER_ON_OFF_CONFIG_SWITCH**, use switch1 to select PSM or modem on/off.
+
+- **UDP_PSM_ENABLE**, enable PSM.
+
+- **UDP_RAI_ENABLE**, enable RAI (control plane).
+
+- **UDP_AS_RAI_ENABLE**, enable RAI (application), requires 3GPP release 14 supported by the Mobile Network Operator.
+
+- **UDP_EDRX_ENABLE**, enable eDRX.
+
+- **MODEM_SAVE_CONFIG_THRESHOLD**, threshold to save the modem configuration. The modem is switched off and on to save the configuration.
+
+- **MODEM_SEARCH_TIMEOUT**, modem network search timeout.
+
+### Power Saving
+
+- **SUSPEND_3V3**, suspend the 3.3V supply, when sleeping.
+
+- **SUSPEND_UART**, suspend the UART, when sleeping.
 
 ### GPS/GNSS (experimental)
 
@@ -46,7 +121,7 @@ for the GUI variant.
 
 - **LOCATION_ENABLE_TRIGGER_MESSAGE**, send a message, when a position is reported by GPS/GNSS. The not continues mode is still experimental. It the most cases, it stops working after something as 30 minutes and requires also 30 minutes to wokr again. So it still requires a lot of work. Default disabled.
 
-**NOTE:** Using GPS/GNSS without assistance data requires to place the `Thingy:91` with free sight to the sky to start. Once the first statelites are detected and the UTC time is available, the `Thingy:91` is able to optimize the GNSS receiving and continues to work also with less signals. The very best results are achieved, when the GPS/GNSS is mostly on. That requires unfortunately 50mA and so works only for about 20h without charging. 
+**NOTE:** Using GPS/GNSS without assistance data requires to place the `Thingy:91` with free sight to the sky to start. Once the first statelites are detected and the UTC time is available, the `Thingy:91` is able to optimize the GNSS receiving and continues to work also with less signal strength. In my experience, the very best results are achieved, when the GPS/GNSS is mostly on. That requires unfortunately 50mA and so works only for about 20h without charging. 
 
 ### Sensors
 
@@ -70,3 +145,39 @@ and then enable
 instead.
 
 **NOTE:** the BME680 is mounted inside the Thingy:91 and is therefore only weakly coupled with the environment. On battery charging, the temperature gets up to 30°. If you want more realistic values, please remove the board from the case.
+
+- **zephyr SHT3XD driver**, access to temperature, humidity. Requires also a device-tree overlay, see [sht3x.overlay](../sht3x.overlay)
+
+## Overlays
+
+As mentioned above, overlays are files, which are used to configure a set of features. 
+
+## List of overlays
+
+[bsec-prj.conf](../bsec-prj.conf) prepares to use **Bosch bme680 BSEC library**, see above. 
+
+[bme-prj.conf](../bme-prj.conf) prepares to use **Bosch bme680 Zephyr Sensor library**, see above. 
+
+[sht3x-prj.conf](../sht3x-prj.conf) prepares to use the **SHT3X Zephyr Sensor library**. Requires device tree overlay [sht3x.overlay](../sht3x.overlay) additionally.
+
+[lowpower-prj.conf](../lowpower-prj.conf) prepares to use the lowpower mode (suspend the UART and 3.3V when sleeping). 
+
+[5min-prj.conf](../5min-prj.conf) prepares to send a message every 5 minutes. Enables to use a environment history to store sensor data.
+
+[10min-prj.conf](../10min-prj.conf) prepares to send a message every 10 minutes. Enables to use a environment history to store sensor data.
+
+[60min-prj.conf](../60min-prj.conf) prepares to send a message every 60 minutes. Enables to use a environment history to store sensor data.
+
+## Apply overlays
+
+Apply configuration overlays:
+
+```
+west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="bme-prj.conf;60min-prj.conf;lowpower-prj.conf"
+```
+
+With device tree overlay:
+
+```
+west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="sht3x-prj.conf;60min-prj.conf;lowpower-prj.conf" -DDTC_OVERLAY_FILE=sht3x.overlay
+```
