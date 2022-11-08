@@ -17,12 +17,11 @@
 
 #include "environment_sensor.h"
 
-#if defined(CONFIG_BME680_BSEC) || defined(CONFIG_BME680)
+#if defined(CONFIG_BME680_BSEC) || defined(CONFIG_BME680) || defined(CONFIG_SHT3XD)
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
-static const float temperature_offset = (CONFIG_BME680_TEMPERATURE_OFFSET / 100.0);
-
+static const float temperature_offset = (CONFIG_TEMPERATURE_OFFSET / 100.0);
 
 #ifdef CONFIG_BME680_BSEC
 
@@ -212,19 +211,19 @@ struct environment_sensor {
 
 static const struct environment_sensor temperature_sensor = {
     .channel = SENSOR_CHAN_AMBIENT_TEMP,
-    .dev = DEVICE_DT_GET(DT_ALIAS(temperature_sensor))};
+    .dev = DEVICE_DT_GET_OR_NULL(DT_ALIAS(temperature_sensor))};
 
 static const struct environment_sensor humidity_sensor = {
     .channel = SENSOR_CHAN_HUMIDITY,
-    .dev = DEVICE_DT_GET(DT_ALIAS(humidity_sensor))};
+    .dev = DEVICE_DT_GET_OR_NULL(DT_ALIAS(humidity_sensor))};
 
 static const struct environment_sensor pressure_sensor = {
     .channel = SENSOR_CHAN_PRESS,
-    .dev = DEVICE_DT_GET(DT_ALIAS(pressure_sensor))};
+    .dev = DEVICE_DT_GET_OR_NULL(DT_ALIAS(pressure_sensor))};
 
 static const struct environment_sensor gas_sensor = {
     .channel = SENSOR_CHAN_GAS_RES,
-    .dev = DEVICE_DT_GET(DT_ALIAS(gas_sensor))};
+    .dev = DEVICE_DT_GET_OR_NULL(DT_ALIAS(gas_sensor))};
 
 static const struct environment_sensor *all_sensors[] = {
     &temperature_sensor,
@@ -240,19 +239,21 @@ int environment_sensor_fetch(bool force)
    static int err = 0;
    int64_t now = k_uptime_get();
    if (force || (now - environment_sensor_next_fetch) >= 0) {
-      environment_sensor_next_fetch = now + (CONFIG_BME680_SAMPLE_INTERVAL_S)*MSEC_PER_SEC;
+      environment_sensor_next_fetch = now + CONFIG_SAMPLE_INTERVAL_S * MSEC_PER_SEC;
       for (int index1 = 0; index1 < all_sensors_size; ++index1) {
          const struct device *dev = all_sensors[index1]->dev;
-         for (int index2 = 0; index2 < index1; ++index2) {
-            if (dev == all_sensors[index2]->dev) {
-               dev = NULL;
-               break;
-            }
-         }
          if (dev) {
-            err = sensor_sample_fetch_chan(dev, SENSOR_CHAN_ALL);
-            if (err) {
-               break;
+            for (int index2 = 0; index2 < index1; ++index2) {
+               if (dev == all_sensors[index2]->dev) {
+                  dev = NULL;
+                  break;
+               }
+            }
+            if (dev) {
+               err = sensor_sample_fetch_chan(dev, SENSOR_CHAN_ALL);
+               if (err) {
+                  break;
+               }
             }
          }
       }
@@ -262,7 +263,7 @@ int environment_sensor_fetch(bool force)
 
 static int environment_sensor_init(const struct device *dev)
 {
-   if (!device_is_ready(dev)) {
+   if (dev && !device_is_ready(dev)) {
       LOG_ERR("%s device is not ready", dev->name);
       return -ENOTSUP;
    }
@@ -272,8 +273,11 @@ static int environment_sensor_init(const struct device *dev)
 int environment_init(void)
 {
    int err = 0;
-
-   LOG_INF("BME680 initialize, %d s minimum interval", (CONFIG_BME680_SAMPLE_INTERVAL_S));
+#ifdef CONFIG_BME680
+   LOG_INF("BME680 initialize, %ds minimum interval", CONFIG_SAMPLE_INTERVAL_S);
+#else
+   LOG_INF("SHT3x initialize, %ds minimum interval", CONFIG_SAMPLE_INTERVAL_S);
+#endif
 
    for (int index = 0; index < all_sensors_size; ++index) {
       err = environment_sensor_init(all_sensors[index]->dev);
@@ -291,6 +295,10 @@ static int environment_sensor_read(const struct environment_sensor *sensor, doub
 {
    int err;
    struct sensor_value data = {0};
+
+   if (!sensor->dev) {
+      return -ENODATA;
+   }
 
    err = environment_sensor_fetch(false);
    if (err) {
@@ -353,4 +361,4 @@ int environment_get_iaq(int32_t *value)
 }
 
 #endif /* CONFIG_BME680_BSEC */
-#endif /* CONFIG_BME680_BSEC || CONFIG_BME680 */
+#endif /* CONFIG_BME680_BSEC || CONFIG_BME680 || CONFIG_SHT3XD */

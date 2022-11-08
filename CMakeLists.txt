@@ -35,9 +35,10 @@ target_sources_ifdef(CONFIG_ADXL362_MOTION_DETECTION app PRIVATE src/acceleromet
 
 target_sources_ifdef(CONFIG_BME680 app PRIVATE src/environment_sensor.c src/environment_history.c)
 
+target_sources_ifdef(CONFIG_SHT3XD app PRIVATE src/environment_sensor.c src/environment_history.c)
+
 target_sources_ifdef(CONFIG_SHT21 app PRIVATE src/environment_sht21.c src/environment_history.c)
 
-target_sources_ifdef(CONFIG_SHT3XD app PRIVATE src/environment_sht31.c src/environment_history.c)
 
 if (CONFIG_BME680_BSEC)
         set(bsec_version "BSEC_1.4.8.0_Generic_Release_updated_v3")

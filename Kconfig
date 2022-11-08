@@ -292,7 +292,7 @@ config BME680_BSEC_SAMPLE_MODE_LOW_POWER
 	  Sample data from BSEC every 0.33333 Hz (3 second interval).
 
 config BME680_BSEC_SAMPLE_MODE_ULTRA_LOW_POWER
-	bool "BSEC low ultra power mode"
+	bool "BSEC ultra low power mode"
 	help
 	  Sample data from BSEC every 0.0033333 Hz (300 second interval).
 
@@ -300,27 +300,28 @@ endchoice # BME680_BSEC_SAMPLE_MODE
 
 endif # BME680_BSEC
 
-if BME680_BSEC || BME680
+if BME680_BSEC || BME680 || SHT3XD
 
-config BME680_TEMPERATURE_OFFSET
-	int "BME680 temperature offset in degree celsius multiplied by 100."
+config TEMPERATURE_OFFSET
+	int "Temperature offset in degree celsius multiplied by 100."
+	default 0   if SHT3XD
 	default 120 if BOARD_THINGY91_NRF9160_NS
 	default 100
 	help
-	  BME680 temperature offset. To account for external heat sources on the board.
+	  Temperature offset. To account for external heat sources on the board.
 	  The provided value is divided by 100. This is due to the Kconfig parser
 	  not supporting floating point types.
 	  The default value 120 is translated to 1.2 degrees celsius offset.
 
-endif # BME680_BSEC || BME680
+endif # BME680_BSEC || BME680 || SHT3XD
 
-if BME680
+if BME680 || SHT3XD
 
-config BME680_SAMPLE_INTERVAL_S
-	int "BME680 minimal sample interval in seconds"
+config SAMPLE_INTERVAL_S
+	int "Minimal sample interval for environment sensor in seconds."
 	default 10
 
-endif # BME680
+endif # BME680 || SHT3XD
 
 endif # SENSOR
 

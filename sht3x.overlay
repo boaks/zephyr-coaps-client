@@ -27,10 +27,8 @@
 	
 };
 
-/delete-node/ &bme680;
-
 &i2c2 {
-/*	/delete-node/ bme680@76; */
+	/delete-node/ bme680@76;
 
 	sht3xd: sht3xd@44 { /* ALERT P1.10 */
 		compatible = "sensirion,sht3xd";
