@@ -45,13 +45,19 @@ int environment_get_gas(int32_t *value);
 
 int environment_get_iaq(int32_t *value);
 
+const char* environment_get_iaq_description(int32_t value);
+
 #if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
 
 int environment_get_temperature_history(double *values, uint8_t size);
 
 void environment_add_temperature_history(double value, bool force);
 
-void environment_init_temperature_history(void);
+int environment_get_iaq_history(int32_t *values, uint8_t size);
+
+void environment_add_iaq_history(int32_t value, bool force);
+
+void environment_init_history(void);
 
 #ifdef CONFIG_BME680_BSEC
 #define NO_ENVIRONMENT_HISTORY_WORKER

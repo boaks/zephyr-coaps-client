@@ -178,7 +178,7 @@ int environment_init(void)
    if (write_cmd(sht21_i2c, SHT21_I2C_ADDR, SHT21_CMD_RESET)) {
       LOG_ERR("SHT21 reset failed!");
    }
-   environment_init_temperature_history();
+   environment_init_history();
 
    return 0;
 }

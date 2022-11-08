@@ -238,6 +238,7 @@ int coap_client_parse_data(uint8_t *data, size_t len)
 #ifdef ENVIRONMENT_SENSOR
 #if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
 static double s_temperatures[CONFIG_ENVIRONMENT_HISTORY_SIZE];
+static int32_t s_iaqs[CONFIG_ENVIRONMENT_HISTORY_SIZE];
 #endif
 #endif
 
@@ -615,33 +616,24 @@ int coap_client_prepare_post(void)
       index += snprintf(buf + index, sizeof(buf) - index, "\n%s%.1f hPa", p, value);
       dtls_info("%s", buf + start);
    }
-   if (environment_get_iaq(&int_value) == 0) {
-      start = index + 1;
-      const char *desc = "???";
-      switch (int_value > 0 ? (int_value - 1) / 50 : 0) {
-         case 0:
-            desc = "excellent";
-            break;
-         case 1:
-            desc = "good";
-            break;
-         case 2:
-            desc = "lightly polluted";
-            break;
-         case 3:
-            desc = "moderately polluted";
-            break;
-         case 4:
-            desc = "heavily polluted";
-            break;
-         case 5:
-         case 6:
-            desc = "severely polluted";
-            break;
-         default:
-            desc = "extremely polluted";
-            break;
+#if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
+   int_value = environment_get_iaq_history(s_iaqs, CONFIG_ENVIRONMENT_HISTORY_SIZE);
+   if (int_value > 0) {
+      int history_index;
+      const char *desc = environment_get_iaq_description(s_iaqs[0]);  
+      index += snprintf(buf + index, sizeof(buf) - index, "\n!");
+      start = index - 1;
+      for (history_index = 0; history_index < int_value; ++history_index) {
+         index += snprintf(buf + index, sizeof(buf) - index, "%d,", s_iaqs[history_index]);
       }
+      --index;
+      index += snprintf(buf + index, sizeof(buf) - index, " Q (%s)", desc);
+      dtls_info("%s", buf + start);
+   }
+#endif
+   if (!int_value && environment_get_iaq(&int_value) == 0) {
+      const char *desc = environment_get_iaq_description(int_value);
+      start = index + 1;
       index += snprintf(buf + index, sizeof(buf) - index, "\n!%d Q (%s)", int_value, desc);
       dtls_info("%s", buf + start);
    }

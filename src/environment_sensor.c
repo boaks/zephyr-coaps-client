@@ -99,6 +99,7 @@ static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_a
    k_mutex_unlock(&environment_mutex);
 
    environment_add_temperature_history(temp, false);
+   environment_add_iaq_history(iaq, false);
 }
 
 static uint32_t environment_state_load(uint8_t *state_buffer, uint32_t n_buffer)
@@ -133,7 +134,7 @@ int environment_init(void)
       LOG_ERR("%s device is not ready", environment_i2c->name);
       return -ENOTSUP;
    }
-   environment_init_temperature_history();
+   environment_init_history();
 
    bsec_ret = bsec_iot_init(BSEC_SAMPLE_RATE, temperature_offset, environment_bus_write, environment_bus_read, environment_delay_ms,
                             environment_state_load, environment_config_load);
@@ -200,6 +201,36 @@ int environment_get_gas(int32_t *value)
 int environment_get_iaq(int32_t *value)
 {
    return environment_get_int32(value, &environment_values.air_quality);
+}
+
+const char *environment_get_iaq_description(int32_t value)
+{
+   const char *desc = "???";
+   switch (value > 0 ? (value - 1) / 50 : 0) {
+      case 0:
+         desc = "excellent";
+         break;
+      case 1:
+         desc = "good";
+         break;
+      case 2:
+         desc = "lightly polluted";
+         break;
+      case 3:
+         desc = "moderately polluted";
+         break;
+      case 4:
+         desc = "heavily polluted";
+         break;
+      case 5:
+      case 6:
+         desc = "severely polluted";
+         break;
+      default:
+         desc = "extremely polluted";
+         break;
+   }
+   return desc;
 }
 
 #else /* CONFIG_BME680_BSEC */
@@ -286,7 +317,7 @@ int environment_init(void)
       }
    }
    environment_sensor_fetch(true);
-   environment_init_temperature_history();
+   environment_init_history();
 
    return 0;
 }
@@ -358,6 +389,12 @@ int environment_get_gas(int32_t *value)
 int environment_get_iaq(int32_t *value)
 {
    return -ENODATA;
+}
+
+const char *environment_get_iaq_description(int32_t value)
+{
+   (void)value;
+   return NULL;
 }
 
 #endif /* CONFIG_BME680_BSEC */
