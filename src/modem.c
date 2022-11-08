@@ -201,21 +201,33 @@ static int64_t get_transmission_time(void)
    return time;
 }
 
-static void lte_connection_status(bool ready)
+static void lte_connection_status()
 {
-   if (ready) {
-      ui_lte_3_op(LED_SET);
-      work_submit_to_io_queue(&modem_connected_callback_work);
-      work_submit_to_io_queue(&modem_read_network_info_work);
 #ifdef CONFIG_PDN
-      work_submit_to_io_queue(&modem_read_pdn_info_work);
+   bool ready = lte_registered && lte_connected && lte_pdn_active;
+#else
+   bool ready = lte_registered && lte_connected;
 #endif
-      work_submit_to_io_queue(&modem_ready_work);
-      LOG_INF("modem ready.");
-   } else {
-      ui_lte_3_op(LED_CLEAR);
-      work_submit_to_io_queue(&modem_idle_callback_work);
-      LOG_INF("modem not ready. con=%d/pdn=%d/reg=%d", lte_connected, lte_pdn_active, lte_registered);
+   if (lte_ready != ready) {
+      lte_ready = ready;
+      if (ready) {
+         ui_lte_3_op(LED_SET);
+         work_submit_to_io_queue(&modem_connected_callback_work);
+         work_submit_to_io_queue(&modem_read_network_info_work);
+#ifdef CONFIG_PDN
+         work_submit_to_io_queue(&modem_read_pdn_info_work);
+#endif
+         work_submit_to_io_queue(&modem_ready_work);
+         LOG_INF("modem ready.");
+      } else {
+         ui_lte_3_op(LED_CLEAR);
+         work_submit_to_io_queue(&modem_idle_callback_work);
+#ifdef CONFIG_PDN
+         LOG_INF("modem not ready. con=%d/pdn=%d/reg=%d", lte_connected, lte_pdn_active, lte_registered);
+#else
+         LOG_INF("modem not ready. con=%d/reg=%d", lte_connected, lte_registered);
+#endif
+      }
    }
 }
 
@@ -223,16 +235,8 @@ static void lte_registration_set(bool registered)
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
    if (lte_registered != registered) {
-#ifdef CONFIG_PDN
-      bool ready = registered && lte_connected && lte_pdn_active;
-#else
-      bool_ready = registered && lte_connected;
-#endif
       lte_registered = registered;
-      if (lte_ready != ready) {
-         lte_ready = ready;
-         lte_connection_status(ready);
-      }
+      lte_connection_status();
    }
    k_mutex_unlock(&lte_mutex);
 }
@@ -246,16 +250,8 @@ static void lte_connection_status_set(bool connect)
       } else {
          ui_lte_2_op(LED_CLEAR);
       }
-#ifdef CONFIG_PDN
-      bool ready = connect && lte_pdn_active && lte_registered;
-#else
-      bool_ready = connect && lte_registered;
-#endif
       lte_connected = connect;
-      if (lte_ready != ready) {
-         lte_ready = ready;
-         lte_connection_status(ready);
-      }
+      lte_connection_status();
    }
    k_mutex_unlock(&lte_mutex);
 }
@@ -265,12 +261,8 @@ static void lte_pdn_status_set(bool pdn_active)
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
    if (lte_pdn_active != pdn_active) {
-      bool ready = pdn_active && lte_connected && lte_registered;
       lte_pdn_active = pdn_active;
-      if (lte_ready != ready) {
-         lte_ready = ready;
-         lte_connection_status(ready);
-      }
+      lte_connection_status();
    }
    k_mutex_unlock(&lte_mutex);
 }
