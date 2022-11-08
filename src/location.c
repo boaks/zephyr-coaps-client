@@ -176,7 +176,7 @@ static int location_stop_works(bool timeout)
    s_location_state = LOCATION_DONE;
 
    /* Cancel any work that has not been started yet */
-   k_work_cancel(&location_gnss_pvt_work);
+   (void)k_work_cancel(&location_gnss_pvt_work);
    (void)k_work_cancel(&location_lte_start_work);
    (void)k_work_cancel(&location_scan_start_work);
    (void)k_work_cancel_delayable(&location_gnss_start_work);

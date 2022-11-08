@@ -11,16 +11,57 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/pm/device.h>
 
 #include "power_manager.h"
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
+static K_MUTEX_DEFINE(pm_mutex);
+
+#if defined(CONFIG_UART_CONSOLE)
+
+#define UART0_DEVICE DEVICE_DT_GET(DT_CHOSEN(zephyr_console))
+
+static const struct device *uart0_dev = UART0_DEVICE;
+static bool uart0_suspended = false;
+
+static void suspend_uart(bool suspend)
+{
+   int ret = 0;
+   if (device_is_ready(uart0_dev) && uart0_suspended != suspend) {
+      if (suspend) {
+         LOG_INF("Disable UART");
+         ret = pm_device_action_run(uart0_dev, PM_DEVICE_ACTION_SUSPEND);
+         if (ret < 0) {
+            LOG_WRN("Failed to disable UART (%d)", ret);
+         } else {
+            uart0_suspended = suspend;
+         }
+      } else {
+         uart0_suspended = suspend;
+         ret = pm_device_action_run(uart0_dev, PM_DEVICE_ACTION_RESUME);
+         if (ret < 0) {
+            LOG_WRN("Failed to enable UART (%d)", ret);
+         } else {
+            LOG_INF("Enabled UART");
+            uart0_suspended = suspend;
+         }
+      }
+   }
+}
+#else
+static void suspend_uart(bool suspend)
+{
+   (void)suspend;
+}
+#endif
+
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
 
-#include <zephyr/device.h>
 #include <zephyr/drivers/i2c.h>
 
 #define ADP536X_I2C_DEVICE DEVICE_DT_GET(DT_NODELABEL(i2c2))
@@ -99,6 +140,9 @@ static void power_manager_read_status(power_manager_status_t *status)
 
 int power_manager_init(void)
 {
+   if (device_is_ready(UART0_DEVICE)) {
+      uart0_dev = UART0_DEVICE;
+   }
    if (device_is_ready(ADP536X_I2C_DEVICE)) {
       i2c_dev = ADP536X_I2C_DEVICE;
       /*
@@ -135,6 +179,19 @@ static int power_manager_xvy(uint8_t config_register, bool enable)
       LOG_WRN("Failed to initialize battery monitor.");
       return -1;
    }
+}
+
+int power_manager_suspend(bool enable)
+{
+   k_mutex_lock(&pm_mutex, K_FOREVER);
+#ifdef CONFIG_SUSPEND_UART
+   suspend_uart(enable);
+#endif
+#ifdef CONFIG_SUSPEND_3V3
+   power_manager_3v3(!enable);
+#endif
+   k_mutex_unlock(&pm_mutex);
+   return 0;
 }
 
 int power_manager_3v3(bool enable)
@@ -190,6 +247,16 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
 int power_manager_init(void)
 {
    modem_init(0, NULL, NULL);
+   return 0;
+}
+
+int power_manager_suspend(bool enable)
+{
+   k_mutex_lock(&pm_mutex, K_FOREVER);
+#ifdef CONFIG_SUSPEND_UART
+   suspend_uart(enable);
+#endif
+   k_mutex_unlock(&pm_mutex);
    return 0;
 }
 

@@ -774,6 +774,7 @@ int dtls_loop(void)
 #endif
          result = 0;
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
+            power_manager_suspend(false);
 #ifdef CONFIG_UDP_AS_RAI_ENABLEx
             dtls_info("RAI ongoing");
             setsockopt(fd, SOL_SOCKET, SO_RAI_ONGOING, NULL, 0);

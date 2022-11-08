@@ -65,16 +65,24 @@ static uint8_t imsi[24];
 
 static volatile int rai_time = -1;
 
-#ifdef CONFIG_LOW_POWER
-static volatile bool lte_power_management_3v3 = true;
+#define SUSPEND_DELAY_MILLIS 2000
 
-static void modem_power_management_3v3_work_fn(struct k_work *work)
+static void modem_power_management_suspend_work_fn(struct k_work *work);
+
+static K_WORK_DEFINE(modem_power_management_resume_work, modem_power_management_suspend_work_fn);
+static K_WORK_DELAYABLE_DEFINE(modem_power_management_suspend_work, modem_power_management_suspend_work_fn);
+
+static void modem_power_management_suspend_work_fn(struct k_work *work)
 {
-   power_manager_3v3(lte_power_management_3v3);
+   if (work == &modem_power_management_resume_work) {
+      power_manager_suspend(false);
+   } else {
+      struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+      if (dwork == &modem_power_management_suspend_work) {
+         power_manager_suspend(true);
+      }
+   }
 }
-
-static K_WORK_DEFINE(modem_power_management_3v3_work, modem_power_management_3v3_work_fn);
-#endif
 
 static void modem_read_network_info_work_fn(struct k_work *work)
 {
@@ -373,10 +381,11 @@ static void lte_handler(const struct lte_lc_evt *const evt)
                   rai_time = -1;
                   LOG_INF("RRC mode: Idle after %lld ms", now - connect_time);
                }
-#ifdef CONFIG_LOW_POWER
-               lte_power_management_3v3 = false;
-               work_submit_to_io_queue(&modem_power_management_3v3_work);
-#endif
+               if (active_time >= 0) {
+                  work_reschedule_for_io_queue(&modem_power_management_suspend_work, K_MSEC(SUSPEND_DELAY_MILLIS + active_time * MSEC_PER_SEC));
+               } else {
+                  work_reschedule_for_io_queue(&modem_power_management_suspend_work, K_MSEC(SUSPEND_DELAY_MILLIS));
+               }
             }
             break;
          }
@@ -404,16 +413,11 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          } else {
             LOG_INF("LTE modem sleeps");
          }
-#ifdef CONFIG_LOW_POWER
-         lte_power_management_3v3 = false;
-         work_submit_to_io_queue(&modem_power_management_3v3_work);
-#endif
+         work_reschedule_for_io_queue(&modem_power_management_suspend_work, K_MSEC(SUSPEND_DELAY_MILLIS));
          break;
       case LTE_LC_EVT_MODEM_SLEEP_EXIT:
-#ifdef CONFIG_LOW_POWER
-         lte_power_management_3v3 = true;
-         work_submit_to_io_queue(&modem_power_management_3v3_work);
-#endif
+         (void)k_work_cancel_delayable(&modem_power_management_suspend_work);
+         work_submit_to_io_queue(&modem_power_management_resume_work);
          LOG_INF("LTE modem wakes up");
          if (s_wakeup_handler) {
             s_wakeup_handler();

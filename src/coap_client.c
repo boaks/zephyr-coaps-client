@@ -389,7 +389,7 @@ int coap_client_prepare_post(void)
       if (strlen(msg)) {
          index += snprintf(buf + index, sizeof(buf) - index, " %s", msg);
       }
-#ifdef CONFIG_LOW_POWER
+#ifdef CONFIG_SUSPEND_3V3
       index += snprintf(buf + index, sizeof(buf) - index, " (low-power)");
 #endif
       dtls_info("%s", buf + start);

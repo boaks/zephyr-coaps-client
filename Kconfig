@@ -198,8 +198,14 @@ endmenu
 
 menu "Extra Functions"
 
-config LOW_POWER
-	bool "Low power mode, disable 3.3V"
+config SUSPEND_3V3
+	bool "Low power mode, suspend 3.3V when sleeping"
+	default y
+	depends on !LOCATION_ENABLE
+
+config SUSPEND_UART
+	bool "Low power mode, suspend UART when sleeping"
+	default y
 
 config LOCATION_ENABLE
 	bool "Enable GNSS Location"

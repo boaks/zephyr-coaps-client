@@ -28,6 +28,8 @@ typedef enum {
 
 int power_manager_init(void);
 
+int power_manager_suspend(bool enable);
+
 int power_manager_3v3(bool enable);
 
 int power_manager_1v8(bool enable);
