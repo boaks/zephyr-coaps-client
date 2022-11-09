@@ -99,7 +99,7 @@ Configure used URI query parameter. Please note, that these query parameter must
 
 - **UDP_RAI_ENABLE**, enable RAI (control plane).
 
-- **UDP_AS_RAI_ENABLE**, enable RAI (application), requires 3GPP release 14 supported by the Mobile Network Operator.
+- **UDP_AS_RAI_ENABLE**, enable RAI (access stratum), requires 3GPP release 14 supported by the Mobile Network Operator.
 
 - **UDP_EDRX_ENABLE**, enable eDRX.
 

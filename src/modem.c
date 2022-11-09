@@ -361,6 +361,8 @@ static void lte_handler(const struct lte_lc_evt *const evt)
             if (evt->rrc_mode == LTE_LC_RRC_MODE_CONNECTED) {
                lte_connection_status_set(true);
                connect_time = now;
+               (void)k_work_cancel_delayable(&modem_power_management_suspend_work);
+               work_submit_to_io_queue(&modem_power_management_resume_work);
                LOG_INF("RRC mode: Connected");
             } else {
                int64_t time = get_transmission_time();
@@ -662,7 +664,7 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_c
    return err;
 }
 
-static int modem_connection_wait(const k_timeout_t timeout)
+int modem_wait_ready(const k_timeout_t timeout)
 {
    int err = 0;
    k_timeout_t time = K_MSEC(0);
@@ -727,7 +729,7 @@ int modem_start(const k_timeout_t timeout)
    err = modem_connect();
    if (!err) {
       time = k_uptime_get();
-      err = modem_connection_wait(timeout);
+      err = modem_wait_ready(timeout);
       time = k_uptime_get() - time;
       if (!err) {
          LOG_INF("LTE attached in %ld [ms]", (long)time);
@@ -742,7 +744,7 @@ int modem_start(const k_timeout_t timeout)
             lte_lc_power_off();
             lte_lc_normal();
             LOG_INF("Modem saved.");
-            err = modem_connection_wait(timeout);
+            err = modem_wait_ready(timeout);
          } else {
             LOG_INF("Modem not saved.");
          }
@@ -1038,6 +1040,11 @@ int modem_set_rai(int enable)
 #ifdef CONFIG_UDP_RAI_ENABLE
    if (enable) {
       /** Release Assistance Indication  */
+#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
+      lte_lc_rai_param_set("4");
+#else
+      lte_lc_rai_param_set("3");
+#endif
       err = lte_lc_rai_req(true);
       if (err) {
          LOG_WRN("lte_lc_rai_req, error: %d", err);
@@ -1096,6 +1103,12 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_c
    (void)config;
    (void)wakeup_handler;
    (void)connect_handler;
+   return 0;
+}
+
+int modem_wait_ready(const k_timeout_t timeout)
+{
+   (void)timeout;
    return 0;
 }
 

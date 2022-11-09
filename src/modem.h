@@ -54,6 +54,8 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_c
 
 int modem_start(const k_timeout_t timeout);
 
+int modem_wait_ready(const k_timeout_t timeout);
+
 const char* modem_get_network_mode(void);
 
 int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx);
