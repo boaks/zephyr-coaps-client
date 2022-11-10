@@ -441,8 +441,8 @@ int coap_client_prepare_post(void)
          } else {
             index += snprintf(buf + index, sizeof(buf) - index, ",PLMN %s", network_info.provider);
          }
-         index += snprintf(buf + index, sizeof(buf) - index, ",TAC %s", network_info.tac);
-         index += snprintf(buf + index, sizeof(buf) - index, ",Cell %s", network_info.cell);
+         index += snprintf(buf + index, sizeof(buf) - index, ",TAC %u", network_info.tac);
+         index += snprintf(buf + index, sizeof(buf) - index, ",Cell %lu", network_info.cell);
          if (network_info.rsrp) {
             index += snprintf(buf + index, sizeof(buf) - index, ",RSRP %d dBm", network_info.rsrp);
          }

@@ -27,8 +27,8 @@ typedef struct lte_network_info {
    int16_t rsrp;
    uint8_t band;
    char provider[6];
-   char tac[5];
-   char cell[9];
+   uint16_t tac;
+   uint32_t cell;
    char apn[16];
    char local_ip[16];
 } lte_network_info_t;

@@ -393,9 +393,10 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          break;
       case LTE_LC_EVT_CELL_UPDATE:
          LOG_INF("LTE cell changed: Cell ID: %d, Tracking area: %d", evt->cell.id, evt->cell.tac);
-         if (lte_registered) {
-            work_submit_to_io_queue(&modem_read_network_info_work);
-         }
+         k_mutex_lock(&lte_mutex, K_FOREVER);
+         network_info.tac = evt->cell.tac;
+         network_info.cell = evt->cell.id;
+         k_mutex_unlock(&lte_mutex);
          break;
       case LTE_LC_EVT_MODEM_SLEEP_ENTER:
          if (idle_time) {
@@ -881,6 +882,7 @@ int modem_read_network_info(struct lte_network_info *info)
 {
    char buf[96];
    struct lte_network_info temp;
+   long value;
    const char *cur = buf;
    char *t = NULL;
 
@@ -927,10 +929,13 @@ int modem_read_network_info(struct lte_network_info *info)
          cur = parse_next_chars(cur, '"', 1);
       }
       if (cur) {
-         // copy 4 character tac
-         cur += parse_strncpy(temp.tac, cur, '"', sizeof(temp.tac));
+         // 4 character tac
+         value = strtol(cur, &t, 16);
+         if (cur != t && 0 <= value && value < 0x10000) {
+            temp.tac = (uint16_t)value;
+         }
          // skip parameter by ,
-         cur = parse_next_chars(cur, ',', 2);
+         cur = parse_next_chars(t, ',', 2);
       }
       if (cur) {
          temp.band = (int)strtol(cur, &t, 10);
@@ -942,9 +947,12 @@ int modem_read_network_info(struct lte_network_info *info)
          // skip ,"
          cur = t + 2;
          // copy 8 character cell
-         cur += parse_strncpy(temp.cell, cur, '"', sizeof(temp.cell));
+         value = strtol(cur, &t, 16);
+         if (cur != t) {
+            temp.cell = (uint32_t)value;
+         }
          // skip 3 parameter by ,
-         cur = parse_next_chars(cur, ',', 3);
+         cur = parse_next_chars(t, ',', 3);
          if (cur) {
             temp.rsrp = (int)strtol(cur, &t, 10) - 140;
             if (cur == t) {
