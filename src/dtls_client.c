@@ -206,6 +206,8 @@ static void dtls_wakeup_trigger(void)
 
 static void dtls_coap_next(void)
 {
+   char buf[64];
+
    ui_lte_1_op(LED_CLEAR);
    if (lte_power_on_off) {
       dtls_info("> modem switching off ...");
@@ -216,6 +218,9 @@ static void dtls_coap_next(void)
 #if CONFIG_COAP_SEND_INTERVAL > 0
    work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
 #endif
+   if (coap_client_time(buf, sizeof(buf))) {
+      dtls_info("%s", buf);
+   }
 }
 
 static void dtls_coap_success(void)

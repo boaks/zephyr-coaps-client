@@ -15,6 +15,7 @@
 #include <random/rand32.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "coap_client.h"
 #include "dtls_debug.h"
@@ -442,7 +443,7 @@ int coap_client_prepare_post(void)
             index += snprintf(buf + index, sizeof(buf) - index, ",PLMN %s", network_info.provider);
          }
          index += snprintf(buf + index, sizeof(buf) - index, ",TAC %u", network_info.tac);
-         index += snprintf(buf + index, sizeof(buf) - index, ",Cell %lu", network_info.cell);
+         index += snprintf(buf + index, sizeof(buf) - index, ",Cell %u", network_info.cell);
          if (network_info.rsrp) {
             index += snprintf(buf + index, sizeof(buf) - index, ",RSRP %d dBm", network_info.rsrp);
          }
@@ -620,7 +621,7 @@ int coap_client_prepare_post(void)
    int_value = environment_get_iaq_history(s_iaqs, CONFIG_ENVIRONMENT_HISTORY_SIZE);
    if (int_value > 0) {
       int history_index;
-      const char *desc = environment_get_iaq_description(s_iaqs[0]);  
+      const char *desc = environment_get_iaq_description(s_iaqs[0]);
       index += snprintf(buf + index, sizeof(buf) - index, "\n!");
       start = index - 1;
       for (history_index = 0; history_index < int_value; ++history_index) {
@@ -783,6 +784,24 @@ int coap_client_send_message(struct dtls_context_t *ctx, session_t *dst)
       }
    }
    return result;
+}
+
+int coap_client_time(char *buf, size_t len)
+{
+   time_t now = coap_time;
+
+   // adjust current time
+   if (coap_uptime) {
+      now += (k_uptime_get() - coap_uptime);
+   }
+
+   now /= MSEC_PER_SEC;
+   if (now > 0) {
+      // Format time, "yyyy-mm-ddThh:mm:ssZ"
+      return strftime(buf, len, "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
+   } else {
+      return 0;
+   }
 }
 
 int coap_client_init(void)

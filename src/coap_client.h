@@ -31,6 +31,8 @@ int coap_client_prepare_post(void);
 
 int coap_client_send_message(struct dtls_context_t *ctx, session_t *dst);
 
+int coap_client_time(char* buf, size_t len);
+
 int coap_client_init(void);
 
 #endif /* COAP_CLIENT_H */
