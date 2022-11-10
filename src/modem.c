@@ -16,6 +16,7 @@
 #include <modem/lte_lc.h>
 #include <modem/nrf_modem_lib.h>
 #include <modem/pdn.h>
+#include <net/socket.h>
 #include <nrf_modem_at.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,6 +64,7 @@ static int64_t transmission_time = 0;
 static uint8_t iccid[24];
 static uint8_t imsi[24];
 
+static volatile enum rai_mode rai_current_mode = RAI_OFF;
 static volatile int rai_time = -1;
 
 #define SUSPEND_DELAY_MILLIS 2000
@@ -628,13 +630,17 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_c
 
 #ifdef CONFIG_PDN
       pdn_default_ctx_cb_reg(pdn_handler);
-      err = nrf_modem_at_printf("AT+CGEREP=1");
-      if (err) {
+      err = modem_at_cmd("AT+CGEREP=1", buf, sizeof(buf), "+CGEREP: ");
+      if (err < 0) {
          LOG_WRN("Failed to enable CGEREP, err %d", err);
+      } else if (err > 0) {
+         LOG_INF("CGEREP: %s", buf);
       }
-      err = nrf_modem_at_printf("AT+CNEC=24");
-      if (err) {
+      err = modem_at_cmd("AT+CNEC=24", buf, sizeof(buf), "+CNEC: ");
+      if (err < 0) {
          LOG_WRN("Failed to enable CNEC, err %d", err);
+      } else if (err > 0) {
+         LOG_INF("CNEC: %s", buf);
       }
 #endif
 
@@ -718,9 +724,16 @@ int modem_start(const k_timeout_t timeout)
    memset(&iccid, 0, sizeof(iccid));
 
 #ifdef CONFIG_UDP_AS_RAI_ENABLE
-   modem_set_rai(1);
+   /** Release Assistance Indication  */
+   err = modem_at_cmd("AT%%RAI=1", buf, sizeof(buf), "%RAI: ");
+   if (err < 0) {
+      LOG_WRN("Failed to enable access stratum RAI, err %d", err);
+   }
 #else
-   modem_set_rai(0);
+   err = modem_at_cmd("AT%%XRAI=0", buf, sizeof(buf), "%XRAI: ");
+   if (err < 0) {
+      LOG_WRN("Failed to disable control plane RAI, err %d", err);
+   }
 #endif
 
    ui_led_op(LED_COLOR_BLUE, LED_SET);
@@ -1019,59 +1032,119 @@ int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
 {
    int err;
    char at_buf[128];
-   memset(buf, 0, max_len);
+
+   if (buf) {
+      memset(buf, 0, max_len);
+   }
    err = nrf_modem_at_cmd(at_buf, sizeof(at_buf), cmd);
-   if (err) {
+   if (err < 0) {
       return err;
+   } else if (err > 0) {
+      int error = nrf_modem_at_err(err);
+      const char *type = "AT ERROR";
+      switch (nrf_modem_at_err_type(err)) {
+         case NRF_MODEM_AT_CME_ERROR:
+            type = "AT CME ERROR";
+            break;
+         case NRF_MODEM_AT_CMS_ERROR:
+            type = "AT CMS ERROR";
+            break;
+         case NRF_MODEM_AT_ERROR:
+         default:
+            break;
+      }
+      LOG_WRN("%s: %d", type, error);
+      return -error;
    }
    terminate_at_buffer(at_buf, sizeof(at_buf));
-   if (skip && strncmp(at_buf, skip, strlen(skip)) == 0) {
-      strncpy(buf, at_buf + strlen(skip), max_len - 1);
+   if (buf) {
+      if (skip && strncmp(at_buf, skip, strlen(skip)) == 0) {
+         strncpy(buf, at_buf + strlen(skip), max_len - 1);
+      } else {
+         strncpy(buf, at_buf, max_len - 1);
+      }
    } else {
-      strncpy(buf, at_buf, max_len - 1);
+      buf = at_buf;
    }
    return strlen(buf);
 }
 
-int modem_set_rai(int enable)
+//#define USE_SO_RAI_NO_DATA
+
+int modem_set_rai_mode(enum rai_mode mode, int socket)
 {
    int err = 0;
-
 #ifdef CONFIG_UDP_RAI_ENABLE
-   if (enable) {
-      /** Release Assistance Indication  */
-#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
-      lte_lc_rai_param_set("4");
-#else
-      lte_lc_rai_param_set("3");
-#endif
-      err = lte_lc_rai_req(true);
-      if (err) {
-         LOG_WRN("lte_lc_rai_req, error: %d", err);
-      } else {
-         LOG_INF("lte_lc_rai_req, enabled.");
-      }
-   } else {
-      err = lte_lc_rai_req(false);
-      if (err) {
-         LOG_WRN("lte_lc_rai_req disable, error: %d", err);
-      } else {
-         LOG_INF("lte_lc_rai_req, disabled.");
+   if (rai_current_mode != mode) {
+      /** Control Plane Release Assistance Indication  */
+      if (mode == RAI_LAST || mode == RAI_NOW) {
+         err = modem_at_cmd("AT%%XRAI=0", NULL, 0, NULL);
+         if (err < 0) {
+            LOG_WRN("Disable RAI error: %d", err);
+         } else {
+            rai_current_mode = mode;
+         }
+      } else if (mode == RAI_ONE_RESPONSE) {
+         err = modem_at_cmd("AT%%XRAI=3", NULL, 0, NULL);
+         if (err < 0) {
+            LOG_WRN("Enable RAI error: %d", err);
+         } else {
+            rai_current_mode = mode;
+         }
+      } else if (mode == RAI_LAST) {
+         err = modem_at_cmd("AT%%XRAI=4", NULL, 0, NULL);
+         if (err < 0) {
+            LOG_WRN("Enable RAI error: %d", err);
+         } else {
+            rai_current_mode = mode;
+         }
       }
    }
 #elif CONFIG_UDP_AS_RAI_ENABLE
-   if (enable) {
-      /** Release Assistance Indication  */
-      err = nrf_modem_at_printf("AT%%RAI=1");
+   int option = -1;
+#ifdef USE_SO_RAI_NO_DATA
+   switch (mode) {
+      case RAI_NOW:
+         option = SO_RAI_NO_DATA;
+         break;
+      case RAI_OFF:
+         if (rai_current_mode != SO_RAI_ONGOING) {
+            option = SO_RAI_ONGOING;
+         }
+         break;
+      case RAI_LAST:
+      case RAI_ONE_RESPONSE:
+      default:
+         break;
+   }
+#else
+   switch (mode) {
+      case RAI_NOW:
+         break;
+      case RAI_LAST:
+         option = SO_RAI_LAST;
+         break;
+      case RAI_ONE_RESPONSE:
+         option = SO_RAI_ONE_RESP;
+         break;
+      case RAI_OFF:
+      default:
+         if (rai_current_mode != SO_RAI_ONGOING) {
+            option = SO_RAI_ONGOING;
+         }
+         break;
+   }
+#endif
+   if (option >= 0) {
+      err = setsockopt(socket, SOL_SOCKET, option, NULL, 0);
       if (err) {
-         LOG_WRN("Failed to enable RAI, err %d", err);
-      }
-   } else {
-      err = nrf_modem_at_printf("AT%%RAI=0");
-      if (err) {
-         LOG_WRN("Failed to disable RAI, err %d", err);
+         LOG_WRN("RAI sockopt %d, error %d", option, errno);
+      } else {
+         rai_current_mode = option;
       }
    }
+#else
+   (void)mode;
 #endif
    return err;
 }
@@ -1186,9 +1259,10 @@ int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
    return 0;
 }
 
-int modem_set_rai(int enable)
+int modem_set_rai_mode(enum rai_mode mode, int socket)
 {
-   (void)enable;
+   (void)mode;
+   (void)socket;
    return 0;
 }
 

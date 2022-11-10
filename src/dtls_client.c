@@ -43,8 +43,6 @@
 #define COAP_ACK_TIMEOUT 3
 #define ADD_ACK_TIMEOUT 3
 
-//#define USE_SO_RAI_NO_DATA
-
 LOG_MODULE_REGISTER(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 typedef enum {
@@ -140,17 +138,15 @@ static void reconnect()
 static void reopen_socket(struct dtls_context_t *ctx)
 {
    int err;
+   int *fd = (int *)dtls_get_app_data(ctx);
+
    dtls_info("> reopen socket ...");
-#ifdef CONFIG_UDP_RAI_ENABLE
-   if (!lte_power_on_off) {
-      modem_set_rai(0);
-   }
-#endif
+   modem_set_rai_mode(RAI_OFF, *fd);
+
    err = modem_wait_ready(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
    if (err) {
       reconnect();
    }
-   int *fd = (int *)dtls_get_app_data(ctx);
    (void)close(*fd);
    *fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
    if (*fd < 0) {
@@ -158,16 +154,7 @@ static void reopen_socket(struct dtls_context_t *ctx)
       reboot();
    }
 
-   if (!lte_power_on_off) {
-#ifdef CONFIG_UDP_RAI_ENABLE
-      modem_set_rai(1);
-#elif CONFIG_UDP_AS_RAI_ENABLE
-      dtls_info("RAI ongoing");
-      if (setsockopt(*fd, SOL_SOCKET, SO_RAI_ONGOING, NULL, 0)) {
-         dtls_warn("RAI error %d", errno);
-      }
-#endif
-   }
+   modem_set_rai_mode(RAI_OFF, *fd);
    dtls_info("> reopend socket.");
 }
 
@@ -363,21 +350,15 @@ static void prepare_socket(int fd)
 {
    lte_connected_send = false;
    connect_time = (unsigned long)k_uptime_get();
-#if defined(CONFIG_UDP_AS_RAI_ENABLE) && !defined(USE_SO_RAI_NO_DATA)
-   if (dtls_connected) {
+   if (dtls_connected && !lte_power_on_off) {
 #ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
-      dtls_info("RAI no response (%d)", SO_RAI_LAST);
-      if (setsockopt(fd, SOL_SOCKET, SO_RAI_LAST, NULL, 0)) {
-         dtls_warn("RAI error %d", errno);
-      }
+      modem_set_rai_mode(RAI_LAST, fd);
 #else
-      dtls_info("RAI one response (%d)", SO_RAI_ONE_RESP);
-      if (setsockopt(fd, SOL_SOCKET, SO_RAI_ONE_RESP, NULL, 0)) {
-         dtls_warn("RAI error %d", errno);
-      }
+      modem_set_rai_mode(RAI_ONE_RESPONSE, fd);
 #endif
+   } else {
+      modem_set_rai_mode(RAI_OFF, fd);
    }
-#endif
 }
 
 static int
@@ -472,30 +453,12 @@ dtls_handle_event(struct dtls_context_t *ctx, session_t *session,
       request_state = NONE;
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
       ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-      if (!lte_power_on_off) {
-#ifdef CONFIG_UDP_RAI_ENABLE
-         modem_set_rai(1);
-#endif
-      }
    } else if (DTLS_EVENT_CONNECT == code) {
       dtls_info("dtls connect ...");
       dtls_connected = 0;
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_SET);
       ui_led_op(LED_COLOR_GREEN, LED_SET);
-      if (!lte_power_on_off) {
-#ifdef CONFIG_UDP_RAI_ENABLE
-         modem_set_rai(0);
-#elif CONFIG_UDP_AS_RAI_ENABLE
-         int *fd = (int *)dtls_get_app_data(ctx);
-         if (fd) {
-            dtls_info("RAI ongoing");
-            if (setsockopt(*fd, SOL_SOCKET, SO_RAI_ONGOING, NULL, 0)) {
-               dtls_warn("RAI error %d", errno);
-            }
-         }
-#endif
-      }
    }
    return 0;
 }
@@ -685,12 +648,7 @@ int dtls_loop(void)
       dtls_warn("Failed to create UDP socket: %d", errno);
       reboot();
    }
-#ifdef CONFIG_UDP_AS_RAI_ENABLE
-   dtls_info("RAI ongoing");
-   if (setsockopt(fd, SOL_SOCKET, SO_RAI_ONGOING, NULL, 0)) {
-      dtls_warn("RAI error %d", errno);
-   }
-#endif
+   modem_set_rai_mode(RAI_OFF, fd);
 
    imei_len = modem_at_cmd("AT+CGSN", imei, sizeof(imei), NULL);
    dtls_credentials_init_psk(0 < imei_len ? imei : NULL);
@@ -761,10 +719,6 @@ int dtls_loop(void)
          io_timeout.tv_usec = 0;
          result = select(fd + 1, &rfds, NULL, &efds, &io_timeout);
       } else {
-#ifdef CONFIG_UDP_AS_RAI_ENABLEx
-         dtls_info("RAI no data");
-         setsockopt(fd, SOL_SOCKET, SO_RAI_LAST, NULL, 0);
-#endif
 #ifdef CONFIG_COAP_WAIT_ON_POWERMANAGER
          if (0xffff == battery_voltage || 0 == battery_voltage) {
             /* wait until the power manager starts to report the battery voltage */
@@ -780,10 +734,6 @@ int dtls_loop(void)
          result = 0;
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
             power_manager_suspend(false);
-#ifdef CONFIG_UDP_AS_RAI_ENABLEx
-            dtls_info("RAI ongoing");
-            setsockopt(fd, SOL_SOCKET, SO_RAI_ONGOING, NULL, 0);
-#endif
             ui_lte_1_op(LED_SET);
 #if CONFIG_COAP_SEND_INTERVAL > 0
             work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
@@ -903,14 +853,9 @@ int dtls_loop(void)
                   dtls_coap_failure();
                }
             }
-#if defined(CONFIG_UDP_AS_RAI_ENABLE) && defined(USE_SO_RAI_NO_DATA)
-            if (request_state == NONE) {
-               dtls_info("RAI no data (%d)", SO_RAI_NO_DATA);
-               if (setsockopt(fd, SOL_SOCKET, SO_RAI_NO_DATA, NULL, 0)) {
-                  dtls_warn("RAI error %d", errno);
-               }
+            if (request_state == NONE && !lte_power_on_off) {
+               modem_set_rai_mode(RAI_NOW, fd);
             }
-#endif
          } else if (FD_ISSET(fd, &efds)) {
             int error = 0;
             socklen_t len = sizeof(error);

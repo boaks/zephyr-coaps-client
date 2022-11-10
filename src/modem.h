@@ -47,6 +47,13 @@ enum lte_state_type {
 	LTE_STATE_CONNECT_NETWORK
 };
 
+enum rai_mode {
+	RAI_OFF,
+	RAI_NOW,
+	RAI_LAST,
+	RAI_ONE_RESPONSE
+};
+
 typedef void (*wakeup_callback_handler_t)(void);
 typedef void (*lte_state_change_callback_handler_t)(enum lte_state_type type, bool connected);
 
@@ -80,7 +87,7 @@ int modem_read_statistic(struct lte_network_statistic* statistic);
 
 int modem_at_cmd(const char* cmd, char* buf, size_t max_len, const char *skip);
 
-int modem_set_rai(int enable);
+int modem_set_rai_mode(enum rai_mode mode, int socket);
 
 int modem_set_offline(void);
 
