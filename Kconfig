@@ -45,6 +45,14 @@ config DTLS_PSK_SECRET
 	   Don't use this on production or other security
 	   relevant use-cases. 
 
+config DTLS_ALWAYS_HANDSHAKE
+	bool "Use a DTLS handshake for request."
+	default n
+	help
+	   Enable to use a DTLS handshake for each request.
+	   Using DTLS 1.2 Connection ID obsoletes such
+	   frequent handshakes.
+
 config COAP_SEND_INTERVAL
 	int "CoAP send interval in seconds. 0 disable"
 	default 0

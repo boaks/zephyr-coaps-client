@@ -16,17 +16,21 @@
 
 typedef void (*ui_callback_handler_t)(void);
 
-typedef enum { LED_COLOR_RED, LED_COLOR_BLUE, LED_COLOR_GREEN } led_t;
+typedef enum { LED_NONE,
+               LED_COLOR_RED,
+               LED_COLOR_BLUE,
+               LED_COLOR_GREEN,
+               LED_LTE_1, /* application layer */
+               LED_LTE_2, /* mobile ip layer */
+               LED_LTE_3  /* mobile connection layer */
+               } led_t;
 
-typedef enum { LED_SET, LED_CLEAR, LED_TOGGLE, LED_BLINK } led_op_t;
+typedef enum { LED_SET,
+               LED_CLEAR,
+               LED_TOGGLE,
+               LED_BLINK } led_op_t;
 
 void ui_led_op(led_t led, led_op_t op);
-// application layer
-void ui_lte_1_op(led_op_t op);
-// mobile ip layer
-void ui_lte_2_op(led_op_t op);
-// mobile connection layer
-void ui_lte_3_op(led_op_t op);
 int ui_init(ui_callback_handler_t button_callback);
 int ui_config(void);
 

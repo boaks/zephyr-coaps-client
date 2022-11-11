@@ -185,6 +185,8 @@ static void ui_op(gpio_device_t *output_spec, led_op_t op, struct k_work_delayab
 void ui_led_op(led_t led, led_op_t op)
 {
    switch (led) {
+      case LED_NONE:
+      break;
       case LED_COLOR_RED:
          ui_op(&led_red_spec, op, &led_red_timer_work);
          break;
@@ -194,28 +196,22 @@ void ui_led_op(led_t led, led_op_t op)
       case LED_COLOR_GREEN:
          ui_op(&led_green_spec, op, &led_green_timer_work);
          break;
-   }
-}
-
-void ui_lte_1_op(led_op_t op)
-{
+      case LED_LTE_1:
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_1, okay)
-   ui_op(&out_lte_1_spec, op, NULL);
+         ui_op(&out_lte_1_spec, op, NULL);
 #endif
-}
-
-void ui_lte_2_op(led_op_t op)
-{
+         break;
+      case LED_LTE_2:
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_2, okay)
-   ui_op(&out_lte_2_spec, op, NULL);
+         ui_op(&out_lte_2_spec, op, NULL);
 #endif
-}
-
-void ui_lte_3_op(led_op_t op)
-{
+         break;
+      case LED_LTE_3:
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_3, okay)
-   ui_op(&out_lte_3_spec, op, NULL);
+         ui_op(&out_lte_3_spec, op, NULL);
 #endif
+         break;
+   }
 }
 
 static int ui_init_output(gpio_device_t *output_spec)

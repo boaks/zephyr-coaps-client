@@ -43,6 +43,9 @@
 #define COAP_ACK_TIMEOUT 3
 #define ADD_ACK_TIMEOUT 3
 
+#define LED_APPLICATION LED_LTE_1
+#define LED_DTLS LED_LTE_2
+
 LOG_MODULE_REGISTER(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 typedef enum {
@@ -54,9 +57,10 @@ typedef enum {
    SEND_ACK
 } request_state_t;
 
-static volatile int network_connected = 0;
-static volatile int dtls_connected = 0;
-static volatile int lte_connected = 0;
+static volatile bool network_connected = false;
+static volatile bool dtls_connected = false;
+static volatile bool dtls_closing = false;
+static volatile bool lte_connected = false;
 static volatile bool lte_connected_send = false;
 static volatile unsigned int lte_connections = 0;
 static volatile request_state_t request_state = NONE;
@@ -208,7 +212,7 @@ static void dtls_coap_next(void)
 {
    char buf[64];
 
-   ui_lte_1_op(LED_CLEAR);
+   ui_led_op(LED_APPLICATION, LED_CLEAR);
    if (lte_power_on_off) {
       dtls_info("> modem switching off ...");
       lte_power_off = true;
@@ -454,16 +458,18 @@ dtls_handle_event(struct dtls_context_t *ctx, session_t *session,
 {
    if (DTLS_EVENT_CONNECTED == code) {
       dtls_info("dtls connected.");
-      dtls_connected = 1;
+      dtls_connected = true;
       request_state = NONE;
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
       ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
+      ui_led_op(LED_DTLS, LED_SET);
    } else if (DTLS_EVENT_CONNECT == code) {
       dtls_info("dtls connect ...");
-      dtls_connected = 0;
+      dtls_connected = false;
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_SET);
       ui_led_op(LED_COLOR_GREEN, LED_SET);
+      ui_led_op(LED_DTLS, LED_CLEAR);
    }
    return 0;
 }
@@ -676,9 +682,13 @@ int dtls_loop(void)
    connect(fd, (struct sockaddr *)&dst.addr.sin, sizeof(struct sockaddr_in));
 #endif
 
-   request_state = SEND;
    timeout = COAP_ACK_TIMEOUT;
+#ifdef CONFIG_DTLS_ALWAYS_HANDSHAKE
+   request_state = NONE;
+#else
+   request_state = SEND;
    dtls_connect(dtls_context, &dst);
+#endif
 
    while (1) {
       if (!lte_power_off && !network_connected) {
@@ -739,7 +749,7 @@ int dtls_loop(void)
          result = 0;
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
             power_manager_suspend(false);
-            ui_lte_1_op(LED_SET);
+            ui_led_op(LED_APPLICATION, LED_SET);
 #if CONFIG_COAP_SEND_INTERVAL > 0
             work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
 #endif
@@ -767,11 +777,13 @@ int dtls_loop(void)
                   dtls_coap_failure();
                }
             } else {
-               ui_led_op(LED_COLOR_GREEN, LED_SET);
-               send_request = true;
                dtls_peer_t *peer = dtls_get_peer(dtls_context, &dst);
-               dtls_reset_peer(dtls_context, peer);
+               if (peer) {
+                  dtls_reset_peer(dtls_context, peer);
+               }
+               ui_led_op(LED_COLOR_GREEN, LED_SET);
                dtls_connect(dtls_context, &dst);
+               send_request = true;
             }
          }
       }
@@ -861,6 +873,12 @@ int dtls_loop(void)
             if (request_state == NONE && !lte_power_on_off) {
                modem_set_rai_mode(RAI_NOW, fd);
             }
+#ifdef CONFIG_DTLS_ALWAYS_HANDSHAKE
+            if (request_state == NONE && dtls_connected) {
+               dtls_connected = false;
+               ui_led_op(LED_DTLS, LED_CLEAR);
+            }
+#endif
          } else if (FD_ISSET(fd, &efds)) {
             int error = 0;
             socklen_t len = sizeof(error);

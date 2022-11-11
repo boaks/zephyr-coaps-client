@@ -33,6 +33,9 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #if defined(CONFIG_NRF_MODEM_LIB)
 
+#define LED_CONNECTED LED_NONE
+#define LED_READY LED_LTE_3
+
 static K_MUTEX_DEFINE(lte_mutex);
 static K_CONDVAR_DEFINE(lte_condvar);
 
@@ -212,8 +215,8 @@ static void lte_connection_status()
 #endif
    if (lte_ready != ready) {
       lte_ready = ready;
+      ui_led_op(LED_READY, ready ? LED_SET : LED_CLEAR);
       if (ready) {
-         ui_lte_3_op(LED_SET);
          work_submit_to_io_queue(&modem_connected_callback_work);
          work_submit_to_io_queue(&modem_read_network_info_work);
 #ifdef CONFIG_PDN
@@ -222,7 +225,6 @@ static void lte_connection_status()
          work_submit_to_io_queue(&modem_ready_work);
          LOG_INF("modem ready.");
       } else {
-         ui_lte_3_op(LED_CLEAR);
          work_submit_to_io_queue(&modem_idle_callback_work);
 #ifdef CONFIG_PDN
          LOG_INF("modem not ready. con=%d/pdn=%d/reg=%d", lte_connected, lte_pdn_active, lte_registered);
@@ -247,11 +249,7 @@ static void lte_connection_status_set(bool connect)
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
    if (lte_connected != connect) {
-      if (connect) {
-         ui_lte_2_op(LED_SET);
-      } else {
-         ui_lte_2_op(LED_CLEAR);
-      }
+      ui_led_op(LED_CONNECTED, connect ? LED_SET : LED_CLEAR);
       lte_connected = connect;
       lte_connection_status();
    }
