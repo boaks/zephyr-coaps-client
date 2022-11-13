@@ -41,7 +41,7 @@ target_sources_ifdef(CONFIG_SHT21 app PRIVATE src/environment_sht21.c src/enviro
 
 
 if (CONFIG_BME680_BSEC)
-        set(bsec_version "BSEC_1.4.8.0_Generic_Release_updated_v3")
+        set(bsec_version "bsec_1-4-9-2_generic_release")
         set(bsec_dir "${ZEPHYR_NRF_MODULE_DIR}/ext/${bsec_version}")
 
         if (CONFIG_FP_SOFTABI)
@@ -61,7 +61,7 @@ if (CONFIG_BME680_BSEC)
         if (CONFIG_BME680_BSEC_SAMPLE_MODE_LOW_POWER)
                 set(BSEC_CONFIG_DIR ${bsec_dir}/config/generic_18v_3s_4d)
         endif()
-        set(BSEC_EXAMPLE_DIR ${bsec_dir}/examples/bsec_iot_example)
+        set(BSEC_EXAMPLE_DIR ${bsec_dir}/examples)
 
         target_include_directories(app PRIVATE ${BSEC_LIB_DIR} ${BSEC_CONFIG_DIR} ${BSEC_EXAMPLE_DIR})
 
@@ -69,8 +69,8 @@ if (CONFIG_BME680_BSEC)
                 src/environment_sensor.c
                  src/environment_history.c
                 ${BSEC_CONFIG_DIR}/bsec_serialized_configurations_iaq.c
-                ${bsec_dir}/examples/bsec_iot_example/bsec_integration.c
-                ${bsec_dir}/examples/bsec_iot_example/bme680.c)
+                ${BSEC_EXAMPLE_DIR}/bsec_integration.c
+                ${BSEC_EXAMPLE_DIR}/bme68x.c)
 
         add_library(bsec_lib STATIC IMPORTED GLOBAL)
         add_dependencies(bsec_lib math_lib bsec_target)

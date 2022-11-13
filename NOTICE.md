@@ -83,4 +83,5 @@ permitted.
 
 ## Optional Third-party Content
 
-The usage of the [Bosch BSEC library](https://www.bosch-sensortec.com/software-tools/software/bsec/) is optional under this [license](https://www.bosch-sensortec.com/media/boschsensortec/downloads/bsec/2017-07-17_clickthrough_license_terms_environmentalib_sw_clean.pdf).
+The usage of the [Bosch BSEC library](https://www.bosch-sensortec.com/software-tools/software/bsec/) is optional under this [license](https://www.bosch-sensortec.com/media/boschsensortec/downloads/bsec/2017-07-17_clickthrough_license_terms_environmentalib_sw_clean.pdf). The `Bosch BSEC library` requires also to use the [BME68x-Sensor-API](https://github.com/BoschSensortec/BME68x-Sensor-API), which comes with a BSD-3-Clause license. 
+

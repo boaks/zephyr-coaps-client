@@ -45,6 +45,7 @@ K_THREAD_STACK_DEFINE(thread_stack, CONFIG_BME680_BSEC_THREAD_STACK_SIZE);
 
 static struct k_thread environment_thread;
 static const struct device *environment_i2c = DEVICE_DT_GET(DT_BUS(DT_ALIAS(environment_sensor)));
+static const uint8_t dev_addr = DT_PROP(DT_ALIAS(environment_sensor), reg); // 0x76;
 
 /* Structure used to maintain internal variables used by the library. */
 static struct environment_values {
@@ -53,11 +54,17 @@ static struct environment_values {
    float humidity;
    float pressure;
    float gas;
+   float co2;
    float air_quality;
+   int air_quality_accuracy;
 
 } environment_values;
 
-static int8_t environment_bus_write(uint8_t dev_addr, uint8_t reg_addr, uint8_t *reg_data_ptr, uint16_t len)
+/*
+typedef BME68X_INTF_RET_TYPE (*bme68x_write_fptr_t)(uint8_t reg_addr, const uint8_t *reg_data, uint32_t length,
+                                                    void *intf_ptr);
+*/
+static BME68X_INTF_RET_TYPE environment_bus_write(uint8_t reg_addr, const uint8_t *reg_data_ptr, uint32_t len, void *intf_ptr)
 {
    uint8_t buf[len + 1];
 
@@ -67,39 +74,60 @@ static int8_t environment_bus_write(uint8_t dev_addr, uint8_t reg_addr, uint8_t 
    return i2c_write(environment_i2c, buf, len + 1, dev_addr);
 }
 
-static int8_t environment_bus_read(uint8_t dev_addr, uint8_t reg_addr, uint8_t *reg_data_ptr, uint16_t len)
+/*
+typedef BME68X_INTF_RET_TYPE (*bme68x_read_fptr_t)(uint8_t reg_addr, uint8_t *reg_data, uint32_t length,
+                                                   void *intf_ptr);
+*/
+static BME68X_INTF_RET_TYPE environment_bus_read(uint8_t reg_addr, uint8_t *reg_data_ptr, uint32_t len, void *intf_ptr)
 {
    return i2c_write_read(environment_i2c, dev_addr, &reg_addr, 1, reg_data_ptr, len);
 }
 
+// typedef int64_t (*get_timestamp_us_fct)();
 static int64_t environment_get_timestamp_us(void)
 {
-   return k_uptime_get() * USEC_PER_MSEC;
+	return k_ticks_to_us_floor64(k_uptime_ticks());
 }
 
-static void environment_delay_ms(uint32_t period)
+// typedef void (*sleep_fct)(uint32_t t_us,void *intf_ptr);
+static void environment_delay_us(uint32_t t_us, void *intf_ptr)
 {
-   k_sleep(K_MSEC(period));
+   k_sleep(K_USEC(t_us));
 }
 
+/*
+typedef void (*output_ready_fct)(int64_t timestamp, float iaq, uint8_t iaq_accuracy, float temperature, float humidity,
+     float pressure, float raw_temperature, float raw_humidity, float gas, float gas_percentage, bsec_library_return_t bsec_status,
+     float static_iaq, float stabStatus, float runInStatus, float co2_equivalent, float breath_voc_equivalent);
+*/
+/*
 static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_accuracy, float temperature,
                                      float humidity, float pressure, float raw_temperature, float raw_humidity,
                                      float gas, bsec_library_return_t bsec_status, float static_iaq,
                                      float co2_equivalent, float breath_voc_equivalent)
+*/
+static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_accuracy, float temperature, float humidity,
+                                     float pressure, float raw_temperature, float raw_humidity, float gas, float gas_percentage, bsec_library_return_t bsec_status,
+                                     float static_iaq, float stabStatus, float runInStatus, float co2_equivalent, float breath_voc_equivalent)
+
 {
-   double temp;
+   double p;
    k_mutex_lock(&environment_mutex, K_FOREVER);
 
-   environment_values.temperature = temperature - temperature_offset; /* compensate self heating */
+   environment_values.temperature = temperature;
    environment_values.humidity = humidity;
    environment_values.pressure = pressure / 100.0; /* hPA */
    environment_values.gas = gas;
+   environment_values.co2 = co2_equivalent;
    environment_values.air_quality = iaq;
-   temp = environment_values.temperature;
+   environment_values.air_quality_accuracy = iaq_accuracy;
+   p = environment_values.pressure;
    k_mutex_unlock(&environment_mutex);
 
-   environment_add_temperature_history(temp, false);
+   environment_add_temperature_history(temperature, false);
    environment_add_iaq_history(iaq, false);
+   LOG_DBG("BME680 BSEC %0.2f°C, %0.1f%%H, %0.1fhPA, %0.1f gas, %0.1f co2, %0.1f iaq (%d)",
+           temperature, humidity, p, gas, co2_equivalent, iaq, iaq_accuracy);
 }
 
 static uint32_t environment_state_load(uint8_t *state_buffer, uint32_t n_buffer)
@@ -122,25 +150,25 @@ static uint32_t environment_config_load(uint8_t *config_buffer, uint32_t n_buffe
 
 static void environment_bsec_thread_fn(void)
 {
-   bsec_iot_loop(environment_delay_ms, environment_get_timestamp_us, environment_output_ready, environment_state_save, 0xffffffff);
+   bsec_iot_loop(environment_delay_us, environment_get_timestamp_us, environment_output_ready, environment_state_save, 0xffffffff);
 }
 
 int environment_init(void)
 {
    return_values_init bsec_ret;
 
-   LOG_INF("BME680 BSEC initialize, %f Hz", BSEC_SAMPLE_RATE);
+   LOG_INF("BME680 BSEC initialize, %0.3f Hz", BSEC_SAMPLE_RATE);
    if (!device_is_ready(environment_i2c)) {
       LOG_ERR("%s device is not ready", environment_i2c->name);
       return -ENOTSUP;
    }
    environment_init_history();
 
-   bsec_ret = bsec_iot_init(BSEC_SAMPLE_RATE, temperature_offset, environment_bus_write, environment_bus_read, environment_delay_ms,
+   bsec_ret = bsec_iot_init(BSEC_SAMPLE_RATE, temperature_offset, environment_bus_write, environment_bus_read, environment_delay_us,
                             environment_state_load, environment_config_load);
 
-   if (bsec_ret.bme680_status) {
-      LOG_ERR("Could not initialize BME680: %d", bsec_ret.bme680_status);
+   if (bsec_ret.bme68x_status) {
+      LOG_ERR("Could not initialize BME68x: %d", bsec_ret.bme68x_status);
       return -EIO;
    } else if (bsec_ret.bsec_status) {
       LOG_ERR("Could not initialize BSEC library: %d", bsec_ret.bsec_status);

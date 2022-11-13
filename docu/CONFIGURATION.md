@@ -131,22 +131,34 @@ Configure used URI query parameter. Please note, that these query parameter must
 
 - **ADXL362_MOTION_DETECTION_LED**, use green LED to signal detected move. Default disabled.
 
-For the usage of the environment sensor [BME680 (Bosch)](https://www.bosch-sensortec.com/products/environmental-sensors/gas-sensors/bme680/) two options are available:
+### Environment Sensors
 
-- **zephyr bme680 driver**, access to temperature, humidity, pressure, and the "gas sensor resistance". No additional source are required. Enabled at
-`Zephyr Kernel > Device Drivers > Sensor Drivers > BME680 sensor`.
+- **TEMPERATURE_OFFSET**, self-heating temperature offset. Default depends on selected sensor. Supported for `BME680` and `SHT3xD`.  
 
-- **Bosch bme680 BSEC library**, access to temperature, humidity, pressure, and the IAQ (Index Air Quality).
-The [BSEC](https://www.bosch-sensortec.com/software-tools/software/bsec/) must be downloaded from Bosch and comes with its own [license](https://www.bosch-sensortec.com/media/boschsensortec/downloads/bsec/2017-07-17_clickthrough_license_terms_environmentalib_sw_clean.pdf). Unzip the downloaded archive into the `zephyr-coaps-client/nrf/ext/` (or `<ncs>/nrf/ext/`). The resulting path must be `nrf/ext/BSEC_1.4.8.0_Generic_Release_updated_v3`.
-If the preparation is done, disable 
-`Zephyr Kernel > Device Drivers > Sensor Drivers > BME680 sensor` (if enabled),
-and then enable
-`Extra Functions > BME680 BSEC`.
-instead.
+#### BME680
 
-**NOTE:** the BME680 is mounted inside the Thingy:91 and is therefore only weakly coupled with the environment. On battery charging, the temperature gets up to 30°. If you want more realistic values, please remove the board from the case.
+The `Thingy:91` is equiped with an environment sensor [BME680 (Bosch)](https://www.bosch-sensortec.com/products/environmental-sensors/gas-sensors/bme680/). This sensor is mounted on the backside of the board towards the battery.
 
-- **zephyr SHT3XD driver**, access to temperature, humidity. Requires also a device-tree overlay, see [sht3x.overlay](../sht3x.overlay)
+**NOTE:** During charging, the battery reaches easily 30° and the reported temperature reflects more this internal temperature than the environment. The enclosure of the `Thingy:91` seems also to decouple the sensor inside from the environment. Therefore either removing the board from the enclosure or using an external sensor may provide better values.
+
+For the [BME680 (Bosch)](https://www.bosch-sensortec.com/products/environmental-sensors/gas-sensors/bme680/) two drivers are available:
+
+- **zephyr bme680 driver**, access to temperature, humidity, pressure, and the "gas sensor resistance". No additional source are required. Enabled at `Zephyr Kernel > Device Drivers > Sensor Drivers > BME680 sensor` (since NCS 2.1.0 already enabled by the device tree).
+
+- **Bosch bme680 BSEC library** (Bosch Sensortec Environmental Cluster (BSEC 1.x)), access to temperature, humidity, pressure, and the IAQ (Index Air Quality).
+The [BSEC library, v1.4.9.2](https://www.bosch-sensortec.com/software-tools/software/bsec/) must be downloaded from this Bosch Website and comes with its own [license](https://www.bosch-sensortec.com/media/boschsensortec/downloads/bsec/2017-07-17_clickthrough_license_terms_environmentalib_sw_clean.pdf). Unzip the downloaded archive into the `zephyr-coaps-client/nrf/ext/` (or `<ncs>/nrf/ext/`). The resulting path must be `nrf/ext/bsec_1-4-9-2_generic_release`. The [BME68x-Sensor-API](https://github.com/BoschSensortec/BME68x-Sensor-API) is also required and could be [downloaded from github](https://github.com/BoschSensortec/BME68x-Sensor-API/archive/refs/heads/master.zip). Unzip this as well and copy the files `bme68x.c`, `bme68x.h`, and `bme68x_defs.h` additionally into the folder `nrf/ext/bsec_1-4-9-2_generic_release/examples`. If the preparation is done, disable `Zephyr Kernel > Device Drivers > Sensor Drivers > BME680 sensor` (if enabled), and then enable `Extra Functions > BME680 BSEC` instead.
+
+**Note:** the usage of the IAQ (Index Air Quality) requires a calibration. See "BST-BME680-Integration-Guide-AN008-49.pdf":
+
+"The IAQ accuracy indicator will notify the user when she/he should initiate a calibration process. Calibration is performed in the background if the sensor is exposed to clean or polluted air for approximately 30 minutes each."
+
+(The calibration configuration is not stored for now.)
+
+#### SHT3xD
+
+Zephyr comes also with a driver for the [SHT3xD](https://sensirion.com/de/produkte/katalog/SHT31-DIS-B/) as external sensor.
+
+- **zephyr SHT3XD driver**, access to temperature, humidity. No additional source are required. Requires a device-tree overlay, see [sht3x.overlay](../sht3x.overlay). Enabled at `Zephyr Kernel > Device Drivers > Sensor Drivers > SHT3xD`. (since NCS 2.1.0 already enabled by the overlay).
 
 ## Overlays
 
