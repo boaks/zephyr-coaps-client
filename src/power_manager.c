@@ -22,6 +22,7 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 static K_MUTEX_DEFINE(pm_mutex);
 
+#ifdef CONFIG_SUSPEND_UART
 #if defined(CONFIG_UART_CONSOLE)
 
 #define UART0_DEVICE DEVICE_DT_GET(DT_CHOSEN(zephyr_console))
@@ -53,12 +54,13 @@ static void suspend_uart(bool suspend)
       }
    }
 }
-#else
+#else /* CONFIG_UART_CONSOLE */
 static void suspend_uart(bool suspend)
 {
    (void)suspend;
 }
-#endif
+#endif /* CONFIG_UART_CONSOLE */
+#endif /* CONFIG_SUSPEND_UART */
 
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
 
@@ -140,9 +142,11 @@ static void power_manager_read_status(power_manager_status_t *status)
 
 int power_manager_init(void)
 {
-   if (device_is_ready(UART0_DEVICE)) {
-      uart0_dev = UART0_DEVICE;
+#if (defined CONFIG_SUSPEND_UART) && (defined CONFIG_UART_CONSOLE)
+   if (!device_is_ready(UART0_DEVICE)) {
+      LOG_WRN("UART console not available.");
    }
+#endif
    if (device_is_ready(ADP536X_I2C_DEVICE)) {
       i2c_dev = ADP536X_I2C_DEVICE;
       /*
