@@ -243,6 +243,20 @@ static int32_t s_iaqs[CONFIG_ENVIRONMENT_HISTORY_SIZE];
 #endif
 #endif
 
+/*
+ * first_battery_level is set, when the first complete
+ * battery level epoch is detected. The very first change
+ * indicates only a partitial epoch.
+ */
+static uint8_t first_battery_level = 0xff;
+static int64_t first_battery_level_uptime = 0;
+static uint8_t last_battery_level = 0xff;
+static int64_t last_battery_level_uptime = 0;
+/*
+ * last left battery time. -1, if not available
+ */
+static int64_t last_battery_left_time = -1;
+
 static int coap_client_add_uri_query(struct coap_packet *request, const char *query)
 {
    if (query && strlen(query) > 0) {
@@ -298,6 +312,7 @@ int coap_client_prepare_post(void)
    int err;
    int index;
    int start;
+   int64_t now;
    int64_t uptime;
 
    uint8_t *token = (uint8_t *)&coap_current_token;
@@ -329,7 +344,8 @@ int coap_client_prepare_post(void)
    }
    bat_level[0] = 1;
 
-   uptime = k_uptime_get() / MSEC_PER_SEC;
+   now = k_uptime_get();
+   uptime = now / MSEC_PER_SEC;
 
    if (!power_manager_status(&battery_level, &battery_voltage, &battery_status)) {
       if (battery_voltage != 0xffff) {
@@ -367,6 +383,40 @@ int coap_client_prepare_post(void)
       index += snprintf(buf + index, sizeof(buf) - index, "\n%u mV", bat_level[0]);
       if (battery_level < 0xff) {
          index += snprintf(buf + index, sizeof(buf) - index, " %u%%", battery_level);
+         int diff = last_battery_level - battery_level;
+         if (diff) {
+            if (diff < 0) {
+                // charging ?
+               first_battery_level = 0xff;
+               last_battery_level = 0xff;
+            } else if (last_battery_level == 0xff) {
+               // first battery level change
+               last_battery_level = battery_level;
+               last_battery_level_uptime = now;
+            } else if (first_battery_level == 0xff) {
+               // first complete battery level epoch
+               first_battery_level = last_battery_level;
+               first_battery_level_uptime = last_battery_level_uptime;
+            }
+            if (first_battery_level != 0xff) {
+               last_battery_left_time = ((now - last_battery_level_uptime) * battery_level) / diff;
+               diff = first_battery_level - battery_level;
+               if (diff > 0) {
+                  last_battery_left_time += ((now - first_battery_level_uptime) * battery_level) / diff;
+                  last_battery_left_time /= 2;
+               }
+               last_battery_level = battery_level;
+               last_battery_level_uptime = now;
+            } else {
+               last_battery_left_time = -1;
+            }
+         }
+
+         if (last_battery_left_time >= 0) {
+            int64_t time = last_battery_left_time - now + last_battery_level_uptime;
+            time /= (MSEC_PER_SEC * 60 * 60 * 24);
+            index += snprintf(buf + index, sizeof(buf) - index, " (%u days left)", (uint32_t)time);
+         }
       }
       const char *msg = "";
       switch (battery_status) {
@@ -500,9 +550,13 @@ int coap_client_prepare_post(void)
 
    if (modem_read_statistic(&network_statistic) >= 0) {
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nStat: tx %ukB, rx %ukB, max %uB, avg %uB, searchs %u, PSM delays %u",
+      index += snprintf(buf + index, sizeof(buf) - index, "\nStat: tx %u kB, rx %u kB, max %u B, avg %u B",
                         network_statistic.transmitted, network_statistic.received, network_statistic.max_packet_size,
-                        network_statistic.average_packet_size, network_statistic.searchs, network_statistic.psm_delays);
+                        network_statistic.average_packet_size);
+      dtls_info("%s", buf + start);
+      start = index + 1;
+      index += snprintf(buf + index, sizeof(buf) - index, "\nCell updates %u, Network searchs %u, PSM delays %u",
+                        network_statistic.cell_updates, network_statistic.searchs, network_statistic.psm_delays);
       dtls_info("%s", buf + start);
    }
 #endif /* CONFIG_COAP_SEND_NETWORK_INFO */

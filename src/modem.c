@@ -59,6 +59,7 @@ static struct lte_lc_edrx_cfg edrx_status = {LTE_LC_LTE_MODE_NONE, 0.0, 0.0};
 static struct lte_lc_psm_cfg psm_status = {0, 0};
 static uint32_t lte_searchs = 0;
 static uint32_t lte_psm_delays = 0;
+static uint32_t lte_cell_updates = 0;
 static bool lte_plmn_lock = false;
 static bool lte_force_nb_iot = false;
 static bool lte_force_lte_m = false;
@@ -194,6 +195,17 @@ static void lte_inc_searchs()
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
    ++lte_searchs;
+   k_mutex_unlock(&lte_mutex);
+}
+
+static void lte_update_cell(uint16_t tac, uint32_t id)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (network_info.cell != id || network_info.tac != tac) {
+      lte_cell_updates++;
+      network_info.tac = tac;
+      network_info.cell = id;
+   }
    k_mutex_unlock(&lte_mutex);
 }
 
@@ -391,10 +403,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          break;
       case LTE_LC_EVT_CELL_UPDATE:
          LOG_INF("LTE cell changed: Cell ID: %d, Tracking area: %d", evt->cell.id, evt->cell.tac);
-         k_mutex_lock(&lte_mutex, K_FOREVER);
-         network_info.tac = evt->cell.tac;
-         network_info.cell = evt->cell.id;
-         k_mutex_unlock(&lte_mutex);
+         lte_update_cell(evt->cell.tac, evt->cell.id);
          break;
       case LTE_LC_EVT_MODEM_SLEEP_ENTER:
          if (idle_time) {
@@ -961,6 +970,9 @@ int modem_read_network_info(struct lte_network_info *info)
    }
 
    k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (network_info.cell != temp.cell || network_info.tac != temp.tac) {
+      lte_cell_updates++;
+   }
    strncpy(temp.apn, network_info.apn, sizeof(temp.apn));
    strncpy(temp.local_ip, network_info.local_ip, sizeof(temp.local_ip));
    network_info = temp;
@@ -1028,6 +1040,7 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
          k_mutex_lock(&lte_mutex, K_FOREVER);
          statistic->searchs = lte_searchs;
          statistic->psm_delays = lte_psm_delays;
+         statistic->cell_updates = lte_cell_updates;
          k_mutex_unlock(&lte_mutex);
       }
    }

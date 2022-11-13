@@ -36,6 +36,7 @@ typedef struct lte_network_info {
 typedef struct lte_network_statistic {
    uint32_t searchs;
    uint32_t psm_delays;
+   uint32_t cell_updates;
    uint32_t transmitted;
    uint32_t received;
    uint16_t max_packet_size;
