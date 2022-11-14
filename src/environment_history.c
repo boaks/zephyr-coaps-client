@@ -31,7 +31,7 @@ static double s_temperature_history[CONFIG_ENVIRONMENT_HISTORY_SIZE];
 #ifdef CONFIG_BME680_BSEC
 static int64_t s_iaq_next = 0;
 static uint8_t s_iaq_size = 0;
-static double s_iaq_history[CONFIG_ENVIRONMENT_HISTORY_SIZE];
+static uint16_t s_iaq_history[CONFIG_ENVIRONMENT_HISTORY_SIZE];
 #endif
 
 #ifndef NO_ENVIRONMENT_HISTORY_WORKER
@@ -108,7 +108,7 @@ void environment_init_history(void)
 #endif
 }
 
-int environment_get_iaq_history(int32_t *values, uint8_t size)
+int environment_get_iaq_history(uint16_t *values, uint8_t size)
 {
 #ifdef CONFIG_BME680_BSEC
    uint8_t index;
@@ -130,7 +130,7 @@ int environment_get_iaq_history(int32_t *values, uint8_t size)
 #endif
 }
 
-void environment_add_iaq_history(int32_t value, bool force)
+void environment_add_iaq_history(uint16_t value, bool force)
 {
 #ifdef CONFIG_BME680_BSEC
    uint8_t index;

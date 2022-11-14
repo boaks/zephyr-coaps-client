@@ -15,16 +15,16 @@
 #define ENVIRONMENT_SENSOR_H
 
 /*
- * With NCS-2.1.0 / v3.1.99-ncs1 it seems, that the KConfig of 
+ * With NCS-2.1.0 / v3.1.99-ncs1 it seems, that the KConfig of
  * sensors in the Device Tree are automatically set to 'y'.
  * That causes CONFIG_BME680 to be switched to 'y' by default
  * for the Thingy:91. To use other sensors or the CONFIG_BME680_BSEC
- * please switch CONFIG_BME680 or disable it in an overlay configuration.   
+ * please switch CONFIG_BME680 or disable it in an overlay configuration.
  */
 
 #if (defined CONFIG_BME680_BSEC) || \
-    (defined CONFIG_BME680) || \
-    (defined CONFIG_SHT3XD) || \
+    (defined CONFIG_BME680) ||      \
+    (defined CONFIG_SHT3XD) ||      \
     (defined CONFIG_SHT21)
 
 #define ENVIRONMENT_SENSOR
@@ -43,9 +43,9 @@ int environment_get_pressure(double *value);
 
 int environment_get_gas(int32_t *value);
 
-int environment_get_iaq(int32_t *value);
+int environment_get_iaq(int32_t *value, uint8_t *accurancy);
 
-const char* environment_get_iaq_description(int32_t value);
+const char *environment_get_iaq_description(int32_t value);
 
 #if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
 
@@ -53,9 +53,13 @@ int environment_get_temperature_history(double *values, uint8_t size);
 
 void environment_add_temperature_history(double value, bool force);
 
-int environment_get_iaq_history(int32_t *values, uint8_t size);
+int environment_get_iaq_history(uint16_t *values, uint8_t size);
 
-void environment_add_iaq_history(int32_t value, bool force);
+#define IAQ_VALUE(X) ((X)&0x3fff)
+#define IAQ_ACCURANCY(X) ((X) >> 14)
+#define IAQ_ACCURANCY_HIST(X) ((X & 3) << 14)
+
+void environment_add_iaq_history(uint16_t value, bool force);
 
 void environment_init_history(void);
 
@@ -65,8 +69,8 @@ void environment_init_history(void);
 
 #else
 
-#define environment_get_temperature_history(X,S) -1
-#define environment_add_temperature_history(X,S)
+#define environment_get_temperature_history(X, S) -1
+#define environment_add_temperature_history(X, S)
 #define environment_init_temperature_history()
 
 #endif /* CONFIG_ENVIRONMENT_HISTORY_SIZE > 0 */

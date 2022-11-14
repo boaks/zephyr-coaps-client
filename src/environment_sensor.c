@@ -86,7 +86,7 @@ static BME68X_INTF_RET_TYPE environment_bus_read(uint8_t reg_addr, uint8_t *reg_
 // typedef int64_t (*get_timestamp_us_fct)();
 static int64_t environment_get_timestamp_us(void)
 {
-	return k_ticks_to_us_floor64(k_uptime_ticks());
+   return k_ticks_to_us_floor64(k_uptime_ticks());
 }
 
 // typedef void (*sleep_fct)(uint32_t t_us,void *intf_ptr);
@@ -125,9 +125,11 @@ static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_a
    k_mutex_unlock(&environment_mutex);
 
    environment_add_temperature_history(temperature, false);
-   environment_add_iaq_history(iaq, false);
+   uint16_t iaq_qual = IAQ_VALUE((int)iaq) | IAQ_ACCURANCY_HIST(iaq_accuracy);
+   environment_add_iaq_history(iaq_qual, false);
    LOG_DBG("BME680 BSEC %0.2f°C, %0.1f%%H, %0.1fhPA, %0.1f gas, %0.1f co2, %0.1f iaq (%d)",
            temperature, humidity, p, gas, co2_equivalent, iaq, iaq_accuracy);
+   //   LOG_INF("BME680 BSEC %u;%u, 0x%04x", IAQ_VALUE(iaq_qual), IAQ_ACCURANCY(iaq_qual), iaq_qual);
 }
 
 static uint32_t environment_state_load(uint8_t *state_buffer, uint32_t n_buffer)
@@ -226,9 +228,17 @@ int environment_get_gas(int32_t *value)
    return environment_get_int32(value, &environment_values.gas);
 }
 
-int environment_get_iaq(int32_t *value)
+int environment_get_iaq(int32_t *value, uint8_t *accurancy)
 {
-   return environment_get_int32(value, &environment_values.air_quality);
+   k_mutex_lock(&environment_mutex, K_FOREVER);
+   if (value) {
+      *value = environment_values.air_quality;
+   }
+   if (accurancy) {
+      *accurancy = environment_values.air_quality_accuracy;
+   }
+   k_mutex_unlock(&environment_mutex);
+   return 0;
 }
 
 const char *environment_get_iaq_description(int32_t value)
@@ -411,11 +421,14 @@ int environment_get_pressure(double *value)
 
 int environment_get_gas(int32_t *value)
 {
+   (void)value;
    return environment_sensor_read(&gas_sensor, NULL, value, NULL);
 }
 
-int environment_get_iaq(int32_t *value)
+int environment_get_iaq(int32_t *value, uint8_t *accurancy)
 {
+   (void)value;
+   (void)accurancy;
    return -ENODATA;
 }
 

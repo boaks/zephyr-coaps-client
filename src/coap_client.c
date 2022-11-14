@@ -239,7 +239,7 @@ int coap_client_parse_data(uint8_t *data, size_t len)
 #ifdef ENVIRONMENT_SENSOR
 #if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
 static double s_temperatures[CONFIG_ENVIRONMENT_HISTORY_SIZE];
-static int32_t s_iaqs[CONFIG_ENVIRONMENT_HISTORY_SIZE];
+static uint16_t s_iaqs[CONFIG_ENVIRONMENT_HISTORY_SIZE];
 #endif
 #endif
 
@@ -297,6 +297,7 @@ int coap_client_prepare_post(void)
 #ifdef ENVIRONMENT_SENSOR
    double value = 0.0;
    int32_t int_value = 0;
+   uint8_t byte_value = 0;
 #endif
 #ifdef CONFIG_LOCATION_ENABLE
    static uint32_t max_execution_time = 0;
@@ -675,21 +676,21 @@ int coap_client_prepare_post(void)
    int_value = environment_get_iaq_history(s_iaqs, CONFIG_ENVIRONMENT_HISTORY_SIZE);
    if (int_value > 0) {
       int history_index;
-      const char *desc = environment_get_iaq_description(s_iaqs[0]);
+      const char *desc = environment_get_iaq_description(IAQ_VALUE(s_iaqs[0]));
       index += snprintf(buf + index, sizeof(buf) - index, "\n!");
       start = index - 1;
       for (history_index = 0; history_index < int_value; ++history_index) {
-         index += snprintf(buf + index, sizeof(buf) - index, "%d,", s_iaqs[history_index]);
+         index += snprintf(buf + index, sizeof(buf) - index, "%d;%d,", IAQ_VALUE(s_iaqs[history_index]), IAQ_ACCURANCY(s_iaqs[history_index]));
       }
       --index;
       index += snprintf(buf + index, sizeof(buf) - index, " Q (%s)", desc);
       dtls_info("%s", buf + start);
    }
 #endif
-   if (!int_value && environment_get_iaq(&int_value) == 0) {
+   if (!int_value && environment_get_iaq(&int_value, &byte_value) == 0) {
       const char *desc = environment_get_iaq_description(int_value);
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\n!%d Q (%s)", int_value, desc);
+      index += snprintf(buf + index, sizeof(buf) - index, "\n!%d;%d Q (%s)", int_value, byte_value, desc);
       dtls_info("%s", buf + start);
    }
 #endif
