@@ -653,6 +653,8 @@ int dtls_loop(void)
    memset(&dst, 0, sizeof(session_t));
    dtls_init_destination(&dst);
 
+   coap_client_init();
+
    fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
    if (fd < 0) {
@@ -664,8 +666,6 @@ int dtls_loop(void)
    imei_len = modem_at_cmd("AT+CGSN", imei, sizeof(imei), NULL);
    dtls_credentials_init_psk(0 < imei_len ? imei : NULL);
    dtls_credentials_init_handler(&cb);
-
-   coap_client_init();
 
    dtls_init();
 
@@ -691,10 +691,6 @@ int dtls_loop(void)
 #endif
 
    while (1) {
-      if (!lte_power_off && !network_connected) {
-         reopen_socket(dtls_context);
-         continue;
-      }
 
 #ifdef CONFIG_LOCATION_ENABLE
       uint8_t battery_level = 0xff;
