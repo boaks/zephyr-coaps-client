@@ -25,9 +25,7 @@ static K_MUTEX_DEFINE(pm_mutex);
 #ifdef CONFIG_SUSPEND_UART
 #if defined(CONFIG_UART_CONSOLE)
 
-#define UART0_DEVICE DEVICE_DT_GET(DT_CHOSEN(zephyr_console))
-
-static const struct device *uart0_dev = UART0_DEVICE;
+static const struct device *const uart0_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
 static bool uart0_suspended = false;
 
 static void suspend_uart(bool suspend)
@@ -54,7 +52,7 @@ static void suspend_uart(bool suspend)
       }
    }
 }
-#else /* CONFIG_UART_CONSOLE */
+#else  /* CONFIG_UART_CONSOLE */
 static void suspend_uart(bool suspend)
 {
    (void)suspend;
@@ -62,11 +60,70 @@ static void suspend_uart(bool suspend)
 #endif /* CONFIG_UART_CONSOLE */
 #endif /* CONFIG_SUSPEND_UART */
 
+/*
+ * first_battery_level is set, when the first complete
+ * battery level epoch is detected. The very first change
+ * indicates only a partitial epoch.
+ */
+static uint8_t first_battery_level = 0xff;
+static int64_t first_battery_level_uptime = 0;
+static uint8_t last_battery_level = 0xff;
+static int64_t last_battery_level_uptime = 0;
+/*
+ * last left battery time. -1, if not available
+ */
+static int64_t last_battery_left_time = -1;
+
+static int16_t calculate_forecast(int64_t *now, uint8_t battery_level)
+{
+   if (battery_level < 0xff) {
+      int diff = last_battery_level - battery_level;
+      if (diff) {
+         if (diff < 0) {
+            // charging ?
+            LOG_INF("charging ?");
+            first_battery_level = 0xff;
+            last_battery_level = 0xff;
+         } else if (last_battery_level == 0xff) {
+            // first battery level change
+            LOG_INF("first battery level change");
+            last_battery_level = battery_level;
+            last_battery_level_uptime = *now;
+         } else if (first_battery_level == 0xff) {
+            // first complete battery level epoch
+            LOG_INF("first complete battery epoch");
+            first_battery_level = last_battery_level;
+            first_battery_level_uptime = last_battery_level_uptime;
+         }
+         if (first_battery_level != 0xff) {
+            last_battery_left_time = ((*now - last_battery_level_uptime) * battery_level) / diff;
+            LOG_INF("left battery time %lld", last_battery_left_time);
+            diff = first_battery_level - battery_level;
+            if (diff > 0) {
+               last_battery_left_time += ((*now - first_battery_level_uptime) * battery_level) / diff;
+               last_battery_left_time /= 2;
+               LOG_INF("left battery time 2 %lld", last_battery_left_time);
+            }
+            last_battery_level = battery_level;
+            last_battery_level_uptime = *now;
+         } else {
+            last_battery_left_time = -1;
+         }
+      }
+
+      if (last_battery_left_time >= 0) {
+         int64_t time = last_battery_left_time - *now + last_battery_level_uptime;
+         time /= (MSEC_PER_SEC * 60 * 60 * 24);
+         LOG_INF("battery %u, %ld left days", battery_level, (long)time);
+         return (int16_t)time;
+      }
+   }
+   return -1;
+}
+
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
 
 #include <zephyr/drivers/i2c.h>
-
-#define ADP536X_I2C_DEVICE DEVICE_DT_GET(DT_NODELABEL(i2c2))
 
 #define ADP536X_I2C_ADDR 0x46
 
@@ -78,7 +135,7 @@ static void suspend_uart(bool suspend)
 #define ADP536X_I2C_REG_BUCK_CONFIG 0x29
 #define ADP536X_I2C_REG_BUCK_BOOST_CONFIG 0x2B
 
-static const struct device *i2c_dev = NULL;
+static const struct device *const i2c_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(i2c2));
 
 static int adp536x_reg_read(uint8_t reg, uint8_t *buff)
 {
@@ -143,12 +200,11 @@ static void power_manager_read_status(power_manager_status_t *status)
 int power_manager_init(void)
 {
 #if (defined CONFIG_SUSPEND_UART) && (defined CONFIG_UART_CONSOLE)
-   if (!device_is_ready(UART0_DEVICE)) {
-      LOG_WRN("UART console not available.");
+   if (!device_is_ready(uart0_dev)) {
+      LOG_WRN("UART0 console not available.");
    }
 #endif
-   if (device_is_ready(ADP536X_I2C_DEVICE)) {
-      i2c_dev = ADP536X_I2C_DEVICE;
+   if (device_is_ready(i2c_dev)) {
       /*
        * 11%, 10mA, 8 min, enable
        */
@@ -162,7 +218,7 @@ int power_manager_init(void)
 
 static int power_manager_xvy(uint8_t config_register, bool enable)
 {
-   if (i2c_dev) {
+   if (device_is_ready(i2c_dev)) {
       uint8_t buck_config = 0;
 
       if (!adp536x_reg_read(config_register, &buck_config)) {
@@ -210,7 +266,7 @@ int power_manager_1v8(bool enable)
 
 int power_manager_voltage(uint16_t *voltage)
 {
-   if (i2c_dev) {
+   if (device_is_ready(i2c_dev)) {
       if (voltage) {
          power_manager_read_voltage(voltage);
       }
@@ -222,11 +278,20 @@ int power_manager_voltage(uint16_t *voltage)
    return -1;
 }
 
-int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status)
+#define SAVE_VALUE(X) ((X) ? *(X) : 0)
+
+int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status, int16_t *forecast)
 {
-   if (i2c_dev) {
+   if (device_is_ready(i2c_dev)) {
+      int64_t now = k_uptime_get();
+      uint8_t internal_level = 0xff;
+      int16_t days = -1;
+
+      power_manager_read_level(&internal_level);
+      days = calculate_forecast(&now, internal_level);
+
       if (level) {
-         power_manager_read_level(level);
+         *level = internal_level;
       }
       if (voltage) {
          power_manager_read_voltage(voltage);
@@ -234,7 +299,10 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
       if (status) {
          power_manager_read_status(status);
       }
-      LOG_DBG("%u%% %umV %d", *level, *voltage, *status);
+      if (forecast) {
+         *forecast = days;
+      }
+      LOG_DBG("%u%% %umV %d (%d left days)", internal_level, SAVE_VALUE(voltage), SAVE_VALUE(status), days);
       return 0;
    } else {
       LOG_WRN("Failed to read battery level!");
@@ -290,13 +358,16 @@ int power_manager_voltage(uint16_t *voltage)
    return 0;
 }
 
-int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status)
+int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status, int16_t *forecast)
 {
    if (level) {
       *level = 0xff;
    }
    if (status) {
       *status = POWER_UNKNOWN;
+   }
+   if (forecast) {
+      *forecast = -1;
    }
    return power_manager_voltage(voltage);
 }

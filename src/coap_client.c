@@ -243,20 +243,6 @@ static uint16_t s_iaqs[CONFIG_ENVIRONMENT_HISTORY_SIZE];
 #endif
 #endif
 
-/*
- * first_battery_level is set, when the first complete
- * battery level epoch is detected. The very first change
- * indicates only a partitial epoch.
- */
-static uint8_t first_battery_level = 0xff;
-static int64_t first_battery_level_uptime = 0;
-static uint8_t last_battery_level = 0xff;
-static int64_t last_battery_level_uptime = 0;
-/*
- * last left battery time. -1, if not available
- */
-static int64_t last_battery_left_time = -1;
-
 static int coap_client_add_uri_query(struct coap_packet *request, const char *query)
 {
    if (query && strlen(query) > 0) {
@@ -307,13 +293,13 @@ int coap_client_prepare_post(void)
 #endif
    power_manager_status_t battery_status = POWER_UNKNOWN;
    uint16_t battery_voltage = 0xffff;
+   int16_t battery_forecast = -1;
    uint8_t battery_level = 0xff;
 
    char buf[640];
    int err;
    int index;
    int start;
-   int64_t now;
    int64_t uptime;
 
    uint8_t *token = (uint8_t *)&coap_current_token;
@@ -345,10 +331,9 @@ int coap_client_prepare_post(void)
    }
    bat_level[0] = 1;
 
-   now = k_uptime_get();
-   uptime = now / MSEC_PER_SEC;
+   uptime = k_uptime_get() / MSEC_PER_SEC;
 
-   if (!power_manager_status(&battery_level, &battery_voltage, &battery_status)) {
+   if (!power_manager_status(&battery_level, &battery_voltage, &battery_status, &battery_forecast)) {
       if (battery_voltage != 0xffff) {
          bat_level[0] = battery_voltage;
       }
@@ -384,40 +369,11 @@ int coap_client_prepare_post(void)
       index += snprintf(buf + index, sizeof(buf) - index, "\n%u mV", bat_level[0]);
       if (battery_level < 0xff) {
          index += snprintf(buf + index, sizeof(buf) - index, " %u%%", battery_level);
-         int diff = last_battery_level - battery_level;
-         if (diff) {
-            if (diff < 0) {
-                // charging ?
-               first_battery_level = 0xff;
-               last_battery_level = 0xff;
-            } else if (last_battery_level == 0xff) {
-               // first battery level change
-               last_battery_level = battery_level;
-               last_battery_level_uptime = now;
-            } else if (first_battery_level == 0xff) {
-               // first complete battery level epoch
-               first_battery_level = last_battery_level;
-               first_battery_level_uptime = last_battery_level_uptime;
-            }
-            if (first_battery_level != 0xff) {
-               last_battery_left_time = ((now - last_battery_level_uptime) * battery_level) / diff;
-               diff = first_battery_level - battery_level;
-               if (diff > 0) {
-                  last_battery_left_time += ((now - first_battery_level_uptime) * battery_level) / diff;
-                  last_battery_left_time /= 2;
-               }
-               last_battery_level = battery_level;
-               last_battery_level_uptime = now;
-            } else {
-               last_battery_left_time = -1;
-            }
-         }
-
-         if (last_battery_left_time >= 0) {
-            int64_t time = last_battery_left_time - now + last_battery_level_uptime;
-            time /= (MSEC_PER_SEC * 60 * 60 * 24);
-            index += snprintf(buf + index, sizeof(buf) - index, " (%u days left)", (uint32_t)time);
-         }
+      }
+      if (battery_forecast > 1 || battery_forecast == 0) {
+         index += snprintf(buf + index, sizeof(buf) - index, " (%u days left)", battery_forecast);
+      } else if (battery_forecast == 1) {
+         index += snprintf(buf + index, sizeof(buf) - index, " (1 day left)");
       }
       const char *msg = "";
       switch (battery_status) {
