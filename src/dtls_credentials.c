@@ -24,11 +24,8 @@
 #define UNUSED_PARAM
 #endif /* __GNUC__ */
 
-//#define USE_ECC
-
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
-#ifdef USE_ECC
 #ifdef DTLS_ECC
 static const unsigned char ecdsa_priv_key[] = {
     0x41, 0xC1, 0xCB, 0x6B, 0x51, 0x24, 0x7A, 0x14,
@@ -48,7 +45,6 @@ static const unsigned char ecdsa_pub_key_y[] = {
     0xE9, 0x3F, 0x98, 0x72, 0x09, 0xDA, 0xED, 0x0B,
     0x4F, 0xAB, 0xC3, 0x6F, 0xC7, 0x72, 0xF8, 0x29};
 #endif /* DTLS_ECC */
-#endif
 
 #ifdef DTLS_PSK
 
@@ -127,7 +123,6 @@ void dtls_credentials_init_psk(const char *imei UNUSED_PARAM)
 
 #endif /* DTLS_PSK */
 
-#ifdef USE_ECC
 #ifdef DTLS_ECC
 static int
 get_ecdsa_key(struct dtls_context_t *ctx,
@@ -161,17 +156,14 @@ verify_ecdsa_key(struct dtls_context_t *ctx,
    return 0;
 }
 #endif /* DTLS_ECC */
-#endif
 
 void dtls_credentials_init_handler(dtls_handler_t *handler)
 {
 #ifdef DTLS_PSK
    handler->get_psk_info = get_psk_info;
 #endif /* DTLS_PSK */
-#ifdef USE_ECC
 #ifdef DTLS_ECC
    handler->get_ecdsa_key = get_ecdsa_key;
    handler->verify_ecdsa_key = verify_ecdsa_key;
 #endif /* DTLS_ECC */
-#endif
 }
