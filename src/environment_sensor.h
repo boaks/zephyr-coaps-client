@@ -47,6 +47,11 @@ int environment_get_iaq(int32_t *value, uint8_t *accurancy);
 
 const char *environment_get_iaq_description(int32_t value);
 
+#define IAQ_VALUE(X) ((X)&0x3fff)
+#define IAQ_ACCURANCY(X) ((X) >> 14)
+#define IAQ_ACCURANCY_HIST(X) ((X & 3) << 14)
+
+
 #if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
 
 int environment_get_temperature_history(double *values, uint8_t size);
@@ -54,10 +59,6 @@ int environment_get_temperature_history(double *values, uint8_t size);
 void environment_add_temperature_history(double value, bool force);
 
 int environment_get_iaq_history(uint16_t *values, uint8_t size);
-
-#define IAQ_VALUE(X) ((X)&0x3fff)
-#define IAQ_ACCURANCY(X) ((X) >> 14)
-#define IAQ_ACCURANCY_HIST(X) ((X & 3) << 14)
 
 void environment_add_iaq_history(uint16_t value, bool force);
 
@@ -71,7 +72,9 @@ void environment_init_history(void);
 
 #define environment_get_temperature_history(X, S) -1
 #define environment_add_temperature_history(X, S)
-#define environment_init_temperature_history()
+#define environment_get_iaq_history(X, S) -1
+#define environment_add_iaq_history(X, S)
+#define environment_init_history()
 
 #endif /* CONFIG_ENVIRONMENT_HISTORY_SIZE > 0 */
 

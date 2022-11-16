@@ -100,18 +100,13 @@ typedef void (*output_ready_fct)(int64_t timestamp, float iaq, uint8_t iaq_accur
      float pressure, float raw_temperature, float raw_humidity, float gas, float gas_percentage, bsec_library_return_t bsec_status,
      float static_iaq, float stabStatus, float runInStatus, float co2_equivalent, float breath_voc_equivalent);
 */
-/*
-static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_accuracy, float temperature,
-                                     float humidity, float pressure, float raw_temperature, float raw_humidity,
-                                     float gas, bsec_library_return_t bsec_status, float static_iaq,
-                                     float co2_equivalent, float breath_voc_equivalent)
-*/
 static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_accuracy, float temperature, float humidity,
                                      float pressure, float raw_temperature, float raw_humidity, float gas, float gas_percentage, bsec_library_return_t bsec_status,
                                      float static_iaq, float stabStatus, float runInStatus, float co2_equivalent, float breath_voc_equivalent)
 
 {
    double p;
+   uint16_t iaq_qual;
    k_mutex_lock(&environment_mutex, K_FOREVER);
 
    environment_values.temperature = temperature;
@@ -125,11 +120,11 @@ static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_a
    k_mutex_unlock(&environment_mutex);
 
    environment_add_temperature_history(temperature, false);
-   uint16_t iaq_qual = IAQ_VALUE((int)iaq) | IAQ_ACCURANCY_HIST(iaq_accuracy);
+   iaq_qual = IAQ_VALUE((int)iaq) | IAQ_ACCURANCY_HIST(iaq_accuracy);
    environment_add_iaq_history(iaq_qual, false);
+
    LOG_DBG("BME680 BSEC %0.2f°C, %0.1f%%H, %0.1fhPA, %0.1f gas, %0.1f co2, %0.1f iaq (%d)",
            temperature, humidity, p, gas, co2_equivalent, iaq, iaq_accuracy);
-   //   LOG_INF("BME680 BSEC %u;%u, 0x%04x", IAQ_VALUE(iaq_qual), IAQ_ACCURANCY(iaq_qual), iaq_qual);
 }
 
 static uint32_t environment_state_load(uint8_t *state_buffer, uint32_t n_buffer)
