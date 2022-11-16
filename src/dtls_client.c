@@ -699,7 +699,7 @@ int dtls_loop(void)
       force = moved;
       moved = false;
 #endif
-      power_manager_status(&battery_level, NULL, NULL);
+      power_manager_status(&battery_level, NULL, NULL, NULL);
       if (location_enabled()) {
          if (battery_level < 20) {
             dtls_info("Low battery, switch off GNSS");
