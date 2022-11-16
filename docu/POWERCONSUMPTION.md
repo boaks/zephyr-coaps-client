@@ -8,8 +8,13 @@
 
 The measurements presented here are done using the [Nordic Semiconductor - Power Profiler Kit II (PPK2)](https://www.nordicsemi.com/Products/Development-hardware/Power-Profiler-Kit-2). The first part of these measurements are done using the [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK), the second with the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91).
 
-The values for the `Thingy:91` are measurement replacing the battery with the PPK2 as source using about 4.1V. The previous test in June 2022 have been done with enabled UART and 3.3V. With that the device has a quiescent current of 0.8 mA and runs for 56 days from battery. See [Powerconsumption-2022-06](POWERCONSUMPTION-2022-06.md).
-Disabling the UART and the 3.3V results in quiescent current of 0.04 mA. Assuming a 80% efficiency and a battery of 1350 mAh, that results in 27000h (or about 1125 days) runtime without sending any data. 20x times more than without disabling the UART and the 3.3V. The self-discarge is unknown, but may reduce that time significantly.
+The values for the `Thingy:91` are measurements replacing the battery with the PPK2 as source using about 4.1V.
+
+The previous tests in June 2022 have been done with enabled UART and 3.3V. With that the device has a quiescent current of 0.8 mA and, assuming a 80% efficiency and a battery of 1350 mAh, it runs for 56 days from battery (see [Powerconsumption-2022-06](POWERCONSUMPTION-2022-06.md)).
+
+Disabling the UART and the 3.3V results in quiescent current of 0.04 mA. With the same assumption of a 80% efficiency and a battery of 1350 mAh, that results in 27000h (or about 1125 days) runtime without sending any data. 20x times more than without disabling the UART and the 3.3V.
+
+The self-discarge is unknown, but may reduce that time significantly. For the LiPo at least a second 0.04 mA self-discarging must be considered, which halfs that runtime to 550 days.
 
 ## General Considerations for LTE-M/NB-IoT
 
@@ -21,10 +26,10 @@ PSM is defined by three parameters:
 - T3324 (PSM Activity Timer)
 - T3412 (TAU Timer)
 
-The first one is given by the mobile network operator, see e.g [NB-IoT Feature matrix and associated parameters](https://docs.iotcreators.com/docs/nb-iot-network-information#nb-iot-feature-matrix-and-associated-parameters) or
-[NB-IoT Feature matrix and associated parameters](https://docs.iotcreators.com/docs/lte-m-network-information#lte-m-feature-matrix-and-associated-parameters).
+The first one, the RRC Activity Timer, is given by the mobile network operator, see e.g [NB-IoT Feature matrix and associated parameters](https://docs.iotcreators.com/docs/nb-iot-network-information#nb-iot-feature-matrix-and-associated-parameters) or
+[LTE-M Feature matrix and associated parameters](https://docs.iotcreators.com/docs/lte-m-network-information#lte-m-feature-matrix-and-associated-parameters).
 
-The other two are negotiated by a request of the device and a response from the mobile network operator, which may deviate from the requested values. For the value range, consider the above references. 
+The other two, PSM Activity Timer and TAU Timer, are negotiated by a request of the device and a response from the mobile network operator, which may deviate from the requested values. For the value range, consider the above references. 
 
 If T3412 (TAU Timer) expires without message exchange, the device wakeups up, moves to RRC connected mode, send a TAU (Tracking Area Update) message, moves back to idle mode, and goes to sleep.
 
@@ -46,7 +51,7 @@ There are also other phases, which are not considered here:
 
 All these are taking randomly amount of time and may occur also unintended. So they hard to take into consideration. I guess, they unfortunately half the runtime in too many cases. 
 
-The measurments differs from test to test. The charts shows just one example test run.
+The measurements differs from test to test. The charts shows just one example test run.
 
 More details about PSM may be found in:
 
@@ -58,7 +63,11 @@ and
 
 ## Summary:
 
-In my experiments, the first question is, which quiescent current does your device have itself. Only if that is low enough, the consumption of the message exchanges builds the calculation base for the runtime. ["All theory is gray"](https://quotethedayaway.wordpress.com/2013/06/05/all-theory-is-gray-my-friend-but-forever-green-is-the-tree-of-life/), so I'm looking forward to complete my tooling, do the measurements for the Thingy:91 itself and then have a live-longterm-test run.
+In my experiments, the first question is, which quiescent current does your device have itself. The second one will be, which self-discarging of the battery must be considered. Only if that sum is low enough, the consumption of the message exchanges builds the calculation base for the runtime.
+
+["All theory is gray"](https://quotethedayaway.wordpress.com/2013/06/05/all-theory-is-gray-my-friend-but-forever-green-is-the-tree-of-life/)
+
+So I'm looking forward to complete my tooling, do the measurements for the Thingy:91 itself and then have a live-longterm-test run.
 
 ### Results of first longterm-tests - June 2022
 
@@ -72,7 +81,11 @@ Thingy:91, LTE-M, PSM, 1h message interchange interval
 4072 mV 84% battery (low-power)
 Stat: tx 299kB, rx 41kB, max 526B, avg 287B, searchs 27, PSM delays 0
 
-Forecast: 146 days
+48-15:54:03 [d-hh:mm:ss], Thingy:91 v0.5.99, 0*1121, 1*46, 2*1, 3*0, failures 1
+4034 mV 79% battery (low-power)
+Stat: tx 585kB, rx 79kB, max 535B, avg 289B, searchs 52, PSM delays 0
+
+Forecast: 190 days
 
 Thingy:91, LTE-M, PSM, 1h message interchange interval
 
@@ -80,7 +93,11 @@ Thingy:91, LTE-M, PSM, 1h message interchange interval
 4124 mV 90% battery (low-power)
 Stat: tx 12kB, rx 2kB, max 525B, avg 258B, searchs 24, PSM delays 0
 
-Forecast: 385 days
+48-01:07:52 [d-hh:mm:ss], Thingy:91 v0.5.99, 0*2, 1*47, 2*0, 3*0, failures 0
+4093 mV 87% battery (low-power)
+Stat: tx 24kB, rx 3kB, max 525B, avg 271B, searchs 48, PSM delays 0
+
+Forecast: 375 days
 
 ## Measurement Charts
 
@@ -180,7 +197,7 @@ We will see, how large the  self-discarge is and how many bugs will prevent proo
 
 ## Disclaimer
 
-Other studies have other results. There are studies, which demonstrates the effect of the amount of data, there are studies, which use always a DTLS handshake for each couple of bytes. Using DTLS 1.2 CID doesn't require that handshake and my measurements shows a larger influence of the reregistration than the amount of bytes.
+Other studies have other results. There are studies, which demonstrates the effect of the amount of data, there are studies, which use always a DTLS handshake for each couple of bytes. Using DTLS 1.2 CID doesn't require that handshake and my measurements shows a larger influence of the moving to RRC connected mode than the amount of bytes.
 
 Anyway, feel asked to test the power consumption on your own. And, please, report your results.
 
