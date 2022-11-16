@@ -143,7 +143,8 @@ static K_WORK_DEFINE(modem_read_pdn_info_work, modem_read_pdn_info_work_fn);
 
 static void modem_read_sim_work_fn(struct k_work *work)
 {
-   char buf[32];
+   char buf[40];
+
    int err = modem_at_cmd("AT+CIMI", buf, sizeof(buf), NULL);
    if (err < 0) {
       LOG_INF("Failed to read IMSI.");
@@ -151,6 +152,15 @@ static void modem_read_sim_work_fn(struct k_work *work)
       LOG_INF("imsi: %s", buf);
       k_mutex_lock(&lte_mutex, K_FOREVER);
       strncpy(imsi, buf, sizeof(imsi));
+      k_mutex_unlock(&lte_mutex);
+   }
+   err = modem_at_cmd("AT%%XICCID", buf, sizeof(buf), "%XICCID: ");
+   if (err < 0) {
+      LOG_INF("Failed to read ICCID.");
+   } else {
+      LOG_INF("iccid: %s", buf);
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      strncpy(iccid, buf, sizeof(iccid));
       k_mutex_unlock(&lte_mutex);
    }
 }
@@ -770,18 +780,8 @@ int modem_start(const k_timeout_t timeout)
             LOG_INF("Modem not saved.");
          }
 #endif
-         err = modem_at_cmd("AT%%XICCID", buf, sizeof(buf), "%XICCID: ");
-         if (err < 0) {
-            LOG_INF("Failed to read ICCID.");
-         } else {
-            LOG_INF("iccid: %s", buf);
-            k_mutex_lock(&lte_mutex, K_FOREVER);
-            strncpy(iccid, buf, sizeof(iccid));
-            k_mutex_unlock(&lte_mutex);
-            err = 0;
-         }
+         modem_read_sim_work_fn(&modem_read_sim_work);
       }
-
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
 #if 0
