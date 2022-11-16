@@ -253,6 +253,14 @@ config ADP536X_POWER_MANAGEMENT
 	help
 	   Enable battery level and charging state monitor.
 
+config ADP536X_POWER_MANAGEMENT_LOW_POWER
+	bool "Enable ADP536X Power Management Sleeping Mode"
+	default y
+	depends on ADP536X_POWER_MANAGEMENT
+	help
+	   Enable power management sleeping mode. Check
+	   battery level only every 8 minutes.
+	   
 endif # ADP536X
 
 if ADXL362

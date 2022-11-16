@@ -69,55 +69,80 @@ static uint8_t first_battery_level = 0xff;
 static int64_t first_battery_level_uptime = 0;
 static uint8_t last_battery_level = 0xff;
 static int64_t last_battery_level_uptime = 0;
+static uint8_t current_battery_level = 0xff;
+static uint8_t current_battery_changes = 0;
 /*
  * last left battery time. -1, if not available
  */
 static int64_t last_battery_left_time = -1;
 
-static int16_t calculate_forecast(int64_t *now, uint8_t battery_level)
+#define MSEC_PER_DAY (MSEC_PER_SEC * 60 * 60 * 24)
+
+static int16_t calculate_forecast(int64_t *now, uint8_t battery_level, power_manager_status_t status)
 {
-   if (battery_level < 0xff) {
-      int diff = last_battery_level - battery_level;
-      if (diff) {
-         if (diff < 0) {
-            // charging ?
-            LOG_INF("charging ?");
-            first_battery_level = 0xff;
-            last_battery_level = 0xff;
-         } else if (last_battery_level == 0xff) {
+   if (battery_level == 0xff) {
+      LOG_INF("not ready.");
+   } else if (status != FROM_BATTERY) {
+      LOG_INF("charging.");
+   } else {
+      int64_t passed_time = (*now) - last_battery_level_uptime;
+      if (battery_level < current_battery_level) {
+         current_battery_level = battery_level;
+         ++current_battery_changes;
+         if (current_battery_changes == 1) {
+            // initial value;
+            return -1;
+         }
+         if (current_battery_changes == 2) {
             // first battery level change
             LOG_INF("first battery level change");
+            first_battery_level = battery_level;
+            first_battery_level_uptime = *now;
             last_battery_level = battery_level;
             last_battery_level_uptime = *now;
-         } else if (first_battery_level == 0xff) {
-            // first complete battery level epoch
-            LOG_INF("first complete battery epoch");
-            first_battery_level = last_battery_level;
-            first_battery_level_uptime = last_battery_level_uptime;
+            return -1;
          }
-         if (first_battery_level != 0xff) {
-            last_battery_left_time = ((*now - last_battery_level_uptime) * battery_level) / diff;
-            LOG_INF("left battery time %lld", last_battery_left_time);
+         if (passed_time >= MSEC_PER_DAY) {
+            // change after a minium of 24h
+            int64_t time;
+            int diff = last_battery_level - battery_level;
+            if (!diff) return -1;
+            last_battery_left_time = (passed_time * battery_level) / diff;
+            LOG_INF("left battery %u%% time %lld (%lld days, %lld passed)",
+                    battery_level, last_battery_left_time,
+                    last_battery_left_time / MSEC_PER_DAY, passed_time / MSEC_PER_DAY);
             diff = first_battery_level - battery_level;
-            if (diff > 0) {
-               last_battery_left_time += ((*now - first_battery_level_uptime) * battery_level) / diff;
-               last_battery_left_time /= 2;
-               LOG_INF("left battery time 2 %lld", last_battery_left_time);
-            }
+            if (!diff) return -1;
+            passed_time = (*now) - first_battery_level_uptime;
+            time = (passed_time * battery_level) / diff;
+            LOG_INF("left battery time 2 %lld (%lld days, %lld passed)", time,
+                    time / MSEC_PER_DAY, passed_time / MSEC_PER_DAY);
+            last_battery_left_time = (last_battery_left_time + time) / 2;
             last_battery_level = battery_level;
             last_battery_level_uptime = *now;
-         } else {
-            last_battery_left_time = -1;
+            passed_time = 0;
+         } else if (current_battery_changes == 3) {
+            // first change
+            int diff = last_battery_level - battery_level;
+            last_battery_left_time = (passed_time * battery_level) / diff;
+            LOG_INF("first left battery time %lld (%lld, d:%u%%, %u%%)", last_battery_left_time, passed_time, diff, battery_level);
          }
       }
-
-      if (last_battery_left_time >= 0) {
-         int64_t time = last_battery_left_time - *now + last_battery_level_uptime;
-         time /= (MSEC_PER_SEC * 60 * 60 * 24);
-         LOG_INF("battery %u, %ld left days", battery_level, (long)time);
-         return (int16_t)time;
+      if (current_battery_changes >= 3) {
+         // after first change
+         int16_t time = (int16_t)((last_battery_left_time - passed_time) / MSEC_PER_DAY);
+         LOG_INF("battery %u%%, %d left days (passed %d days)", battery_level, time, (int)(passed_time / MSEC_PER_DAY));
+         return time;
       }
+      return -1;
    }
+   // fall through, reset
+   current_battery_changes = 0;
+   first_battery_level = 0xff;
+   last_battery_level = 0xff;
+   current_battery_level = 0xff;
+   last_battery_left_time = -1;
+
    return -1;
 }
 
@@ -127,6 +152,7 @@ static int16_t calculate_forecast(int64_t *now, uint8_t battery_level)
 
 #define ADP536X_I2C_ADDR 0x46
 
+#define ADP536X_I2C_REG_CHARGE_TERMINATION 0x3
 #define ADP536X_I2C_REG_STATUS 0x8
 #define ADP536X_I2C_REG_LEVEL 0x21
 #define ADP536X_I2C_REG_VOLTAGE_HIGH_BYTE 0x25
@@ -205,10 +231,26 @@ int power_manager_init(void)
    }
 #endif
    if (device_is_ready(i2c_dev)) {
+      uint8_t value = 0;
+
+      adp536x_reg_read(ADP536X_I2C_REG_CHARGE_TERMINATION, &value);
+      value &= 3;
+      value |= 0x80; // 4.2V
+      adp536x_reg_write(ADP536X_I2C_REG_CHARGE_TERMINATION, value);
+
+#ifdef CONFIG_ADP536X_POWER_MANAGEMENT_LOW_POWER
       /*
-       * 11%, 10mA, 8 min, enable
+       * 0x5B: 11%, 10mA, 8 min, sleep, enable
        */
-      adp536x_reg_write(ADP536X_I2C_REG_FUEL_GAUGE_MODE, 0x59);
+      adp536x_reg_write(ADP536X_I2C_REG_FUEL_GAUGE_MODE, 0x5B);
+      LOG_INF("Battery monitor initialized (low power).");
+#else
+      /*
+       * 0x51: 11%, 10mA, enable
+       */
+      adp536x_reg_write(ADP536X_I2C_REG_FUEL_GAUGE_MODE, 0x51);
+      LOG_INF("Battery monitor initialized.");
+#endif
       return 0;
    } else {
       LOG_WRN("Failed to initialize battery monitor.");
@@ -236,7 +278,7 @@ static int power_manager_xvy(uint8_t config_register, bool enable)
          return -1;
       }
    } else {
-      LOG_WRN("Failed to initialize battery monitor.");
+      LOG_WRN("Failed to write buckbst_cfg.");
       return -1;
    }
 }
@@ -284,25 +326,28 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
 {
    if (device_is_ready(i2c_dev)) {
       int64_t now = k_uptime_get();
-      uint8_t internal_level = 0xff;
+      power_manager_status_t internal_status = POWER_UNKNOWN;
       int16_t days = -1;
+      uint8_t internal_level = 0xff;
+
+      LOG_DBG("Read battery monitor status ...");
 
       power_manager_read_level(&internal_level);
-      days = calculate_forecast(&now, internal_level);
-
+      power_manager_read_status(&internal_status);
+      days = calculate_forecast(&now, internal_level, internal_status);
       if (level) {
          *level = internal_level;
       }
-      if (voltage) {
-         power_manager_read_voltage(voltage);
-      }
       if (status) {
-         power_manager_read_status(status);
+         *status = internal_status;
       }
       if (forecast) {
          *forecast = days;
       }
-      LOG_DBG("%u%% %umV %d (%d left days)", internal_level, SAVE_VALUE(voltage), SAVE_VALUE(status), days);
+      if (voltage) {
+         power_manager_read_voltage(voltage);
+      }
+      LOG_DBG("%u%% %umV %d (%d left days)", internal_level, SAVE_VALUE(voltage), internal_status, days);
       return 0;
    } else {
       LOG_WRN("Failed to read battery level!");
