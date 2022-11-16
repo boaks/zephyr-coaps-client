@@ -398,7 +398,7 @@ int coap_client_prepare_post(void)
       if (strlen(msg)) {
          index += snprintf(buf + index, sizeof(buf) - index, " %s", msg);
       }
-#ifdef CONFIG_SUSPEND_3V3
+#if defined(CONFIG_SUSPEND_3V3) && defined(CONFIG_SUSPEND_UART)
       index += snprintf(buf + index, sizeof(buf) - index, " (low-power)");
 #endif
       dtls_info("%s", buf + start);
