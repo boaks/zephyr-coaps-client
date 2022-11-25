@@ -206,6 +206,10 @@ endmenu
 
 menu "Extra Functions"
 
+config USE_IO_JOB_QUEUE
+	bool "Use i/o job queue"
+	default y
+
 config SUSPEND_3V3
 	bool "Low power mode, suspend 3.3V when sleeping"
 	default y
