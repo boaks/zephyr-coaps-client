@@ -539,9 +539,7 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_c
          LOG_INF("Failed to read IMEI.");
       } else {
          LOG_INF("imei: %s", buf);
-         k_mutex_lock(&lte_mutex, K_FOREVER);
          strncpy(imei, buf, sizeof(imei));
-         k_mutex_unlock(&lte_mutex);
       }
       if ((config & 3) == 3) {
          err = modem_at_cmd("AT%%XFACTORYRESET=0", buf, sizeof(buf), NULL);
@@ -881,14 +879,10 @@ int modem_get_imsi(char *buf, size_t len)
 
 int modem_get_imei(char *buf, size_t len)
 {
-   int result = 0;
-   k_mutex_lock(&lte_mutex, K_FOREVER);
    if (buf) {
       strncpy(buf, imei, len);
    }
-   result = strlen(imei);
-   k_mutex_unlock(&lte_mutex);
-   return result;
+   return strlen(imei);
 }
 
 int modem_get_iccid(char *buf, size_t len)
