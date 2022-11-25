@@ -883,20 +883,18 @@ int dtls_loop(void)
             } else {
                dtls_info("I/O event: last socket error %d", error);
             }
-            if (lte_lost_network(error)) {
-               reopen_socket(dtls_context);
-               if (request_state == SEND || request_state == RESEND) {
-                  loops = 0;
-                  if (dtls_connected) {
-                     dtls_info("CoAP request send again");
-                     result = coap_client_send_message(dtls_context, &dst);
-                     if (result < 0) {
-                        dtls_coap_failure();
-                     }
-                  } else {
-                     dtls_info("hs send again");
-                     dtls_check_retransmit(dtls_context, NULL);
+            reopen_socket(dtls_context);
+            if (request_state == SEND || request_state == RESEND) {
+               loops = 0;
+               if (dtls_connected) {
+                  dtls_info("CoAP request send again");
+                  result = coap_client_send_message(dtls_context, &dst);
+                  if (result < 0) {
+                     dtls_coap_failure();
                   }
+               } else {
+                  dtls_info("hs send again");
+                  dtls_check_retransmit(dtls_context, NULL);
                }
             } else {
                k_sleep(K_MSEC(500));
