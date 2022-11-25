@@ -45,9 +45,9 @@ static void suspend_uart(bool suspend)
          ret = pm_device_action_run(uart0_dev, PM_DEVICE_ACTION_RESUME);
          if (ret < 0) {
             LOG_WRN("Failed to enable UART (%d)", ret);
+            uart0_suspended = !suspend;
          } else {
             LOG_INF("Enabled UART");
-            uart0_suspended = suspend;
          }
       }
    }
@@ -60,15 +60,20 @@ static void suspend_uart(bool suspend)
 #endif /* CONFIG_UART_CONSOLE */
 #endif /* CONFIG_SUSPEND_UART */
 
+#ifdef CONFIG_ADP536X_POWER_MANAGEMENT
+
 /*
  * first_battery_level is set, when the first complete
  * battery level epoch is detected. The very first change
  * indicates only a partitial epoch.
  */
+static int64_t next_forecast_uptime = 0;
+
 static uint8_t first_battery_level = 0xff;
 static int64_t first_battery_level_uptime = 0;
 static uint8_t last_battery_level = 0xff;
 static int64_t last_battery_level_uptime = 0;
+
 static uint8_t current_battery_level = 0xff;
 static uint8_t current_battery_changes = 0;
 /*
@@ -76,6 +81,7 @@ static uint8_t current_battery_changes = 0;
  */
 static int64_t last_battery_left_time = -1;
 
+#define MSEC_PER_HOUR (MSEC_PER_SEC * 60 * 60)
 #define MSEC_PER_DAY (MSEC_PER_SEC * 60 * 60 * 24)
 
 static int16_t calculate_forecast(int64_t *now, uint8_t battery_level, power_manager_status_t status)
@@ -85,54 +91,56 @@ static int16_t calculate_forecast(int64_t *now, uint8_t battery_level, power_man
    } else if (status != FROM_BATTERY) {
       LOG_INF("charging.");
    } else {
-      int64_t passed_time = (*now) - last_battery_level_uptime;
-      if (battery_level < current_battery_level) {
-         current_battery_level = battery_level;
-         ++current_battery_changes;
-         if (current_battery_changes == 1) {
-            // initial value;
-            return -1;
+      if (((*now) - next_forecast_uptime) >= 0) {
+         int64_t passed_time = (*now) - last_battery_level_uptime;
+         if (battery_level < current_battery_level) {
+            current_battery_level = battery_level;
+            ++current_battery_changes;
+            if (current_battery_changes == 1) {
+               // initial value;
+               return -1;
+            }
+            if (current_battery_changes == 2) {
+               // first battery level change
+               LOG_INF("first battery level change");
+               first_battery_level = battery_level;
+               first_battery_level_uptime = *now;
+               last_battery_level = battery_level;
+               last_battery_level_uptime = *now;
+               return -1;
+            }
+            if (passed_time >= MSEC_PER_DAY) {
+               // change after a minium of 24h
+               int64_t time;
+               int diff = last_battery_level - battery_level;
+               if (!diff) return -1;
+               last_battery_left_time = (passed_time * battery_level) / diff;
+               LOG_INF("left battery %u%% time %lld (%lld days, %lld passed)",
+                       battery_level, last_battery_left_time,
+                       last_battery_left_time / MSEC_PER_DAY, passed_time / MSEC_PER_DAY);
+               diff = first_battery_level - battery_level;
+               if (!diff) return -1;
+               passed_time = (*now) - first_battery_level_uptime;
+               time = (passed_time * battery_level) / diff;
+               LOG_INF("left battery time 2 %lld (%lld days, %lld passed)", time,
+                       time / MSEC_PER_DAY, passed_time / MSEC_PER_DAY);
+               last_battery_left_time = (last_battery_left_time + time) / 2;
+               last_battery_level = battery_level;
+               last_battery_level_uptime = *now;
+               passed_time = 0;
+            } else if (current_battery_changes == 3) {
+               // first change
+               int diff = last_battery_level - battery_level;
+               last_battery_left_time = (passed_time * battery_level) / diff;
+               LOG_INF("first left battery time %lld (%lld, d:%u%%, %u%%)", last_battery_left_time, passed_time, diff, battery_level);
+            }
          }
-         if (current_battery_changes == 2) {
-            // first battery level change
-            LOG_INF("first battery level change");
-            first_battery_level = battery_level;
-            first_battery_level_uptime = *now;
-            last_battery_level = battery_level;
-            last_battery_level_uptime = *now;
-            return -1;
+         if (current_battery_changes >= 3) {
+            // after first change
+            int16_t time = (int16_t)((last_battery_left_time - passed_time) / MSEC_PER_DAY);
+            LOG_INF("battery %u%%, %d left days (passed %d days)", battery_level, time, (int)(passed_time / MSEC_PER_DAY));
+            return time;
          }
-         if (passed_time >= MSEC_PER_DAY) {
-            // change after a minium of 24h
-            int64_t time;
-            int diff = last_battery_level - battery_level;
-            if (!diff) return -1;
-            last_battery_left_time = (passed_time * battery_level) / diff;
-            LOG_INF("left battery %u%% time %lld (%lld days, %lld passed)",
-                    battery_level, last_battery_left_time,
-                    last_battery_left_time / MSEC_PER_DAY, passed_time / MSEC_PER_DAY);
-            diff = first_battery_level - battery_level;
-            if (!diff) return -1;
-            passed_time = (*now) - first_battery_level_uptime;
-            time = (passed_time * battery_level) / diff;
-            LOG_INF("left battery time 2 %lld (%lld days, %lld passed)", time,
-                    time / MSEC_PER_DAY, passed_time / MSEC_PER_DAY);
-            last_battery_left_time = (last_battery_left_time + time) / 2;
-            last_battery_level = battery_level;
-            last_battery_level_uptime = *now;
-            passed_time = 0;
-         } else if (current_battery_changes == 3) {
-            // first change
-            int diff = last_battery_level - battery_level;
-            last_battery_left_time = (passed_time * battery_level) / diff;
-            LOG_INF("first left battery time %lld (%lld, d:%u%%, %u%%)", last_battery_left_time, passed_time, diff, battery_level);
-         }
-      }
-      if (current_battery_changes >= 3) {
-         // after first change
-         int16_t time = (int16_t)((last_battery_left_time - passed_time) / MSEC_PER_DAY);
-         LOG_INF("battery %u%%, %d left days (passed %d days)", battery_level, time, (int)(passed_time / MSEC_PER_DAY));
-         return time;
       }
       return -1;
    }
@@ -142,11 +150,10 @@ static int16_t calculate_forecast(int64_t *now, uint8_t battery_level, power_man
    last_battery_level = 0xff;
    current_battery_level = 0xff;
    last_battery_left_time = -1;
+   next_forecast_uptime = *now + MSEC_PER_HOUR;
 
    return -1;
 }
-
-#ifdef CONFIG_ADP536X_POWER_MANAGEMENT
 
 #include <zephyr/drivers/i2c.h>
 
