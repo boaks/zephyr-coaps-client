@@ -65,8 +65,9 @@ static bool lte_force_nb_iot = false;
 static bool lte_force_lte_m = false;
 static struct lte_network_info network_info;
 static int64_t transmission_time = 0;
-static uint8_t iccid[24];
-static uint8_t imsi[24];
+static uint8_t iccid[MODEM_ID_SIZE];
+static uint8_t imsi[MODEM_ID_SIZE];
+static uint8_t imei[MODEM_ID_SIZE];
 
 static volatile enum rai_mode rai_current_mode = RAI_OFF;
 static volatile int rai_time = -1;
@@ -306,7 +307,7 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
       case LTE_LC_NW_REG_SEARCHING:
          description = "Searching ...";
          lte_inc_searchs();
-         k_work_submit(&modem_read_sim_work);
+         work_submit_to_io_queue(&modem_read_sim_work);
          break;
       case LTE_LC_NW_REG_REGISTRATION_DENIED:
          description = "Not Connected - denied";
@@ -328,6 +329,7 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
 
    lte_registration_set(registered);
    if (registered) {
+      work_submit_to_io_queue(&modem_read_sim_work);
       work_submit_to_io_queue(&modem_registered_callback_work);
    } else {
       work_submit_to_io_queue(&modem_unregistered_callback_work);
@@ -532,6 +534,15 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_c
       if (err > 0) {
          LOG_INF("rev: %s", buf);
       }
+      err = modem_at_cmd("AT+CGSN", buf, sizeof(buf), NULL);
+      if (err < 0) {
+         LOG_INF("Failed to read IMEI.");
+      } else {
+         LOG_INF("imei: %s", buf);
+         k_mutex_lock(&lte_mutex, K_FOREVER);
+         strncpy(imei, buf, sizeof(imei));
+         k_mutex_unlock(&lte_mutex);
+      }
       if ((config & 3) == 3) {
          err = modem_at_cmd("AT%%XFACTORYRESET=0", buf, sizeof(buf), NULL);
          LOG_INF("Factory reset: %s", buf);
@@ -551,6 +562,10 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_c
          LOG_INF("rel14feat: %s", buf);
       }
 #endif
+      err = modem_at_cmd("AT%%XEPCO=1", buf, sizeof(buf), NULL);
+      if (err > 0) {
+         LOG_INF("epco: %s", buf);
+      }
       err = modem_at_cmd("AT%%XCONNSTAT=1", buf, sizeof(buf), NULL);
       if (err > 0) {
          LOG_INF("stat: %s", buf);
@@ -780,7 +795,6 @@ int modem_start(const k_timeout_t timeout)
             LOG_INF("Modem not saved.");
          }
 #endif
-         modem_read_sim_work_fn(&modem_read_sim_work);
       }
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
@@ -861,6 +875,18 @@ int modem_get_imsi(char *buf, size_t len)
       strncpy(buf, imsi, len);
    }
    result = strlen(imsi);
+   k_mutex_unlock(&lte_mutex);
+   return result;
+}
+
+int modem_get_imei(char *buf, size_t len)
+{
+   int result = 0;
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (buf) {
+      strncpy(buf, imei, len);
+   }
+   result = strlen(imei);
    k_mutex_unlock(&lte_mutex);
    return result;
 }
@@ -1096,7 +1122,7 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
 #ifdef CONFIG_UDP_RAI_ENABLE
    if (rai_current_mode != mode) {
       /** Control Plane Release Assistance Indication  */
-      if (mode == RAI_LAST || mode == RAI_NOW) {
+      if (mode == RAI_LAST) {
          err = modem_at_cmd("AT%%XRAI=0", NULL, 0, NULL);
          if (err < 0) {
             LOG_WRN("Disable RAI error: %d", err);
@@ -1235,6 +1261,13 @@ int modem_get_network_info(struct lte_network_info *info)
 }
 
 int modem_get_imsi(char *buf, size_t len)
+{
+   (void)buf;
+   (void)len;
+   return 0;
+}
+
+int modem_get_imei(char *buf, size_t len)
 {
    (void)buf;
    (void)len;

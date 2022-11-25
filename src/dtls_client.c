@@ -630,8 +630,7 @@ static void accelerometer_handler(const struct accelerometer_evt *const evt)
 
 int dtls_loop(void)
 {
-   char imei[24];
-   int imei_len;
+   char imei[MODEM_ID_SIZE];
    fd_set rfds, efds;
    dtls_context_t *dtls_context;
    struct timeval io_timeout;
@@ -663,8 +662,8 @@ int dtls_loop(void)
    }
    modem_set_rai_mode(RAI_OFF, fd);
 
-   imei_len = modem_at_cmd("AT+CGSN", imei, sizeof(imei), NULL);
-   dtls_credentials_init_psk(0 < imei_len ? imei : NULL);
+   modem_get_imei(imei, sizeof(imei));
+   dtls_credentials_init_psk(imei);
    dtls_credentials_init_handler(&cb);
 
    dtls_init();

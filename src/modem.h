@@ -20,6 +20,8 @@
 
 #include <modem/lte_lc.h>
 
+#define MODEM_ID_SIZE 24
+
 typedef struct lte_network_info {
    const char* reg_status;
    bool registered;
@@ -73,6 +75,8 @@ int modem_get_psm_status(struct lte_lc_psm_cfg *psm);
 int modem_get_network_info(struct lte_network_info* info);
 
 int modem_get_imsi(char* buf, size_t len);
+
+int modem_get_imei(char* buf, size_t len);
 
 int modem_get_iccid(char* buf, size_t len);
 

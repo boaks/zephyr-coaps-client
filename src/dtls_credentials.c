@@ -102,9 +102,9 @@ void dtls_credentials_init_psk(const char *imei)
    unsigned char *cur;
 
    strncpy(psk_id, CONFIG_DTLS_PSK_IDENTITY, psk_id_length);
-   cur = (unsigned char *) strstr(psk_id, "${imei}");
+   cur = (unsigned char *)strstr(psk_id, "${imei}");
    if (cur) {
-      if (imei) {
+      if (imei && strlen(imei)) {
          snprintf(cur, sizeof(psk_id) - (cur - psk_id), "%s", imei);
       } else {
          uint32_t id = 0;
