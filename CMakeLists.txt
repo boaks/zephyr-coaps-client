@@ -144,11 +144,22 @@ else()
 set(BUILD_SUMUP5 "Build without waiting for power-manager.")
 endif()
 
+if (CONFIG_SUSPEND_3V3 AND CONFIG_SUSPEND_UART)
+set(BUILD_SUMUP6 "Suspend 3.3V and UART.")
+elseif (CONFIG_SUSPEND_3V3)
+set(BUILD_SUMUP6 "Suspend 3.3V.")
+elseif (CONFIG_SUSPEND_UART)
+set(BUILD_SUMUP6 "Suspend UART.")
+else()
+set(BUILD_SUMUP6 "Not suspending 3.3V nor UART.")
+endif()
+
 add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP1}"
                    COMMAND echo "${BUILD_SUMUP2}"
                    COMMAND echo "${BUILD_SUMUP3}"
                    COMMAND echo "${BUILD_SUMUP4}"
                    COMMAND echo "${BUILD_SUMUP5}"
+                   COMMAND echo "${BUILD_SUMUP6}"
                    COMMAND echo "Build with network search timeout ${CONFIG_MODEM_SEARCH_TIMEOUT}s"
                    )
