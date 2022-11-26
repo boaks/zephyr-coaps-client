@@ -657,7 +657,7 @@ int dtls_loop(void)
    fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
    if (fd < 0) {
-      dtls_warn("Failed to create UDP socket: %d", errno);
+      dtls_warn("Failed to create UDP socket: %d (%s)", errno, strerror(errno));
       reboot();
    }
    modem_set_rai_mode(RAI_OFF, fd);
@@ -879,10 +879,11 @@ int dtls_loop(void)
             socklen_t len = sizeof(error);
             result = getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len);
             if (result) {
-               dtls_info("I/O event: last socket error failed, %d", errno);
+               dtls_info("I/O event: last socket error failed, %d (%s)", errno, strerror(errno));
             } else {
-               dtls_info("I/O event: last socket error %d", error);
+               dtls_info("I/O event: last socket error %d (%s)", error, strerror(error));
             }
+            k_sleep(K_MSEC(1000));
             reopen_socket(dtls_context);
             if (request_state == SEND || request_state == RESEND) {
                loops = 0;
@@ -896,8 +897,6 @@ int dtls_loop(void)
                   dtls_info("hs send again");
                   dtls_check_retransmit(dtls_context, NULL);
                }
-            } else {
-               k_sleep(K_MSEC(500));
             }
          }
       }
