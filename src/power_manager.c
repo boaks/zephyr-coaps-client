@@ -16,6 +16,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/pm/device.h>
 
+#include "io_job_queue.h"
 #include "power_manager.h"
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
@@ -118,6 +119,9 @@ static int16_t calculate_forecast(int64_t *now, uint8_t battery_level, power_man
                LOG_INF("left battery %u%% time %lld (%lld days, %lld passed)",
                        battery_level, last_battery_left_time,
                        last_battery_left_time / MSEC_PER_DAY, passed_time / MSEC_PER_DAY);
+               last_battery_level = battery_level;
+               last_battery_level_uptime = *now;
+               passed_time = 0;
                diff = first_battery_level - battery_level;
                if (!diff) return -1;
                passed_time = (*now) - first_battery_level_uptime;
@@ -125,18 +129,18 @@ static int16_t calculate_forecast(int64_t *now, uint8_t battery_level, power_man
                LOG_INF("left battery time 2 %lld (%lld days, %lld passed)", time,
                        time / MSEC_PER_DAY, passed_time / MSEC_PER_DAY);
                last_battery_left_time = (last_battery_left_time + time) / 2;
-               last_battery_level = battery_level;
-               last_battery_level_uptime = *now;
                passed_time = 0;
             } else if (current_battery_changes == 3) {
                // first change
                int diff = last_battery_level - battery_level;
+               if (!diff) return -1;
                last_battery_left_time = (passed_time * battery_level) / diff;
                LOG_INF("first left battery time %lld (%lld, d:%u%%, %u%%)", last_battery_left_time, passed_time, diff, battery_level);
             }
          }
          if (current_battery_changes >= 3) {
             // after first change
+            passed_time += (MSEC_PER_DAY / 2);
             int16_t time = (int16_t)((last_battery_left_time - passed_time) / MSEC_PER_DAY);
             LOG_INF("battery %u%%, %d left days (passed %d days)", battery_level, time, (int)(passed_time / MSEC_PER_DAY));
             return time;
@@ -230,6 +234,18 @@ static void power_manager_read_status(power_manager_status_t *status)
    }
 }
 
+#ifdef CONFIG_ADP536X_POWER_MANAGEMENT_LOW_POWER
+static void power_management_sleep_mode_work_fn(struct k_work *work)
+{
+   /*
+    * 0x5B: 11%, 10mA, 8 min, sleep, enable
+    */
+   adp536x_reg_write(ADP536X_I2C_REG_FUEL_GAUGE_MODE, 0x5B);
+}
+
+static K_WORK_DELAYABLE_DEFINE(power_management_sleep_mode_work, power_management_sleep_mode_work_fn);
+#endif /* CONFIG_ADP536X_POWER_MANAGEMENT_LOW_POWER */
+
 int power_manager_init(void)
 {
 #if (defined CONFIG_SUSPEND_UART) && (defined CONFIG_UART_CONSOLE)
@@ -239,24 +255,22 @@ int power_manager_init(void)
 #endif
    if (device_is_ready(i2c_dev)) {
       uint8_t value = 0;
+      int64_t now = k_uptime_get();
+
+      // init forecast
+      calculate_forecast(&now, 0xff, CHARGING_TRICKLE);
 
       adp536x_reg_read(ADP536X_I2C_REG_CHARGE_TERMINATION, &value);
       value &= 3;
       value |= 0x80; // 4.2V
       adp536x_reg_write(ADP536X_I2C_REG_CHARGE_TERMINATION, value);
-
-#ifdef CONFIG_ADP536X_POWER_MANAGEMENT_LOW_POWER
-      /*
-       * 0x5B: 11%, 10mA, 8 min, sleep, enable
-       */
-      adp536x_reg_write(ADP536X_I2C_REG_FUEL_GAUGE_MODE, 0x5B);
-      LOG_INF("Battery monitor initialized (low power).");
-#else
       /*
        * 0x51: 11%, 10mA, enable
        */
       adp536x_reg_write(ADP536X_I2C_REG_FUEL_GAUGE_MODE, 0x51);
       LOG_INF("Battery monitor initialized.");
+#ifdef CONFIG_ADP536X_POWER_MANAGEMENT_LOW_POWER
+      work_schedule_for_io_queue(&power_management_sleep_mode_work, K_MINUTES(30));
 #endif
       return 0;
    } else {

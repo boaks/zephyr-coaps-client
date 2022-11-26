@@ -718,7 +718,7 @@ int modem_wait_ready(const k_timeout_t timeout)
       }
       time.ticks += interval.ticks;
       if ((time.ticks - timeout.ticks) > 0) {
-         err = 1;
+         err = -1;
          break;
       }
    }
