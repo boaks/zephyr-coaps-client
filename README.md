@@ -4,7 +4,7 @@
 
 ## Reliable - Efficient - Encrypted
 
-Version 0.5.99 - October 2022
+Version 0.5.0 - November 2022
 
 This [zephyr](https://www.zephyrproject.org/) client demonstrates to use coaps ([CoAP](https://tools.ietf.org/html/rfc7252) over [DTLS 1.2](https://tools.ietf.org/html/rfc6347)) with the [Eclipse/TinyDtls Library](https://github.com/eclipse/tinydtls). In combination with [Eclipse/Californium](https://github.com/eclipse/californium) as Cloud-Server, it enables a device to use [DTLS 1.2 Connection ID](https://tools.ietf.org/html/rfc9146), which obsolete the commonly used frequently DTLS handshakes and eliminates that expensive overhead.
 Reducing the messages exchange mostly down to two ip-messages (one request, one response), it enables your device for
@@ -155,18 +155,18 @@ The demo client exchanges encrypted messages with the coap-server. These message
 Demo message:
 
 ```
-7:30:03 [h:mm:ss], Thingy:91 v0.5.99, 0*47, 1*0, 2*0, 3*0, failures 0
-3984 mV 72% battery
-ICCID: ??????????????
-IMSI: ??????????????
-!Network: CAT-M1,roaming,Band 3,PLMN 26201,TAC 67B9,Cell 01CC2B00,RSRP -103 dBm
-PDN: ??????,???.???.???.???
-!PSM: TAU 86400 [s], Act 0 [s], Released: 10853 ms
-!eDRX: LTE-M 81.92 [s], page 2.56 [s]
-Stat: tx 28kB, rx 3kB, max 611B, avg 313B, searchs 1, PSM delays 4
-!22.66,22.65,22.65,22.65,22.64,22.64,22.64,22.65,23.09,22.59,22.57,22.57 C
-57.38 %H
-984.0 hPa
+6:49 [m:ss], Thingy:91 v0.5.0, 0*1, 1*0, 2*0, 3*0, failures 0
+4168 mV 95% battery (low-power)
+ICCID: ????????????????????
+IMSI: ???????????????
+!Network: CAT-M1,roaming,Band 20,PLMN 26201,TAC 26553,Cell 30157571,RSRP -105 dBm
+PDN: ???.???,???.??.??.???
+!PSM: TAU 86400 [s], Act 0 [s], Released: 12593 ms
+Stat: tx 0 kB, rx 0 kB, max 490 B, avg 132 B
+Cell updates 1, Network searchs 1, PSM delays 0
+!22.98,22.99,23.03,23.06,23.11,23.17,23.23,23.30,23.39,23.50,23.64,23.80 C
+55.13 %H
+1002.6 hPa
 ```
 
 It starts with the up-time in the first line, followed by the label "Thingy:91" and the client's version. The sent statistic. "`0*47`" := 47 exchanges without retransmission, "`1*0`" := no (0) exchanges with 1 retransmission finishs that first line. The current exchange is not included in this statistic. The second line contains the battery status and the third and fourth the information from the SIM-card. The fifth to ninth contains the network information. From the tenth line on, the value of the sensors are following.
