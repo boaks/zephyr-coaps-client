@@ -26,6 +26,10 @@
 
 #define PROTOCOL_COAP_DTLS 0
 #define PROTOCOL_COAP_UDP 1
+#define PROTOCOL_COAP_TLS 2
+#define PROTOCOL_COAP_TCP 3
+#define PROTOCOL_HTTPS 4
+#define PROTOCOL_HTTP 5
 
 extern unsigned int transmissions[COAP_MAX_RETRANSMISSION + 1];
 extern unsigned int connect_time_ms;

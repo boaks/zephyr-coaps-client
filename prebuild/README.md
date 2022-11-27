@@ -10,6 +10,8 @@ Starting with 0.10.0, the "..._full.hex" binaries are required to be applied fir
 
 Also starting with 0.10.0, the prebuild binaries doesn't longer support updates via the serial bootloader interface. It's still supported using XMODEM or FOTA. For custom builds it may be reenabled using [mcuboot.conf](../../../raw/main/child_image/mcuboot.conf). 
 
+The binary for the [nrf9160 DevKit](https://www.nordicsemi.com/Products/Development-hardware/nrf9160-dk) contains the app version with support for `coap`, `coaps`, `coap+tcp` and `coaps+tcp`. The `tcp` variants are experimental and only for comparisons of messages and energy.
+
 ## License
 
 Please refer to [NOTICE](../NOTICE.md).

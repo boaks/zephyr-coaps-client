@@ -45,6 +45,7 @@
 #include "parse.h"
 #include "power_manager.h"
 #include "sh_cmd.h"
+#include "tcp_client.h"
 #include "ui.h"
 
 #ifdef CONFIG_LOCATION_ENABLE
@@ -2028,6 +2029,18 @@ static void dump_destination(const dtls_app_data_t *app)
       case PROTOCOL_COAP_UDP:
          scheme = "coap ";
          break;
+      case PROTOCOL_COAP_TLS:
+         scheme = "coaps+tcp ";
+         break;
+      case PROTOCOL_COAP_TCP:
+         scheme = "coap+tcp ";
+         break;
+      case PROTOCOL_HTTPS:
+         scheme = "https ";
+         break;
+      case PROTOCOL_HTTP:
+         scheme = "http ";
+         break;
    }
    dtls_info("Destination: %s'%s'", scheme, app->host);
    if (app->destination.size) {
@@ -2050,6 +2063,10 @@ static int init_destination(dtls_app_data_t *app)
 {
    int rc = -ENOENT;
 
+   uint16_t port = htons(appl_settings_get_destination_port(app->protocol == PROTOCOL_COAP_DTLS ||
+                                                            app->protocol == PROTOCOL_COAP_TLS ||
+                                                            app->protocol == PROTOCOL_HTTPS));
+
    appl_settings_get_destination(app->host, sizeof(app->host));
 
    if (app->host[0]) {
@@ -2057,7 +2074,10 @@ static int init_destination(dtls_app_data_t *app)
       struct addrinfo *result = NULL;
       struct addrinfo hints = {
           .ai_family = AF_INET,
-          .ai_socktype = SOCK_DGRAM};
+          .ai_socktype = (app->protocol == PROTOCOL_COAP_UDP ||
+                          app->protocol == PROTOCOL_COAP_DTLS)
+                             ? SOCK_DGRAM
+                             : SOCK_STREAM};
 
       dtls_info("DNS lookup: %s", app->host);
       watchdog_feed();
@@ -2463,6 +2483,14 @@ static void init(int config, int *protocol)
          *protocol = PROTOCOL_COAP_DTLS;
       } else if (!stricmp(scheme, "coap")) {
          *protocol = PROTOCOL_COAP_UDP;
+      } else if (!stricmp(scheme, "coaps+tcp")) {
+         *protocol = PROTOCOL_COAP_TLS;
+      } else if (!stricmp(scheme, "coap+tcp")) {
+         *protocol = PROTOCOL_COAP_TCP;
+      } else if (!stricmp(scheme, "https")) {
+         *protocol = PROTOCOL_HTTPS;
+      } else if (!stricmp(scheme, "http")) {
+         *protocol = PROTOCOL_HTTP;
       }
    }
 }
@@ -2479,6 +2507,7 @@ static const led_task_t led_no_host[] = {
 
 int main(void)
 {
+   int err = 0;
    int config = 0;
    int reset_cause = 0;
    uint16_t reboot_cause = 0;
@@ -2519,6 +2548,10 @@ int main(void)
       app_data_context.protocol = PROTOCOL_COAP_UDP;
 #elif CONFIG_PROTOCOL_MODE_DTLS
       app_data_context.protocol = PROTOCOL_COAP_DTLS;
+#elif CONFIG_PROTOCOL_MODE_TCP
+      app_data_context.protocol = PROTOCOL_COAP_TCP;
+#elif CONFIG_PROTOCOL_MODE_TLS
+      app_data_context.protocol = PROTOCOL_COAP_TLS;
 #else
       app_data_context.protocol = PROTOCOL_COAP_DTLS;
 #endif
@@ -2538,6 +2571,18 @@ int main(void)
          break;
       case PROTOCOL_COAP_UDP:
          dtls_info("CoAP/UDP");
+         break;
+      case PROTOCOL_COAP_TLS:
+         dtls_info("CoAP/TLS");
+         break;
+      case PROTOCOL_COAP_TCP:
+         dtls_info("CoAP/TCP");
+         break;
+      case PROTOCOL_HTTPS:
+         dtls_info("HTTPS");
+         break;
+      case PROTOCOL_HTTP:
+         dtls_info("HTTP");
          break;
    }
 
@@ -2568,6 +2613,10 @@ int main(void)
 #ifdef CONFIG_ENVIRONMENT_SENSOR
    environment_init();
 #endif
+
+   if (app_data_context.protocol == PROTOCOL_COAP_TLS || app_data_context.protocol == PROTOCOL_HTTPS) {
+      tls_cert_provision();
+   }
 
    if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), true) != 0) {
       appl_ready = true;

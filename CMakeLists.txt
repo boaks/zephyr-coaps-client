@@ -39,6 +39,7 @@ target_sources(app PRIVATE
 	src/dtls_client.c
 	src/coap_client.c
 	src/coap_appl_client.c
+	src/tcp_client.c	
 	)
 
 target_sources_ifdef(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING app PRIVATE src/coap_prov_client.c)
