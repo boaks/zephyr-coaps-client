@@ -22,7 +22,11 @@ config COAP_SERVER_ADDRESS_STATIC
 	default "20.47.97.44"
 
 config COAP_SERVER_PORT
-	int "CoAP server port number (DTLS)."
+	int "CoAP server port number (UDP/TCP)."
+	default "5683"
+
+config COAPS_SERVER_PORT
+	int "CoAP server port number (DTLS/TLS)."
 	default "5684"
 
 config DTLS_PSK_IDENTITY
@@ -44,6 +48,10 @@ config DTLS_PSK_SECRET
 	   and the "cali.*" wildcard identity.
 	   Don't use this on production or other security
 	   relevant use-cases. 
+
+config COAP_SERVER_TRUST_CERTIFICATE
+	string "CoAP server's trusted certificate."
+	default "../cert/Californium.pem"
 
 config DTLS_ALWAYS_HANDSHAKE
 	bool "Use a DTLS handshake for request."
@@ -132,7 +140,7 @@ menu "Modem Settings"
 
 config LTE_LOCK_PLMN_CONFIG_SWITCH
 	bool "LTE lock PLMN based on config switch"
-	depends on !LTE_LOCK_PLMN
+	depends on !LTE_LOCK_PLMN && (BOARD_NRF9160DK_NRF9160 || BOARD_NRF9160DK_NRF9160_NS)
 	default n
 
 config LTE_LOCK_PLMN_CONFIG_SWITCH_STRING_1
@@ -169,7 +177,7 @@ config LTE_POWER_ON_OFF_ENABLE
 config LTE_POWER_ON_OFF_CONFIG_SWITCH
 	bool "Enable LTE Power On/Off configuration switch"
 	default n
-	depends on !LTE_LOCK_PLMN_CONFIG_SWITCH && !LTE_POWER_ON_OFF_ENABLE
+	depends on !LTE_LOCK_PLMN_CONFIG_SWITCH && !LTE_POWER_ON_OFF_ENABLE && (BOARD_NRF9160DK_NRF9160 || BOARD_NRF9160DK_NRF9160_NS) 
 
 config UDP_PSM_ENABLE
 	bool "Enable LTE Power Saving Mode"
@@ -201,6 +209,29 @@ config MODEM_SEARCH_TIMEOUT
 	int "Modem search timeout in seconds."
 	default 300 if LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO || LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO
 	default 180
+
+config PROTOCOL_CONFIG_SWITCH
+	bool "Enable protocol configuration switch"
+	default n
+	depends on !LTE_LOCK_PLMN_CONFIG_SWITCH && !LTE_POWER_ON_OFF_CONFIG_SWITCH && (BOARD_NRF9160DK_NRF9160 || BOARD_NRF9160DK_NRF9160_NS)
+
+choice PROTOCOL_MODE
+	prompt "Protocol mode"
+	default PROTOCOL_MODE_DTLS
+	help
+	  Configure udp, dtls
+
+config PROTOCOL_MODE_UDP
+	bool "coap"
+	help
+	  Use coap over udp.
+
+config PROTOCOL_MODE_DTLS
+	bool "coaps"
+	help
+	  Use coap over dtls.
+
+endchoice # BME680_BSEC_SAMPLE_MODE
 
 endmenu
 

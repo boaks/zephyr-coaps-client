@@ -51,6 +51,7 @@ static uint16_t coap_current_mid;
 static uint16_t coap_message_len = 0;
 static uint8_t coap_message_buf[APP_COAP_MAX_MSG_LEN];
 static uint8_t read_etag[9];
+static const char *client_id;
 
 /* last coap-time in milliseconds since 1.1.1970 */
 static uint64_t coap_time = 0;
@@ -218,7 +219,7 @@ int coap_client_parse_data(uint8_t *data, size_t len)
       }
       memcpy(coap_message_buf, payload, payload_len);
       coap_message_buf[payload_len] = 0;
-      dtls_info("  payload: %s", (const char *)coap_message_buf);
+      dtls_info("  payload: '%s'", (const char *)coap_message_buf);
    }
    coap_client_decode_payload(payload, payload_len);
 
@@ -646,10 +647,25 @@ int coap_client_prepare_post(void)
    if (!int_value && environment_get_iaq(&int_value, &byte_value) == 0) {
       const char *desc = environment_get_iaq_description(int_value);
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\n!%d;%d Q (%s)", int_value, byte_value, desc);
+      index += snprintf(buf + index, sizeof(buf) - index, "\n%s%d;%d Q (%s)", p, int_value, byte_value, desc);
       dtls_info("%s", buf + start);
    }
+#else
+   start = index;
+   index += snprintf(buf + index, sizeof(buf) - index, "\n!");
+   err = modem_at_cmd("AT%%XTEMP?", buf + index, sizeof(buf) - index, "%XTEMP: ");
+   if (err > 0) {
+      index += err;
+      index += snprintf(buf + index, sizeof(buf) - index, " C");
+      dtls_info("%s", buf + start + 1);
+   } else {
+      if (err < 0) {
+         dtls_warn("Failed to read XTEMP.");
+      }
+      index = start;
+   }
 #endif
+
    coap_current_token++;
    coap_current_mid = coap_next_id();
 
@@ -704,6 +720,10 @@ int coap_client_prepare_post(void)
 #endif /* CONFIG_COAP_QUERY_RESPONSE_LENGTH */
 #ifdef CONFIG_COAP_QUERY_KEEP_ENABLE
    err = coap_client_add_uri_query(&request, "keep");
+   if (err < 0) {
+      return err;
+   }
+   err = coap_client_add_uri_query_param(&request, "id", client_id);
    if (err < 0) {
       return err;
    }
@@ -780,21 +800,130 @@ int coap_client_prepare_post(void)
    coap_message_len = request.offset;
    dtls_info("CoAP request prepared, token 0x%02x%02x%02x%02x, %u bytes", token[0], token[1], token[2], token[3], coap_message_len);
 
-   power_manager_3v3(true);
-
-   return err;
+   return coap_message_len;
 }
 
-int coap_client_send_message(struct dtls_context_t *ctx, session_t *dst)
+int coap_client_prepare_post_for_tcp(void)
 {
-   int result = 0;
-   if (coap_message_len > 0) {
-      result = dtls_write(ctx, dst, coap_message_buf, coap_message_len);
-      if (result < 0) {
-         dtls_warn("Failed to send CoAP request, %d", errno);
+   uint16_t message_len;
+   uint8_t token_len;
+   uint8_t code;
+   int result = coap_client_prepare_post();
+
+   if (result < 0) {
+      return result;
+   }
+
+   token_len = coap_message_buf[0] & 0xf;
+   code = coap_message_buf[1];
+   message_len = coap_message_len - token_len - 4;
+
+   if (message_len < 13) {
+      coap_message_buf[0] = token_len | (message_len << 4);
+      memmove(&coap_message_buf[2], &coap_message_buf[4], coap_message_len - 4);
+      coap_message_len -= 2;
+   } else if (message_len < 13 + 256) {
+      coap_message_buf[0] = token_len | (13 << 4);
+      coap_message_buf[1] = message_len - 13;
+      coap_message_buf[2] = code;
+      memmove(&coap_message_buf[3], &coap_message_buf[4], coap_message_len - 4);
+      --coap_message_len;
+   } else {
+      coap_message_buf[0] = token_len | (14 << 4);
+      message_len -= (13 + 256);
+      coap_message_buf[1] = (message_len >> 8);
+      coap_message_buf[2] = message_len;
+      coap_message_buf[3] = code;
+   }
+
+   return coap_message_len;
+}
+
+int coap_client_prepare_response_from_tcp(uint8_t *buffer, size_t length, size_t max_length)
+{
+   if (buffer && length > 1) {
+      int code = 0;
+      int token_len = buffer[0] & 0xf;
+      int length_type = (buffer[0] >> 4) & 0xf;
+      int coap_length = -1;
+
+      if (length_type < 13) {
+         coap_length = length_type + token_len + 4;
+         if ((length + 2) != coap_length || coap_length > max_length) {
+            // length error
+            return -1;
+         }
+         code = buffer[1] & 0xff;
+         memmove(&buffer[4], &buffer[2], length - 2);
+      } else if (length_type == 13) {
+         coap_length = (buffer[1] & 0xff) + token_len + 4 + 13;
+         if ((length + 1) != coap_length || coap_length > max_length) {
+            // length error
+            return -1;
+         }
+         code = buffer[2] & 0xff;
+         memmove(&buffer[4], &buffer[3], length - 3);
+      } else if (length_type == 14) {
+         coap_length = ((buffer[1] & 0xff) << 8) +
+                       (buffer[2] & 0xff) +
+                       token_len + 4 + 13 + 256;
+         if (length != coap_length || coap_length > max_length) {
+            // length error
+            return -1;
+         }
+         code = buffer[3] & 0xff;
+      } else if (length_type == 15) {
+         coap_length = ((buffer[1] & 0xff) << 16) +
+                       ((buffer[2] & 0xff) << 8) +
+                       (buffer[3] & 0xff) + token_len + 4 + 13 + 256 + 65536;
+         if ((length - 1) != coap_length || coap_length > max_length) {
+            // length error
+            return -1;
+         }
+         code = buffer[4] & 0xff;
+         memmove(&buffer[4], &buffer[5], length - 5);
+      }
+      buffer[0] = token_len + 0x50; // NON
+      buffer[1] = code;
+      buffer[2] = 0;
+      buffer[3] = 0;
+      return coap_length;
+   }
+   return -1;
+}
+
+int coap_client_decode_tcp_length(const uint8_t *buffer, size_t length)
+{
+   if (length == 2 && buffer[0] == 0) {
+      return 2;
+   } else if (length > 2) {
+      LOG_INF("recv() 0x%02x 0x%02x 0x%02x\n", buffer[0], buffer[1], buffer[2]);
+      int token_len = buffer[0] & 0xf;
+      int length_type = (buffer[0] >> 4) & 0xf;
+      if (length_type < 13) {
+         return length_type + token_len + 2;
+      } else if (length_type == 13) {
+         return (buffer[1] & 0xff) + token_len + 13 + 3;
+      } else if (length_type == 14) {
+         return ((buffer[1] & 0xff) << 8) +
+                (buffer[2] & 0xff) +
+                token_len + 13 + 256 + 4;
+      } else if (length_type == 15 && length > 3) {
+         return ((buffer[1] & 0xff) << 16) +
+                ((buffer[2] & 0xff) << 8) +
+                (buffer[3] & 0xff) +
+                token_len + 13 + 256 + 65536 + 5;
       }
    }
-   return result;
+   return -1;
+}
+
+int coap_client_message(const uint8_t **buffer)
+{
+   if (buffer) {
+      *buffer = coap_message_buf;
+   }
+   return coap_message_len;
 }
 
 int coap_client_time(char *buf, size_t len)
@@ -813,6 +942,12 @@ int coap_client_time(char *buf, size_t len)
    } else {
       return 0;
    }
+}
+
+int coap_client_set_id(const char *id)
+{
+   client_id = id;
+   return id ? strlen(id) : 0;
 }
 
 int coap_client_init(void)

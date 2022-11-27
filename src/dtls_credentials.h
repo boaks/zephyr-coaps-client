@@ -20,4 +20,6 @@ void dtls_credentials_init_psk(const char *imei);
 
 void dtls_credentials_init_handler(dtls_handler_t* handler);
 
+const char* dtls_credentials_get_psk_identity(void);
+
 #endif /* DTLS_CREDENTIALS_H */

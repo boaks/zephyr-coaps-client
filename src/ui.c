@@ -303,5 +303,5 @@ int ui_config(void)
       }
    }
 #endif
-   return 0;
+   return -1;
 }

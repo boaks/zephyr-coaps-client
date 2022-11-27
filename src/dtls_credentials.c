@@ -49,7 +49,7 @@ static const unsigned char ecdsa_pub_key_y[] = {
 #ifdef DTLS_PSK
 
 /* The PSK information for DTLS */
-static unsigned char psk_id[32];
+static unsigned char psk_id[32] = { 0 };
 static size_t psk_id_length = sizeof(psk_id);
 static unsigned char psk_key[] = CONFIG_DTLS_PSK_SECRET;
 static size_t psk_key_length = sizeof(psk_key) - 1;
@@ -58,7 +58,7 @@ static size_t psk_key_length = sizeof(psk_key) - 1;
  * retrieve a key for the given identity within this particular
  * session. */
 static int
-get_psk_info(struct dtls_context_t *ctx UNUSED_PARAM,
+get_psk_info(dtls_context_t *ctx UNUSED_PARAM,
              const session_t *session UNUSED_PARAM,
              dtls_credentials_type_t type,
              const unsigned char *id, size_t id_len,
@@ -125,8 +125,8 @@ void dtls_credentials_init_psk(const char *imei UNUSED_PARAM)
 
 #ifdef DTLS_ECC
 static int
-get_ecdsa_key(struct dtls_context_t *ctx,
-              const session_t *session,
+get_ecdsa_key(dtls_context_t *ctx UNUSED_PARAM,
+              const session_t *session UNUSED_PARAM,
               const dtls_ecdsa_key_t **result)
 {
    static const dtls_ecdsa_key_t ecdsa_key = {
@@ -134,22 +134,18 @@ get_ecdsa_key(struct dtls_context_t *ctx,
        .priv_key = ecdsa_priv_key,
        .pub_key_x = ecdsa_pub_key_x,
        .pub_key_y = ecdsa_pub_key_y};
-   (void)ctx;
-   (void)session;
 
    *result = &ecdsa_key;
    return 0;
 }
 
 static int
-verify_ecdsa_key(struct dtls_context_t *ctx,
-                 const session_t *session,
+verify_ecdsa_key(dtls_context_t *ctx UNUSED_PARAM,
+                 const session_t *session UNUSED_PARAM,
                  const unsigned char *other_pub_x,
                  const unsigned char *other_pub_y,
                  size_t key_size)
 {
-   (void)ctx;
-   (void)session;
    (void)other_pub_x;
    (void)other_pub_y;
    (void)key_size;
@@ -166,4 +162,13 @@ void dtls_credentials_init_handler(dtls_handler_t *handler)
    handler->get_ecdsa_key = get_ecdsa_key;
    handler->verify_ecdsa_key = verify_ecdsa_key;
 #endif /* DTLS_ECC */
+}
+
+const char *dtls_credentials_get_psk_identity(void)
+{
+#ifdef DTLS_PSK
+   return psk_id;
+   #else 
+   return "cali.anonymous";
+#endif
 }
