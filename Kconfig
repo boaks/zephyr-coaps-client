@@ -144,6 +144,14 @@ config DTLS_ALWAYS_HANDSHAKE
 	   Using DTLS 1.2 Connection ID obsoletes such
 	   frequent handshakes.
 
+config COAP_SERVER_TRUST_CERTIFICATE
+	string "CoAP server's trusted certificate."
+	default "../cert/Californium.pem"
+
+config HTTP_SERVER_TRUST_CERTIFICATE
+	string "HTTP server's trusted certificate (let's encrypt)."
+	default "../cert/ISRGRootX1.pem"
+
 config COAP_WAIT_ON_POWERMANAGER
 	bool "Enable CoAP to wait for power-manager before sending"
 	default n
@@ -361,7 +369,7 @@ choice PROTOCOL_MODE
 	prompt "Protocol mode"
 	default PROTOCOL_MODE_DTLS
 	help
-	  Configure udp, dtls
+	  Configure udp, dtls, tcp, or tls
 
 config PROTOCOL_MODE_UDP
 	bool "coap"
@@ -372,6 +380,16 @@ config PROTOCOL_MODE_DTLS
 	bool "coaps"
 	help
 	  Use coap over dtls.
+
+config PROTOCOL_MODE_TCP
+	bool "coap+tcp"
+	help
+	  Use coap over tcp.
+
+config PROTOCOL_MODE_TLS
+	bool "coaps+tcp"
+	help
+	  Use coap over tls.
 
 endchoice # PROTOCOL_MODE
 

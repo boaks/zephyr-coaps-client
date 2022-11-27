@@ -6,6 +6,8 @@
 
 This folder contains 8 prebuild binaries intended to be used to get a first impression of CoAP / DTLS 1.2 CID. The compiled in destination server is californium.eclipseprojects.io. To gather more experience, please build and modify this example on your own.
 
+The binary for the [nrf9160 DevKit](https://www.nordicsemi.com/Products/Development-hardware/nrf9160-dk) contains the app version with support for `coap`, `coaps`, `coap+tcp` and `coaps+tcp`. The `tcp` variants are experimental and only for comparisons of messages and energy.
+
 ## License
 
 Please refer to [NOTICE](../NOTICE.md).
