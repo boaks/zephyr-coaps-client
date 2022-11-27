@@ -41,6 +41,7 @@
 #include "modem_sim.h"
 #include "parse.h"
 #include "power_manager.h"
+#include "tcp_client.h"
 #include "sh_cmd.h"
 #include "ui.h"
 
@@ -1735,7 +1736,7 @@ static int init_destination(int protocol, session_t *destination)
       struct addrinfo *result = NULL;
       struct addrinfo hints = {
           .ai_family = AF_INET,
-          .ai_socktype = SOCK_DGRAM};
+          .ai_socktype = protocol & 2 ? SOCK_STREAM : SOCK_DGRAM};
 
       host = CONFIG_COAP_SERVER_HOSTNAME;
       dtls_info("DNS lookup: %s", host);
@@ -1881,6 +1882,7 @@ SH_CMD(restart, NULL, "restart device.", sh_cmd_restart, NULL, 0);
 
 int main(void)
 {
+   int err;
    int config = 0;
    int protocol = -1;
    int flags = 0;
@@ -1913,7 +1915,7 @@ int main(void)
    }
 #elif CONFIG_PROTOCOL_CONFIG_SWITCH
    if (config >= 0) {
-      protocol = config >> 3;
+      protocol = config >> 2;
       switch (protocol) {
          case 0:
             dtls_info("CoAP/DTLS 1.2 CID");
@@ -1921,6 +1923,12 @@ int main(void)
             break;
          case 1:
             dtls_info("CoAP/UDP");
+            break;
+         case 2:
+            dtls_info("CoAP/TLS");
+            break;
+         case 3:
+            dtls_info("CoAP/TCP");
             break;
       }
    }
@@ -1933,6 +1941,12 @@ int main(void)
       protocol = 0;
       flags |= FLAG_KEEP_CONNECTION;
       dtls_info("CoAP/DTLS 1.2 CID");
+#elif CONFIG_PROTOCOL_MODE_TCP
+      protocol = 3;
+      dtls_info("CoAP/TCP");
+#elif CONFIG_PROTOCOL_MODE_TLS
+      protocol = 2;
+      dtls_info("CoAP/TLS");
 #else
       protocol = 0;
       flags |= FLAG_KEEP_CONNECTION;
@@ -1979,6 +1993,10 @@ int main(void)
    environment_init();
 #endif
 
+   if (protocol == 2) {
+      tls_cert_provision();
+   }
+
    if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), true) != 0) {
       appl_ready = true;
       if (dtls_network_searching(K_MINUTES(CONFIG_MODEM_SEARCH_TIMEOUT_REBOOT))) {
@@ -1995,8 +2013,35 @@ int main(void)
    memset(&dst, 0, sizeof(session_t));
    init_destination(protocol, &dst);
 
-   dtls_trigger();
-   dtls_loop(&dst, flags);
+   if (protocol & 2) {
+      k_sem_give(&dtls_trigger_msg);
+      while (true) {
+         watchdog_feed();
+         if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
+            app_data.request_state = SEND;
+            connect_time = (unsigned long)k_uptime_get();
+            power_manager_suspend(false);
+            ui_led_op(LED_APPLICATION, LED_SET);
+            if (lte_power_off) {
+               lte_power_off = false;
+               modem_set_normal();
+               modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), false);
+            }
+            connected_time = 0;
+            err = coap_post(&dst, flags, (unsigned long *)&connected_time, appl_buffer, appl_buffer_len);
+            response_time = (unsigned long)k_uptime_get();
+            if (err > 0) {
+               dtls_coap_success(&app_data);
+            } else {
+               dtls_coap_failure(&app_data, "tcp/tls");
+            }
+            watchdog_feed();
+         }
+      }
+   } else {
+      dtls_trigger();
+      dtls_loop(&dst, flags);
+   }
    return 0;
 }
 

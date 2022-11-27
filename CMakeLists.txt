@@ -38,6 +38,7 @@ target_sources(app PRIVATE
 	src/dtls_credentials.c
 	src/coap_client.c
 	src/coap_appl_client.c
+	src/tcp_client.c	
 	)
 
 target_sources_ifdef(CONFIG_SH_CMD app PRIVATE src/sh_cmd.c)
