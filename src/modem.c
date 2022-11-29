@@ -33,7 +33,7 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #if defined(CONFIG_NRF_MODEM_LIB)
 
-#define LED_CONNECTED LED_NONE
+#define LED_CONNECTED LED_LTE_2
 #define LED_READY LED_LTE_3
 
 static K_MUTEX_DEFINE(lte_mutex);
@@ -1116,7 +1116,7 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
 #ifdef CONFIG_UDP_RAI_ENABLE
    if (rai_current_mode != mode) {
       /** Control Plane Release Assistance Indication  */
-      if (mode == RAI_LAST) {
+      if (mode == RAI_OFF) {
          err = modem_at_cmd("AT%%XRAI=0", NULL, 0, NULL);
          if (err < 0) {
             LOG_WRN("Disable RAI error: %d", err);
@@ -1126,14 +1126,14 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
       } else if (mode == RAI_ONE_RESPONSE) {
          err = modem_at_cmd("AT%%XRAI=3", NULL, 0, NULL);
          if (err < 0) {
-            LOG_WRN("Enable RAI error: %d", err);
+            LOG_WRN("Enable RAI 3 error: %d", err);
          } else {
             rai_current_mode = mode;
          }
       } else if (mode == RAI_LAST) {
          err = modem_at_cmd("AT%%XRAI=4", NULL, 0, NULL);
          if (err < 0) {
-            LOG_WRN("Enable RAI error: %d", err);
+            LOG_WRN("Enable RAI 4 error: %d", err);
          } else {
             rai_current_mode = mode;
          }
