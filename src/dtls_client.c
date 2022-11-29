@@ -681,7 +681,7 @@ int dtls_loop(session_t *dst, int flags)
             dtls_info("Motion detected, force GNSS");
             location_start(force);
          }
-      } else if (dtls_connected) {
+      } else if (!dtls_pending) {
          if (battery_level > 80 && battery_level < 0xff) {
             dtls_info("High battery, switch on GNSS");
             location_start(false);
