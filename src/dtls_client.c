@@ -604,10 +604,16 @@ static void accelerometer_handler(const struct accelerometer_evt *const evt)
 }
 #endif
 
+#define USE_POLL
+
 int dtls_loop(session_t *dst, int flags)
 {
+#ifdef USE_POLL
+   struct pollfd udp_poll; 
+#else
    fd_set rfds, efds;
    struct timeval io_timeout;
+#endif
    dtls_app_data_t dtls_add_data = {0, 0};
    dtls_context_t *dtls_context = NULL;
    int result;
@@ -687,15 +693,25 @@ int dtls_loop(session_t *dst, int flags)
       }
 #endif
 
+#ifdef USE_POLL
+      udp_poll.fd = dtls_add_data.fd;
+      udp_poll.events = POLLIN;
+      udp_poll.revents = 0;
+#else
       FD_ZERO(&rfds);
       FD_ZERO(&efds);
       FD_SET(dtls_add_data.fd, &rfds);
       FD_SET(dtls_add_data.fd, &efds);
+#endif
 
       if (request_state != NONE) {
+#ifdef USE_POLL
+         result = poll(&udp_poll, 1, 1000);
+#else
          io_timeout.tv_sec = 1;
          io_timeout.tv_usec = 0;
          result = select(dtls_add_data.fd + 1, &rfds, NULL, &efds, &io_timeout);
+#endif
       } else {
 #ifdef CONFIG_COAP_WAIT_ON_POWERMANAGER
          if (0xffff == battery_voltage || 0 == battery_voltage) {
@@ -808,7 +824,11 @@ int dtls_loop(session_t *dst, int flags)
             }
          }
       } else { /* ok */
+#ifdef USE_POLL
+         if (udp_poll.revents & POLLIN) {
+#else
          if (FD_ISSET(dtls_add_data.fd, &rfds)) {
+#endif
             recvfrom_peer(&dtls_add_data, dtls_context);
             if (request_state == SEND_ACK) {
                unsigned long temp_time = connect_time;
@@ -835,7 +855,11 @@ int dtls_loop(session_t *dst, int flags)
                dtls_pending = true;
                ui_led_op(LED_DTLS, LED_CLEAR);
             }
+#ifdef USE_POLL
+         } else if (udp_poll.revents & (POLLERR | POLLNVAL)) {
+#else
          } else if (FD_ISSET(dtls_add_data.fd, &efds)) {
+#endif
             int error = 0;
             socklen_t len = sizeof(error);
             result = getsockopt(dtls_add_data.fd, SOL_SOCKET, SO_ERROR, &error, &len);
