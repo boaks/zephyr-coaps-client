@@ -170,6 +170,28 @@ static void reopen_socket(dtls_app_data_t *app)
    dtls_info("> reopend socket.");
 }
 
+static int check_socket(dtls_app_data_t *app, bool event)
+{
+   int error = 0;
+   socklen_t len = sizeof(error);
+   int result = getsockopt(app->fd, SOL_SOCKET, SO_ERROR, &error, &len);
+   if (result) {
+      dtls_info("I/O: get last socket error failed, %d (%s)", errno, strerror(errno));
+      error = errno;
+   } else if (error) {
+      dtls_info("I/O: last socket error %d (%s)", error, strerror(error));
+   } else {
+      dtls_debug("No socket error.");
+   }
+   if (error) {
+      if (event) {
+         k_sleep(K_MSEC(1000));
+      }
+      reopen_socket(app);
+   }
+   return -error;
+}
+
 static void dtls_trigger(void)
 {
    if (request_state == NONE) {
@@ -311,7 +333,7 @@ static void dtls_coap_failure(void)
 }
 
 static int
-read_from_peer(dtls_context_t *ctx, session_t *session , uint8 *data, size_t len)
+read_from_peer(dtls_context_t *ctx, session_t *session, uint8 *data, size_t len)
 {
    (void)ctx;
    (void)session;
@@ -609,7 +631,7 @@ static void accelerometer_handler(const struct accelerometer_evt *const evt)
 int dtls_loop(session_t *dst, int flags)
 {
 #ifdef USE_POLL
-   struct pollfd udp_poll; 
+   struct pollfd udp_poll;
 #else
    fd_set rfds, efds;
    struct timeval io_timeout;
@@ -740,6 +762,8 @@ int dtls_loop(session_t *dst, int flags)
                modem_set_normal();
                modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
                reopen_socket(&dtls_add_data);
+            } else {
+               check_socket(&dtls_add_data, false);
             }
             request_state = SEND;
             loops = 0;
@@ -860,27 +884,20 @@ int dtls_loop(session_t *dst, int flags)
 #else
          } else if (FD_ISSET(dtls_add_data.fd, &efds)) {
 #endif
-            int error = 0;
-            socklen_t len = sizeof(error);
-            result = getsockopt(dtls_add_data.fd, SOL_SOCKET, SO_ERROR, &error, &len);
+            result = check_socket(&dtls_add_data, true);
             if (result) {
-               dtls_info("I/O event: last socket error failed, %d (%s)", errno, strerror(errno));
-            } else {
-               dtls_info("I/O event: last socket error %d (%s)", error, strerror(error));
-            }
-            k_sleep(K_MSEC(1000));
-            reopen_socket(&dtls_add_data);
-            if (request_state == SEND || request_state == RESEND || request_state == RECEIVE) {
-               loops = 0;
-               request_state = SEND;
-               transmission = 0;
-               timeout = COAP_ACK_TIMEOUT;
-               if (dtls_pending) {
-                  dtls_info("hs send again");
-                  dtls_check_retransmit(dtls_context, NULL);
-               } else {
-                  dtls_info("CoAP request send again");
-                  sendto_peer(&dtls_add_data, dst, dtls_context);
+               if (request_state == SEND || request_state == RESEND || request_state == RECEIVE) {
+                  loops = 0;
+                  request_state = SEND;
+                  transmission = 0;
+                  timeout = COAP_ACK_TIMEOUT;
+                  if (dtls_pending) {
+                     dtls_info("hs send again");
+                     dtls_check_retransmit(dtls_context, NULL);
+                  } else {
+                     dtls_info("CoAP request send again");
+                     sendto_peer(&dtls_add_data, dst, dtls_context);
+                  }
                }
             }
          }
