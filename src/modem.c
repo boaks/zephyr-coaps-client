@@ -1140,6 +1140,7 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
       }
    }
 #elif CONFIG_UDP_AS_RAI_ENABLE
+   /** Access stratum Release Assistance Indication  */
    int option = -1;
 #ifdef USE_SO_RAI_NO_DATA
    switch (mode) {
