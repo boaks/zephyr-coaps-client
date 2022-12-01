@@ -55,11 +55,12 @@ The measurements differs from test to test. The charts shows just one example te
 
 More details about PSM may be found in:
 
-[Improving Energy Efficiency for Mobile IoT, March 2022](https://www.gsma.com/iot/wp-content/uploads/2022/02/2022.03-GSMA-Energy-Efficiency-for-Mobile-IoT-1.pdf).
+[GSMA - Improving Energy Efficiency for Mobile IoT, March 2022](https://www.gsma.com/iot/wp-content/uploads/2022/02/2022.03-GSMA-Energy-Efficiency-for-Mobile-IoT-1.pdf).
+
+[Nordic Semiconductor - LTE-M vs NB-IoT Field Test: How Distance Affects Power Consumption](https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/ltem-vs-nbiot-field-test-how-distance-affects-power-consumption)
 
 and
-
-[LTE-M vs NB-IoT Field Test: How Distance Affects Power Consumption](https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/ltem-vs-nbiot-field-test-how-distance-affects-power-consumption)
+[GSMA - NB-IoT Roaming Features April 2022](https://www.gsma.com/iot/wp-content/uploads/2022/04/NB-IoT-Roaming-Features-April-2022-Landscape.pdf)
 
 ## Summary:
 
