@@ -53,14 +53,13 @@ All these are taking randomly amount of time and may occur also unintended. So t
 
 The measurements differs from test to test. The charts shows just one example test run.
 
-More details about PSM may be found in:
+More details about PSM and other power saving functions can be found in:
 
 [GSMA - Improving Energy Efficiency for Mobile IoT, March 2022](https://www.gsma.com/iot/wp-content/uploads/2022/02/2022.03-GSMA-Energy-Efficiency-for-Mobile-IoT-1.pdf).
 
-[Nordic Semiconductor - LTE-M vs NB-IoT Field Test: How Distance Affects Power Consumption](https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/ltem-vs-nbiot-field-test-how-distance-affects-power-consumption)
-
-and
 [GSMA - NB-IoT Roaming Features April 2022](https://www.gsma.com/iot/wp-content/uploads/2022/04/NB-IoT-Roaming-Features-April-2022-Landscape.pdf)
+
+[Nordic Semiconductor - LTE-M vs NB-IoT Field Test: How Distance Affects Power Consumption](https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/ltem-vs-nbiot-field-test-how-distance-affects-power-consumption)
 
 ## Summary:
 
@@ -78,6 +77,7 @@ See [Powerconsumption-2022-06](POWERCONSUMPTION-2022-06.md#results-of-first-long
 
 Thingy:91, LTE-M, PSM, 1h message interchange interval
 
+```
 24-23:54:03 [d-hh:mm:ss], Thingy:91 v0.5.99, 0*576, 1*24, 2*1, 3*0, failures 0
 4072 mV 84% battery (low-power)
 Stat: tx 299kB, rx 41kB, max 526B, avg 287B, searchs 27, PSM delays 0
@@ -86,10 +86,16 @@ Stat: tx 299kB, rx 41kB, max 526B, avg 287B, searchs 27, PSM delays 0
 4034 mV 79% battery (low-power)
 Stat: tx 585kB, rx 79kB, max 535B, avg 289B, searchs 52, PSM delays 0
 
-Forecast: 190 days
+66-00:54:04 [d-hh:mm:ss], Thingy:91 v0.5.99, 0*1521, 1*63, 2*1, 3*0, failures 1
+4006 mV 75% battery (low-power)
+Stat: tx 793kB, rx 107kB, max 535B, avg 289B, searchs 70, PSM delays 0
+```
 
-Thingy:91, LTE-M, PSM, 1h message interchange interval
+Forecast: 215 days
 
+Thingy:91, LTE-M, PSM, 24h message interchange interval
+
+```
 24-00:59:14 [d-hh:mm:ss], Thingy:91 v0.5.99, 0*2, 1*23, 2*0, 3*0, failures 0
 4124 mV 90% battery (low-power)
 Stat: tx 12kB, rx 2kB, max 525B, avg 258B, searchs 24, PSM delays 0
@@ -98,7 +104,12 @@ Stat: tx 12kB, rx 2kB, max 525B, avg 258B, searchs 24, PSM delays 0
 4093 mV 87% battery (low-power)
 Stat: tx 24kB, rx 3kB, max 525B, avg 271B, searchs 48, PSM delays 0
 
-Forecast: 375 days
+65-01:13:53 [d-hh:mm:ss], Thingy:91 v0.5.99, 0*2, 1*64, 2*0, 3*0, failures 0
+4073 mV 84% battery (low-power)
+Stat: tx 33kB, rx 5kB, max 525B, avg 275B, searchs 65, PSM delays 0
+```
+
+Forecast: 390 days
 
 ## Measurement Charts
 
