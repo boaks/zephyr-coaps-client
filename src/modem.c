@@ -651,6 +651,11 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_c
          LOG_WRN("Modem disable eDRX failed!");
       }
 #endif
+#ifdef CONFIG_STATIONARY_MODE_ENABLE
+      modem_at_cmd("AT%%REDMOD=1", buf, sizeof(buf), NULL);
+#else
+      modem_at_cmd("AT%%REDMOD=2", buf, sizeof(buf), NULL);
+#endif
 
 #if 0
       err = nrf_modem_at_printf("AT+CGDCONT=1,\"IPV4V6\",\"flolive.net\"");

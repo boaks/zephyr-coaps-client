@@ -197,6 +197,10 @@ config UDP_EDRX_ENABLE
 	bool "Enable LTE eDRX"
 	default y
 
+config STATIONARY_MODE_ENABLE
+	bool "Enable LTE stationary mode"
+	default n
+
 config MODEM_SAVE_CONFIG_THRESHOLD
 	int "Modem save configuration threshold in seconds. 0s, don't save, 1s always save. Default 60s"
 	default 60
