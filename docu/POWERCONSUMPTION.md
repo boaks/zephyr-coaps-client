@@ -12,9 +12,9 @@ The values for the `Thingy:91` are measurements replacing the battery with the P
 
 The previous tests in June 2022 have been done with enabled UART and 3.3V. With that the device has a quiescent current of 0.8 mA and, assuming a 80% efficiency and a battery of 1350 mAh, it runs for 56 days from battery (see [Powerconsumption-2022-06](POWERCONSUMPTION-2022-06.md)).
 
-Disabling the UART and the 3.3V results in quiescent current of 0.04 mA. With the same assumption of a 80% efficiency and a battery of 1350 mAh, that results in 27000h (or about 1125 days) runtime without sending any data. 20x times more than without disabling the UART and the 3.3V.
+Disabling the UART and the 3.3V results in quiescent current of 40 µA. With the same assumption of a 80% efficiency and a battery of 1350 mAh, that results in 27000h (or about 1125 days) runtime without sending any data. 20x times more than without disabling the UART and the 3.3V.
 
-The self-discarge is unknown, but may reduce that time significantly. For the LiPo at least a second 0.04 mA self-discarging must be considered, which halfs that runtime to 550 days.
+The self-discarge is unknown, but may reduce that time significantly. For the LiPo at least a second 40 µA self-discarging must be considered, which halfs that runtime to 550 days.
 
 ## General Considerations for LTE-M/NB-IoT
 
@@ -38,6 +38,7 @@ To exchange an application message, the devices wakes up, moves to RRC connected
 As of summer 2022, in my setup in south Germany, LTE-M comes with PSM but no RAI, NB-IoT comes with both PSM and RAI.
 
 The tests are using a T3324 (PSM Activity Timer) of 0s.
+The messages used are about 400 bytes to the server and 40 bytes back. In one test also a smaller message with 200 bytes is used.  
 
 With that, the usage to send data is split into three phases:
 - moving to connected mode
@@ -128,13 +129,13 @@ It takes about 3s, with an average current of 17mA at 5V. That results in 0.07 m
 
 ![NB-IoT no-response small message](./nb-iot-psm-no-response-small.png)
 
-This chart shows the wakeup from PSM with RAI to send one small message without response. 
+This chart shows the wakeup from PSM with RAI to send one small message (200 bytes) without response. 
 
 It takes about 2.7s, with an average current of 26mA at 5V. That results in 0.075 mWh per message. Sending every hour a message reduces the runtime of a Thingy:91 then to 818 days. Very close to the value or a wakeup without sending a message.
 
 ![NB-IoT no-response](./nb-iot-psm-no-response.png)
 
-This chart shows the wakeup from PSM with RAI to send one message without response. 
+This chart shows the wakeup from PSM with RAI to send one normal message (400 bytes) without response. 
 
 It takes about 2.9s, with an average current of 26mA at 5V. That results in 0.1 mWh per message. Sending every hour a message reduces the runtime of a Thingy:91 then to 730 days.
 
@@ -212,5 +213,16 @@ We will see, how large the  self-discarge is and how many bugs will prevent proo
 Other studies have other results. There are studies, which demonstrates the effect of the amount of data, there are studies, which use always a DTLS handshake for each couple of bytes. Using DTLS 1.2 CID doesn't require that handshake and my measurements shows a larger influence of the moving to RRC connected mode than the amount of bytes.
 
 Anyway, feel asked to test the power consumption on your own. And, please, report your results.
+
+### Other studies:
+
+[LPWAN Network and Protocols - Selection and Optimization](https://www.thalesgroup.com/en/markets/digital-identity-and-security/iot/resources/developers/cellular-iot-network-and-protocols)
+
+As DTLS 1.2 CID demonstrates, handshakes are not required for every exchange.
+About 1800 bytes for a PSK handshake seems to be large, maybe someone forgot to reduce the number of cipher suites on the client. These cipher-suites are included in the first message a client sends, the so called `ClientHello`. The pitfal here is, that this message is repeated including a cookie. Saving 100 bytes in the message results so in saving 200 in the handshake. So it's easy to lower that to 1400 bytes only using selected cipher suites. And again, using DTLS 1.2 CID reduces the amount of handshakes significantly.  
+
+[Power Consumption Analysis of NB-IoT and eMTC
+in Challenging Smart City Environments](https://cni.etit.tu-dortmund.de/storages/cni-etit/r/Research/Publications/2018/Joerke_GLOBECOM/Joerke_GLOBECOM_12_2018.pdf)
+
 
 ** !!! Under Construction !!! **
