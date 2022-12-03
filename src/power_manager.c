@@ -17,6 +17,7 @@
 #include <zephyr/pm/device.h>
 
 #include "io_job_queue.h"
+#include "ui.h"
 #include "power_manager.h"
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
@@ -313,6 +314,7 @@ int power_manager_suspend(bool enable)
 #ifdef CONFIG_SUSPEND_3V3
    power_manager_3v3(!enable);
 #endif
+   ui_suspend(enable);
    k_mutex_unlock(&pm_mutex);
    return 0;
 }
@@ -394,6 +396,7 @@ int power_manager_suspend(bool enable)
 #ifdef CONFIG_SUSPEND_UART
    suspend_uart(enable);
 #endif
+   ui_suspend(enable);
    k_mutex_unlock(&pm_mutex);
    return 0;
 }

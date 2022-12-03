@@ -63,7 +63,10 @@ typedef struct gpio_device {
    bool init;
 } gpio_device_t;
 
-#define GPIO_DEVICE_INIT(NODE) { GPIO_DT_SPEC_GET(NODE, gpios), false}
+#define GPIO_DEVICE_INIT(NODE)             \
+   {                                       \
+      GPIO_DT_SPEC_GET(NODE, gpios), false \
+   }
 
 #if DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_2, okay)
 static gpio_device_t config_button_1_spec = GPIO_DEVICE_INIT(CONFIG_BUTTON_NODE_1);
@@ -87,6 +90,7 @@ static gpio_device_t button_spec = GPIO_DEVICE_INIT(CALL_BUTTON_NODE);
 
 static struct gpio_callback button_cb_data;
 static ui_callback_handler_t button_callback;
+static volatile bool button_edge_interrupt;
 
 static void ui_led_timer_expiry_fn(struct k_work *work);
 static void ui_button_pressed_fn(struct k_work *work);
@@ -96,21 +100,26 @@ static K_WORK_DELAYABLE_DEFINE(led_red_timer_work, ui_led_timer_expiry_fn);
 static K_WORK_DELAYABLE_DEFINE(led_green_timer_work, ui_led_timer_expiry_fn);
 static K_WORK_DELAYABLE_DEFINE(led_blue_timer_work, ui_led_timer_expiry_fn);
 
-static K_MUTEX_DEFINE(led_mutex);
+static K_MUTEX_DEFINE(ui_mutex);
 
 static void ui_button_pressed_fn(struct k_work *work)
 {
-
    ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
 
    if (button_callback != NULL) {
       button_callback();
    }
+   k_mutex_lock(&ui_mutex, K_FOREVER);
+   if (!gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_EDGE_TO_INACTIVE)) {
+      button_edge_interrupt = true;
+   }
+   k_mutex_unlock(&ui_mutex);
 }
 
 static void ui_button_pressed(const struct device *dev, struct gpio_callback *cb,
-                           uint32_t pins)
+                              uint32_t pins)
 {
+   gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_DISABLE);
    k_work_submit(&button_pressed_work);
 }
 
@@ -136,6 +145,7 @@ static int ui_init_button(void)
    if (ret < 0) {
       return ret;
    }
+   button_edge_interrupt = true;
    gpio_init_callback(&button_cb_data, ui_button_pressed, BIT(button_spec.gpio_spec.pin));
    ret = gpio_add_callback(button_spec.gpio_spec.port, &button_cb_data);
    return ret;
@@ -156,7 +166,7 @@ static void ui_led_timer_expiry_fn(struct k_work *work)
 
 static void ui_op(gpio_device_t *output_spec, led_op_t op, struct k_work_delayable *timer)
 {
-   k_mutex_lock(&led_mutex, K_FOREVER);
+   k_mutex_lock(&ui_mutex, K_FOREVER);
    if (timer) {
       k_work_cancel_delayable(timer);
    }
@@ -179,14 +189,14 @@ static void ui_op(gpio_device_t *output_spec, led_op_t op, struct k_work_delayab
             break;
       }
    }
-   k_mutex_unlock(&led_mutex);
+   k_mutex_unlock(&ui_mutex);
 }
 
 void ui_led_op(led_t led, led_op_t op)
 {
    switch (led) {
       case LED_NONE:
-      break;
+         break;
       case LED_COLOR_RED:
          ui_op(&led_red_spec, op, &led_red_timer_work);
          break;
@@ -265,6 +275,7 @@ int ui_init(ui_callback_handler_t button_handler)
 #endif
 
    button_callback = button_handler;
+
    ret = ui_init_button();
    if (ret) {
       LOG_INF("UI init: call button failed! %d", ret);
@@ -285,6 +296,32 @@ int ui_init(ui_callback_handler_t button_handler)
    }
 #endif
    return 0;
+}
+
+int ui_suspend(bool enable)
+{
+   int ret = 0;
+   if (button_spec.init) {
+      k_mutex_lock(&ui_mutex, K_FOREVER);
+      if (enable == button_edge_interrupt) {
+         ret = gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_DISABLE);
+         if (!ret) {
+            if (enable) {
+               ret = gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_LEVEL_ACTIVE);
+               if (!ret) {
+                  button_edge_interrupt = false;
+               }
+            } else {
+               ret = gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_EDGE_TO_INACTIVE);
+               if (!ret) {
+                  button_edge_interrupt = true;
+               }
+            }
+         }
+      }
+      k_mutex_unlock(&ui_mutex);
+   }
+   return ret;
 }
 
 int ui_config(void)

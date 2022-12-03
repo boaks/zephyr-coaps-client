@@ -14,6 +14,8 @@
 #ifndef UI_H
 #define UI_H
 
+#include <stdbool.h>
+
 typedef void (*ui_callback_handler_t)(void);
 
 typedef enum { LED_NONE,
@@ -32,6 +34,7 @@ typedef enum { LED_SET,
 
 void ui_led_op(led_t led, led_op_t op);
 int ui_init(ui_callback_handler_t button_callback);
+int ui_suspend(bool enable);
 int ui_config(void);
 
 #endif /* UI_H */
