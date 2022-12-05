@@ -513,8 +513,9 @@ int coap_client_prepare_post(void)
                         network_statistic.average_packet_size);
       dtls_info("%s", buf + start);
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nCell updates %u, Network searchs %u, PSM delays %u",
-                        network_statistic.cell_updates, network_statistic.searchs, network_statistic.psm_delays);
+      index += snprintf(buf + index, sizeof(buf) - index, "\nCell updates %u, Network searchs %u (%u [s]), PSM delays %u, Restarts %u",
+                        network_statistic.cell_updates, network_statistic.searchs, network_statistic.search_time, 
+                        network_statistic.psm_delays, network_statistic.restarts);
       dtls_info("%s", buf + start);
    }
 #endif /* CONFIG_COAP_SEND_NETWORK_INFO */

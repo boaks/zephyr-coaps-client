@@ -19,6 +19,8 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 
+#include "io_job_queue.h"
+
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #define LED_RED_NODE DT_ALIAS(led0)
@@ -90,12 +92,15 @@ static gpio_device_t button_spec = GPIO_DEVICE_INIT(CALL_BUTTON_NODE);
 
 static struct gpio_callback button_cb_data;
 static ui_callback_handler_t button_callback;
-static volatile bool button_edge_interrupt;
+static volatile bool button_active;
+static volatile unsigned int button_counter;
 
 static void ui_led_timer_expiry_fn(struct k_work *work);
 static void ui_button_pressed_fn(struct k_work *work);
 
 static K_WORK_DEFINE(button_pressed_work, ui_button_pressed_fn);
+static K_WORK_DEFINE(button_released_work, ui_button_pressed_fn);
+static K_WORK_DELAYABLE_DEFINE(button_long_pressed_work, ui_button_pressed_fn);
 static K_WORK_DELAYABLE_DEFINE(led_red_timer_work, ui_led_timer_expiry_fn);
 static K_WORK_DELAYABLE_DEFINE(led_green_timer_work, ui_led_timer_expiry_fn);
 static K_WORK_DELAYABLE_DEFINE(led_blue_timer_work, ui_led_timer_expiry_fn);
@@ -104,23 +109,54 @@ static K_MUTEX_DEFINE(ui_mutex);
 
 static void ui_button_pressed_fn(struct k_work *work)
 {
-   ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
+   static volatile int duration = 0;
 
-   if (button_callback != NULL) {
-      button_callback();
+   if (&button_pressed_work == work) {
+      LOG_INF("UI button pressed %u", button_counter);
+      duration = 0;
+      work_reschedule_for_io_queue(&button_long_pressed_work, K_MSEC(5000));
+   } else if (&button_released_work == work) {
+      LOG_INF("UI button released %u", button_counter);
+      k_work_cancel_delayable(&button_long_pressed_work);
+      if (duration == 0) {
+         duration = 1;
+         ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
+         if (button_callback != NULL) {
+            button_callback(0);
+            LOG_INF("UI button callback %u", button_counter);
+         }
+      }
+   } else if (&button_long_pressed_work.work == work) {
+      LOG_INF("UI button long pressed %u", button_counter);
+      if (duration == 0) {
+         duration = 2;
+         ui_led_op(LED_COLOR_BLUE, LED_BLINK);
+         ui_led_op(LED_COLOR_GREEN, LED_BLINK);
+         ui_led_op(LED_COLOR_RED, LED_BLINK);
+         if (button_callback != NULL) {
+            button_callback(1);
+            LOG_INF("UI button long callback %u", button_counter);
+         }
+      }
    }
-   k_mutex_lock(&ui_mutex, K_FOREVER);
-   if (!gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_EDGE_TO_INACTIVE)) {
-      button_edge_interrupt = true;
-   }
-   k_mutex_unlock(&ui_mutex);
 }
 
 static void ui_button_pressed(const struct device *dev, struct gpio_callback *cb,
                               uint32_t pins)
 {
-   gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_DISABLE);
-   k_work_submit(&button_pressed_work);
+   if ((BIT(button_spec.gpio_spec.pin) & pins) == 0) {
+      return;
+   }
+   if (button_active) {
+      button_active = false;
+      gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_LEVEL_ACTIVE);
+      work_submit_to_io_queue(&button_released_work);
+   } else {
+      button_active = true;
+      ++button_counter;
+      gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_LEVEL_INACTIVE);
+      work_submit_to_io_queue(&button_pressed_work);
+   }
 }
 
 static int ui_init_input(gpio_device_t *input_spec)
@@ -141,11 +177,12 @@ static int ui_init_button(void)
    if (ret < 0) {
       return ret;
    }
-   ret = gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_EDGE_TO_ACTIVE);
+   button_counter = 0;
+   button_active = false;
+   ret = gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_LEVEL_ACTIVE);
    if (ret < 0) {
       return ret;
    }
-   button_edge_interrupt = true;
    gpio_init_callback(&button_cb_data, ui_button_pressed, BIT(button_spec.gpio_spec.pin));
    ret = gpio_add_callback(button_spec.gpio_spec.port, &button_cb_data);
    return ret;
@@ -153,13 +190,11 @@ static int ui_init_button(void)
 
 static void ui_led_timer_expiry_fn(struct k_work *work)
 {
-   struct k_work_delayable *dwork = k_work_delayable_from_work(work);
-
-   if (&led_red_timer_work == dwork) {
+   if (&led_red_timer_work.work == work) {
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
-   } else if (&led_green_timer_work == dwork) {
+   } else if (&led_green_timer_work.work == work) {
       ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-   } else if (&led_blue_timer_work == dwork) {
+   } else if (&led_blue_timer_work.work == work) {
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    }
 }
@@ -184,7 +219,7 @@ static void ui_op(gpio_device_t *output_spec, led_op_t op, struct k_work_delayab
          case LED_BLINK:
             if (timer) {
                gpio_pin_set_dt(&output_spec->gpio_spec, 1);
-               k_work_schedule(timer, K_MSEC(500));
+               work_schedule_for_io_queue(timer, K_MSEC(500));
             }
             break;
       }
@@ -296,32 +331,6 @@ int ui_init(ui_callback_handler_t button_handler)
    }
 #endif
    return 0;
-}
-
-int ui_suspend(bool enable)
-{
-   int ret = 0;
-   if (button_spec.init) {
-      k_mutex_lock(&ui_mutex, K_FOREVER);
-      if (enable == button_edge_interrupt) {
-         ret = gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_DISABLE);
-         if (!ret) {
-            if (enable) {
-               ret = gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_LEVEL_ACTIVE);
-               if (!ret) {
-                  button_edge_interrupt = false;
-               }
-            } else {
-               ret = gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_EDGE_TO_INACTIVE);
-               if (!ret) {
-                  button_edge_interrupt = true;
-               }
-            }
-         }
-      }
-      k_mutex_unlock(&ui_mutex);
-   }
-   return ret;
 }
 
 int ui_config(void)

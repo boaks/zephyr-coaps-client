@@ -71,6 +71,8 @@ static volatile unsigned int lte_connections = 0;
 static volatile request_state_t request_state = NONE;
 static volatile unsigned long connected_time = 0;
 
+static volatile bool trigger_restart_modem = false;
+
 static volatile bool lte_power_off = false;
 
 static bool lte_power_on_off = false;
@@ -112,32 +114,34 @@ static void reboot()
    sys_reboot(SYS_REBOOT_COLD);
 }
 
-static void reconnect()
+static void restart_modem()
 {
    int timeout_seconds = CONFIG_MODEM_SEARCH_TIMEOUT;
-   int sleep_minutes = 15;
+   int sleep_minutes = trigger_restart_modem ? 0 : 15;
 
    dtls_warn("> reconnect modem ...");
-
    k_sem_reset(&dtls_trigger_search);
 
-   while (!network_connected) {
+   while (!network_connected || trigger_restart_modem) {
       dtls_info("> modem offline (%d minutes)", sleep_minutes);
       modem_set_lte_offline();
       k_sleep(K_MSEC(2000));
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
       ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-      if (k_sem_take(&dtls_trigger_search, K_MINUTES(sleep_minutes)) == 0) {
-         dtls_info("> modem normal (manual)");
-         sleep_minutes = 15;
-      } else if (sleep_minutes < 61) {
-         dtls_info("> modem normal (timeout)");
-         sleep_minutes *= 2;
-      } else {
-         dtls_info("> modem reboot");
-         reboot();
+      if (sleep_minutes) {
+         if (k_sem_take(&dtls_trigger_search, K_MINUTES(sleep_minutes)) == 0) {
+            dtls_info("> modem normal (manual)");
+            sleep_minutes = 15;
+         } else if (sleep_minutes < 61) {
+            dtls_info("> modem normal (timeout)");
+            sleep_minutes *= 2;
+         } else {
+            dtls_info("> modem reboot");
+            reboot();
+         }
       }
+      trigger_restart_modem = false;
       modem_set_normal();
       timeout_seconds *= 2;
       dtls_info("> modem search network (%d minutes)", timeout_seconds / 60);
@@ -157,7 +161,7 @@ static void reopen_socket(dtls_app_data_t *app)
 
    err = modem_wait_ready(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
    if (err) {
-      reconnect();
+      restart_modem();
    }
    (void)close(app->fd);
    app->fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -199,8 +203,11 @@ static void dtls_trigger(void)
    }
 }
 
-static void dtls_manual_trigger(void)
+static void dtls_manual_trigger(int duration)
 {
+   if (duration == 1) {
+      trigger_restart_modem = true;
+   }
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
    k_sem_give(&dtls_trigger_search);
    dtls_trigger();
@@ -714,7 +721,10 @@ int dtls_loop(session_t *dst, int flags)
          }
       }
 #endif
-
+      if (trigger_restart_modem) {
+         restart_modem();
+         reopen_socket(&dtls_add_data);
+      }
 #ifdef USE_POLL
       udp_poll.fd = dtls_add_data.fd;
       udp_poll.events = POLLIN;
@@ -758,9 +768,13 @@ int dtls_loop(session_t *dst, int flags)
                dtls_info("modem on");
                lte_power_off = false;
                lte_connected_send = false;
+               trigger_restart_modem = false;
                connect_time = (unsigned long)k_uptime_get();
                modem_set_normal();
                modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
+               reopen_socket(&dtls_add_data);
+            } else if (trigger_restart_modem) {
+               restart_modem();
                reopen_socket(&dtls_add_data);
             } else {
                check_socket(&dtls_add_data, false);
@@ -810,8 +824,12 @@ int dtls_loop(session_t *dst, int flags)
 #endif
             } else if (loops < 60) {
                ++loops;
+               if (loops % 5 == 4) {
+                  check_socket(&dtls_add_data, false);
+               }
             } else {
                dtls_coap_failure();
+               reopen_socket(&dtls_add_data);
             }
          } else if (request_state == RECEIVE) {
             int temp = timeout;
@@ -1067,7 +1085,7 @@ void main(void)
 #endif
 
    if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT)) != 0) {
-      reconnect();
+      restart_modem();
    }
 
    modem_get_imei(imei, sizeof(imei));

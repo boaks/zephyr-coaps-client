@@ -56,8 +56,10 @@ static bool lte_pdn_active = false;
 static const char *volatile network_mode = "init";
 
 static struct lte_lc_edrx_cfg edrx_status = {LTE_LC_LTE_MODE_NONE, 0.0, 0.0};
-static struct lte_lc_psm_cfg psm_status = {0, 0};
+static struct lte_lc_psm_cfg psm_status = {0, -1};
+static uint32_t lte_restarts = 0;
 static uint32_t lte_searchs = 0;
+static uint32_t lte_search_time = 0;
 static uint32_t lte_psm_delays = 0;
 static uint32_t lte_cell_updates = 0;
 static bool lte_plmn_lock = false;
@@ -65,6 +67,7 @@ static bool lte_force_nb_iot = false;
 static bool lte_force_lte_m = false;
 static struct lte_network_info network_info;
 static int64_t transmission_time = 0;
+static int64_t network_search_time = 0;
 static uint8_t iccid[MODEM_ID_SIZE];
 static uint8_t imsi[MODEM_ID_SIZE];
 static uint8_t imei[MODEM_ID_SIZE];
@@ -202,10 +205,25 @@ static void lte_inc_psm_delays(void)
    k_mutex_unlock(&lte_mutex);
 }
 
-static void lte_inc_searchs()
+static void lte_start_search()
 {
+   int64_t now = k_uptime_get();
    k_mutex_lock(&lte_mutex, K_FOREVER);
    ++lte_searchs;
+   if (network_search_time) {
+      lte_search_time += (now - network_search_time + 500) / 1000;
+   }
+   network_search_time = now;
+   k_mutex_unlock(&lte_mutex);
+}
+
+static void lte_end_search()
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (network_search_time) {
+      lte_search_time += (k_uptime_get() - network_search_time + 500) / 1000;
+      network_search_time = 0;
+   }
    k_mutex_unlock(&lte_mutex);
 }
 
@@ -295,6 +313,7 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
 {
    const char *description = "unknown";
    bool registered = false;
+   bool search = false;
 
    switch (reg_status) {
       case LTE_LC_NW_REG_NOT_REGISTERED:
@@ -306,8 +325,7 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
          break;
       case LTE_LC_NW_REG_SEARCHING:
          description = "Searching ...";
-         lte_inc_searchs();
-         work_submit_to_io_queue(&modem_read_sim_work);
+         search = true;
          break;
       case LTE_LC_NW_REG_REGISTRATION_DENIED:
          description = "Not Connected - denied";
@@ -326,7 +344,12 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
          description = "Not Connected - UICC fail";
          break;
    }
-
+   if (search) {
+      lte_start_search();
+      work_submit_to_io_queue(&modem_read_sim_work);
+   } else {
+      lte_end_search();
+   }
    lte_registration_set(registered);
    if (registered) {
       work_submit_to_io_queue(&modem_read_sim_work);
@@ -1064,7 +1087,9 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
       if (err == 4) {
          k_mutex_lock(&lte_mutex, K_FOREVER);
          statistic->searchs = lte_searchs;
+         statistic->search_time = lte_search_time;
          statistic->psm_delays = lte_psm_delays;
+         statistic->restarts = lte_restarts;
          statistic->cell_updates = lte_cell_updates;
          k_mutex_unlock(&lte_mutex);
       }
@@ -1201,6 +1226,7 @@ int modem_set_offline(void)
 
 int modem_set_normal(void)
 {
+   ++lte_restarts;
    return lte_lc_normal();
 }
 
