@@ -26,7 +26,6 @@ typedef struct lte_network_info {
    const char* reg_status;
    bool registered;
    bool plmn_lock;
-   int16_t rsrp;
    uint8_t band;
    char provider[6];
    uint16_t tac;
@@ -35,12 +34,25 @@ typedef struct lte_network_info {
    char local_ip[16];
 } lte_network_info_t;
 
+#define INVALID_SIGNAL_VALUE 0x7fff
+
+typedef struct lte_ceinfo {
+   uint8_t ce_supported;
+   char state;
+   uint8_t downlink_repetition;
+   uint8_t uplink_repetition;
+   int16_t rsrp;
+   int16_t cinr;
+   int16_t snr;
+} lte_ceinfo_t;
+
 typedef struct lte_network_statistic {
    uint32_t searchs;
    uint32_t psm_delays;
    uint32_t restarts;
    uint32_t cell_updates;
    uint32_t search_time;
+   uint32_t psm_delay_time;
    uint32_t transmitted;
    uint32_t received;
    uint16_t max_packet_size;
@@ -76,6 +88,8 @@ int modem_get_psm_status(struct lte_lc_psm_cfg *psm);
 
 int modem_get_network_info(struct lte_network_info* info);
 
+int modem_get_coverage_enhancement_info(struct lte_ceinfo* info);
+
 int modem_get_imsi(char* buf, size_t len);
 
 int modem_get_imei(char* buf, size_t len);
@@ -91,6 +105,8 @@ int modem_read_network_info(struct lte_network_info* info);
 int modem_read_pdn_info(char* buf, size_t len);
 
 int modem_read_statistic(struct lte_network_statistic* statistic);
+
+int modem_read_coverage_enhancement_info(struct lte_ceinfo* info);
 
 int modem_at_cmd(const char* cmd, char* buf, size_t max_len, const char *skip);
 

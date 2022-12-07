@@ -279,6 +279,14 @@ static int coap_client_add_uri_query_param_opt(struct coap_packet *request, cons
    }
 }
 
+union lte_params {
+   struct lte_lc_psm_cfg psm;
+   struct lte_lc_edrx_cfg edrx;
+   struct lte_network_info network_info;
+   struct lte_network_statistic network_statistic;
+   struct lte_ceinfo ceinfo;
+};
+
 int coap_client_prepare_post(void)
 {
 #ifdef ENVIRONMENT_SENSOR
@@ -312,17 +320,10 @@ int coap_client_prepare_post(void)
 #endif
 
 #ifdef CONFIG_COAP_SEND_NETWORK_INFO
-   struct lte_lc_psm_cfg psm;
-   struct lte_lc_edrx_cfg edrx;
-   struct lte_network_info network_info;
-   struct lte_network_statistic network_statistic;
+   union lte_params params;
    const char *p;
 
-   memset(&psm, 0, sizeof(psm));
-   memset(&edrx, 0, sizeof(edrx));
-   memset(&network_info, 0, sizeof(network_info));
-   memset(&network_statistic, 0, sizeof(network_statistic));
-
+   memset(&params, 0, sizeof(params));
 #endif
 
    coap_message_len = 0;
@@ -437,40 +438,61 @@ int coap_client_prepare_post(void)
 #endif /* CONFIG_COAP_SEND_SIM_INFO */
 
 #ifdef CONFIG_COAP_SEND_NETWORK_INFO
+   memset(&params, 0, sizeof(params));
+   if (modem_get_coverage_enhancement_info(&params.ceinfo) >= 0) {
+      if (params.ceinfo.ce_supported) {
+         start = index + 1;
+         index += snprintf(buf + index, sizeof(buf) - index, "\n!CE: down: %u, up: %u",
+                           params.ceinfo.downlink_repetition, params.ceinfo.uplink_repetition);
+         if (params.ceinfo.rsrp < INVALID_SIGNAL_VALUE) {
+            index += snprintf(buf + index, sizeof(buf) - index, ", RSRP: %d dBm",
+                              params.ceinfo.rsrp);
+         }
+         if (params.ceinfo.cinr < INVALID_SIGNAL_VALUE) {
+            index += snprintf(buf + index, sizeof(buf) - index, ", CINR: %d dBm",
+                              params.ceinfo.cinr);
+         }
+         if (params.ceinfo.snr < INVALID_SIGNAL_VALUE) {
+            index += snprintf(buf + index, sizeof(buf) - index, ", SNR: %d dB",
+                              params.ceinfo.snr);
+         }
+         dtls_info("%s", buf + start);
+      }
+   }
+
    p = modem_get_network_mode();
    start = index + 1;
    index += snprintf(buf + index, sizeof(buf) - index, "\n!Network: %s", p);
 
-   if (!modem_get_network_info(&network_info)) {
-      index += snprintf(buf + index, sizeof(buf) - index, ",%s", network_info.reg_status);
-      if (network_info.registered) {
-         index += snprintf(buf + index, sizeof(buf) - index, ",Band %d", network_info.band);
-         if (network_info.plmn_lock) {
-            index += snprintf(buf + index, sizeof(buf) - index, ",#PLMN %s", network_info.provider);
+   memset(&params, 0, sizeof(params));
+   if (!modem_get_network_info(&params.network_info)) {
+      index += snprintf(buf + index, sizeof(buf) - index, ",%s", params.network_info.reg_status);
+      if (params.network_info.registered) {
+         index += snprintf(buf + index, sizeof(buf) - index, ",Band %d", params.network_info.band);
+         if (params.network_info.plmn_lock) {
+            index += snprintf(buf + index, sizeof(buf) - index, ",#PLMN %s", params.network_info.provider);
          } else {
-            index += snprintf(buf + index, sizeof(buf) - index, ",PLMN %s", network_info.provider);
+            index += snprintf(buf + index, sizeof(buf) - index, ",PLMN %s", params.network_info.provider);
          }
-         index += snprintf(buf + index, sizeof(buf) - index, ",TAC %u", network_info.tac);
-         index += snprintf(buf + index, sizeof(buf) - index, ",Cell %u", network_info.cell);
-         if (network_info.rsrp) {
-            index += snprintf(buf + index, sizeof(buf) - index, ",RSRP %d dBm", network_info.rsrp);
-         }
+         index += snprintf(buf + index, sizeof(buf) - index, ",TAC %u", params.network_info.tac);
+         index += snprintf(buf + index, sizeof(buf) - index, ",Cell %u", params.network_info.cell);
       }
    }
    dtls_info("%s", buf + start);
 
-   if (network_info.registered) {
+   if (params.network_info.registered) {
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nPDN: %s,%s", network_info.apn, network_info.local_ip);
+      index += snprintf(buf + index, sizeof(buf) - index, "\nPDN: %s,%s", params.network_info.apn, params.network_info.local_ip);
       dtls_info("%s", buf + start);
    }
 
    index += snprintf(buf + index, sizeof(buf) - index, "\n");
    start = index;
 
-   if (modem_get_psm_status(&psm) == 0) {
-      if (psm.active_time >= 0) {
-         index += snprintf(buf + index, sizeof(buf) - index, "!PSM: TAU %d [s], Act %d [s]", psm.tau, psm.active_time);
+   memset(&params, 0, sizeof(params));
+   if (modem_get_psm_status(&params.psm) == 0) {
+      if (params.psm.active_time >= 0) {
+         index += snprintf(buf + index, sizeof(buf) - index, "!PSM: TAU %d [s], Act %d [s]", params.psm.tau, params.psm.active_time);
       } else {
          index += snprintf(buf + index, sizeof(buf) - index, "PSM: n.a.");
       }
@@ -487,37 +509,40 @@ int coap_client_prepare_post(void)
    } else {
       index = start - 1;
    }
-   if (modem_get_edrx_status(&edrx) == 0) {
+   memset(&params, 0, sizeof(params));
+   if (modem_get_edrx_status(&params.edrx) == 0) {
       start = index + 1;
-      switch (edrx.mode) {
+      switch (params.edrx.mode) {
          case LTE_LC_LTE_MODE_NONE:
             index += snprintf(buf + index, sizeof(buf) - index, "\neDRX: n.a.");
             break;
          case LTE_LC_LTE_MODE_LTEM:
-            index += snprintf(buf + index, sizeof(buf) - index, "\n!eDRX: LTE-M %0.2f [s], page %0.2f [s]", edrx.edrx, edrx.ptw);
+            index += snprintf(buf + index, sizeof(buf) - index, "\n!eDRX: LTE-M %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
             break;
          case LTE_LC_LTE_MODE_NBIOT:
-            index += snprintf(buf + index, sizeof(buf) - index, "\n!eDRX: NB-IoT %0.2f [s], page %0.2f [s]", edrx.edrx, edrx.ptw);
+            index += snprintf(buf + index, sizeof(buf) - index, "\n!eDRX: NB-IoT %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
             break;
       }
       dtls_info("%s", buf + start);
-      if (edrx.mode == LTE_LC_LTE_MODE_NONE) {
+      if (params.edrx.mode == LTE_LC_LTE_MODE_NONE) {
          index = start - 1;
       }
    }
 
-   if (modem_read_statistic(&network_statistic) >= 0) {
+   memset(&params, 0, sizeof(params));
+   if (modem_read_statistic(&params.network_statistic) >= 0) {
       start = index + 1;
       index += snprintf(buf + index, sizeof(buf) - index, "\nStat: tx %u kB, rx %u kB, max %u B, avg %u B",
-                        network_statistic.transmitted, network_statistic.received, network_statistic.max_packet_size,
-                        network_statistic.average_packet_size);
+                        params.network_statistic.transmitted, params.network_statistic.received,
+                        params.network_statistic.max_packet_size, params.network_statistic.average_packet_size);
       dtls_info("%s", buf + start);
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nCell updates %u, Network searchs %u (%u [s]), PSM delays %u, Restarts %u",
-                        network_statistic.cell_updates, network_statistic.searchs, network_statistic.search_time, 
-                        network_statistic.psm_delays, network_statistic.restarts);
+      index += snprintf(buf + index, sizeof(buf) - index, "\nCell updates %u, Network searchs %u (%u [s]), PSM delays %u (%u [s]), Restarts %u",
+                        params.network_statistic.cell_updates, params.network_statistic.searchs, params.network_statistic.search_time,
+                        params.network_statistic.psm_delays, params.network_statistic.psm_delay_time, params.network_statistic.restarts);
       dtls_info("%s", buf + start);
    }
+
 #endif /* CONFIG_COAP_SEND_NETWORK_INFO */
 
 #ifdef CONFIG_LOCATION_ENABLE

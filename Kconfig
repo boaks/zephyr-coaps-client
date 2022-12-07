@@ -67,7 +67,7 @@ config COAP_SEND_INTERVAL
 
 config COAP_WAKEUP_SEND_INTERVAL
 	int "Wakeup CoAP send interval in seconds. 0 disable."
-	default 3500
+	default 0
 	depends on UDP_PSM_ENABLE
 	help
 	   Using PSM (Power Sleeping Mode) the modem frequently wakesup to refresh

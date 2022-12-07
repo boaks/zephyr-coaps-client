@@ -762,7 +762,7 @@ int dtls_loop(session_t *dst, int flags)
             power_manager_suspend(false);
             ui_led_op(LED_APPLICATION, LED_SET);
 #if CONFIG_COAP_SEND_INTERVAL > 0
-            work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
+            work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
 #endif
             if (lte_power_off) {
                dtls_info("modem on");
