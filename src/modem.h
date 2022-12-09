@@ -60,21 +60,21 @@ typedef struct lte_network_statistic {
 } lte_network_statistic_t;
 
 enum lte_state_type {
-	LTE_STATE_REGISTER_NETWORK,
-	LTE_STATE_CONNECT_NETWORK
+	LTE_STATE_REGISTRATION,
+	LTE_STATE_READY,
+	LTE_STATE_SLEEPING
 };
 
 enum rai_mode {
 	RAI_OFF,
-	RAI_NOW,
+	RAI_NOW, /* intended to uses a extra dummy message! */
 	RAI_LAST,
 	RAI_ONE_RESPONSE
 };
 
-typedef void (*wakeup_callback_handler_t)(void);
-typedef void (*lte_state_change_callback_handler_t)(enum lte_state_type type, bool connected);
+typedef void (*lte_state_change_callback_handler_t)(enum lte_state_type type, bool active);
 
-int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_change_callback_handler_t state_handler);
+int modem_init(int config, lte_state_change_callback_handler_t state_handler);
 
 int modem_start(const k_timeout_t timeout);
 
@@ -95,6 +95,8 @@ int modem_get_imsi(char* buf, size_t len);
 int modem_get_imei(char* buf, size_t len);
 
 int modem_get_iccid(char* buf, size_t len);
+
+int modem_get_hpplmn_search_interval(void);
 
 int modem_get_release_time(void);
 

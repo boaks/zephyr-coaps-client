@@ -384,7 +384,6 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
 
 int power_manager_init(void)
 {
-   modem_init(0, NULL, NULL);
    return 0;
 }
 

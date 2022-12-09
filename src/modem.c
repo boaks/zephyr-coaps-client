@@ -26,7 +26,6 @@
 #include "io_job_queue.h"
 #include "modem.h"
 #include "parse.h"
-#include "power_manager.h"
 #include "ui.h"
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
@@ -34,6 +33,14 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #if defined(CONFIG_NRF_MODEM_LIB)
 
 #define MSEC_TO_SEC(X) (((X) + (MSEC_PER_SEC / 2)) / MSEC_PER_SEC)
+
+#ifdef CONFIG_UDP_PSM_ENABLE
+#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
+#define EFFECTIVE_LTE_PSM_REQ_RAT "00000000"
+#else
+#define EFFECTIVE_LTE_PSM_REQ_RAT CONFIG_LTE_PSM_REQ_RAT
+#endif
+#endif
 
 #define LED_CONNECTED LED_LTE_2
 #define LED_READY LED_LTE_3
@@ -43,7 +50,6 @@ static K_CONDVAR_DEFINE(lte_condvar);
 
 static K_SEM_DEFINE(ptau_update, 0, 1);
 
-static wakeup_callback_handler_t s_wakeup_handler = NULL;
 static lte_state_change_callback_handler_t s_lte_state_change_handler = NULL;
 static bool initialized = 0;
 
@@ -75,6 +81,7 @@ static int64_t network_search_time = 0;
 static uint8_t iccid[MODEM_ID_SIZE];
 static uint8_t imsi[MODEM_ID_SIZE];
 static uint8_t imei[MODEM_ID_SIZE];
+static volatile int16_t hpplmn_search_interval = -ENODATA;
 
 static volatile enum rai_mode rai_current_mode = RAI_OFF;
 static volatile int rai_time = -1;
@@ -88,12 +95,12 @@ static K_WORK_DELAYABLE_DEFINE(modem_power_management_suspend_work, modem_power_
 
 static void modem_power_management_suspend_work_fn(struct k_work *work)
 {
-   if (work == &modem_power_management_resume_work) {
-      power_manager_suspend(false);
-   } else {
-      struct k_work_delayable *dwork = k_work_delayable_from_work(work);
-      if (dwork == &modem_power_management_suspend_work) {
-         power_manager_suspend(true);
+   lte_state_change_callback_handler_t callback = s_lte_state_change_handler;
+   if (callback) {
+      if (work == &modem_power_management_resume_work) {
+         callback(LTE_STATE_SLEEPING, false);
+      } else if (work == &modem_power_management_suspend_work.work) {
+         callback(LTE_STATE_SLEEPING, true);
       }
    }
 }
@@ -122,21 +129,21 @@ static void modem_state_change_callback_work_fn(struct k_work *work);
 
 static K_WORK_DEFINE(modem_registered_callback_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_unregistered_callback_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_connected_callback_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_idle_callback_work, modem_state_change_callback_work_fn);
+static K_WORK_DEFINE(modem_ready_callback_work, modem_state_change_callback_work_fn);
+static K_WORK_DEFINE(modem_not_ready_callback_work, modem_state_change_callback_work_fn);
 
 static void modem_state_change_callback_work_fn(struct k_work *work)
 {
    lte_state_change_callback_handler_t callback = s_lte_state_change_handler;
    if (callback) {
-      if (work == &modem_connected_callback_work) {
-         callback(LTE_STATE_CONNECT_NETWORK, true);
-      } else if (work == &modem_idle_callback_work) {
-         callback(LTE_STATE_CONNECT_NETWORK, false);
+      if (work == &modem_ready_callback_work) {
+         callback(LTE_STATE_READY, true);
+      } else if (work == &modem_not_ready_callback_work) {
+         callback(LTE_STATE_READY, false);
       } else if (work == &modem_registered_callback_work) {
-         callback(LTE_STATE_REGISTER_NETWORK, true);
+         callback(LTE_STATE_REGISTRATION, true);
       } else if (work == &modem_unregistered_callback_work) {
-         callback(LTE_STATE_REGISTER_NETWORK, false);
+         callback(LTE_STATE_REGISTRATION, false);
       }
    }
 }
@@ -152,7 +159,7 @@ static K_WORK_DEFINE(modem_read_pdn_info_work, modem_read_pdn_info_work_fn);
 
 static void modem_read_sim_work_fn(struct k_work *work)
 {
-   char buf[40];
+   char buf[200];
 
    int err = modem_at_cmd("AT+CIMI", buf, sizeof(buf), NULL);
    if (err < 0) {
@@ -163,18 +170,52 @@ static void modem_read_sim_work_fn(struct k_work *work)
       strncpy(imsi, buf, sizeof(imsi));
       k_mutex_unlock(&lte_mutex);
    }
-   err = modem_at_cmd("AT%%XICCID", buf, sizeof(buf), "%XICCID: ");
-   if (err < 0) {
-      LOG_INF("Failed to read ICCID.");
-   } else {
-      LOG_INF("iccid: %s", buf);
-      k_mutex_lock(&lte_mutex, K_FOREVER);
-      strncpy(iccid, buf, sizeof(iccid));
-      k_mutex_unlock(&lte_mutex);
+   if (!iccid[0]) {
+      err = modem_at_cmd("AT%%XICCID", buf, sizeof(buf), "%XICCID: ");
+      if (err < 0) {
+         LOG_INF("Failed to read ICCID.");
+      } else {
+         LOG_INF("iccid: %s", buf);
+         k_mutex_lock(&lte_mutex, K_FOREVER);
+         strncpy(iccid, buf, sizeof(iccid));
+         k_mutex_unlock(&lte_mutex);
+      }
    }
-   err = modem_at_cmd("AT+CRSM=176,28589,0,0,0", buf, sizeof(buf), "+CRSM: ");
-   if (err > 0) {
-      LOG_INF("CRSM: %s", buf);
+   if (hpplmn_search_interval == -ENODATA) {
+      /* 0x6FAD, check for eDRX SIM suspend support*/
+      err = modem_at_cmd("AT+CRSM=176,28589,0,0,0", buf, sizeof(buf), "+CRSM: ");
+      if (err > 0) {
+         LOG_INF("CRSM edrx: %s", buf);
+         if (strncmp(buf, "144,0,\"", 7) == 0) {
+            // successful read
+            char n = buf[7 + 6]; // byte 3, low nibble
+            if (n > '7') {
+               LOG_INF("eDRX cycle support");
+            } else {
+               LOG_INF("No eDRX cycle support");
+            }
+         }
+      }
+      /* 0x6F31, Higher Priority PLMN search period */
+      err = modem_at_cmd("AT+CRSM=176,28465,0,0,0", buf, sizeof(buf), "+CRSM: ");
+      if (err > 0) {
+         LOG_INF("CRSM hpplmn: %s", buf);
+         if (strncmp(buf, "144,0,\"", 7) == 0) {
+            // successful read
+            int interval = (int)strtol(&buf[7], NULL, 16);
+            interval *= 2;
+            if (interval > 80) {
+               interval *= 2;
+               if (interval > 240) {
+                  interval = 240;
+               }
+            }
+            LOG_INF("HPPLMN search interval: %d [h]", interval);
+            k_mutex_lock(&lte_mutex, K_FOREVER);
+            hpplmn_search_interval = (int16_t)interval;
+            k_mutex_unlock(&lte_mutex);
+         }
+      }
    }
 }
 
@@ -268,7 +309,7 @@ static void lte_connection_status()
       lte_ready = ready;
       ui_led_op(LED_READY, ready ? LED_SET : LED_CLEAR);
       if (ready) {
-         work_submit_to_io_queue(&modem_connected_callback_work);
+         work_submit_to_io_queue(&modem_ready_callback_work);
          work_submit_to_io_queue(&modem_read_network_info_work);
 #ifdef CONFIG_PDN
          work_submit_to_io_queue(&modem_read_pdn_info_work);
@@ -276,7 +317,7 @@ static void lte_connection_status()
          work_submit_to_io_queue(&modem_ready_work);
          LOG_INF("modem ready.");
       } else {
-         work_submit_to_io_queue(&modem_idle_callback_work);
+         work_submit_to_io_queue(&modem_not_ready_callback_work);
 #ifdef CONFIG_PDN
          LOG_INF("modem not ready. con=%d/pdn=%d/reg=%d", lte_connected, lte_pdn_active, lte_registered);
 #else
@@ -385,8 +426,16 @@ static void lte_handler(const struct lte_lc_evt *const evt)
             network_mode = "none";
          } else if (evt->lte_mode == LTE_LC_LTE_MODE_LTEM) {
             network_mode = "CAT-M1";
+#ifdef CONFIG_UDP_PSM_ENABLE
+            lte_lc_psm_param_set(CONFIG_LTE_PSM_REQ_RPTAU, "00000000");
+            lte_lc_psm_req(true);
+#endif
          } else if (evt->lte_mode == LTE_LC_LTE_MODE_NBIOT) {
             network_mode = "NB-IoT";
+#ifdef CONFIG_UDP_PSM_ENABLEx
+            lte_lc_psm_param_set(CONFIG_LTE_PSM_REQ_RPTAU, EFFECTIVE_LTE_PSM_REQ_RAT);
+            lte_lc_psm_req(true);
+#endif
          }
          LOG_INF("LTE Mode: %s", network_mode);
          break;
@@ -468,9 +517,6 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          (void)k_work_cancel_delayable(&modem_power_management_suspend_work);
          work_submit_to_io_queue(&modem_power_management_resume_work);
          LOG_INF("LTE modem wakes up");
-         if (s_wakeup_handler) {
-            s_wakeup_handler();
-         }
          break;
       case LTE_LC_EVT_MODEM_EVENT:
          if (evt->modem_evt == LTE_LC_MODEM_EVT_BATTERY_LOW) {
@@ -548,7 +594,7 @@ static int modem_connect(void)
    return err;
 }
 
-int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_change_callback_handler_t state_handler)
+int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 {
    int err = 0;
 
@@ -557,6 +603,8 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_c
    } else if (!initialized) {
       char buf[128];
       const char *plmn = NULL;
+
+      s_lte_state_change_handler = state_handler;
 
       nrf_modem_lib_init(NORMAL_MODE);
       err = modem_at_cmd("AT%%HWVERSION", buf, sizeof(buf), "%HWVERSION: ");
@@ -644,9 +692,7 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_c
       }
 
 #ifdef CONFIG_UDP_PSM_ENABLE
-#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
-      lte_lc_psm_param_set(CONFIG_LTE_PSM_REQ_RPTAU, "00000000");
-#endif
+      lte_lc_psm_param_set(CONFIG_LTE_PSM_REQ_RPTAU, EFFECTIVE_LTE_PSM_REQ_RAT);
       err = lte_lc_psm_req(true);
       if (err) {
          if (err == -EFAULT) {
@@ -696,7 +742,11 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_c
          LOG_INF("REDMOB: OK");
       }
 
+#ifdef CONFIG_STATIONARY_MODE_ENABLE
+      err = modem_at_cmd("AT%%XDATAPRFL=0", buf, sizeof(buf), NULL);
+#else
       err = modem_at_cmd("AT%%XDATAPRFL=2", buf, sizeof(buf), NULL);
+#endif
       if (err >= 0) {
          LOG_INF("DATAPRFL: OK");
       }
@@ -746,14 +796,7 @@ int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_c
 
       LOG_INF("modem initialized");
    }
-   if (initialized) {
-      if (wakeup_handler) {
-         s_wakeup_handler = wakeup_handler;
-      }
-      if (state_handler) {
-         s_lte_state_change_handler = state_handler;
-      }
-   }
+
    return err;
 }
 
@@ -961,6 +1004,15 @@ int modem_get_iccid(char *buf, size_t len)
    result = strlen(iccid);
    k_mutex_unlock(&lte_mutex);
    return result;
+}
+
+int modem_get_hpplmn_search_interval(void)
+{
+   int interval;
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   interval = hpplmn_search_interval;
+   k_mutex_unlock(&lte_mutex);
+   return interval;
 }
 
 void modem_set_transmission_time(void)
@@ -1205,6 +1257,8 @@ int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
    }
    err = nrf_modem_at_cmd(at_buf, sizeof(at_buf), cmd);
    if (err < 0) {
+      LOG_WRN(">> %s:", cmd);
+      LOG_WRN(">> %s: %d", strerror(-err), err);
       return err;
    } else if (err > 0) {
       int error = nrf_modem_at_err(err);
@@ -1221,7 +1275,7 @@ int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
             break;
       }
       LOG_WRN(">> %s:", cmd);
-      LOG_WRN(">> %s: %d", type, error);
+      LOG_WRN(">> %s: %d (%d)", type, error, err);
       return -error;
    }
    terminate_at_buffer(at_buf, sizeof(at_buf));
@@ -1341,10 +1395,9 @@ int modem_power_off(void)
 
 #else
 
-int modem_init(int config, wakeup_callback_handler_t wakeup_handler, lte_state_change_callback_handler_t state_handler)
+int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 {
    (void)config;
-   (void)wakeup_handler;
    (void)connect_handler;
    return 0;
 }
@@ -1410,6 +1463,11 @@ int modem_get_iccid(char *buf, size_t len)
    (void)buf;
    (void)len;
    return 0;
+}
+
+int modem_get_hpplmn_search_interval(void)
+{
+   return -ENODATA;
 }
 
 int modem_read_network_info(struct lte_network_info *info)
