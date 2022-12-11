@@ -437,28 +437,6 @@ int coap_client_prepare_post(void)
 #endif /* CONFIG_COAP_SEND_SIM_INFO */
 
 #ifdef CONFIG_COAP_SEND_NETWORK_INFO
-   memset(&params, 0, sizeof(params));
-   if (modem_get_coverage_enhancement_info(&params.ce_info) >= 0) {
-      if (params.ce_info.ce_supported) {
-         start = index + 1;
-         index += snprintf(buf + index, sizeof(buf) - index, "\n!CE: down: %u, up: %u",
-                           params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
-         if (params.ce_info.rsrp < INVALID_SIGNAL_VALUE) {
-            index += snprintf(buf + index, sizeof(buf) - index, ", RSRP: %d dBm",
-                              params.ce_info.rsrp);
-         }
-         if (params.ce_info.cinr < INVALID_SIGNAL_VALUE) {
-            index += snprintf(buf + index, sizeof(buf) - index, ", CINR: %d dB",
-                              params.ce_info.cinr);
-         }
-         if (params.ce_info.snr < INVALID_SIGNAL_VALUE) {
-            index += snprintf(buf + index, sizeof(buf) - index, ", SNR: %d dB",
-                              params.ce_info.snr);
-         }
-         dtls_info("%s", buf + start);
-      }
-   }
-
    p = modem_get_network_mode();
    start = index + 1;
    index += snprintf(buf + index, sizeof(buf) - index, "\n!Network: %s", p);
@@ -527,6 +505,30 @@ int coap_client_prepare_post(void)
          index = start - 1;
       }
    }
+#endif /* CONFIG_COAP_SEND_NETWORK_INFO */
+
+#ifdef CONFIG_COAP_SEND_STATISTIC_INFO
+   memset(&params, 0, sizeof(params));
+   if (modem_get_coverage_enhancement_info(&params.ce_info) >= 0) {
+      if (params.ce_info.ce_supported) {
+         start = index + 1;
+         index += snprintf(buf + index, sizeof(buf) - index, "\n!CE: down: %u, up: %u",
+                           params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
+         if (params.ce_info.rsrp < INVALID_SIGNAL_VALUE) {
+            index += snprintf(buf + index, sizeof(buf) - index, ", RSRP: %d dBm",
+                              params.ce_info.rsrp);
+         }
+         if (params.ce_info.cinr < INVALID_SIGNAL_VALUE) {
+            index += snprintf(buf + index, sizeof(buf) - index, ", CINR: %d dB",
+                              params.ce_info.cinr);
+         }
+         if (params.ce_info.snr < INVALID_SIGNAL_VALUE) {
+            index += snprintf(buf + index, sizeof(buf) - index, ", SNR: %d dB",
+                              params.ce_info.snr);
+         }
+         dtls_info("%s", buf + start);
+      }
+   }
 
    memset(&params, 0, sizeof(params));
    if (modem_read_statistic(&params.network_statistic) >= 0) {
@@ -542,7 +544,7 @@ int coap_client_prepare_post(void)
       dtls_info("%s", buf + start);
    }
 
-#endif /* CONFIG_COAP_SEND_NETWORK_INFO */
+#endif /* CONFIG_COAP_SEND_STATISTIC_INFO */
 
 #ifdef CONFIG_LOCATION_ENABLE
    err = 1;

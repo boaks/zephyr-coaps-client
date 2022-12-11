@@ -84,6 +84,10 @@ config COAP_SEND_NETWORK_INFO
 	bool "Include network infos in message."
 	default y
 
+config COAP_SEND_STATISTIC_INFO
+	bool "Include statistic infos in message."
+	default y
+
 config COAP_NO_RESPONSE_ENABLE
 	bool "Use CoAP NO_RESPONSE option for one-way message"
 	default n
