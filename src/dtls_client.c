@@ -199,7 +199,7 @@ static int check_socket(dtls_app_data_t *app, bool event)
 
 static void dtls_trigger(void)
 {
-   if (request_state == NONE) {
+   if (request_state == NONE || request_state == WAIT_SUSPEND) {
       k_sem_give(&dtls_trigger_msg);
    }
 }
@@ -378,15 +378,6 @@ read_from_peer(dtls_context_t *ctx, session_t *session, uint8 *data, size_t len)
    }
 
    return 0;
-}
-
-static inline bool lte_lost_network(int error)
-{
-#ifdef __LINUX_ERRNO_EXTENSIONS__
-   return (ENETDOWN == error || ESHUTDOWN == error || ENETUNREACH == error);
-#else
-   return (ENETDOWN == error || ENETUNREACH == error);
-#endif
 }
 
 static void prepare_socket(int fd)
@@ -862,6 +853,9 @@ int dtls_loop(session_t *dst, int flags)
                request_state = NONE;
                dtls_info("CoAP suspend after %d", loops);
             } else {
+               if (k_sem_count_get(&dtls_trigger_msg)) {
+                  request_state = NONE;
+               }
                ++loops;
             }
          } else {

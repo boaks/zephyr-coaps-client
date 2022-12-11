@@ -75,13 +75,13 @@ static bool lte_plmn_lock = false;
 static bool lte_force_nb_iot = false;
 static bool lte_force_lte_m = false;
 static struct lte_network_info network_info;
-static struct lte_ceinfo ceinfo;
+static struct lte_ce_info ce_info;
+static struct lte_sim_info sim_info;
+
+static uint8_t imei[MODEM_ID_SIZE];
+
 static int64_t transmission_time = 0;
 static int64_t network_search_time = 0;
-static uint8_t iccid[MODEM_ID_SIZE];
-static uint8_t imsi[MODEM_ID_SIZE];
-static uint8_t imei[MODEM_ID_SIZE];
-static volatile int16_t hpplmn_search_interval = -ENODATA;
 
 static volatile enum rai_mode rai_current_mode = RAI_OFF;
 static volatile int rai_time = -1;
@@ -157,9 +157,58 @@ static void modem_read_pdn_info_work_fn(struct k_work *work)
 static K_WORK_DEFINE(modem_read_pdn_info_work, modem_read_pdn_info_work_fn);
 #endif
 
+#ifndef CONFIG_USER_PLMN_SELECTOR
+// #define CONFIG_USER_PLMN_SELECTOR "262010400026202040002620304000"
+#define CONFIG_USER_PLMN_SELECTOR "FFFFFF0000FFFFFF0000FFFFFF0000"
+#endif
+
+#define FORBIDDEN_PLMN "62F210"
+
+#define CRSM_SUCCESS "144,0,\""
+#define CRSM_SUCCESS_LEN (sizeof(CRSM_SUCCESS) - 1)
+
+static size_t get_plmn(const char *list, size_t len, char *plmn, size_t plmn_size)
+{
+   int select = 0;
+   char access[11];
+
+   if (strncmp(list, CRSM_SUCCESS, CRSM_SUCCESS_LEN)) {
+      return 0;
+   }
+
+   list += CRSM_SUCCESS_LEN;
+   len -= CRSM_SUCCESS_LEN;
+   access[10] = 0;
+
+   while (*list && *list != '"' && len > 0) {
+      memcpy(access, list, 10);
+      LOG_DBG("Check selector %s", access);
+      select = (int)strtol(&access[6], NULL, 16);
+      if (select == 0 || select & 0x4000) {
+         if (memcmp(list, "FFFFFF", 6)) {
+            access[0] = list[1];
+            access[1] = list[0];
+            access[2] = list[3];
+            access[3] = list[5];
+            access[4] = list[4];
+            if (plmn_size > 5) {
+               plmn_size = 5;
+            }
+            memcpy(plmn, access, plmn_size);
+            return plmn_size;
+         }
+      }
+      list += 10;
+      len -= 10;
+   }
+   return 0;
+}
+
 static void modem_read_sim_work_fn(struct k_work *work)
 {
    char buf[200];
+   char plmn[6];
+   size_t plmn_len = 0;
 
    int err = modem_at_cmd("AT+CIMI", buf, sizeof(buf), NULL);
    if (err < 0) {
@@ -167,42 +216,44 @@ static void modem_read_sim_work_fn(struct k_work *work)
    } else {
       LOG_INF("imsi: %s", buf);
       k_mutex_lock(&lte_mutex, K_FOREVER);
-      strncpy(imsi, buf, sizeof(imsi));
+      strncpy(sim_info.imsi, buf, sizeof(sim_info.imsi));
       k_mutex_unlock(&lte_mutex);
    }
-   if (!iccid[0]) {
+   if (!sim_info.valid) {
       err = modem_at_cmd("AT%%XICCID", buf, sizeof(buf), "%XICCID: ");
       if (err < 0) {
          LOG_INF("Failed to read ICCID.");
       } else {
          LOG_INF("iccid: %s", buf);
          k_mutex_lock(&lte_mutex, K_FOREVER);
-         strncpy(iccid, buf, sizeof(iccid));
+         strncpy(sim_info.iccid, buf, sizeof(sim_info.iccid));
          k_mutex_unlock(&lte_mutex);
       }
-   }
-   if (hpplmn_search_interval == -ENODATA) {
+
       /* 0x6FAD, check for eDRX SIM suspend support*/
       err = modem_at_cmd("AT+CRSM=176,28589,0,0,0", buf, sizeof(buf), "+CRSM: ");
       if (err > 0) {
          LOG_INF("CRSM edrx: %s", buf);
-         if (strncmp(buf, "144,0,\"", 7) == 0) {
+         if (strncmp(buf, CRSM_SUCCESS, CRSM_SUCCESS_LEN) == 0) {
             // successful read
-            char n = buf[7 + 6]; // byte 3, low nibble
+            char n = buf[CRSM_SUCCESS_LEN + 6]; // byte 3, low nibble
             if (n > '7') {
-               LOG_INF("eDRX cycle support");
+               LOG_INF("eDRX cycle supported.");
             } else {
-               LOG_INF("No eDRX cycle support");
+               LOG_INF("eDRX cycle not supported.");
             }
+            k_mutex_lock(&lte_mutex, K_FOREVER);
+            sim_info.edrx_cycle_support = (n > '7');
+            k_mutex_unlock(&lte_mutex);
          }
       }
       /* 0x6F31, Higher Priority PLMN search period */
       err = modem_at_cmd("AT+CRSM=176,28465,0,0,0", buf, sizeof(buf), "+CRSM: ");
       if (err > 0) {
          LOG_INF("CRSM hpplmn: %s", buf);
-         if (strncmp(buf, "144,0,\"", 7) == 0) {
+         if (strncmp(buf, CRSM_SUCCESS, CRSM_SUCCESS_LEN) == 0) {
             // successful read
-            int interval = (int)strtol(&buf[7], NULL, 16);
+            int interval = (int)strtol(&buf[CRSM_SUCCESS_LEN], NULL, 16);
             interval *= 2;
             if (interval > 80) {
                interval *= 2;
@@ -212,11 +263,113 @@ static void modem_read_sim_work_fn(struct k_work *work)
             }
             LOG_INF("HPPLMN search interval: %d [h]", interval);
             k_mutex_lock(&lte_mutex, K_FOREVER);
-            hpplmn_search_interval = (int16_t)interval;
+            sim_info.hpplmn_search_interval = (int16_t)interval;
             k_mutex_unlock(&lte_mutex);
          }
       }
+
+      memset(plmn, 0, sizeof(plmn));
+      /* 0x6F62, HPLMN selector, 5*8 */
+      err = modem_at_cmd("AT+CRSM=176,28514,0,0,40", buf, sizeof(buf), "+CRSM: ");
+      if (err > 0) {
+         LOG_INF("CRSM hplmn: %s", buf);
+         plmn_len = get_plmn(buf, err, plmn, sizeof(plmn));
+         if (plmn_len) {
+            LOG_INF("CRSM hpplmn: %s", plmn);
+         }
+      }
+      /* 0x6F61, Operator controlled PLMN selector, 5*8 */
+      err = modem_at_cmd("AT+CRSM=176,28513,0,0,40", buf, sizeof(buf), "+CRSM: ");
+      if (err > 0) {
+         LOG_INF("CRSM oplmn: %s", buf);
+         if (!plmn_len) {
+            plmn_len = get_plmn(buf, err, plmn, sizeof(plmn));
+            if (plmn_len) {
+               LOG_INF("CRSM oplmn: %s", plmn);
+            }
+         }
+      }
+      /* 0x6F60, User controlled PLMN selector, 5*8 */
+      err = modem_at_cmd("AT+CRSM=176,28512,0,0,40", buf, sizeof(buf), "+CRSM: ");
+      if (err > 0) {
+         LOG_INF("CRSM user plmn: %s", buf);
+         if (strncmp(buf, CRSM_SUCCESS, CRSM_SUCCESS_LEN) == 0) {
+            int len = strlen(CONFIG_USER_PLMN_SELECTOR);
+            if (strncmp(buf + CRSM_SUCCESS_LEN, CONFIG_USER_PLMN_SELECTOR, len) != 0) {
+               err = nrf_modem_at_cmd(buf, sizeof(buf), "AT+CRSM=214,28512,0,0,%d,\"%s\"", len / 2, CONFIG_USER_PLMN_SELECTOR);
+               if (!err) {
+                  LOG_INF("PLMN user selector written.");
+               }
+            }
+            if (!plmn_len) {
+               err = modem_at_cmd("AT+CRSM=176,28512,0,0,40", buf, sizeof(buf), "+CRSM: ");
+            }
+         }
+         if (!plmn_len) {
+            plmn_len = get_plmn(buf, err, plmn, sizeof(plmn));
+            if (plmn_len) {
+               LOG_INF("CRSM user plmn: %s", plmn);
+            }
+         }
+      }
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      if (plmn_len) {
+         strcpy(sim_info.hpplmn, plmn);
+      } else {
+         sim_info.hpplmn[0] = 0;
+      }
+      sim_info.valid = true;
+      k_mutex_unlock(&lte_mutex);
+      if (plmn_len) {
+         LOG_INF("HPPLMN %s", plmn);
+      } else {
+         LOG_INF("HPPLMN not configured");
+      }
+#if 0
+      /* 0x6F7B, Forbidden PLMNs, 5*5 */
+      err = modem_at_cmd("AT+CRSM=176,28539,0,0,25", buf, sizeof(buf), "+CRSM: ");
+      if (err > 0) {
+         LOG_INF("CRSM forbidden plmn: %s", buf);
+         if (strcmp(FORBIDDEN_PLMN, plmn) == 0) {
+            if (strncmp(buf, CRSM_SUCCESS, CRSM_SUCCESS_LEN) == 0) {
+               err = nrf_modem_at_cmd(buf, sizeof(buf), "AT+CRSM=214,28539,0,0,%d,\"%s\"", 3, FORBIDDEN_PLMN);
+               if (!err) {
+                  LOG_INF("Forbidden PLMN written.");
+                  err = modem_at_cmd("AT+CRSM=176,28539,0,0,25", buf, sizeof(buf), "+CRSM: ");
+                  if (err > 0) {
+                     LOG_INF("CRSM* forbidden plmn: %s", buf);
+                  }
+               }
+            }
+         }
+      }
+#endif
    }
+   /*
+   err = modem_at_cmd("AT+CSIM=26,\"80C2000008CF06020282814C00\"", buf, sizeof(buf), "+CSIM: ");
+   if (err > 0) {
+      LOG_INF("CSIM-1: %s", buf);
+      err = modem_at_cmd("AT+CSIM=10,\"00C0000009\"", buf, sizeof(buf), "+CSIM: ");
+      if (err > 0) {
+         LOG_INF("CSIM-2: %s", buf);
+      }
+   }
+   err = modem_at_cmd("AT+CSIM=28,\"80C2000009CF07020282814E0101\"", buf, sizeof(buf), "+CSIM: ");
+   if (err > 0) {
+      LOG_INF("CSIM-3: %s", buf);
+      err = modem_at_cmd("AT+CIMI", buf, sizeof(buf), NULL);
+      if (err < 0) {
+         LOG_INF("Failed to read IMSI.");
+      } else {
+         LOG_INF("imsi-1: %s", sim_info.imsi);
+         LOG_INF("imsi-2: %s", buf);
+      }
+   }
+   err = modem_at_cmd("AT+CSIM=36,\"80C200000DCF0B020282814F050190000000\"", buf, sizeof(buf), "+CSIM: ");
+   if (err > 0) {
+      LOG_INF("CSIM-4: %s", buf);
+   }
+   */
 }
 
 static K_WORK_DEFINE(modem_read_sim_work, modem_read_sim_work_fn);
@@ -562,15 +715,17 @@ static void pdn_handler(uint8_t cid, enum pdn_event event,
 }
 #endif
 
-static void terminate_at_buffer(char *line, size_t len)
+static size_t terminate_at_buffer(char *line, size_t len)
 {
-   while (*line != 0 && *line != '\n' && *line != '\r' && len > 1) {
-      ++line;
+   char *current = line;
+   while (*current != 0 && *current != '\n' && *current != '\r' && len > 1) {
+      ++current;
       --len;
    }
-   if (*line != 0 && len > 0) {
-      *line = 0;
+   if (*current != 0 && len > 0) {
+      *current = 0;
    }
+   return current - line;
 }
 
 static int modem_connect(void)
@@ -850,8 +1005,9 @@ int modem_start(const k_timeout_t timeout)
 #endif
    }
    memset(&network_info, 0, sizeof(network_info));
-   memset(&imsi, 0, sizeof(imsi));
-   memset(&iccid, 0, sizeof(iccid));
+   memset(&ce_info, 0, sizeof(ce_info));
+   memset(&sim_info, 0, sizeof(sim_info));
+   sim_info.hpplmn_search_interval = -ENODATA;
 
 #ifdef CONFIG_UDP_AS_RAI_ENABLE
    /** Release Assistance Indication  */
@@ -964,26 +1120,24 @@ int modem_get_network_info(struct lte_network_info *info)
    return 0;
 }
 
-int modem_get_coverage_enhancement_info(struct lte_ceinfo *info)
+int modem_get_coverage_enhancement_info(struct lte_ce_info *info)
 {
    if (info) {
       k_mutex_lock(&lte_mutex, K_FOREVER);
-      *info = ceinfo;
+      *info = ce_info;
       k_mutex_unlock(&lte_mutex);
    }
    return 0;
 }
 
-int modem_get_imsi(char *buf, size_t len)
+int modem_get_sim_info(struct lte_sim_info *info)
 {
-   int result = 0;
-   k_mutex_lock(&lte_mutex, K_FOREVER);
-   if (buf) {
-      strncpy(buf, imsi, len);
+   if (info) {
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      *info = sim_info;
+      k_mutex_unlock(&lte_mutex);
    }
-   result = strlen(imsi);
-   k_mutex_unlock(&lte_mutex);
-   return result;
+   return 0;
 }
 
 int modem_get_imei(char *buf, size_t len)
@@ -992,27 +1146,6 @@ int modem_get_imei(char *buf, size_t len)
       strncpy(buf, imei, len);
    }
    return strlen(imei);
-}
-
-int modem_get_iccid(char *buf, size_t len)
-{
-   int result = 0;
-   k_mutex_lock(&lte_mutex, K_FOREVER);
-   if (buf) {
-      strncpy(buf, iccid, len);
-   }
-   result = strlen(iccid);
-   k_mutex_unlock(&lte_mutex);
-   return result;
-}
-
-int modem_get_hpplmn_search_interval(void)
-{
-   int interval;
-   k_mutex_lock(&lte_mutex, K_FOREVER);
-   interval = hpplmn_search_interval;
-   k_mutex_unlock(&lte_mutex);
-   return interval;
 }
 
 void modem_set_transmission_time(void)
@@ -1134,8 +1267,8 @@ int modem_read_network_info(struct lte_network_info *info)
    strncpy(temp.apn, network_info.apn, sizeof(temp.apn));
    strncpy(temp.local_ip, network_info.local_ip, sizeof(temp.local_ip));
    network_info = temp;
-   ceinfo.rsrp = rsrp;
-   ceinfo.snr = snr;
+   ce_info.rsrp = rsrp;
+   ce_info.snr = snr;
    k_mutex_unlock(&lte_mutex);
    if (info) {
       *info = temp;
@@ -1210,11 +1343,11 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
    return err;
 }
 
-int modem_read_coverage_enhancement_info(struct lte_ceinfo *info)
+int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
 {
    int err;
    char buf[64];
-   struct lte_ceinfo temp;
+   struct lte_ce_info temp;
 
    memset(&temp, 0, sizeof(temp));
    err = modem_at_cmd("AT+CEINFO?", buf, sizeof(buf), "+CEINFO: ");
@@ -1236,8 +1369,8 @@ int modem_read_coverage_enhancement_info(struct lte_ceinfo *info)
             temp.cinr = INVALID_SIGNAL_VALUE;
          }
          k_mutex_lock(&lte_mutex, K_FOREVER);
-         temp.snr = ceinfo.snr;
-         ceinfo = temp;
+         temp.snr = ce_info.snr;
+         ce_info = temp;
          k_mutex_unlock(&lte_mutex);
          if (info) {
             *info = temp;
@@ -1250,12 +1383,20 @@ int modem_read_coverage_enhancement_info(struct lte_ceinfo *info)
 int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
 {
    int err;
-   char at_buf[128];
+   char temp_buf[128];
+   size_t at_len = sizeof(temp_buf);
+   char *at_buf = temp_buf;
 
+   if (buf && max_len > at_len) {
+      at_buf = buf;
+      at_len = max_len;
+   } else {
+      memset(at_buf, 0, at_len);
+   }
    if (buf) {
       memset(buf, 0, max_len);
    }
-   err = nrf_modem_at_cmd(at_buf, sizeof(at_buf), cmd);
+   err = nrf_modem_at_cmd(at_buf, at_len, cmd);
    if (err < 0) {
       LOG_WRN(">> %s:", cmd);
       LOG_WRN(">> %s: %d", strerror(-err), err);
@@ -1278,17 +1419,24 @@ int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
       LOG_WRN(">> %s: %d (%d)", type, error, err);
       return -error;
    }
-   terminate_at_buffer(at_buf, sizeof(at_buf));
+   at_len = terminate_at_buffer(at_buf, at_len);
    if (buf) {
-      if (skip && strncmp(at_buf, skip, strlen(skip)) == 0) {
-         strncpy(buf, at_buf + strlen(skip), max_len - 1);
-      } else {
-         strncpy(buf, at_buf, max_len - 1);
+      if (skip) {
+         size_t skip_len = strlen(skip);
+         if (skip_len && strncmp(at_buf, skip, skip_len) == 0) {
+            at_buf += skip_len;
+            at_len -= skip_len;
+         }
       }
+      if (at_len >= max_len) {
+         at_len = max_len - 1;
+      }
+      memmove(buf, at_buf, at_len);
+      buf[at_len] = 0;
    } else {
       buf = at_buf;
    }
-   return strlen(buf);
+   return at_len;
 }
 
 //#define USE_SO_RAI_NO_DATA
@@ -1438,17 +1586,16 @@ int modem_get_network_info(struct lte_network_info *info)
    return -ENODATA;
 }
 
-int modem_get_coverage_enhancement_info(struct lte_ceinfo *info)
+int modem_get_coverage_enhancement_info(struct lte_ce_info *info)
 {
    (void)info;
    return -ENODATA;
 }
 
-int modem_get_imsi(char *buf, size_t len)
+int modem_get_sim_info(struct lte_sim_info *info)
 {
-   (void)buf;
-   (void)len;
-   return 0;
+   (void)info;
+   return -ENODATA;
 }
 
 int modem_get_imei(char *buf, size_t len)
@@ -1456,18 +1603,6 @@ int modem_get_imei(char *buf, size_t len)
    (void)buf;
    (void)len;
    return 0;
-}
-
-int modem_get_iccid(char *buf, size_t len)
-{
-   (void)buf;
-   (void)len;
-   return 0;
-}
-
-int modem_get_hpplmn_search_interval(void)
-{
-   return -ENODATA;
 }
 
 int modem_read_network_info(struct lte_network_info *info)
@@ -1482,7 +1617,7 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
    return -ENODATA;
 }
 
-int modem_read_coverage_enhancement_info(struct lte_ceinfo *info)
+int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
 {
    (void)info;
    return -ENODATA;

@@ -284,7 +284,8 @@ union lte_params {
    struct lte_lc_edrx_cfg edrx;
    struct lte_network_info network_info;
    struct lte_network_statistic network_statistic;
-   struct lte_ceinfo ceinfo;
+   struct lte_ce_info ce_info;
+   struct lte_sim_info sim_info;
 };
 
 int coap_client_prepare_post(void)
@@ -416,45 +417,43 @@ int coap_client_prepare_post(void)
 #endif
 
 #ifdef CONFIG_COAP_SEND_SIM_INFO
-   start = index + 1;
-   index += snprintf(buf + index, sizeof(buf) - index, "\nICCID: ");
-   err = modem_get_iccid(buf + index, sizeof(buf) - index);
-   dtls_info("%s", buf + start);
-   if (err) {
-      index += err;
-   } else {
-      index = start - 1;
-   }
-
-   start = index + 1;
-   index += snprintf(buf + index, sizeof(buf) - index, "\nIMSI: ");
-   err = modem_get_imsi(buf + index, sizeof(buf) - index);
-   dtls_info("%s", buf + start);
-   if (err) {
-      index += err;
-   } else {
-      index = start - 1;
+   memset(&params, 0, sizeof(params));
+   if (modem_get_sim_info(&params.sim_info) >= 0 && params.sim_info.valid) {
+      start = index + 1;
+      index += snprintf(buf + index, sizeof(buf) - index, "\nICCID: %s, eDRX cycle: %s",
+                        params.sim_info.iccid, params.sim_info.edrx_cycle_support ? "on" : "off");
+      if (params.sim_info.hpplmn_search_interval && params.sim_info.hpplmn[0]) {
+         index += snprintf(buf + index, sizeof(buf) - index, ", HPPLMN %s interval: %d [h]",
+                           params.sim_info.hpplmn, params.sim_info.hpplmn_search_interval);
+      } else if (params.sim_info.hpplmn_search_interval) {
+         index += snprintf(buf + index, sizeof(buf) - index, ", HPPLMN interval: %d [h]",
+                           params.sim_info.hpplmn_search_interval);
+      }
+      dtls_info("%s", buf + start);
+      start = index + 1;
+      index += snprintf(buf + index, sizeof(buf) - index, "\nIMSI: %s", params.sim_info.imsi);
+      dtls_info("%s", buf + start);
    }
 #endif /* CONFIG_COAP_SEND_SIM_INFO */
 
 #ifdef CONFIG_COAP_SEND_NETWORK_INFO
    memset(&params, 0, sizeof(params));
-   if (modem_get_coverage_enhancement_info(&params.ceinfo) >= 0) {
-      if (params.ceinfo.ce_supported) {
+   if (modem_get_coverage_enhancement_info(&params.ce_info) >= 0) {
+      if (params.ce_info.ce_supported) {
          start = index + 1;
          index += snprintf(buf + index, sizeof(buf) - index, "\n!CE: down: %u, up: %u",
-                           params.ceinfo.downlink_repetition, params.ceinfo.uplink_repetition);
-         if (params.ceinfo.rsrp < INVALID_SIGNAL_VALUE) {
+                           params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
+         if (params.ce_info.rsrp < INVALID_SIGNAL_VALUE) {
             index += snprintf(buf + index, sizeof(buf) - index, ", RSRP: %d dBm",
-                              params.ceinfo.rsrp);
+                              params.ce_info.rsrp);
          }
-         if (params.ceinfo.cinr < INVALID_SIGNAL_VALUE) {
+         if (params.ce_info.cinr < INVALID_SIGNAL_VALUE) {
             index += snprintf(buf + index, sizeof(buf) - index, ", CINR: %d dBm",
-                              params.ceinfo.cinr);
+                              params.ce_info.cinr);
          }
-         if (params.ceinfo.snr < INVALID_SIGNAL_VALUE) {
+         if (params.ce_info.snr < INVALID_SIGNAL_VALUE) {
             index += snprintf(buf + index, sizeof(buf) - index, ", SNR: %d dB",
-                              params.ceinfo.snr);
+                              params.ce_info.snr);
          }
          dtls_info("%s", buf + start);
       }

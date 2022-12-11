@@ -22,6 +22,15 @@
 
 #define MODEM_ID_SIZE 24
 
+typedef struct lte_sim_info {
+   bool valid;
+   int16_t hpplmn_search_interval;
+   bool edrx_cycle_support;
+   char iccid[MODEM_ID_SIZE];
+   char imsi[MODEM_ID_SIZE];
+   char hpplmn[6];
+} lte_sim_info_t;
+
 typedef struct lte_network_info {
    const char* reg_status;
    bool registered;
@@ -36,7 +45,7 @@ typedef struct lte_network_info {
 
 #define INVALID_SIGNAL_VALUE 0x7fff
 
-typedef struct lte_ceinfo {
+typedef struct lte_ce_info {
    uint8_t ce_supported;
    char state;
    uint8_t downlink_repetition;
@@ -44,7 +53,7 @@ typedef struct lte_ceinfo {
    int16_t rsrp;
    int16_t cinr;
    int16_t snr;
-} lte_ceinfo_t;
+} lte_ce_info_t;
 
 typedef struct lte_network_statistic {
    uint32_t searchs;
@@ -88,15 +97,11 @@ int modem_get_psm_status(struct lte_lc_psm_cfg *psm);
 
 int modem_get_network_info(struct lte_network_info* info);
 
-int modem_get_coverage_enhancement_info(struct lte_ceinfo* info);
+int modem_get_coverage_enhancement_info(struct lte_ce_info* info);
 
-int modem_get_imsi(char* buf, size_t len);
+int modem_get_sim_info(struct lte_sim_info* info);
 
 int modem_get_imei(char* buf, size_t len);
-
-int modem_get_iccid(char* buf, size_t len);
-
-int modem_get_hpplmn_search_interval(void);
 
 int modem_get_release_time(void);
 
@@ -108,7 +113,7 @@ int modem_read_pdn_info(char* buf, size_t len);
 
 int modem_read_statistic(struct lte_network_statistic* statistic);
 
-int modem_read_coverage_enhancement_info(struct lte_ceinfo* info);
+int modem_read_coverage_enhancement_info(struct lte_ce_info* info);
 
 int modem_at_cmd(const char* cmd, char* buf, size_t max_len, const char *skip);
 
