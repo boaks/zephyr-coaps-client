@@ -448,7 +448,7 @@ int coap_client_prepare_post(void)
                               params.ce_info.rsrp);
          }
          if (params.ce_info.cinr < INVALID_SIGNAL_VALUE) {
-            index += snprintf(buf + index, sizeof(buf) - index, ", CINR: %d dBm",
+            index += snprintf(buf + index, sizeof(buf) - index, ", CINR: %d dB",
                               params.ce_info.cinr);
          }
          if (params.ce_info.snr < INVALID_SIGNAL_VALUE) {
