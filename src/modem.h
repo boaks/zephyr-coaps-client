@@ -21,6 +21,7 @@
 #include <modem/lte_lc.h>
 
 #define MODEM_ID_SIZE 24
+#define MODEM_PLMN_SIZE 7
 
 typedef struct lte_sim_info {
    bool valid;
@@ -28,7 +29,7 @@ typedef struct lte_sim_info {
    bool edrx_cycle_support;
    char iccid[MODEM_ID_SIZE];
    char imsi[MODEM_ID_SIZE];
-   char hpplmn[6];
+   char hpplmn[MODEM_PLMN_SIZE];
 } lte_sim_info_t;
 
 typedef struct lte_network_info {

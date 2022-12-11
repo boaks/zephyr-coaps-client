@@ -158,19 +158,24 @@ static K_WORK_DEFINE(modem_read_pdn_info_work, modem_read_pdn_info_work_fn);
 #endif
 
 #ifndef CONFIG_USER_PLMN_SELECTOR
-// #define CONFIG_USER_PLMN_SELECTOR "262010400026202040002620304000"
 #define CONFIG_USER_PLMN_SELECTOR "FFFFFF0000FFFFFF0000FFFFFF0000"
 #endif
 
-#define FORBIDDEN_PLMN "62F210"
-
 #define CRSM_SUCCESS "144,0,\""
 #define CRSM_SUCCESS_LEN (sizeof(CRSM_SUCCESS) - 1)
+
+static inline void append_plmn(char** plmn, char digit) {
+   if (digit != 'F') {
+      **plmn = digit;
+      (*plmn)++;
+   }
+}
 
 static size_t get_plmn(const char *list, size_t len, char *plmn, size_t plmn_size)
 {
    int select = 0;
    char access[11];
+   char *cur = access;
 
    if (strncmp(list, CRSM_SUCCESS, CRSM_SUCCESS_LEN)) {
       return 0;
@@ -186,14 +191,23 @@ static size_t get_plmn(const char *list, size_t len, char *plmn, size_t plmn_siz
       select = (int)strtol(&access[6], NULL, 16);
       if (select == 0 || select & 0x4000) {
          if (memcmp(list, "FFFFFF", 6)) {
-            access[0] = list[1];
-            access[1] = list[0];
-            access[2] = list[3];
-            access[3] = list[5];
-            access[4] = list[4];
-            if (plmn_size > 5) {
-               plmn_size = 5;
+            // according to TS 24.008 [9].
+            // For instance, using 246 for the MCC and 81 for the MNC
+            // and if this is stored in PLMN 3 the contents is as follows:
+            // Bytes 7 to 9: '42' 'F6' '18'.
+            // If storage for fewer than n PLMNs is required, 
+            // the unused bytes shall be set to 'FF'.
+            cur = access;
+            append_plmn(&cur, list[1]);
+            append_plmn(&cur, list[0]);
+            append_plmn(&cur, list[3]);
+            append_plmn(&cur, list[2]);
+            append_plmn(&cur, list[5]);
+            append_plmn(&cur, list[4]);
+            if (plmn_size > cur - access) {
+               plmn_size = cur - access;
             }
+            memset(plmn, 0, plmn_size);
             memcpy(plmn, access, plmn_size);
             return plmn_size;
          }
@@ -207,7 +221,7 @@ static size_t get_plmn(const char *list, size_t len, char *plmn, size_t plmn_siz
 static void modem_read_sim_work_fn(struct k_work *work)
 {
    char buf[200];
-   char plmn[6];
+   char plmn[MODEM_PLMN_SIZE];
    size_t plmn_len = 0;
 
    int err = modem_at_cmd("AT+CIMI", buf, sizeof(buf), NULL);
@@ -275,7 +289,7 @@ static void modem_read_sim_work_fn(struct k_work *work)
          LOG_INF("CRSM hplmn: %s", buf);
          plmn_len = get_plmn(buf, err, plmn, sizeof(plmn));
          if (plmn_len) {
-            LOG_INF("CRSM hpplmn: %s", plmn);
+            LOG_INF("CRSM hplmn: %s", plmn);
          }
       }
       /* 0x6F61, Operator controlled PLMN selector, 5*8 */
@@ -325,51 +339,7 @@ static void modem_read_sim_work_fn(struct k_work *work)
       } else {
          LOG_INF("HPPLMN not configured");
       }
-#if 0
-      /* 0x6F7B, Forbidden PLMNs, 5*5 */
-      err = modem_at_cmd("AT+CRSM=176,28539,0,0,25", buf, sizeof(buf), "+CRSM: ");
-      if (err > 0) {
-         LOG_INF("CRSM forbidden plmn: %s", buf);
-         if (strcmp(FORBIDDEN_PLMN, plmn) == 0) {
-            if (strncmp(buf, CRSM_SUCCESS, CRSM_SUCCESS_LEN) == 0) {
-               err = nrf_modem_at_cmd(buf, sizeof(buf), "AT+CRSM=214,28539,0,0,%d,\"%s\"", 3, FORBIDDEN_PLMN);
-               if (!err) {
-                  LOG_INF("Forbidden PLMN written.");
-                  err = modem_at_cmd("AT+CRSM=176,28539,0,0,25", buf, sizeof(buf), "+CRSM: ");
-                  if (err > 0) {
-                     LOG_INF("CRSM* forbidden plmn: %s", buf);
-                  }
-               }
-            }
-         }
-      }
-#endif
    }
-   /*
-   err = modem_at_cmd("AT+CSIM=26,\"80C2000008CF06020282814C00\"", buf, sizeof(buf), "+CSIM: ");
-   if (err > 0) {
-      LOG_INF("CSIM-1: %s", buf);
-      err = modem_at_cmd("AT+CSIM=10,\"00C0000009\"", buf, sizeof(buf), "+CSIM: ");
-      if (err > 0) {
-         LOG_INF("CSIM-2: %s", buf);
-      }
-   }
-   err = modem_at_cmd("AT+CSIM=28,\"80C2000009CF07020282814E0101\"", buf, sizeof(buf), "+CSIM: ");
-   if (err > 0) {
-      LOG_INF("CSIM-3: %s", buf);
-      err = modem_at_cmd("AT+CIMI", buf, sizeof(buf), NULL);
-      if (err < 0) {
-         LOG_INF("Failed to read IMSI.");
-      } else {
-         LOG_INF("imsi-1: %s", sim_info.imsi);
-         LOG_INF("imsi-2: %s", buf);
-      }
-   }
-   err = modem_at_cmd("AT+CSIM=36,\"80C200000DCF0B020282814F050190000000\"", buf, sizeof(buf), "+CSIM: ");
-   if (err > 0) {
-      LOG_INF("CSIM-4: %s", buf);
-   }
-   */
 }
 
 static K_WORK_DEFINE(modem_read_sim_work, modem_read_sim_work_fn);
