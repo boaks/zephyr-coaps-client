@@ -24,6 +24,16 @@ Alternatively you may use the project's configuration file [prj.conf](../prj.con
 
 For more information, see [overlays](#overlays).
 
+## General
+
+The time running from battery depends a lot from the configuration.
+
+The application enables per default to suspend the UART and the 3.3V.
+
+Depending on the SIM-Card, the HPPLMN (automatic search for higher priorized PLMN) consumes quite a lot energy. e.g. a HPPLMN interval of 2h and an average searchtime of 60s ends up at a power consumption comparable with 10 message exchanges every hour. So check your SIM-card (enable COAP_SEND_SIM_INFO), not that you get surprised!
+
+The usage of the sensors also reduces that time. Consider to measure less frequent, e.g. every 10 minutes instead of every couple of seconds.
+
 ## Basic
 
 - **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox at `californium.eclipseprojects.io`.
@@ -42,15 +52,27 @@ For more information, see [overlays](#overlays).
 
 - **COAP_WAIT_ON_POWERMANAGER**, coap waits for the power-manager to start exchanging application data. Takes up to 30 s and delays the first exchange. Default disabled.
 
-- **COAP_SEND_SIM_INFO**, include information from the SIM-card. e.g. `ICCID: 89882280666025467840` and `IMSI: 901405102546784`.
-
-- **COAP_SEND_NETWORK_INFO**, include network information. e.g.
+- **COAP_SEND_SIM_INFO**, include information from the SIM-card.
 
 ```
-!Network: CAT-M1,roaming,Band 3,PLMN 26201,TAC 67B9,Cell 01CC2B06,RSRP -105 dBm
-PDN: ???,??.???.??.??
-!PSM: TAU 86400 [s], Act 8 [s], Released: 10874 ms
-Stat: tx 493kB, rx 67kB, max 532B, avg 289B, searchs 44, PSM delays 0
+ICCID: ????????????????????, eDRX cycle: off, HPPLMN interval: 10 [h]
+IMSI: ???????????????
+```
+
+- **COAP_SEND_NETWORK_INFO**, include network information
+
+```
+!Network: CAT-M1,roaming,Band 3,#PLMN 26201,TAC 26553,Cell 30157574
+PDN: ???.???,???.??.??.???
+!PSM: TAU 86400 [s], Act 0 [s], Released: 12406 ms
+```
+
+- **COAP_SEND_STATISTIC_INFO**, include statistic information. e.g. transmissions and network searchs.
+
+```
+!CE: down: 8, up: 1, RSRP: -116 dBm, CINR: 8 dB, SNR: 9 dB
+Stat: tx 1 kB, rx 0 kB, max 597 B, avg 142 B
+Cell updates 2, Network searchs 1 (2 [s]), PSM delays 0 (0 [s]), Restarts 0
 ```
 
 - **COAP_NO_RESPONSE_ENABLE**, send one-way coap message (request without response).
@@ -102,6 +124,8 @@ Configure used URI query parameter. Please note, that these query parameter must
 - **UDP_AS_RAI_ENABLE**, enable RAI (access stratum), requires 3GPP release 14 supported by the Mobile Network Operator.
 
 - **UDP_EDRX_ENABLE**, enable eDRX.
+
+- **STATIONARY_MODE_ENABLE**, enable stationary mode. Optimize power consumptio, if device is sationary at one place and is not moved. Reduces/removes also HPPLMN searchs (automatic search for higher priorized PLMN). 
 
 - **MODEM_SAVE_CONFIG_THRESHOLD**, threshold to save the modem configuration. The modem is switched off and on to save the configuration.
 

@@ -19,11 +19,11 @@ In combination with LTE-M/NB-IoT, CoAP / DTLS CID enables to build mobile applic
 - zero-install and 
 - high cost-efficiency.
 
-The demo client itself is in development stage. In "good weather", the `Thingy:91` flies from battery for 7 weeks. In "storm" it may require to be switched off and on again. That should be rare exceptions.
+The demo client itself is in development stage. In "good and normal weather", the `Thingy:91` flies from battery for 7 months. In "storm" it may require to be switched off and on again. That should be very rare exceptions.
 
-The demo client is intended as groundwork for your own ideas. "Out-of-the-box" this application is only useful to easily check, if mobile IoT works at the locations and environment you want to use it. The demo reports also some details about the mobile network. 
+The demo client is intended as groundwork for your own ideas. "Out-of-the-box" this application is useful to easily check, if mobile IoT works at the locations and environment you want to use it. The demo reports also some details about the mobile network. 
 To build products and applications on this protocol stack requires to implement a production client and to adapt the coap-server for your function. The demo targets therefore people, which are already common with [zephyr](https://www.zephyrproject.org/), or, even better, common with the development for the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) itself.
-Without that knowledge it will be hard an time consuming to make benefit out of this demo.
+Without that knowledge it will be time consuming to make benefit out of this demo.
 
 **Note:**
 The demo client is considered to use CoAP/DTLS CID. Without server-side support for DTLS CID, it will not work proper. Please ensure, that your server supports that.
@@ -157,13 +157,14 @@ Demo message:
 ```
 6:49 [m:ss], Thingy:91 v0.5.0, 0*1, 1*0, 2*0, 3*0, failures 0
 4168 mV 95% battery (low-power)
-ICCID: ????????????????????
+ICCID: ????????????????????, eDRX cycle: off, HPPLMN interval: 10 [h]
 IMSI: ???????????????
-!Network: CAT-M1,roaming,Band 20,PLMN 26201,TAC 26553,Cell 30157571,RSRP -105 dBm
+!Network: CAT-M1,roaming,Band 3,#PLMN 26201,TAC 26553,Cell 30157574
 PDN: ???.???,???.??.??.???
-!PSM: TAU 86400 [s], Act 0 [s], Released: 12593 ms
-Stat: tx 0 kB, rx 0 kB, max 490 B, avg 132 B
-Cell updates 1, Network searchs 1, PSM delays 0
+!PSM: TAU 86400 [s], Act 0 [s], Released: 12406 ms
+!CE: down: 8, up: 1, RSRP: -116 dBm, CINR: 8 dB, SNR: 9 dB
+Stat: tx 1 kB, rx 0 kB, max 597 B, avg 142 B
+Cell updates 2, Network searchs 1 (2 [s]), PSM delays 0 (0 [s]), Restarts 0
 !22.98,22.99,23.03,23.06,23.11,23.17,23.23,23.30,23.39,23.50,23.64,23.80 C
 55.13 %H
 1002.6 hPa
