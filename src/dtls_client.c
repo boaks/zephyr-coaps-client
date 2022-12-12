@@ -60,6 +60,10 @@ typedef enum {
 
 typedef struct dtls_app_data_t {
    int fd;
+   bool dtls_pending;
+   request_state_t request_state;
+   uint16_t timeout;
+   int64_t start_time;
 } dtls_app_data_t;
 
 static volatile bool network_registered = false;
@@ -69,22 +73,19 @@ static volatile bool lte_connected_send = false;
 static volatile unsigned int lte_connections = 0;
 static volatile unsigned long connected_time = 0;
 
-static volatile bool dtls_pending = false;
-static volatile request_state_t request_state = NONE;
+static dtls_app_data_t app_data;
+
+static unsigned long connect_time = 0;
+static unsigned long response_time = 0;
+static unsigned int transmission = 0;
 
 static volatile bool trigger_restart_modem = false;
-
 static volatile bool lte_power_off = false;
-
 static bool lte_power_on_off = false;
 
 #ifdef CONFIG_ADXL362_MOTION_DETECTION
 static volatile bool moved = false;
 #endif
-static unsigned long connect_time = 0;
-static unsigned long response_time = 0;
-static unsigned int transmission = 0;
-static int timeout = 0;
 
 #define MAX_READ_BUF 1600
 static uint8_t receive_buffer[MAX_READ_BUF];
@@ -199,7 +200,7 @@ static int check_socket(dtls_app_data_t *app, bool event)
 
 static void dtls_trigger(void)
 {
-   if (request_state == NONE || request_state == WAIT_SUSPEND) {
+   if (app_data.request_state == NONE || app_data.request_state == WAIT_SUSPEND) {
       k_sem_give(&dtls_trigger_msg);
    }
 }
@@ -222,7 +223,7 @@ static K_WORK_DELAYABLE_DEFINE(dtls_timer_trigger_work, dtls_timer_trigger_fn);
 
 static void dtls_timer_trigger_fn(struct k_work *work)
 {
-   if (request_state == NONE) {
+   if (app_data.request_state == NONE) {
       dtls_trigger();
    } else {
       work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
@@ -235,12 +236,12 @@ static void dtls_wakeup_trigger(void)
    static unsigned long wakeup_next_sent = 0;
    unsigned long now = (unsigned long)k_uptime_get();
 
-   if (request_state == NONE) {
+   if (app_data.request_state == NONE) {
       if ((now - wakeup_next_sent) > 0) {
          dtls_trigger();
       }
-   } else {
-      dtls_info("Wakeup with request state %d", request_state);
+   } else if (app) {
+      dtls_info("Wakeup with request state %d", app_data.request_state);
    }
    wakeup_next_sent = now + ((CONFIG_COAP_WAKEUP_SEND_INTERVAL)*MSEC_PER_SEC);
 }
@@ -265,7 +266,7 @@ static void dtls_coap_next(void)
    }
 }
 
-static void dtls_coap_success(void)
+static void dtls_coap_success(dtls_app_data_t *app)
 {
    long time1 = connected_time - connect_time;
    long time2 = response_time - connect_time;
@@ -276,7 +277,7 @@ static void dtls_coap_success(void)
       time2 = -1;
    }
    k_sem_reset(&dtls_trigger_msg);
-   request_state = WAIT_SUSPEND;
+   app->request_state = WAIT_SUSPEND;
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
@@ -318,7 +319,7 @@ static void dtls_coap_success(void)
    dtls_coap_next();
 }
 
-static void dtls_coap_failure(void)
+static void dtls_coap_failure(dtls_app_data_t *app)
 {
    long time1 = connected_time - connect_time;
    long time2 = response_time - connect_time;
@@ -329,7 +330,7 @@ static void dtls_coap_failure(void)
       time2 = -1;
    }
    k_sem_reset(&dtls_trigger_msg);
-   request_state = WAIT_SUSPEND;
+   app->request_state = WAIT_SUSPEND;
    ui_led_op(LED_COLOR_RED, LED_SET);
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
@@ -343,6 +344,7 @@ read_from_peer(dtls_context_t *ctx, session_t *session, uint8 *data, size_t len)
 {
    (void)ctx;
    (void)session;
+   dtls_app_data_t *app = dtls_get_app_data(ctx);
 
    int err = coap_client_parse_data(data, len);
    if (err < 0) {
@@ -353,26 +355,26 @@ read_from_peer(dtls_context_t *ctx, session_t *session, uint8 *data, size_t len)
       case PARSE_IGN:
          break;
       case PARSE_RST:
-         if (NONE != request_state) {
+         if (NONE != app->request_state) {
             response_time = (unsigned long)k_uptime_get();
-            dtls_coap_failure();
+            dtls_coap_failure(app);
          }
          break;
       case PARSE_ACK:
-         if (NONE != request_state) {
-            request_state = WAIT_RESPONSE;
+         if (NONE != app->request_state) {
+            app->request_state = WAIT_RESPONSE;
          }
          break;
       case PARSE_RESPONSE:
-         if (NONE != request_state) {
+         if (NONE != app->request_state) {
             response_time = (unsigned long)k_uptime_get();
-            dtls_coap_success();
+            dtls_coap_success(app);
          }
          break;
       case PARSE_CON_RESPONSE:
-         if (NONE != request_state) {
+         if (NONE != app->request_state) {
             response_time = (unsigned long)k_uptime_get();
-            request_state = SEND_ACK;
+            app->request_state = SEND_ACK;
          }
          break;
    }
@@ -380,17 +382,17 @@ read_from_peer(dtls_context_t *ctx, session_t *session, uint8 *data, size_t len)
    return 0;
 }
 
-static void prepare_socket(int fd)
+static void prepare_socket(dtls_app_data_t *app)
 {
    lte_connected_send = false;
-   if (!dtls_pending && !lte_power_on_off) {
+   if (!app->dtls_pending && !lte_power_on_off) {
 #ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
-      modem_set_rai_mode(RAI_LAST, fd);
+      modem_set_rai_mode(RAI_LAST, app->fd);
 #else
-      modem_set_rai_mode(RAI_ONE_RESPONSE, fd);
+      modem_set_rai_mode(RAI_ONE_RESPONSE, app->fd);
 #endif
    } else {
-      modem_set_rai_mode(RAI_OFF, fd);
+      modem_set_rai_mode(RAI_OFF, app->fd);
    }
 }
 
@@ -398,11 +400,11 @@ static int
 send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size_t len)
 {
    int result = 0;
-   const char *tag = dtls_pending ? "hs_" : "";
+   const char *tag = app->dtls_pending ? "hs_" : "";
 
    if (!lte_power_on_off) {
       connect_time = (unsigned long)k_uptime_get();
-      prepare_socket(app->fd);
+      prepare_socket(app);
    }
    result = sendto(app->fd, data, len, MSG_DONTWAIT, &session->addr.sa, session->size);
    if (result < 0) {
@@ -412,24 +414,24 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
    if (network_ready) {
       modem_set_transmission_time();
    }
-   if (RESEND != request_state) {
-      timeout = COAP_ACK_TIMEOUT;
+   if (RESEND != app->request_state) {
+      app->timeout = COAP_ACK_TIMEOUT;
    }
 #ifndef NDEBUG
    /* logging */
-   if (SEND == request_state) {
+   if (SEND == app->request_state) {
       if (network_ready) {
          dtls_info("%ssent_to_peer %d", tag, result);
       } else {
          dtls_info("%ssend_to_peer %d", tag, result);
       }
-   } else if (RESEND == request_state) {
+   } else if (RESEND == app->request_state) {
       if (network_ready) {
          dtls_info("%sresent_to_peer %d", tag, result);
       } else {
          dtls_info("%sresend_to_peer %d", tag, result);
       }
-   } else if (RECEIVE == request_state) {
+   } else if (RECEIVE == app->request_state) {
       if (network_ready) {
          dtls_info("%sunintended resent_to_peer %d", tag, result);
       } else {
@@ -437,15 +439,6 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
       }
    }
 #endif
-   if (!dtls_pending && network_ready) {
-      if (request_state == SEND || request_state == RESEND) {
-#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
-         dtls_coap_success();
-#else
-         request_state = RECEIVE;
-#endif
-      }
-   }
    return result;
 }
 
@@ -453,33 +446,29 @@ static int
 dtls_send_to_peer(dtls_context_t *ctx,
                   session_t *session, uint8 *data, size_t len)
 {
-
-   dtls_app_data_t *app = (dtls_app_data_t *)dtls_get_app_data(ctx);
-   int res = send_to_peer(app, session, data, len);
-   if (dtls_pending && res >= 0) {
-      if (network_ready) {
-         request_state = RECEIVE;
-      } else if (RESEND != request_state) {
-         request_state = SEND;
-      }
+   dtls_app_data_t *app = dtls_get_app_data(ctx);
+   if (app->dtls_pending &&
+       (app->request_state == RECEIVE || app->request_state == NONE)) {
+      app->request_state = SEND;
    }
-   return res;
+   return send_to_peer(app, session, data, len);
 }
 
 static int
 dtls_handle_event(dtls_context_t *ctx, session_t *session,
                   dtls_alert_level_t level, unsigned short code)
 {
+
    if (DTLS_EVENT_CONNECTED == code) {
       dtls_info("dtls connected.");
-      dtls_pending = false;
-      request_state = NONE;
+      app_data.dtls_pending = false;
+      app_data.request_state = NONE;
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
       ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
       ui_led_op(LED_DTLS, LED_SET);
    } else if (DTLS_EVENT_CONNECT == code) {
       dtls_info("dtls connect ...");
-      dtls_pending = true;
+      app_data.dtls_pending = true;
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_SET);
       ui_led_op(LED_COLOR_GREEN, LED_SET);
@@ -508,10 +497,11 @@ recvfrom_peer(dtls_app_data_t *app, dtls_context_t *ctx)
    }
    dtls_info("received_from_peer %d bytes", result);
    if (ctx) {
-      if (dtls_pending && request_state == RESEND) {
-         request_state = SEND;
+      result = dtls_handle_message(ctx, &session, receive_buffer, result);
+      if (app->dtls_pending && (app->request_state == SEND || app->request_state == RESEND)) {
+         app->request_state = RECEIVE;
       }
-      return dtls_handle_message(ctx, &session, receive_buffer, result);
+      return result;
    } else {
       return read_from_peer(NULL, &session, receive_buffer, result);
    }
@@ -524,6 +514,9 @@ sendto_peer(dtls_app_data_t *app, session_t *dst, struct dtls_context_t *ctx)
    size_t coap_message_len = 0;
    const uint8_t *coap_message_buf = NULL;
 
+   if (app->request_state == NONE) {
+      app->request_state = SEND;
+   }
    coap_message_len = coap_client_message(&coap_message_buf);
    if (ctx) {
       if (coap_message_len > 0) {
@@ -542,8 +535,16 @@ sendto_peer(dtls_app_data_t *app, session_t *dst, struct dtls_context_t *ctx)
       if (!lte_power_off) {
          ui_led_op(LED_COLOR_GREEN, LED_SET);
       }
+      if (network_ready) {
+         app->request_state = RECEIVE;
+#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
+         if (!app->dtls_pending) {
+            dtls_coap_success(app);
+         }
+#endif
+      }
    } else {
-      dtls_coap_failure();
+      dtls_coap_failure(app);
    }
    return result;
 }
@@ -576,11 +577,11 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
          ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
       }
    } else if (type == LTE_STATE_READY) {
-      if (!dtls_pending) {
+      if (!app_data.dtls_pending) {
          if (active) {
             ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op(LED_COLOR_GREEN, LED_SET);
-         } else if (NONE == request_state || WAIT_SUSPEND == request_state) {
+         } else if (NONE == app_data.request_state || WAIT_SUSPEND == app_data.request_state) {
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
             ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
          } else {
@@ -630,7 +631,6 @@ int dtls_loop(session_t *dst, int flags)
    fd_set rfds, efds;
    struct timeval io_timeout;
 #endif
-   dtls_app_data_t dtls_add_data = {0};
    dtls_context_t *dtls_context = NULL;
    int result;
    int loops = 0;
@@ -646,37 +646,36 @@ int dtls_loop(session_t *dst, int flags)
 #endif
 
    coap_client_init();
+   app_data.fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
-   dtls_add_data.fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-
-   if (dtls_add_data.fd < 0) {
+   if (app_data.fd < 0) {
       dtls_warn("Failed to create UDP socket: %d (%s)", errno, strerror(errno));
       reboot();
    }
-   modem_set_rai_mode(RAI_OFF, dtls_add_data.fd);
+   modem_set_rai_mode(RAI_OFF, app_data.fd);
 
    if (flags & FLAG_TLS) {
       dtls_init();
-      dtls_context = dtls_new_context(&dtls_add_data);
+      dtls_context = dtls_new_context(&app_data);
       if (!dtls_context) {
          dtls_emerg("cannot create context");
          reboot();
       }
       dtls_credentials_init_handler(&cb);
       dtls_set_handler(dtls_context, &cb);
-      dtls_pending = true;
+      app_data.dtls_pending = true;
    }
 #if defined(CONFIG_UDP_AS_RAI_ENABLE) && defined(USE_SO_RAI_NO_DATA)
    // using SO_RAI_NO_DATA requires a destination, for what ever
    connect(fd, (struct sockaddr *)&dst.addr.sin, sizeof(struct sockaddr_in));
 #endif
 
-   timeout = COAP_ACK_TIMEOUT;
+   app_data.timeout = COAP_ACK_TIMEOUT;
    if ((flags & FLAG_KEEP_CONNECTION) && (flags & FLAG_TLS)) {
-      request_state = SEND;
+      app_data.request_state = SEND;
       dtls_connect(dtls_context, dst);
    } else {
-      request_state = NONE;
+      app_data.request_state = NONE;
    }
 
    while (1) {
@@ -710,10 +709,10 @@ int dtls_loop(session_t *dst, int flags)
 #endif
       if (trigger_restart_modem) {
          restart_modem();
-         reopen_socket(&dtls_add_data);
+         reopen_socket(&app_data);
       }
 #ifdef USE_POLL
-      udp_poll.fd = dtls_add_data.fd;
+      udp_poll.fd = app_data.fd;
       udp_poll.events = POLLIN;
       udp_poll.revents = 0;
 #else
@@ -723,7 +722,7 @@ int dtls_loop(session_t *dst, int flags)
       FD_SET(dtls_add_data.fd, &efds);
 #endif
 
-      if (request_state != NONE) {
+      if (app_data.request_state != NONE) {
 #ifdef USE_POLL
          result = poll(&udp_poll, 1, 1000);
 #else
@@ -758,20 +757,19 @@ int dtls_loop(session_t *dst, int flags)
                connect_time = (unsigned long)k_uptime_get();
                modem_set_normal();
                modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
-               reopen_socket(&dtls_add_data);
+               reopen_socket(&app_data);
             } else if (trigger_restart_modem) {
                restart_modem();
-               reopen_socket(&dtls_add_data);
+               reopen_socket(&app_data);
             } else {
-               check_socket(&dtls_add_data, false);
+               check_socket(&app_data, false);
             }
-            request_state = SEND;
             loops = 0;
             transmission = 0;
             if (coap_client_prepare_post() < 0) {
-               dtls_coap_failure();
+               dtls_coap_failure(&app_data);
             } else {
-               if (dtls_pending) {
+               if (app_data.dtls_pending) {
                   dtls_peer_t *peer = dtls_get_peer(dtls_context, dst);
                   if (peer) {
                      dtls_reset_peer(dtls_context, peer);
@@ -780,7 +778,7 @@ int dtls_loop(session_t *dst, int flags)
                   dtls_connect(dtls_context, dst);
                   send_request = true;
                } else {
-                  sendto_peer(&dtls_add_data, dst, dtls_context);
+                  sendto_peer(&app_data, dst, dtls_context);
                }
             }
          }
@@ -790,77 +788,79 @@ int dtls_loop(session_t *dst, int flags)
             dtls_warn("select failed: errno %d (%s)", result, strerror(errno));
          }
       } else if (result == 0) { /* timeout */
-         if (request_state == SEND || request_state == RESEND) {
+         if (app_data.request_state == SEND ||
+             app_data.request_state == RESEND) {
             if (lte_connected_send) {
                loops = 0;
                time = connected_time - connect_time;
                if (time < 0)
                   time = -1;
-               if (request_state == SEND) {
+               if (app_data.request_state == SEND) {
                   dtls_info("%d/%d/%u-%ld ms: connected => sent", network_ready, lte_connected_send, lte_connections, time);
                } else {
                   dtls_info("%d/%d/%u-%ld ms: connected => resent", network_ready, lte_connected_send, lte_connections, time);
                }
+               app_data.request_state = RECEIVE;
 #ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
-               dtls_coap_success();
-#else
-               request_state = RECEIVE;
+               if (!app_data.dtls_pending) {
+                  dtls_coap_success(&app_data);
+               }
 #endif
             } else if (loops < 60) {
                ++loops;
                if (loops % 5 == 4) {
-                  check_socket(&dtls_add_data, false);
+                  check_socket(&app_data, false);
                }
             } else {
-               dtls_coap_failure();
-               reopen_socket(&dtls_add_data);
+               dtls_coap_failure(&app_data);
+               reopen_socket(&app_data);
             }
-         } else if (request_state == RECEIVE) {
-            int temp = timeout;
+         } else if (app_data.request_state == RECEIVE) {
+            int temp = app_data.timeout;
             if (!network_ready) {
                temp += ADD_ACK_TIMEOUT;
             }
             ++loops;
-            dtls_info("CoAP wait %d/%d/%d", loops, timeout, temp);
+            dtls_info("CoAP wait %d/%d/%d", loops, app_data.timeout, temp);
             if (loops > temp) {
                result = -1;
                if (transmission < COAP_MAX_RETRANSMISSION) {
                   ++transmission;
                   loops = 0;
-                  timeout <<= 1;
-                  request_state = RESEND;
+                  app_data.timeout <<= 1;
+                  app_data.request_state = RESEND;
 
-                  if (dtls_pending) {
-                     dtls_info("hs resend, timeout %d", timeout);
+                  if (app_data.dtls_pending) {
+                     dtls_info("hs resend, timeout %d", app_data.timeout);
                      dtls_check_retransmit(dtls_context, NULL);
                   } else {
-                     dtls_info("CoAP request resend, timeout %d", timeout);
-                     sendto_peer(&dtls_add_data, dst, dtls_context);
+                     dtls_info("CoAP request resend, timeout %d", app_data.timeout);
+                     sendto_peer(&app_data, dst, dtls_context);
                   }
                } else {
                   // maximum retransmissions reached
-                  dtls_coap_failure();
+                  dtls_coap_failure(&app_data);
                }
             }
-         } else if (request_state == WAIT_RESPONSE) {
+         } else if (app_data.request_state == WAIT_RESPONSE) {
             if (loops < 60) {
                ++loops;
             } else {
-               dtls_coap_failure();
+               dtls_coap_failure(&app_data);
             }
-         } else if (request_state == WAIT_SUSPEND) {
+         } else if (app_data.request_state == WAIT_SUSPEND) {
             if (network_sleeping) {
-               request_state = NONE;
+               app_data.request_state = NONE;
                dtls_info("CoAP suspend after %d", loops);
             } else {
                if (k_sem_count_get(&dtls_trigger_msg)) {
-                  request_state = NONE;
+                  app_data.request_state = NONE;
                }
                ++loops;
             }
          } else {
             ++loops;
-            dtls_info("CoAP wait state %d, %d", request_state, loops);
+            dtls_info("CoAP wait state %d, %d", app_data.request_state, loops);
          }
       } else { /* ok */
 #ifdef USE_POLL
@@ -868,29 +868,27 @@ int dtls_loop(session_t *dst, int flags)
 #else
          if (FD_ISSET(dtls_add_data.fd, &rfds)) {
 #endif
-            recvfrom_peer(&dtls_add_data, dtls_context);
-            if (request_state == SEND_ACK) {
+            recvfrom_peer(&app_data, dtls_context);
+            if (app_data.request_state == SEND_ACK) {
                unsigned long temp_time = connect_time;
-               sendto_peer(&dtls_add_data, dst, dtls_context);
+               sendto_peer(&app_data, dst, dtls_context);
                connect_time = temp_time;
-               request_state = NONE;
-               dtls_coap_success();
+               dtls_coap_success(&app_data);
                dtls_info("CoAP ACK sent.");
-            } else if (!dtls_pending && send_request) {
+            } else if (!app_data.dtls_pending && send_request) {
                send_request = false;
                loops = 0;
-               request_state = SEND;
                transmission = 0;
-               sendto_peer(&dtls_add_data, dst, dtls_context);
+               sendto_peer(&app_data, dst, dtls_context);
             }
-            if (request_state == NONE && !lte_power_on_off) {
-               modem_set_rai_mode(RAI_NOW, dtls_add_data.fd);
+            if (app_data.request_state == NONE && !lte_power_on_off) {
+               modem_set_rai_mode(RAI_NOW, app_data.fd);
             }
-            if (request_state == NONE &&
+            if (app_data.request_state == NONE &&
                 (flags & FLAG_TLS) &&
                 !(flags & FLAG_KEEP_CONNECTION) &&
-                !dtls_pending) {
-               dtls_pending = true;
+                !app_data.dtls_pending) {
+               app_data.dtls_pending = true;
                ui_led_op(LED_DTLS, LED_CLEAR);
             }
 #ifdef USE_POLL
@@ -898,18 +896,20 @@ int dtls_loop(session_t *dst, int flags)
 #else
          } else if (FD_ISSET(dtls_add_data.fd, &efds)) {
 #endif
-            result = check_socket(&dtls_add_data, true);
+            result = check_socket(&app_data, true);
             if (result) {
-               if (request_state == SEND || request_state == RESEND || request_state == RECEIVE) {
+               if (app_data.request_state == SEND ||
+                   app_data.request_state == RESEND ||
+                   app_data.request_state == RECEIVE) {
                   loops = 0;
-                  request_state = SEND;
                   transmission = 0;
-                  if (dtls_pending) {
+                  app_data.request_state = SEND;
+                  if (app_data.dtls_pending) {
                      dtls_info("hs send again");
                      dtls_check_retransmit(dtls_context, NULL);
                   } else {
                      dtls_info("CoAP request send again");
-                     sendto_peer(&dtls_add_data, dst, dtls_context);
+                     sendto_peer(&app_data, dst, dtls_context);
                   }
                }
             }
@@ -987,8 +987,10 @@ void main(void)
    int config = 0;
    int protocol = -1;
    int flags = 0;
-   char imei[24];
+   char imei[MODEM_ID_SIZE];
    session_t dst;
+
+   memset(&app_data, 0, sizeof(app_data));
 
    LOG_INF("CoAP/DTLS 1.2 CID sample " CLIENT_VERSION " has started");
 
