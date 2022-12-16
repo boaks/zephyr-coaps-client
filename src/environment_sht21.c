@@ -20,7 +20,7 @@
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
-static const struct device *sht21_i2c;
+static const struct device *const sht21_i2c = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(i2c2));
 
 #define SHT21_I2C_ADDR 0x40
 
@@ -166,7 +166,6 @@ int environment_init(void)
 {
    LOG_INF("SHT21 initialize");
 
-   sht21_i2c = device_get_binding("I2C_2");
    if (sht21_i2c == NULL) {
       LOG_INF("Could not get I2C_2 device\n");
       return -ENOTSUP;
