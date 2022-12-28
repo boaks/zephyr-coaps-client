@@ -125,7 +125,7 @@ Configure used URI query parameter. Please note, that these query parameter must
 
 - **UDP_EDRX_ENABLE**, enable eDRX.
 
-- **STATIONARY_MODE_ENABLE**, enable stationary mode. Optimize power consumptio, if device is sationary at one place and is not moved. Reduces/removes also HPPLMN searchs (automatic search for higher priorized PLMN). 
+- **STATIONARY_MODE_ENABLE**, enable stationary mode. Optimize power consumption, if device is sationary at one place and is not moved. Reduces/removes also HPPLMN searchs (automatic search for higher priorized PLMN). **Note**: with mfw 1.3.2 the implementation has changed. Using global SIMs (IMSI starting with 9) now triggers such a search independent from that setting!  
 
 - **MODEM_SAVE_CONFIG_THRESHOLD**, threshold to save the modem configuration. The modem is switched off and on to save the configuration.
 

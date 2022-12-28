@@ -18,7 +18,8 @@ The self-discarge is unknown, but may reduce that time significantly. For the Li
 
 ## General Considerations for LTE-M/NB-IoT
 
-Using LTE-M or NB-IoT for a power constraint device mostly comes with the requirement to enable power saving functions. This tests uses PSM (Power Saving Mode) and RAI (Release Assistance Indication), if available. eDRX was not considered. 
+Using LTE-M or NB-IoT for a power constraint device mostly comes with the requirement to enable power saving functions. This tests uses PSM (Power Saving Mode) and RAI (Release Assistance Indication), if available. 
+eDRX is not considered for now. The benefit of eDRX to be faster and more efficient on the wakeup is currently eaten up by an additional quiescent current of 25µA of the SIM cards.  
 
 PSM is defined by three parameters:
 
@@ -47,10 +48,13 @@ With that, the usage to send data is split into three phases:
 
 There are also other phases, which are not considered here:
 - initial network registration (easily up to 3 minutes)
+- HPPLMN searches when switching to idle (easily up to 1 minute)
 - wakeup with cell change
 - wakeup changing from LTE-M to NB-IoT and visa versa
 
-All these are taking randomly amount of time and may occur also unintended. So they hard to take into consideration. I guess, they unfortunately half the runtime in too many cases. 
+All these are taking more or less randomly amount of time and may occur also unintended. So they hard to take into consideration. I guess, they unfortunately half the runtime in too many cases.
+
+In my experience especially HPPLMN searches may turn out to use quite a lot of energy. The interval of these HPPLMN searches is stored on the SIM card. Especially using global SIMs (IMSI starting with a 9) causes since nRF9106 mfw 1.3.2 an increased number of HPPLMN searches, though the current country code is not longer considered. Using a global SIM with an interval of 2h causes a device, which exchanges every hour a message to increase the power consumption by 10 times.  
 
 The measurements differs from test to test. The charts shows just one example test run.
 
@@ -90,9 +94,13 @@ Stat: tx 585kB, rx 79kB, max 535B, avg 289B, searchs 52, PSM delays 0
 66-00:54:04 [d-hh:mm:ss], Thingy:91 v0.5.99, 0*1521, 1*63, 2*1, 3*0, failures 1
 4006 mV 75% battery (low-power)
 Stat: tx 793kB, rx 107kB, max 535B, avg 289B, searchs 70, PSM delays 0
+
+90-15:54:04 [d-hh:mm:ss], Thingy:91 v0.5.99, 0*2088, 1*87, 2*1, 3*0, failures 1
+3972 mV 71% battery (low-power)
+Stat: tx 1089kB, rx 147kB, max 535B, avg 289B, searchs 95, PSM delays 0
 ```
 
-Forecast: 215 days
+Forecast: 240 days
 
 Thingy:91, LTE-M, PSM, 24h message interchange interval
 
@@ -108,6 +116,10 @@ Stat: tx 24kB, rx 3kB, max 525B, avg 271B, searchs 48, PSM delays 0
 65-01:13:53 [d-hh:mm:ss], Thingy:91 v0.5.99, 0*2, 1*64, 2*0, 3*0, failures 0
 4073 mV 84% battery (low-power)
 Stat: tx 33kB, rx 5kB, max 525B, avg 275B, searchs 65, PSM delays 0
+
+90-01:22:57 [d-hh:mm:ss], Thingy:91 v0.5.99, 0*2, 1*89, 2*0, 3*0, failures 0
+4043 mV 81% battery (low-power)
+Stat: tx 45kB, rx 6kB, max 525B, avg 279B, searchs 90, PSM delays 0
 ```
 
 Forecast: 390 days
