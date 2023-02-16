@@ -98,9 +98,14 @@ Stat: tx 793kB, rx 107kB, max 535B, avg 289B, searchs 70, PSM delays 0
 90-15:54:04 [d-hh:mm:ss], Thingy:91 v0.5.99, 0*2088, 1*87, 2*1, 3*0, failures 1
 3972 mV 71% battery (low-power)
 Stat: tx 1089kB, rx 147kB, max 535B, avg 289B, searchs 95, PSM delays 0
+
+104-19:54:04 [d-hh:mm:ss], Thingy:91 v0.5.99, 0*2414, 1*100, 2*2, 3*0, failures 1
+3954 mV 68% battery (low-power)
+Stat: tx 1261kB, rx 170kB, max 536B, avg 290B, searchs 111, PSM delays 0
 ```
 
-Forecast: 240 days
+Forecast: 250 days
+The device reseted itself after about 120 days (bug). With that I stopped this test.
 
 Thingy:91, LTE-M, PSM, 24h message interchange interval
 
@@ -123,6 +128,7 @@ Stat: tx 45kB, rx 6kB, max 525B, avg 279B, searchs 90, PSM delays 0
 ```
 
 Forecast: 390 days
+I stopped that test an will execute a new test with a nRF9160-feather and other batteries.
 
 ## Measurement Charts
 
