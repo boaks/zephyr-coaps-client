@@ -179,12 +179,15 @@ static int ui_init_button(void)
    }
    button_counter = 0;
    button_active = false;
-   ret = gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_LEVEL_ACTIVE);
+
+   gpio_init_callback(&button_cb_data, ui_button_pressed, BIT(button_spec.gpio_spec.pin));
+   ret = gpio_add_callback(button_spec.gpio_spec.port, &button_cb_data);
    if (ret < 0) {
       return ret;
    }
-   gpio_init_callback(&button_cb_data, ui_button_pressed, BIT(button_spec.gpio_spec.pin));
-   ret = gpio_add_callback(button_spec.gpio_spec.port, &button_cb_data);
+
+   ret = gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_LEVEL_ACTIVE);
+
    return ret;
 }
 
