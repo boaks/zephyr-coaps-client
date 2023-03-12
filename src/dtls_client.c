@@ -21,6 +21,7 @@
 #include <sys/reboot.h>
 
 #include "coap_client.h"
+#include "console_input.h"
 #include "dtls.h"
 #include "dtls_credentials.h"
 #include "dtls_debug.h"
@@ -79,6 +80,7 @@ static unsigned long connect_time = 0;
 static unsigned long response_time = 0;
 static unsigned int transmission = 0;
 
+static volatile bool appl_ready = false;
 static volatile bool trigger_restart_modem = false;
 static volatile bool lte_power_off = false;
 static bool lte_power_on_off = false;
@@ -207,7 +209,7 @@ static void dtls_trigger(void)
 
 static void dtls_manual_trigger(int duration)
 {
-   if (duration == 1) {
+   if (duration == 1 && appl_ready) {
       trigger_restart_modem = true;
    }
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
@@ -1077,9 +1079,15 @@ void main(void)
    environment_init();
 #endif
 
+#ifdef CONFIG_CONSOLE_SUBSYS
+   console_init_input();
+#endif
+
    if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT)) != 0) {
+      appl_ready = true;
       restart_modem();
    }
+   appl_ready = true;
 
    modem_get_imei(imei, sizeof(imei));
    dtls_credentials_init_psk(imei);

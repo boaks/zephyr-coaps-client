@@ -24,7 +24,7 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 static K_MUTEX_DEFINE(pm_mutex);
 
 #ifdef CONFIG_SUSPEND_UART
-#if defined(CONFIG_UART_CONSOLE)
+#if defined(CONFIG_UART_CONSOLE) && !defined(CONFIG_CONSOLE_SUBSYS)
 
 static const struct device *const uart0_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
 static bool uart0_suspended = false;
@@ -248,7 +248,7 @@ static K_WORK_DELAYABLE_DEFINE(power_management_sleep_mode_work, power_managemen
 
 int power_manager_init(void)
 {
-#if (defined CONFIG_SUSPEND_UART) && (defined CONFIG_UART_CONSOLE)
+#if defined(CONFIG_SUSPEND_UART) && defined(CONFIG_UART_CONSOLE) && !defined(CONFIG_CONSOLE_SUBSYS)
    if (!device_is_ready(uart0_dev)) {
       LOG_WRN("UART0 console not available.");
    }
