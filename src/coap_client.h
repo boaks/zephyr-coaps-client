@@ -23,6 +23,7 @@
 
 #define COAP_MAX_RETRANSMISSION 3
 #define BAT_LEVEL_SLOTS 10
+#define REBOOT_INFOS 4
 
 extern unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
 extern unsigned int bat_level[BAT_LEVEL_SLOTS];
@@ -40,6 +41,8 @@ int coap_client_decode_tcp_length(const uint8_t *buffer, size_t length);
 int coap_client_prepare_response_from_tcp(uint8_t *buffer, size_t length, size_t max_length);
 
 int coap_client_message(const uint8_t** buffer);
+
+void coap_client_get_time(int64_t* now);
 
 int coap_client_time(char* buf, size_t len);
 

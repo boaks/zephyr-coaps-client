@@ -20,6 +20,7 @@
 #include <string.h>
 #include <sys/reboot.h>
 
+#include "appl_eeprom.h"
 #include "coap_client.h"
 #include "console_input.h"
 #include "dtls.h"
@@ -40,6 +41,16 @@
 #endif
 
 #include "environment_sensor.h"
+
+#define ERROR_CODE_SOCKET      0x0000
+#define ERROR_CODE_OPEN_SOCKET 0x1000
+#define ERROR_CODE_INIT_NO_LTE 0x2000
+#define ERROR_CODE_INIT_SOCKET 0x3000
+#define ERROR_CODE_INIT_NO_DTLS 0x4000
+#define ERROR_CODE_MANUAL_TRIGGERED 0xa000
+
+#define ERROR_CODE(BASE, ERR) ((BASE & 0xf000) | (ERR & 0xfff))
+
 
 #define COAP_ACK_TIMEOUT 3
 #define ADD_ACK_TIMEOUT 3
@@ -80,6 +91,8 @@ static unsigned long connect_time = 0;
 static unsigned long response_time = 0;
 static unsigned int transmission = 0;
 
+static bool appl_eeprom = false;
+
 static volatile bool appl_ready = false;
 static volatile bool trigger_restart_modem = false;
 static volatile bool lte_power_off = false;
@@ -99,12 +112,20 @@ static unsigned int rtts[RTT_SLOTS + 2] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20};
 K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
 K_SEM_DEFINE(dtls_trigger_search, 0, 1);
 
-static void reboot()
+static void reboot(int error, bool factoryReset)
 {
    modem_power_off();
+   if (factoryReset) {
+      modem_factory_reset();
+   }
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    ui_led_op(LED_COLOR_RED, LED_SET);
+   if (appl_eeprom) {
+      int64_t now = 0;
+      coap_client_get_time(&now);
+      appl_eeprom_write_code(now, (int16_t)error);
+   }
    k_sleep(K_MSEC(500));
    for (int i = 0; i < 4; ++i) {
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
@@ -118,13 +139,31 @@ static void reboot()
    sys_reboot(SYS_REBOOT_COLD);
 }
 
-static void restart_modem()
+static int get_socket_error(dtls_app_data_t *app)
+{
+   int error = 0;
+   socklen_t len = sizeof(error);
+   int result = getsockopt(app->fd, SOL_SOCKET, SO_ERROR, &error, &len);
+   if (result) {
+      error = errno;
+   }
+   return error;
+}
+
+static void restart_modem(dtls_app_data_t *app)
 {
    int timeout_seconds = CONFIG_MODEM_SEARCH_TIMEOUT;
    int sleep_minutes = trigger_restart_modem ? 0 : 15;
 
    dtls_warn("> reconnect modem ...");
    k_sem_reset(&dtls_trigger_search);
+
+   if (trigger_restart_modem) {
+      int ui = ui_config();
+      if ((ui & 2) == 0) {
+         reboot(ERROR_CODE_MANUAL_TRIGGERED, false);
+      }
+   }
 
    while (!network_registered || trigger_restart_modem) {
       dtls_info("> modem offline (%d minutes)", sleep_minutes);
@@ -140,13 +179,15 @@ static void restart_modem()
          } else if (sleep_minutes < 61) {
             dtls_info("> modem normal (timeout)");
             sleep_minutes *= 2;
+         } else if (app) {
+            dtls_info("> modem lost network, reboot");
+            reboot(ERROR_CODE(ERROR_CODE_SOCKET, get_socket_error(app)), true);
          } else {
-            dtls_info("> modem reboot");
-            reboot();
+            dtls_info("> modem no network, reboot");
+            reboot(ERROR_CODE_INIT_NO_LTE, true);
          }
       }
       trigger_restart_modem = false;
-      modem_set_normal();
       timeout_seconds *= 2;
       dtls_info("> modem search network (%d minutes)", timeout_seconds / 60);
       if (modem_start(K_SECONDS(timeout_seconds)) == 0) {
@@ -165,13 +206,13 @@ static void reopen_socket(dtls_app_data_t *app)
 
    err = modem_wait_ready(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
    if (err) {
-      restart_modem();
+      restart_modem(app);
    }
    (void)close(app->fd);
    app->fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
    if (app->fd < 0) {
       dtls_warn("> reopen UDP socket failed, %d, errno %d (%s), reboot", app->fd, errno, strerror(errno));
-      reboot();
+      reboot(ERROR_CODE(ERROR_CODE_OPEN_SOCKET, errno), false);
    }
 
    modem_set_rai_mode(RAI_OFF, app->fd);
@@ -180,17 +221,7 @@ static void reopen_socket(dtls_app_data_t *app)
 
 static int check_socket(dtls_app_data_t *app, bool event)
 {
-   int error = 0;
-   socklen_t len = sizeof(error);
-   int result = getsockopt(app->fd, SOL_SOCKET, SO_ERROR, &error, &len);
-   if (result) {
-      dtls_info("I/O: get last socket error failed, %d (%s)", errno, strerror(errno));
-      error = errno;
-   } else if (error) {
-      dtls_info("I/O: last socket error %d (%s)", error, strerror(error));
-   } else {
-      dtls_debug("No socket error.");
-   }
+   int error = get_socket_error(app);
    if (error) {
       if (event) {
          k_sleep(K_MSEC(1000));
@@ -565,10 +596,12 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
       network_registered = active;
       if (active) {
          if (!network_ready) {
+            dtls_info("LTE online, no network");
             ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
          }
       } else {
+         dtls_info("LTE offline");
          network_ready = false;
          led_op_t op = LED_SET;
          if (lte_power_off) {
@@ -584,6 +617,7 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
             ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op(LED_COLOR_GREEN, LED_SET);
          } else if (NONE == app_data.request_state || WAIT_SUSPEND == app_data.request_state) {
+            dtls_info("LTE not ready");
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
             ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
          } else {
@@ -652,7 +686,7 @@ int dtls_loop(session_t *dst, int flags)
 
    if (app_data.fd < 0) {
       dtls_warn("Failed to create UDP socket: %d (%s)", errno, strerror(errno));
-      reboot();
+      reboot(ERROR_CODE_INIT_SOCKET, false);
    }
    modem_set_rai_mode(RAI_OFF, app_data.fd);
 
@@ -661,7 +695,7 @@ int dtls_loop(session_t *dst, int flags)
       dtls_context = dtls_new_context(&app_data);
       if (!dtls_context) {
          dtls_emerg("cannot create context");
-         reboot();
+         reboot(ERROR_CODE_INIT_NO_DTLS, false);
       }
       dtls_credentials_init_handler(&cb);
       dtls_set_handler(dtls_context, &cb);
@@ -710,7 +744,7 @@ int dtls_loop(session_t *dst, int flags)
       }
 #endif
       if (trigger_restart_modem) {
-         restart_modem();
+         restart_modem(&app_data);
          reopen_socket(&app_data);
       }
 #ifdef USE_POLL
@@ -757,11 +791,10 @@ int dtls_loop(session_t *dst, int flags)
                lte_power_off = false;
                trigger_restart_modem = false;
                connect_time = (unsigned long)k_uptime_get();
-               modem_set_normal();
                modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
                reopen_socket(&app_data);
             } else if (trigger_restart_modem) {
-               restart_modem();
+               restart_modem(&app_data);
                reopen_socket(&app_data);
             } else {
                check_socket(&app_data, false);
@@ -980,7 +1013,6 @@ static int init_destination(int protocol, session_t *destination)
              sizeof(ipv4_addr));
    dtls_info("Destination: %s", host);
    dtls_info("IPv4 Address found %s", ipv4_addr);
-
    return 0;
 }
 
@@ -997,6 +1029,10 @@ void main(void)
    LOG_INF("CoAP/DTLS 1.2 CID sample " CLIENT_VERSION " has started");
 
    dtls_set_log_level(DTLS_LOG_INFO);
+
+   if (!appl_eeprom_init()) {
+      appl_eeprom = true;
+   }
 
    io_job_queue_init();
 
@@ -1085,7 +1121,7 @@ void main(void)
 
    if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT)) != 0) {
       appl_ready = true;
-      restart_modem();
+      restart_modem(NULL);
    }
    appl_ready = true;
 

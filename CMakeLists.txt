@@ -24,6 +24,7 @@ target_sources(app PRIVATE
 	src/power_manager.c
 	src/io_job_queue.c
 	src/ui.c
+	src/appl_eeprom.c
 	src/dtls_client.c
 	src/dtls_credentials.c
 	src/coap_client.c

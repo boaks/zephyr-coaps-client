@@ -24,10 +24,14 @@
 #include "power_manager.h"
 #include "ui.h"
 
+#include "appl_eeprom.h"
 #include "environment_sensor.h"
 
 #ifdef CONFIG_LOCATION_ENABLE
 #include "location.h"
+#endif
+#ifdef CONFIG_SCALE_ENABLE
+#include "scale.h"
 #endif
 
 #define APP_COAP_MAX_MSG_LEN 1280
@@ -62,6 +66,18 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
 unsigned int bat_level[BAT_LEVEL_SLOTS] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+static int coap_client_format_time(int64_t time_millis, char *buf, size_t len)
+{
+   time_t time = time_millis / MSEC_PER_SEC;
+   if (time > 0) {
+      // Format time, "yyyy-mm-ddThh:mm:ssZ"
+      return strftime(buf, len, "%Y-%m-%dT%H:%M:%SZ", gmtime(&time));
+   } else {
+      return 0;
+   }
+}
+
 
 static int coap_client_encode_time(struct coap_packet *request)
 {
@@ -301,12 +317,18 @@ int coap_client_prepare_post(void)
    struct modem_gnss_state result;
    bool pending;
 #endif
+#if defined(CONFIG_COAP_SEND_NETWORK_INFO) || defined(CONFIG_LOCATION_ENABLE)
+   const char *p;
+#endif
+
    power_manager_status_t battery_status = POWER_UNKNOWN;
    uint16_t battery_voltage = 0xffff;
    int16_t battery_forecast = -1;
    uint8_t battery_level = 0xff;
+   int64_t reboot_times[REBOOT_INFOS];
+   uint16_t reboot_codes[REBOOT_INFOS];
 
-   char buf[640];
+   char buf[800];
    int err;
    int index;
    int start;
@@ -320,9 +342,8 @@ int coap_client_prepare_post(void)
    char query[30];
 #endif
 
-#ifdef CONFIG_COAP_SEND_NETWORK_INFO
+#if defined(CONFIG_COAP_SEND_NETWORK_INFO) || defined(CONFIG_COAP_SEND_SIM_INFO)
    union lte_params params;
-   const char *p;
 
    memset(&params, 0, sizeof(params));
 #endif
@@ -369,7 +390,7 @@ int coap_client_prepare_post(void)
 
    if (bat_level[0] > 1) {
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\n%u mV", bat_level[0]);
+      index += snprintf(buf + index, sizeof(buf) - index, "\n!%u mV", bat_level[0]);
       if (battery_level < 0xff) {
          index += snprintf(buf + index, sizeof(buf) - index, " %u%%", battery_level);
       }
@@ -407,6 +428,19 @@ int coap_client_prepare_post(void)
       dtls_info("%s", buf + start);
    }
 
+   memset(reboot_times, 0, sizeof(reboot_times));
+   memset(reboot_codes, 0, sizeof(reboot_codes));
+   err = appl_eeprom_read_codes(reboot_times, reboot_codes, REBOOT_INFOS);
+   if (err > 0) {
+      start = index + 1;
+      index += snprintf(buf + index, sizeof(buf) - index, "\nLast code: ");
+      index += coap_client_format_time(reboot_times[0], buf + index, sizeof(buf) - index);
+      index += snprintf(buf + index, sizeof(buf) - index, " 0x%04x", reboot_codes[0]);
+      for (int i = 1; i < err; ++i) {
+         index += snprintf(buf + index, sizeof(buf) - index, ", 0x%04x", reboot_codes[i]);
+      }
+      dtls_info("%s", buf + start);
+   }
 #if 0
    err = modem_at_cmd("AT%%CONEVAL", buf + index, sizeof(buf) - index, "%CONEVAL: ");
    if (err < 0) {
@@ -439,7 +473,7 @@ int coap_client_prepare_post(void)
 #ifdef CONFIG_COAP_SEND_NETWORK_INFO
    p = modem_get_network_mode();
    start = index + 1;
-   index += snprintf(buf + index, sizeof(buf) - index, "\n!Network: %s", p);
+   index += snprintf(buf + index, sizeof(buf) - index, "\nNetwork: %s", p);
 
    memset(&params, 0, sizeof(params));
    if (!modem_get_network_info(&params.network_info)) {
@@ -469,7 +503,7 @@ int coap_client_prepare_post(void)
    memset(&params, 0, sizeof(params));
    if (modem_get_psm_status(&params.psm) == 0) {
       if (params.psm.active_time >= 0) {
-         index += snprintf(buf + index, sizeof(buf) - index, "!PSM: TAU %d [s], Act %d [s]", params.psm.tau, params.psm.active_time);
+         index += snprintf(buf + index, sizeof(buf) - index, "PSM: TAU %d [s], Act %d [s]", params.psm.tau, params.psm.active_time);
       } else {
          index += snprintf(buf + index, sizeof(buf) - index, "PSM: n.a.");
       }
@@ -494,10 +528,10 @@ int coap_client_prepare_post(void)
             index += snprintf(buf + index, sizeof(buf) - index, "\neDRX: n.a.");
             break;
          case LTE_LC_LTE_MODE_LTEM:
-            index += snprintf(buf + index, sizeof(buf) - index, "\n!eDRX: LTE-M %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
+            index += snprintf(buf + index, sizeof(buf) - index, "\neDRX: LTE-M %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
             break;
          case LTE_LC_LTE_MODE_NBIOT:
-            index += snprintf(buf + index, sizeof(buf) - index, "\n!eDRX: NB-IoT %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
+            index += snprintf(buf + index, sizeof(buf) - index, "\neDRX: NB-IoT %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
             break;
       }
       dtls_info("%s", buf + start);
@@ -609,7 +643,7 @@ int coap_client_prepare_post(void)
          index = start - 1;
 #endif
       }
-      index += snprintf(buf + index, sizeof(buf) - index, "\n!%sGNSS.3=%.06f,%.06f,%.01f,%.02f,%.01f",
+      index += snprintf(buf + index, sizeof(buf) - index, "\n%sGNSS.3=%.06f,%.06f,%.01f,%.02f,%.01f",
                         err ? "*" : "",
                         result.position.latitude, result.position.longitude, result.position.accuracy,
                         result.position.altitude, result.position.altitude_accuracy);
@@ -953,22 +987,21 @@ int coap_client_message(const uint8_t **buffer)
    return coap_message_len;
 }
 
-int coap_client_time(char *buf, size_t len)
+void coap_client_get_time(int64_t *now)
 {
-   time_t now = coap_time;
-
+   *now = coap_time;
    // adjust current time
    if (coap_uptime) {
-      now += (k_uptime_get() - coap_uptime);
+      *now += (k_uptime_get() - coap_uptime);
    }
+}
 
-   now /= MSEC_PER_SEC;
-   if (now > 0) {
-      // Format time, "yyyy-mm-ddThh:mm:ssZ"
-      return strftime(buf, len, "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
-   } else {
-      return 0;
-   }
+int coap_client_time(char *buf, size_t len)
+{
+   time_t now;
+
+   coap_client_get_time(&now);
+   return coap_client_format_time(now, buf, len);
 }
 
 int coap_client_set_id(const char *id)

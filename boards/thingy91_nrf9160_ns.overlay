@@ -11,9 +11,23 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+ &i2c2 {
+	eeprom0: eeprom@50 {
+		/* 24CW160 (16 kbit eeprom) */
+		/* 0x8000 config register not accessible! If required, set size to 64K */
+		compatible = "atmel,at24";
+		reg = <0x50>;
+		size = <DT_SIZE_K(2)>;
+		pagesize = <32>;
+		address-width = <16>;
+		timeout = <5>;
+	};
+
+};
+
 /*
  * Map the devices to the aliases of the application. 
- */ 
+ */
 
 / {
 	aliases {	
@@ -32,6 +46,8 @@
 		/* alias for sensor with SENSOR_CHAN_ACCEL_XYZ channels */
 		accelerometer-sensor = &adxl362;
 
+		/* alias for application eeprom */
+		eeprom-appl = &eeprom0;
 	};
 	
 };
