@@ -23,10 +23,15 @@
 #define MODEM_ID_SIZE 24
 #define MODEM_PLMN_SIZE 7
 
+typedef struct lte_modem_info {
+   char version[MODEM_ID_SIZE];
+   char firmware[MODEM_ID_SIZE];
+} lte_modem_info_t;
+
 typedef struct lte_sim_info {
    bool valid;
-   int16_t hpplmn_search_interval;
    bool edrx_cycle_support;
+   int16_t hpplmn_search_interval;
    char iccid[MODEM_ID_SIZE];
    char imsi[MODEM_ID_SIZE];
    char hpplmn[MODEM_PLMN_SIZE];
@@ -127,5 +132,7 @@ int modem_set_lte_offline(void);
 int modem_set_normal(void);
 
 int modem_power_off(void);
+
+int modem_factory_reset(void);
 
 #endif /* MODEM_H */
