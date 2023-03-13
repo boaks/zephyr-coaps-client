@@ -48,7 +48,7 @@ The usage of the sensors also reduces that time. Consider to measure less freque
 
 - **COAP_SEND_INTERVAL**, coap send interval in seconds. Used, if messages are send frequently. Default 0s, disabled.
 
-- **COAP_WAKEUP_SEND_INTERVAL**, coap wakeup send interval in seconds. Used, if messages are send piggybacked with PSM wakeups. Default 0s, disabled.
+- **COAP_FAILURE_SEND_INTERVAL**, coap send interval after failures in seconds. 0 to use send interval.
 
 - **COAP_WAIT_ON_POWERMANAGER**, coap waits for the power-manager to start exchanging application data. Takes up to 30 s and delays the first exchange. Default disabled.
 

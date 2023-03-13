@@ -1577,6 +1577,17 @@ int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
    return modem_int_at_cmd(cmd, buf, max_len, skip, true);
 }
 
+int modem_set_psm(bool enable)
+{
+#ifdef CONFIG_UDP_PSM_ENABLE
+   LOG_INF("PSM %s", enable ? "enable" : "disable");
+   return lte_lc_psm_req(enable);
+#else
+   (void)enable;
+   return 0;
+#endif
+}
+
 //#define USE_SO_RAI_NO_DATA
 
 int modem_set_rai_mode(enum rai_mode mode, int socket)
@@ -1793,6 +1804,12 @@ int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
    (void)buf;
    (void)max_len;
    (void)skip;
+   return 0;
+}
+
+int modem_set_psm(bool enable)
+{
+   (void)enable;
    return 0;
 }
 

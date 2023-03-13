@@ -65,16 +65,9 @@ config COAP_SEND_INTERVAL
 	int "CoAP send interval in seconds. 0 disable"
 	default 0
 
-config COAP_WAKEUP_SEND_INTERVAL
-	int "Wakeup CoAP send interval in seconds. 0 disable."
+config COAP_FAILURE_SEND_INTERVAL
+	int "CoAP send interval after failures in seconds. 0 to use send interval"
 	default 0
-	depends on UDP_PSM_ENABLE
-	help
-	   Using PSM (Power Sleeping Mode) the modem frequently wakesup to refresh
-	   the network registration. This interval is used to exchange messages
-	   piggybacked on such an wakeup. The interval doesn't trigger such a wakeup,
-	   so it's usully chosen a little smaller than the PSM interval.
-	   Ignored, if COAP_SEND_INTERVAL is enabled.
 
 config COAP_SEND_SIM_INFO
 	bool "Include SIM infos in message."
