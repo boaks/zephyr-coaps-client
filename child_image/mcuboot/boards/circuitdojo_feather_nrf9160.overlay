@@ -1,0 +1,9 @@
+/ {
+
+	leds {
+		blue_led: led_0 {
+			/* changed in v5 */
+			gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+		};
+	};	
+};

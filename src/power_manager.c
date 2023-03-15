@@ -19,10 +19,46 @@
 
 #include "io_job_queue.h"
 #include "power_manager.h"
+#include "transform.h"
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 static K_MUTEX_DEFINE(pm_mutex);
+typedef const struct device *t_devptr;
+
+#define MAX_PM_DEVICES 10
+
+static int pm_dev_counter = 0;
+static t_devptr pm_dev_table[MAX_PM_DEVICES];
+
+static void suspend_devices(bool suspend)
+{
+   if (suspend) {
+      for (int i = 0; i < pm_dev_counter; ++i) {
+         const struct device *dev = pm_dev_table[i];
+         int ret = pm_device_action_run(dev, PM_DEVICE_ACTION_SUSPEND);
+         if (ret < 0) {
+            if (ret != -EALREADY) {
+               LOG_WRN("Failed to suspend %s", dev->name);
+            }
+         } else {
+            LOG_INF("Suspended %s", dev->name);
+         }
+      }
+   } else {
+      for (int i = pm_dev_counter; i > 0; --i) {
+         const struct device *dev = pm_dev_table[i - 1];
+         int ret = pm_device_action_run(dev, PM_DEVICE_ACTION_RESUME);
+         if (ret < 0) {
+            if (ret != -EALREADY) {
+               LOG_WRN("Failed to resume %s", dev->name);
+            }
+         } else {
+            LOG_INF("Resumed %s", dev->name);
+         }
+      }
+   }
+}
 
 #ifdef CONFIG_SUSPEND_UART
 #if defined(CONFIG_UART_CONSOLE) && !defined(CONFIG_CONSOLE_SUBSYS)
@@ -86,8 +122,6 @@ static void suspend_uart(bool suspend)
 #endif /* CONFIG_UART_CONSOLE */
 #endif /* CONFIG_SUSPEND_UART */
 
-#ifdef CONFIG_ADP536X_POWER_MANAGEMENT
-
 /*
  * first_battery_level is set, when the first complete
  * battery level epoch is detected. The very first change
@@ -110,7 +144,7 @@ static int64_t last_battery_left_time = -1;
 #define MSEC_PER_HOUR (MSEC_PER_SEC * 60 * 60)
 #define MSEC_PER_DAY (MSEC_PER_SEC * 60 * 60 * 24)
 
-static int16_t calculate_forecast(int64_t *now, uint8_t battery_level, power_manager_status_t status)
+static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_manager_status_t status)
 {
    if (battery_level == 0xff) {
       LOG_INF("not ready.");
@@ -183,6 +217,40 @@ static int16_t calculate_forecast(int64_t *now, uint8_t battery_level, power_man
 
    return -1;
 }
+
+/** A discharge curve specific to the power source. */
+static const struct transform_curve curve = {
+#ifdef CONFIG_BATTERY_TYPE_LIPO_2000_MAH
+    .points = 4,
+    .curve = {
+        {4150, 10000},
+        {4000, 8000},
+        {3500, 1000},
+        {3350, 0},
+    }
+#elif defined(CONFIG_BATTERY_TYPE_ENELOOP_2000_MAH)
+    .points = 5,
+    .curve = {
+        {4250, 10000},
+        {3900, 8260},
+        {3800, 3700},
+        {3600, 1000},
+        {3350, 0},
+    }
+#else
+    .points = 6,
+    .curve = {
+        {4200, 10000},
+        {3800, 5000},
+        {3750, 2500},
+        {3600, 1250},
+        {3400, 400},
+        {3200, 0},
+    }
+#endif
+};
+
+#ifdef CONFIG_ADP536X_POWER_MANAGEMENT
 
 #include <zephyr/drivers/i2c.h>
 
@@ -341,6 +409,7 @@ int power_manager_suspend(bool enable)
 #endif
 #endif
    k_mutex_lock(&pm_mutex, K_FOREVER);
+   suspend_devices(enable);
 #ifdef CONFIG_SUSPEND_UART
    suspend_uart(enable);
 #endif
@@ -384,11 +453,15 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
       power_manager_status_t internal_status = POWER_UNKNOWN;
       int16_t days = -1;
       uint8_t internal_level = 0xff;
+      uint16_t internal_voltage = 0xffff;
 
       LOG_DBG("Read battery monitor status ...");
 
-      power_manager_read_level(&internal_level);
+      //      power_manager_read_level(&internal_level);
       power_manager_read_status(&internal_status);
+      power_manager_read_voltage(&internal_voltage);
+      internal_level = transform_curve(internal_voltage, &curve) / 100;
+
       days = calculate_forecast(&now, internal_level, internal_status);
       if (level) {
          *level = internal_level;
@@ -400,7 +473,7 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
          *forecast = days;
       }
       if (voltage) {
-         power_manager_read_voltage(voltage);
+         *voltage = internal_voltage;
       }
       LOG_DBG("%u%% %umV %d (%d left days)", internal_level, SAVE_VALUE(voltage), internal_status, days);
       return 0;
@@ -414,16 +487,32 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
 
 #include <stdlib.h>
 
+#ifdef CONFIG_BATTERY_ADC
+#include "battery_adc.h"
+#else /* CONFIG_BATTERY_ADC */
 #include "modem.h"
+#endif /* CONFIG_BATTERY_ADC */
 
 int power_manager_init(void)
 {
-   return 0;
+   int rc = 0;
+#ifdef CONFIG_BATTERY_ADC
+   int64_t now = k_uptime_get();
+
+   rc = battery_measure_enable(false);
+   // init forecast
+   calculate_forecast(&now, 0xff, POWER_UNKNOWN);
+#endif
+   return rc;
 }
 
 int power_manager_suspend(bool enable)
 {
    k_mutex_lock(&pm_mutex, K_FOREVER);
+#ifdef CONFIG_BATTERY_ADC
+   battery_measure_enable(false);
+#endif
+   suspend_devices(enable);
 #ifdef CONFIG_SUSPEND_UART
    suspend_uart(enable);
 #endif
@@ -445,30 +534,75 @@ int power_manager_1v8(bool enable)
 
 int power_manager_voltage(uint16_t *voltage)
 {
+   int rc = 0;
+#ifdef CONFIG_BATTERY_ADC
+   rc = battery_sample(voltage);
+   if (rc) {
+      LOG_WRN("Failed to measure battery level!");
+      *voltage = 0xffff;
+   }
+#else
    char buf[32];
 
-   int err = modem_at_cmd("AT%%XVBAT", buf, sizeof(buf), "%XVBAT: ");
-   if (err < 0) {
+   rc = modem_at_cmd("AT%%XVBAT", buf, sizeof(buf), "%XVBAT: ");
+   if (rc < 0) {
       LOG_WRN("Failed to read battery level from modem!");
       *voltage = 0xffff;
    } else {
       *voltage = atoi(buf);
+      rc = 0;
    }
-   return 0;
+#endif
+   return rc;
 }
 
 int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status, int16_t *forecast)
 {
-   if (level) {
-      *level = 0xff;
-   }
+   int rc = 0;
+   int64_t now = k_uptime_get();
+   int16_t days = -1;
+   uint16_t vol = 0xffff;
+   uint16_t lvl = 0xffff;
+
+   LOG_DBG("Read battery monitor status ...");
+
    if (status) {
       *status = POWER_UNKNOWN;
    }
    if (forecast) {
       *forecast = -1;
    }
-   return power_manager_voltage(voltage);
+   rc = power_manager_voltage(&vol);
+   if (!rc) {
+#ifdef CONFIG_BATTERY_ADC
+      lvl = transform_curve(vol, &curve) / 100;
+#endif
+      days = calculate_forecast(&now, lvl, FROM_BATTERY);
+   }
+   if (voltage) {
+      *voltage = vol;
+   }
+   if (level) {
+      *level = lvl;
+   }
+   if (forecast) {
+      *forecast = days;
+   }
+
+   return rc;
 }
 
 #endif
+
+int power_manager_add(const struct device *dev)
+{
+   if (dev) {
+      if (pm_dev_counter >= MAX_PM_DEVICES) {
+         return -ENOMEM;
+      }
+      pm_dev_table[pm_dev_counter] = dev;
+      pm_dev_counter++;
+      LOG_INF("PM add %s", dev->name);
+   }
+   return 0;
+}

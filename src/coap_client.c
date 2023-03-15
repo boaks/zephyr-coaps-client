@@ -418,9 +418,6 @@ int coap_client_prepare_post(void)
       if (strlen(msg)) {
          index += snprintf(buf + index, sizeof(buf) - index, " %s", msg);
       }
-#if defined(CONFIG_SUSPEND_3V3) && defined(CONFIG_SUSPEND_UART)
-      index += snprintf(buf + index, sizeof(buf) - index, " (low-power)");
-#endif
       dtls_info("%s", buf + start);
    }
 
@@ -707,7 +704,7 @@ int coap_client_prepare_post(void)
       index += snprintf(buf + index, sizeof(buf) - index, "\n%s%d;%d Q (%s)", p, int_value, byte_value, desc);
       dtls_info("%s", buf + start);
    }
-#else
+#else /* ENVIRONMENT_SENSOR */
    start = index;
    index += snprintf(buf + index, sizeof(buf) - index, "\n!");
    err = modem_at_cmd("AT%%XTEMP?", buf + index, sizeof(buf) - index, "%XTEMP: ");
@@ -721,7 +718,7 @@ int coap_client_prepare_post(void)
       }
       index = start;
    }
-#endif
+#endif /* ENVIRONMENT_SENSOR */
 
    coap_current_token++;
    coap_current_mid = coap_next_id();

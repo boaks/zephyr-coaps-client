@@ -16,6 +16,8 @@ Disabling the UART and the 3.3V results in quiescent current of 40 µA. With the
 
 The self-discarge is unknown, but may reduce that time significantly. For the LiPo at least a second 40 µA self-discarging must be considered, which halfs that runtime to 550 days.
 
+If you consider to use a [nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/), the quiescent current is about 14 µA for VIN in range from 3.3 to 4.1V. For voltages higher 4.1V, the quiescent current is also higher, up to 100µA. For usual operation on battery, that doesn't matter too much, but the benefit from the 14µA in the main range is really great. Using a `nRF9160 feather v5` with 3x AA [Eneloop 2000mAh](https://www.panasonic-eneloop.eu/en) batteries with extremely low self-discarging, there is a chance to run the feather for 2 years from battery, exchanging every hour a message with the cloud.
+
 ## General Considerations for LTE-M/NB-IoT
 
 Using LTE-M or NB-IoT for a power constraint device mostly comes with the requirement to enable power saving functions. This tests uses PSM (Power Saving Mode) and RAI (Release Assistance Indication), if available. 

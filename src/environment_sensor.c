@@ -358,7 +358,7 @@ int environment_init(void)
 static int environment_sensor_read(const struct environment_sensor *sensor, double *value, int32_t *high_value, int32_t *low_value)
 {
    int err;
-   struct sensor_value data = {0};
+   struct sensor_value data = {0, 0};
 
    if (!sensor->dev) {
       return -ENODATA;

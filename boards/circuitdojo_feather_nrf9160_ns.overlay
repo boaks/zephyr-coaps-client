@@ -1,0 +1,56 @@
+/*
+ * Copyright (c) 2022 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+
+/	{
+
+	zephyr,user {
+        latch-en-gpios = <&gpio0 31 GPIO_ACTIVE_HIGH>;
+    };
+
+	leds {
+		blue_led: led_0 {
+			/* changed in v5 */
+			gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+		};
+
+	};
+
+	aliases {
+		/delete-property/ led0;
+
+		led1 = &blue_led;
+
+		/* alias for sensor with SENSOR_CHAN_ACCEL_XYZ channels */
+		accelerometer-sensor = &lis2dh;
+
+	};
+
+};
+
+/*
+&gpio0 {
+    sense-edge-mask = <0xffff>;
+};
+*/
+
+&i2c1 {
+
+	lis2dh: lis2dh@18 {
+		/* changed in v5 */
+		irq-gpios = <&gpio0 30 GPIO_ACTIVE_HIGH>;
+		anym-on-int1;
+	};
+
+};
+
+

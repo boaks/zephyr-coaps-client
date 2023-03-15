@@ -36,7 +36,7 @@
 #include "location.h"
 #endif
 
-#ifdef CONFIG_ADXL362_MOTION_DETECTION
+#ifdef CONFIG_MOTION_SENSOR
 #include "accelerometer_sensor.h"
 #endif
 
@@ -104,7 +104,7 @@ static volatile bool trigger_reboot = false;
 static volatile bool lte_power_off = false;
 static bool lte_power_on_off = false;
 
-#ifdef CONFIG_ADXL362_MOTION_DETECTION
+#ifdef CONFIG_MOTION_DETECTION
 static volatile bool moved = false;
 #endif
 
@@ -703,15 +703,15 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
    }
 }
 
-#ifdef CONFIG_ADXL362_MOTION_DETECTION
+#ifdef CONFIG_MOTION_DETECTION
 static void accelerometer_handler(const struct accelerometer_evt *const evt)
 {
    moved = true;
    dtls_info("accelerometer trigger, x %.02f, y %.02f, z %.02f", evt->values[0], evt->values[1], evt->values[2]);
-#ifdef CONFIG_ADXL362_MOTION_DETECTION_LED
+#ifdef MOTION_DETECTION_LED
    ui_led_op(LED_COLOR_GREEN, LED_BLINK);
    ui_led_op(LED_COLOR_RED, LED_BLINK);
-#endif /* CONFIG_ADXL362_MOTION_DETECTION_LED */
+#endif /* MOTION_DETECTION_LED */
 }
 #endif
 
@@ -770,7 +770,7 @@ int dtls_loop(session_t *dst, int flags)
       power_manager_status_t battery_status = POWER_UNKNOWN;
       uint8_t battery_level = 0xff;
       bool force = false;
-#ifdef CONFIG_ADXL362_MOTION_DETECTION
+#ifdef CONFIG_MOTION_DETECTION
       force = moved;
       moved = false;
 #endif
@@ -1193,10 +1193,15 @@ void main(void)
    dtls_warn("no location");
 #endif
 
-#ifdef CONFIG_ADXL362_MOTION_DETECTION
+#ifdef CONFIG_MOTION_SENSOR
+#ifdef CONFIG_MOTION_DETECTION
    accelerometer_init(accelerometer_handler);
    accelerometer_enable(true);
-#endif
+#else  /* CONFIG_MOTION_DETECTION */
+   accelerometer_init(NULL);
+//   accelerometer_enable(false);
+#endif /* CONFIG_MOTION_DETECTION */
+#endif /* CONFIG_MOTION_SENSOR */
 
 #ifdef ENVIRONMENT_SENSOR
    environment_init();

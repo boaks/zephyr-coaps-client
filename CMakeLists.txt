@@ -20,11 +20,12 @@ project(coaps-client)
 # APP START
 target_sources(app PRIVATE
 	src/parse.c
-	src/modem.c
+	src/transform.c
 	src/power_manager.c
 	src/io_job_queue.c
 	src/ui.c
 	src/appl_eeprom.c
+	src/modem.c
 	src/dtls_client.c
 	src/dtls_credentials.c
 	src/coap_client.c
@@ -34,7 +35,7 @@ target_sources_ifdef(CONFIG_CONSOLE_SUBSYS app PRIVATE src/console_input.c)
 
 target_sources_ifdef(CONFIG_LOCATION_ENABLE app PRIVATE src/location.c)
 
-target_sources_ifdef(CONFIG_ADXL362_MOTION_DETECTION app PRIVATE src/accelerometer_sensor.c)
+target_sources_ifdef(CONFIG_MOTION_SENSOR app PRIVATE src/accelerometer_sensor.c)
 
 target_sources_ifdef(CONFIG_BME680 app PRIVATE src/environment_sensor.c src/environment_history.c)
 
@@ -42,6 +43,7 @@ target_sources_ifdef(CONFIG_SHT3XD app PRIVATE src/environment_sensor.c src/envi
 
 target_sources_ifdef(CONFIG_SHT21 app PRIVATE src/environment_sht21.c src/environment_history.c)
 
+target_sources_ifdef(CONFIG_BATTERY_ADC app PRIVATE src/battery_adc.c)
 
 if (CONFIG_BME680_BSEC)
         set(bsec_version "bsec_1-4-9-2_generic_release")
