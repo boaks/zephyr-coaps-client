@@ -37,24 +37,6 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #define CONFIG_SWITCH_NODE_1 DT_ALIAS(sw2)
 #define CONFIG_SWITCH_NODE_2 DT_ALIAS(sw3)
 
-#if (!DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
-/* A build error here means your board isn't set up to blink the red LED. */
-#error "Unsupported board: led0 (red) devicetree alias is not defined"
-#define LED_RED ""
-#define PIN_RED 0
-#define FLAGS_RED 0
-#endif
-
-#if (!DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
-/* A build error here means your board isn't set up to blink the green LED. */
-#error "Unsupported board: led1 (green) devicetree alias is not defined"
-#endif
-
-#if (!DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
-/* A build error here means your board isn't set up to blink the blue LED. */
-#error "Unsupported board: led2 (blue) devicetree alias is not defined"
-#endif
-
 #if (!DT_NODE_HAS_STATUS(CALL_BUTTON_NODE, okay))
 /* A build error here means your board isn't set up to for sw0 (call button). */
 #error "Unsupported board: sw0 devicetree alias is not defined"
@@ -76,9 +58,15 @@ static gpio_device_t config_switch_1_spec = GPIO_DEVICE_INIT(CONFIG_SWITCH_NODE_
 static gpio_device_t config_switch_2_spec = GPIO_DEVICE_INIT(CONFIG_SWITCH_NODE_2);
 #endif
 
+#if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
 static gpio_device_t led_red_spec = GPIO_DEVICE_INIT(LED_RED_NODE);
+#endif
+#if (DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
 static gpio_device_t led_green_spec = GPIO_DEVICE_INIT(LED_GREEN_NODE);
+#endif
+#if (DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
 static gpio_device_t led_blue_spec = GPIO_DEVICE_INIT(LED_BLUE_NODE);
+#endif
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_1, okay)
 static gpio_device_t out_lte_1_spec = GPIO_DEVICE_INIT(OUT_LTE_NODE_1);
 #endif
@@ -101,11 +89,19 @@ static void ui_button_pressed_fn(struct k_work *work);
 static K_WORK_DEFINE(button_pressed_work, ui_button_pressed_fn);
 static K_WORK_DEFINE(button_released_work, ui_button_pressed_fn);
 static K_WORK_DELAYABLE_DEFINE(button_long_pressed_work, ui_button_pressed_fn);
+#if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
 static K_WORK_DELAYABLE_DEFINE(led_red_timer_work, ui_led_timer_expiry_fn);
+#endif
+#if (DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
 static K_WORK_DELAYABLE_DEFINE(led_green_timer_work, ui_led_timer_expiry_fn);
+#endif
+#if (DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
 static K_WORK_DELAYABLE_DEFINE(led_blue_timer_work, ui_led_timer_expiry_fn);
+#endif
 
 static K_MUTEX_DEFINE(ui_mutex);
+
+static volatile bool ui_enabled = true;
 
 static void ui_button_pressed_fn(struct k_work *work)
 {
@@ -120,6 +116,7 @@ static void ui_button_pressed_fn(struct k_work *work)
       k_work_cancel_delayable(&button_long_pressed_work);
       if (duration == 0) {
          duration = 1;
+         ui_enable(true);
          ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
          if (button_callback != NULL) {
             button_callback(0);
@@ -130,6 +127,7 @@ static void ui_button_pressed_fn(struct k_work *work)
       LOG_INF("UI button long pressed %u", button_counter);
       if (duration == 0) {
          duration = 2;
+         ui_enable(true);
          ui_led_op(LED_COLOR_BLUE, LED_BLINK);
          ui_led_op(LED_COLOR_GREEN, LED_BLINK);
          ui_led_op(LED_COLOR_RED, LED_BLINK);
@@ -191,17 +189,6 @@ static int ui_init_button(void)
    return ret;
 }
 
-static void ui_led_timer_expiry_fn(struct k_work *work)
-{
-   if (&led_red_timer_work.work == work) {
-      ui_led_op(LED_COLOR_RED, LED_CLEAR);
-   } else if (&led_green_timer_work.work == work) {
-      ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-   } else if (&led_blue_timer_work.work == work) {
-      ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
-   }
-}
-
 static void ui_op(gpio_device_t *output_spec, led_op_t op, struct k_work_delayable *timer)
 {
    k_mutex_lock(&ui_mutex, K_FOREVER);
@@ -230,19 +217,50 @@ static void ui_op(gpio_device_t *output_spec, led_op_t op, struct k_work_delayab
    k_mutex_unlock(&ui_mutex);
 }
 
-void ui_led_op(led_t led, led_op_t op)
+static void ui_led_timer_expiry_fn(struct k_work *work)
 {
+#if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
+   if (&led_red_timer_work.work == work) {
+      ui_op(&led_red_spec, LED_CLEAR, &led_red_timer_work);
+      return;
+   }
+#endif
+#if (DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
+   if (&led_green_timer_work.work == work) {
+      ui_op(&led_green_spec, LED_CLEAR, &led_green_timer_work);
+      return;
+   }
+#endif
+#if (DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
+   if (&led_blue_timer_work.work == work) {
+      ui_op(&led_blue_spec, LED_CLEAR, &led_blue_timer_work);
+      return;
+   }
+#endif
+}
+
+int ui_led_op(led_t led, led_op_t op)
+{
+   if (!ui_enabled) {
+      return -EACCES;
+   }
    switch (led) {
       case LED_NONE:
          break;
       case LED_COLOR_RED:
+#if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
          ui_op(&led_red_spec, op, &led_red_timer_work);
+#endif
          break;
       case LED_COLOR_BLUE:
+#if (DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
          ui_op(&led_blue_spec, op, &led_blue_timer_work);
+#endif
          break;
       case LED_COLOR_GREEN:
+#if (DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
          ui_op(&led_green_spec, op, &led_green_timer_work);
+#endif
          break;
       case LED_LTE_1:
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_1, okay)
@@ -260,6 +278,7 @@ void ui_led_op(led_t led, led_op_t op)
 #endif
          break;
    }
+   return 0;
 }
 
 static int ui_init_output(gpio_device_t *output_spec)
@@ -280,19 +299,24 @@ int ui_init(ui_callback_handler_t button_handler)
    int ret;
    LOG_INF("UI init.");
 
+#if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
    ret = ui_init_output(&led_red_spec);
    if (ret) {
       LOG_INF("UI init: LED red failed! %d", ret);
    }
+#endif
+#if (DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
    ret = ui_init_output(&led_green_spec);
    if (ret) {
       LOG_INF("UI init: LED green failed! %d", ret);
    }
+#endif
+#if (DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
    ret = ui_init_output(&led_blue_spec);
    if (ret) {
       LOG_INF("UI init: LED blue failed! %d", ret);
    }
-
+#endif
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_1, okay)
    ret = ui_init_output(&out_lte_1_spec);
    if (ret) {
@@ -353,4 +377,10 @@ int ui_config(void)
    }
 #endif
    return -1;
+}
+
+int ui_enable(bool enable)
+{
+   ui_enabled = enable;
+   return 0;
 }

@@ -1147,6 +1147,7 @@ int modem_start(const k_timeout_t timeout)
 
    ui_led_op(LED_COLOR_BLUE, LED_SET);
    ui_led_op(LED_COLOR_RED, LED_SET);
+   ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
 
    err = modem_connect();
    if (!err) {

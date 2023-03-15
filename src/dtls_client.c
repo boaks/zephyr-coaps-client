@@ -72,7 +72,7 @@ typedef enum {
 typedef struct dtls_app_data_t {
    int fd;
    bool dtls_pending;
-   bool retransmission;
+   uint8_t retransmission;
    request_state_t request_state;
    uint16_t timeout;
    int64_t start_time;
@@ -89,11 +89,12 @@ static dtls_app_data_t app_data;
 
 static unsigned long connect_time = 0;
 static unsigned long response_time = 0;
-static unsigned int transmission = 0;
 static unsigned int current_failures = 0;
 static unsigned int handled_failures = 0;
 
 static bool appl_eeprom = false;
+
+static volatile bool ui_led_active = false;
 
 static volatile bool appl_ready = false;
 static volatile bool trigger_restart_modem = false;
@@ -112,8 +113,10 @@ static uint8_t receive_buffer[MAX_READ_BUF];
 #define RTT_INTERVAL 2000
 static unsigned int rtts[RTT_SLOTS + 2] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20};
 
-K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
-K_SEM_DEFINE(dtls_trigger_search, 0, 1);
+static K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
+static K_SEM_DEFINE(dtls_trigger_search, 0, 1);
+
+static K_MUTEX_DEFINE(dtls_pm_mutex);
 
 static void reboot(int error, bool factoryReset)
 {
@@ -252,6 +255,8 @@ static void dtls_manual_trigger(int duration)
       trigger_reboot = (ui_config() & 2) == 0;
       trigger_restart_modem = true;
    }
+   // LEDs for manual trigger
+   ui_enable(true);
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
    k_sem_give(&dtls_trigger_search);
    dtls_trigger();
@@ -266,12 +271,47 @@ static K_WORK_DELAYABLE_DEFINE(dtls_timer_trigger_work, dtls_timer_trigger_fn);
 static void dtls_timer_trigger_fn(struct k_work *work)
 {
    if (app_data.request_state == NONE) {
+      // no LEDs for time trigger
+      ui_enable(false);
       dtls_trigger();
    } else {
       work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
    }
 }
 #endif
+
+static void dtls_power_management(void)
+{
+   static bool power_manager_suspended = false;
+   bool suspend;
+   bool changed;
+
+   k_mutex_lock(&dtls_pm_mutex, K_FOREVER);
+   suspend = network_sleeping && !ui_led_active && app_data.request_state == NONE;
+   changed = power_manager_suspended != suspend;
+   if (changed) {
+      power_manager_suspended = suspend;
+   }
+   k_mutex_unlock(&dtls_pm_mutex);
+
+   if (changed) {
+      if (suspend) {
+         ui_led_op(LED_COLOR_RED, LED_CLEAR);
+         ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
+         ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
+      }
+      power_manager_suspend(suspend);
+   }
+}
+
+static void dtls_power_management_suspend_fn(struct k_work *work)
+{
+   ui_led_active = false;
+   ui_led_op(LED_COLOR_RED, LED_CLEAR);
+   dtls_power_management();
+}
+
+static K_WORK_DELAYABLE_DEFINE(dtls_power_management_suspend_work, dtls_power_management_suspend_fn);
 
 static void dtls_coap_next(void)
 {
@@ -317,8 +357,8 @@ static void dtls_coap_success(dtls_app_data_t *app)
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    dtls_info("%u/%ldms/%ldms: success", lte_connections, time1, time2);
-   if (transmission <= COAP_MAX_RETRANSMISSION) {
-      transmissions[transmission]++;
+   if (app->retransmission <= COAP_MAX_RETRANSMISSION) {
+      transmissions[app->retransmission]++;
    }
    time2 /= RTT_INTERVAL;
    if (time2 < RTT_SLOTS) {
@@ -368,7 +408,10 @@ static void dtls_coap_failure(dtls_app_data_t *app)
    }
    k_sem_reset(&dtls_trigger_msg);
    app->request_state = WAIT_SUSPEND;
-   ui_led_op(LED_COLOR_RED, LED_SET);
+   if (!ui_led_op(LED_COLOR_RED, LED_SET)) {
+      ui_led_active = true;
+      work_reschedule_for_io_queue(&dtls_power_management_suspend_work, K_SECONDS(10));
+   }
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    dtls_info("%u/%ldms/%ldms: failure", lte_connections, time1, time2);
@@ -452,7 +495,7 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
    if (network_ready) {
       modem_set_transmission_time();
    }
-   if (!app->retransmission) {
+   if (app->retransmission == 0) {
       app->timeout = COAP_ACK_TIMEOUT;
    }
 #ifndef NDEBUG
@@ -534,7 +577,7 @@ recvfrom_peer(dtls_app_data_t *app, dtls_context_t *ctx)
    }
    dtls_info("received_from_peer %d bytes", result);
    if (ctx) {
-      app->retransmission = false;
+      app->retransmission = 0;
       return dtls_handle_message(ctx, &session, receive_buffer, result);
    } else {
       return read_from_peer(NULL, &session, receive_buffer, result);
@@ -570,6 +613,7 @@ sendto_peer(dtls_app_data_t *app, session_t *dst, struct dtls_context_t *ctx)
          ui_led_op(LED_COLOR_GREEN, LED_SET);
       }
       if (network_ready) {
+         ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
          app->request_state = RECEIVE;
 #ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
          if (!app->dtls_pending) {
@@ -588,7 +632,7 @@ dtls_start_connect(struct dtls_context_t *ctx, session_t *dst)
 {
    dtls_app_data_t *app = dtls_get_app_data(ctx);
 
-   app->retransmission = false;
+   app->retransmission = 0;
    app->request_state = SEND;
    return dtls_connect(ctx, dst);
 }
@@ -630,9 +674,6 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
             dtls_info("LTE not ready");
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
             ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-         } else {
-            ui_led_op(LED_COLOR_BLUE, LED_SET);
-            ui_led_op(LED_COLOR_GREEN, LED_SET);
          }
       }
       if (network_ready != active) {
@@ -645,13 +686,8 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
       }
    }
    if (type == LTE_STATE_SLEEPING) {
-      power_manager_suspend(active);
       network_sleeping = active;
-#if CONFIG_COAP_WAKEUP_SEND_INTERVAL > 0 && CONFIG_COAP_SEND_INTERVAL == 0
-      if (!active) {
-         dtls_wakeup_trigger();
-      }
-#endif
+      dtls_power_management();
    }
 }
 
@@ -805,8 +841,10 @@ int dtls_loop(session_t *dst, int flags)
          }
 #endif
          result = 0;
+         dtls_power_management();
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
-            power_manager_suspend(false);
+            app_data.request_state = SEND;
+            dtls_power_management();
             ui_led_op(LED_APPLICATION, LED_SET);
 #if CONFIG_COAP_SEND_INTERVAL > 0
             work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
@@ -825,11 +863,10 @@ int dtls_loop(session_t *dst, int flags)
                check_socket(&app_data, false);
             }
             loops = 0;
-            transmission = 0;
+            app_data.retransmission = 0;
             if (coap_client_prepare_post() < 0) {
                dtls_coap_failure(&app_data);
             } else {
-               app_data.retransmission = false;
                if (app_data.dtls_pending) {
                   dtls_peer_t *peer = dtls_get_peer(dtls_context, dst);
                   if (peer) {
@@ -883,18 +920,26 @@ int dtls_loop(session_t *dst, int flags)
          } else if (app_data.request_state == RECEIVE) {
             int temp = app_data.timeout;
             if (!network_ready) {
-               temp += ADD_ACK_TIMEOUT;
+               if (app_data.retransmission >= COAP_MAX_RETRANSMISSION) {
+                  // stop waiting ...
+                  temp = loops;
+               } else {
+                  temp += ADD_ACK_TIMEOUT;
+               }
             }
             ++loops;
-            dtls_info("CoAP wait %d/%d/%d", loops, app_data.timeout, temp);
+            if (app_data.retransmission > 0) {
+               dtls_info("CoAP wait %d/%d/%d, retrans. %d, network %d", loops, app_data.timeout, temp, app_data.retransmission, network_ready);
+            } else {
+               dtls_info("CoAP wait %d/%d/%d", loops, app_data.timeout, temp);
+            }
             if (loops > temp) {
                result = -1;
-               if (transmission < COAP_MAX_RETRANSMISSION) {
-                  ++transmission;
+               if (app_data.retransmission < COAP_MAX_RETRANSMISSION) {
+                  ++app_data.retransmission;
                   loops = 0;
                   app_data.timeout <<= 1;
                   app_data.request_state = SEND;
-                  app_data.retransmission = true;
 
                   if (app_data.dtls_pending) {
                      dtls_info("hs resend, timeout %d", app_data.timeout);
@@ -920,11 +965,14 @@ int dtls_loop(session_t *dst, int flags)
                dtls_coap_failure(&app_data);
             }
          } else if (app_data.request_state == WAIT_SUSPEND) {
+            // wait for late received data
             if (network_sleeping) {
+               // modem enters sleep, no more data
                app_data.request_state = NONE;
                dtls_info("CoAP suspend after %d", loops);
             } else {
                if (k_sem_count_get(&dtls_trigger_msg)) {
+                  // send button pressed
                   app_data.request_state = NONE;
                }
                ++loops;
@@ -950,7 +998,7 @@ int dtls_loop(session_t *dst, int flags)
                dtls_info("DTLS finished, send coap request.");
                send_request = false;
                loops = 0;
-               transmission = 0;
+               app_data.retransmission = 0;
                sendto_peer(&app_data, dst, dtls_context);
             }
             if (app_data.request_state == NONE && !lte_power_on_off) {
@@ -973,7 +1021,7 @@ int dtls_loop(session_t *dst, int flags)
                if (app_data.request_state == SEND ||
                    app_data.request_state == RECEIVE) {
                   loops = 0;
-                  transmission = 0;
+                  app_data.retransmission = 0;
                   app_data.request_state = SEND;
                   if (app_data.dtls_pending) {
                      dtls_info("hs send again");
