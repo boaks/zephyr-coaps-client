@@ -89,6 +89,8 @@ static dtls_app_data_t app_data;
 
 static unsigned long connect_time = 0;
 static unsigned long response_time = 0;
+
+static bool initial_success = false;
 static unsigned int current_failures = 0;
 static unsigned int handled_failures = 0;
 
@@ -393,6 +395,8 @@ static void dtls_coap_success(dtls_app_data_t *app)
    }
    // reset failures on success
    current_failures = 0;
+   handled_failures = 0;
+   initial_success = true;
    dtls_coap_next();
 }
 
@@ -416,7 +420,10 @@ static void dtls_coap_failure(dtls_app_data_t *app)
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    dtls_info("%u/%ldms/%ldms: failure", lte_connections, time1, time2);
    transmissions[COAP_MAX_RETRANSMISSION + 1]++;
-   current_failures++;
+   if (initial_success) {
+      current_failures++;
+      dtls_info("current failures %d.", current_failures);
+   }
    dtls_coap_next();
 }
 
@@ -790,7 +797,7 @@ int dtls_loop(session_t *dst, int flags)
 #endif
       if (current_failures > handled_failures) {
          handled_failures = current_failures;
-         dtls_info("current failures %d.", current_failures);
+         dtls_info("handle failure %d.", current_failures);
          if (current_failures == 4) {
             // reboot
             reboot(ERROR_CODE_TOO_MANY_FAILURES, false);

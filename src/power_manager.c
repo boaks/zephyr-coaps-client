@@ -14,6 +14,7 @@
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/logging/log_ctrl.h>
 #include <zephyr/pm/device.h>
 
 #include "io_job_queue.h"
@@ -27,27 +28,51 @@ static K_MUTEX_DEFINE(pm_mutex);
 #if defined(CONFIG_UART_CONSOLE) && !defined(CONFIG_CONSOLE_SUBSYS)
 
 static const struct device *const uart0_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
-static bool uart0_suspended = false;
+static bool uart0_suspend = false;
+static int uart0_counter = 0;
+
+static void suspend_uart_fn(struct k_work *work);
+
+static K_WORK_DELAYABLE_DEFINE(suspend_uart_work, suspend_uart_fn);
+
+static void suspend_uart_fn(struct k_work *work)
+{
+   k_mutex_lock(&pm_mutex, K_FOREVER);
+   if (uart0_suspend) {
+      if (++uart0_counter < 30) {
+         if (!log_data_pending()) {
+            uart0_counter = 30;
+         }
+         work_schedule_for_io_queue(&suspend_uart_work, K_MSEC(50));
+         k_mutex_unlock(&pm_mutex);
+         return;
+      }
+      int ret = pm_device_action_run(uart0_dev, PM_DEVICE_ACTION_SUSPEND);
+      if (ret < 0 && ret != -EALREADY) {
+         LOG_WRN("Failed to disable UART (%d)", ret);
+         uart0_suspend = false;
+      }
+   }
+   k_mutex_unlock(&pm_mutex);
+}
 
 static void suspend_uart(bool suspend)
 {
    int ret = 0;
-   if (device_is_ready(uart0_dev) && uart0_suspended != suspend) {
+
+   if (device_is_ready(uart0_dev) && uart0_suspend != suspend) {
+      uart0_suspend = suspend;
       if (suspend) {
          LOG_INF("Disable UART");
-         ret = pm_device_action_run(uart0_dev, PM_DEVICE_ACTION_SUSPEND);
-         if (ret < 0) {
-            LOG_WRN("Failed to disable UART (%d)", ret);
-         } else {
-            uart0_suspended = suspend;
-         }
+         uart0_counter = 0;
+         work_schedule_for_io_queue(&suspend_uart_work, K_MSEC(50));
       } else {
-         uart0_suspended = suspend;
          ret = pm_device_action_run(uart0_dev, PM_DEVICE_ACTION_RESUME);
-         if (ret < 0) {
+         if (ret < 0 && ret != -EALREADY) {
             LOG_WRN("Failed to enable UART (%d)", ret);
-            uart0_suspended = !suspend;
+            uart0_suspend = !suspend;
          } else {
+            k_sleep(K_MSEC(50));
             LOG_INF("Enabled UART");
          }
       }
@@ -306,6 +331,15 @@ static int power_manager_xvy(uint8_t config_register, bool enable)
 
 int power_manager_suspend(bool enable)
 {
+#ifdef CONFIG_SUSPEND_3V3
+#ifndef CONFIG_SUSPEND_UART
+   if (enable) {
+      LOG_INF("Suspend 3.3V");
+   } else {
+      LOG_INF("Resume 3.3V");
+   }
+#endif
+#endif
    k_mutex_lock(&pm_mutex, K_FOREVER);
 #ifdef CONFIG_SUSPEND_UART
    suspend_uart(enable);

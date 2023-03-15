@@ -86,7 +86,7 @@ static int64_t network_search_time = 0;
 static volatile enum rai_mode rai_current_mode = RAI_OFF;
 static volatile int rai_time = -1;
 
-#define SUSPEND_DELAY_MILLIS 2000
+#define SUSPEND_DELAY_MILLIS 100
 
 static int modem_int_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip, bool warn);
 
@@ -657,16 +657,8 @@ static void lte_handler(const struct lte_lc_evt *const evt)
             network_mode = "none";
          } else if (evt->lte_mode == LTE_LC_LTE_MODE_LTEM) {
             network_mode = "CAT-M1";
-#ifdef CONFIG_UDP_PSM_ENABLE
-            lte_lc_psm_param_set(CONFIG_LTE_PSM_REQ_RPTAU, "00000000");
-            lte_lc_psm_req(true);
-#endif
          } else if (evt->lte_mode == LTE_LC_LTE_MODE_NBIOT) {
             network_mode = "NB-IoT";
-#ifdef CONFIG_UDP_PSM_ENABLEx
-            lte_lc_psm_param_set(CONFIG_LTE_PSM_REQ_RPTAU, EFFECTIVE_LTE_PSM_REQ_RAT);
-            lte_lc_psm_req(true);
-#endif
          }
          LOG_INF("LTE Mode: %s", network_mode);
          break;
