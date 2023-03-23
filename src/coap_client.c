@@ -78,7 +78,6 @@ static int coap_client_format_time(int64_t time_millis, char *buf, size_t len)
    }
 }
 
-
 static int coap_client_encode_time(struct coap_packet *request)
 {
    uint64_t time = coap_time;
@@ -342,7 +341,7 @@ int coap_client_prepare_post(void)
    char query[30];
 #endif
 
-#if defined(CONFIG_COAP_SEND_NETWORK_INFO) || defined(CONFIG_COAP_SEND_SIM_INFO)
+#if defined(CONFIG_COAP_SEND_NETWORK_INFO) || defined(CONFIG_COAP_SEND_SIM_INFO) || defined(CONFIG_COAP_SEND_STATISTIC_INFO)
    union lte_params params;
 
    memset(&params, 0, sizeof(params));

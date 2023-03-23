@@ -106,8 +106,6 @@ endif()
 
 if (CONFIG_COAP_SEND_INTERVAL)
 set(BUILD_SUMUP1 "Build with send interval ${CONFIG_COAP_SEND_INTERVAL} s.")
-elseif (CONFIG_COAP_WAKEUP_SEND_INTERVAL)
-set(BUILD_SUMUP1 "Build with wakeup send interval ${CONFIG_COAP_WAKEUP_SEND_INTERVAL} s.")
 else()
 set(BUILD_SUMUP1 "Build without send interval.")
 endif()
