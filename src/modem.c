@@ -1618,19 +1618,26 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
 #elif CONFIG_UDP_AS_RAI_ENABLE
    /** Access stratum Release Assistance Indication  */
    int option = -1;
+   const char *rai = "";
+
 #ifdef USE_SO_RAI_NO_DATA
    switch (mode) {
       case RAI_NOW:
          option = SO_RAI_NO_DATA;
+         rai = "now";
          break;
       case RAI_OFF:
          if (rai_current_mode != SO_RAI_ONGOING) {
             option = SO_RAI_ONGOING;
          }
+         rai = "off";
          break;
       case RAI_LAST:
+         rai = "last";
+         break;
       case RAI_ONE_RESPONSE:
       default:
+         rai = "one response";
          break;
    }
 #else
@@ -1638,15 +1645,18 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
       case RAI_NOW:
          break;
       case RAI_LAST:
+         rai = "last";
          option = SO_RAI_LAST;
          break;
       case RAI_ONE_RESPONSE:
          option = SO_RAI_ONE_RESP;
+         rai = "one response";
          break;
       case RAI_OFF:
       default:
          if (rai_current_mode != SO_RAI_ONGOING) {
             option = SO_RAI_ONGOING;
+            rai = "off";
          }
          break;
    }
@@ -1654,8 +1664,9 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
    if (option >= 0) {
       err = setsockopt(socket, SOL_SOCKET, option, NULL, 0);
       if (err) {
-         LOG_WRN("RAI sockopt %d, error %d", option, errno);
+         LOG_WRN("RAI sockopt %d/%s, error %d", option, rai, errno);
       } else {
+         LOG_INF("RAI sockopt %d/%s, success", option, rai);
          rai_current_mode = option;
       }
    }
