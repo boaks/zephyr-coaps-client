@@ -54,7 +54,7 @@ There are also other phases, which are not considered here:
 
 All these are taking more or less randomly amount of time and may occur also unintended. So they hard to take into consideration. I guess, they unfortunately half the runtime in too many cases.
 
-In my experience especially HPPLMN searches may turn out to use quite a lot of energy. The interval of these HPPLMN searches is stored on the SIM card. Especially using global SIMs (IMSI starting with a 9) causes since nRF9106 mfw 1.3.2 an increased number of HPPLMN searches, though the current country code is not longer considered. Using a global SIM with an interval of 2h causes a device, which exchanges every hour a message to increase the power consumption by 10 times.  
+In my experience especially HPPLMN searches may turn out to use quite a lot of energy. The interval of these HPPLMN searches is stored on the SIM card. Especially using global SIMs (IMSI starting with a 9) causes since nRF9160 mfw 1.3.2 an increased number of HPPLMN searches, though the current country code is not longer considered for such global SIMs. Using a global SIM with an interval of 2h causes a device, which exchanges every hour a message to increase the power consumption by 10 times.
 
 The measurements differs from test to test. The charts shows just one example test run.
 
