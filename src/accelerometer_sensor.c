@@ -31,7 +31,7 @@ static void accelerometer_trigger_handler(const struct device *dev,
    struct accelerometer_evt evt;
 
    switch (trig->type) {
-      case SENSOR_TRIG_THRESHOLD:
+      case SENSOR_TRIG_MOTION:
 
          if (sensor_sample_fetch(dev) < 0) {
             LOG_ERR("Sample fetch error");
@@ -82,7 +82,7 @@ int accelerometer_enable(bool enable)
 {
    struct sensor_trigger trig = {
        .chan = SENSOR_CHAN_ACCEL_XYZ,
-       .type = SENSOR_TRIG_THRESHOLD};
+       .type = SENSOR_TRIG_MOTION};
 
    int err = sensor_trigger_set(accelerometer_dev, &trig, enable ? accelerometer_trigger_handler : NULL);
    if (err) {

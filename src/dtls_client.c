@@ -769,23 +769,25 @@ int dtls_loop(session_t *dst, int flags)
    while (1) {
 
 #ifdef CONFIG_LOCATION_ENABLE
+      power_manager_status_t battery_status = POWER_UNKNOWN;
       uint8_t battery_level = 0xff;
       bool force = false;
 #ifdef CONFIG_ADXL362_MOTION_DETECTION
       force = moved;
       moved = false;
 #endif
-      power_manager_status(&battery_level, NULL, NULL, NULL);
+      power_manager_status(&battery_level, NULL, &battery_status, NULL);
       if (location_enabled()) {
-         if (battery_level < 20) {
+         if (battery_level < 20 && battery_status == FROM_BATTERY) {
             dtls_info("Low battery, switch off GNSS");
             location_stop();
          } else if (force) {
             dtls_info("Motion detected, force GNSS");
             location_start(force);
          }
-      } else if (!dtls_pending) {
-         if (battery_level > 80 && battery_level < 0xff) {
+      } else if (!app_data.dtls_pending) {
+         if ((battery_level > 80 && battery_level < 0xff) ||
+             (battery_status != FROM_BATTERY && battery_status != POWER_UNKNOWN)) {
             dtls_info("High battery, switch on GNSS");
             location_start(false);
          } else if (location_init && (battery_level == 0xff || battery_level >= 20)) {
