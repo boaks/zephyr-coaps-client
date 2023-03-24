@@ -34,12 +34,6 @@ int coap_client_parse_data(uint8_t *data, size_t len);
 
 int coap_client_prepare_post(void);
 
-int coap_client_prepare_post_for_tcp(void);
-
-int coap_client_decode_tcp_length(const uint8_t *buffer, size_t length);
-
-int coap_client_prepare_response_from_tcp(uint8_t *buffer, size_t length, size_t max_length);
-
 int coap_client_message(const uint8_t** buffer);
 
 void coap_client_get_time(int64_t* now);

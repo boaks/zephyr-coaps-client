@@ -30,9 +30,6 @@
 #ifdef CONFIG_LOCATION_ENABLE
 #include "location.h"
 #endif
-#ifdef CONFIG_SCALE_ENABLE
-#include "scale.h"
-#endif
 
 #define APP_COAP_MAX_MSG_LEN 1280
 #define APP_COAP_VERSION 1
@@ -861,121 +858,6 @@ int coap_client_prepare_post(void)
    dtls_info("CoAP request prepared, token 0x%02x%02x%02x%02x, %u bytes", token[0], token[1], token[2], token[3], coap_message_len);
 
    return coap_message_len;
-}
-
-int coap_client_prepare_post_for_tcp(void)
-{
-   uint16_t message_len;
-   uint8_t token_len;
-   uint8_t code;
-   int result = coap_client_prepare_post();
-
-   if (result < 0) {
-      return result;
-   }
-
-   token_len = coap_message_buf[0] & 0xf;
-   code = coap_message_buf[1];
-   message_len = coap_message_len - token_len - 4;
-
-   if (message_len < 13) {
-      coap_message_buf[0] = token_len | (message_len << 4);
-      memmove(&coap_message_buf[2], &coap_message_buf[4], coap_message_len - 4);
-      coap_message_len -= 2;
-   } else if (message_len < 13 + 256) {
-      coap_message_buf[0] = token_len | (13 << 4);
-      coap_message_buf[1] = message_len - 13;
-      coap_message_buf[2] = code;
-      memmove(&coap_message_buf[3], &coap_message_buf[4], coap_message_len - 4);
-      --coap_message_len;
-   } else {
-      coap_message_buf[0] = token_len | (14 << 4);
-      message_len -= (13 + 256);
-      coap_message_buf[1] = (message_len >> 8);
-      coap_message_buf[2] = message_len;
-      coap_message_buf[3] = code;
-   }
-
-   return coap_message_len;
-}
-
-int coap_client_prepare_response_from_tcp(uint8_t *buffer, size_t length, size_t max_length)
-{
-   if (buffer && length > 1) {
-      int code = 0;
-      int token_len = buffer[0] & 0xf;
-      int length_type = (buffer[0] >> 4) & 0xf;
-      int coap_length = -1;
-
-      if (length_type < 13) {
-         coap_length = length_type + token_len + 4;
-         if ((length + 2) != coap_length || coap_length > max_length) {
-            // length error
-            return -1;
-         }
-         code = buffer[1] & 0xff;
-         memmove(&buffer[4], &buffer[2], length - 2);
-      } else if (length_type == 13) {
-         coap_length = (buffer[1] & 0xff) + token_len + 4 + 13;
-         if ((length + 1) != coap_length || coap_length > max_length) {
-            // length error
-            return -1;
-         }
-         code = buffer[2] & 0xff;
-         memmove(&buffer[4], &buffer[3], length - 3);
-      } else if (length_type == 14) {
-         coap_length = ((buffer[1] & 0xff) << 8) +
-                       (buffer[2] & 0xff) +
-                       token_len + 4 + 13 + 256;
-         if (length != coap_length || coap_length > max_length) {
-            // length error
-            return -1;
-         }
-         code = buffer[3] & 0xff;
-      } else if (length_type == 15) {
-         coap_length = ((buffer[1] & 0xff) << 16) +
-                       ((buffer[2] & 0xff) << 8) +
-                       (buffer[3] & 0xff) + token_len + 4 + 13 + 256 + 65536;
-         if ((length - 1) != coap_length || coap_length > max_length) {
-            // length error
-            return -1;
-         }
-         code = buffer[4] & 0xff;
-         memmove(&buffer[4], &buffer[5], length - 5);
-      }
-      buffer[0] = token_len + 0x50; // NON
-      buffer[1] = code;
-      buffer[2] = 0;
-      buffer[3] = 0;
-      return coap_length;
-   }
-   return -1;
-}
-
-int coap_client_decode_tcp_length(const uint8_t *buffer, size_t length)
-{
-   if (length == 2 && buffer[0] == 0) {
-      return 2;
-   } else if (length > 2) {
-      LOG_INF("recv() 0x%02x 0x%02x 0x%02x\n", buffer[0], buffer[1], buffer[2]);
-      int token_len = buffer[0] & 0xf;
-      int length_type = (buffer[0] >> 4) & 0xf;
-      if (length_type < 13) {
-         return length_type + token_len + 2;
-      } else if (length_type == 13) {
-         return (buffer[1] & 0xff) + token_len + 13 + 3;
-      } else if (length_type == 14) {
-         return ((buffer[1] & 0xff) << 8) +
-                (buffer[2] & 0xff) +
-                token_len + 13 + 256 + 4;
-      } else if (length_type == 15 && length > 3) {
-         return ((buffer[1] & 0xff) << 16) +
-                ((buffer[2] & 0xff) << 8) +
-                (buffer[3] & 0xff) +
-                token_len + 13 + 256 + 65536 + 5;
-      }
-   }
-   return -1;
 }
 
 int coap_client_message(const uint8_t **buffer)
