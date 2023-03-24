@@ -16,7 +16,6 @@
 #include <nrf_modem_gnss.h>
 #include <stdio.h>
 #include <string.h>
-#include <zephyr.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 

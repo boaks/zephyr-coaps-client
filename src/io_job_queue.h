@@ -14,7 +14,7 @@
 #ifndef IO_JOB_QUEUE_H
 #define IO_JOB_QUEUE_H
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 
 extern struct k_work_q io_job_queue;
 

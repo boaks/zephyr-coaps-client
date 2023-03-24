@@ -14,11 +14,11 @@
 #include "tinydtls.h"
 
 #include <errno.h>
-#include <net/coap.h>
-#include <net/socket.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/reboot.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/sys/reboot.h>
 
 #include "appl_eeprom.h"
 #include "coap_client.h"

@@ -11,11 +11,11 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-#include <net/coap.h>
-#include <random/rand32.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/random/rand32.h>
 
 #include "coap_client.h"
 #include "dtls_debug.h"

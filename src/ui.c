@@ -11,14 +11,13 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-#include "ui.h"
-#include <logging/log.h>
-#include <zephyr.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
-#include <zephyr/kernel.h>
 
+#include "ui.h"
 #include "io_job_queue.h"
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);

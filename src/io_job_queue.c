@@ -11,7 +11,7 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-#include <zephyr.h>
+#include "io_job_queue.h"
 
 #ifdef CONFIG_USE_IO_JOB_QUEUE
 

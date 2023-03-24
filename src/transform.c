@@ -11,10 +11,10 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-#include <logging/log.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <zephyr/logging/log.h>
 
 #include "transform.h"
 

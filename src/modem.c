@@ -11,17 +11,16 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-#include <kernel.h>
-#include <logging/log.h>
-#include <modem/lte_lc.h>
-#include <modem/nrf_modem_lib.h>
-#include <modem/pdn.h>
-#include <net/socket.h>
-#include <nrf_modem_at.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <zephyr.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/net/socket.h>
+#include <modem/lte_lc.h>
+#include <modem/nrf_modem_lib.h>
+#include <modem/pdn.h>
+#include <nrf_modem_at.h>
 
 #include "io_job_queue.h"
 #include "modem.h"

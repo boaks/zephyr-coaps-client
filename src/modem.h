@@ -16,7 +16,7 @@
 
 #include <stddef.h>
 #include <stdbool.h>
-#include <sys_clock.h>
+#include <zephyr/sys_clock.h>
 
 #include <modem/lte_lc.h>
 
