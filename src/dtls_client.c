@@ -798,13 +798,13 @@ int dtls_loop(session_t *dst, int flags)
       if (current_failures > handled_failures) {
          handled_failures = current_failures;
          dtls_info("handle failure %d.", current_failures);
-         if (current_failures == 4) {
-            // reboot
-            reboot(ERROR_CODE_TOO_MANY_FAILURES, false);
-         } else if (current_failures == 3) {
+         if (current_failures == 3 && (flags & FLAG_TLS)) {
             // restart dtls
             app_data.dtls_pending = true;
             dtls_trigger();
+         } else if (current_failures >= 3) {
+            // reboot
+            reboot(ERROR_CODE_TOO_MANY_FAILURES, false);
          } else if (current_failures == 2) {
             // restart modem
             trigger_restart_modem = true;
@@ -1134,6 +1134,7 @@ void main(void)
       dtls_info("LTE power on/off %s.", lte_power_on_off ? "enabled" : "disabled");
       if (config & 8) {
          protocol = 1;
+         dtls_info("CoAP/UDP");
       }
    }
 #elif CONFIG_PROTOCOL_CONFIG_SWITCH
