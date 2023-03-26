@@ -131,6 +131,8 @@ int modem_set_offline(void);
 
 int modem_set_lte_offline(void);
 
+int modem_set_sim_on(void);
+
 int modem_set_normal(void);
 
 int modem_power_off(void);

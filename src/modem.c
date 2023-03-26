@@ -1694,6 +1694,14 @@ int modem_set_lte_offline(void)
    return lte_lc_func_mode_set(LTE_LC_FUNC_MODE_DEACTIVATE_LTE) ? -EFAULT : 0;
 }
 
+int modem_set_sim_on(void) 
+{
+   char buf[64];
+   
+   LOG_INF("modem activate SIM only");
+   return modem_at_cmd("AT+CFUN=41", buf, sizeof(buf), "+CFUN: ");
+}
+
 int modem_power_off(void)
 {
    LOG_INF("modem off");

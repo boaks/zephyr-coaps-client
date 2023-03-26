@@ -34,11 +34,11 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160) based devic
 
 | Device | |
 | :- | - |
-| [Nordic Semiconductor, Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) | ![Thingy:91](./docu/thingy91.jpg) |
-| [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) | ![nRF9160-DK](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK.png) |
-| [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/) | ![nRF9160-DK](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
+| [Nordic Semiconductor, Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91)<br>Works "out-of-the-box" in the "wild". Not easy to extend with custom sensors. | ![Thingy:91](./docu/thingy91.jpg) |
+| [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/)<br>Requires additonal batteries, antennas, and closures to work in the "wild". The design of the feather allows to easily add custom sensors. | ![nRF9160-DK](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
+| [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. The design allows to easily add custom sensors. | ![nRF9160-DK](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK.png) |
 
-The `Thingy:91` demo works with [ncs-2.1.2](https://github.com/nrfconnect/sdk-nrf/tree/v2.1.2).
+The demo works with [ncs-2.1.2](https://github.com/nrfconnect/sdk-nrf/tree/v2.1.2).
 
 To benefit from the newer modem features, please consider to use the modem firmware [1.3.4](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.4.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
@@ -54,7 +54,7 @@ In order to use this demo with a `Thingy:91`, you need:
    - either a [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) and a [10-wire-ribbon connector, 2x5, 0.050"](https://www.digikey.com/en/products/detail/harwin-inc/M50-9100542/4953091).
    - or a [j-Link](https://www.segger.com/products/debug-probes/j-link/) and a [cortex-M adapter](https://www.segger.com/products/debug-probes/j-link/accessories/adapters/9-pin-cortex-m-adapter/).
 
-**Note:** the Thingy:91 uses 1.8V VDD and requires the Jlink to support 1.8V as well. Not all Jlinks supporting that, ensure you get a right one! If the nRF9160-DK is used, ensure you select 1.8V for VDD-IO (SW9 on the DK). 
+**Note:** the `Thingy:91` uses 1.8V VDD and requires the Jlink to support 1.8V as well. Not all Jlinks supporting that, ensure you get a right one! If the `nRF9160-DK` is used, ensure you select 1.8V for VDD-IO (SW9 on the DK). 
 
 ## Required HW-Tools for nRF9160 feather v5
 
@@ -65,12 +65,21 @@ In order to use this demo with a `nRF9160 feather v5`, you need:
 - a debug probe to flash the device.
    - either a [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)
    - or a [nRF5340-DK](https://www.nordicsemi.com/Products/Development-hardware/nrf5340-dk)
-   (doesn't work for the Thingy:91!)
+   (doesn't work for the `Thingy:91`!)
    - or a [j-Link](https://www.segger.com/products/debug-probes/j-link/)
-
    - and a [TC2030-CTX-NL 6-Pin “No Legs”](https://www.tag-connect.com/product/tc2030-ctx-nl-6-pin-no-legs-cable-with-10-pin-micro-connector-for-cortex-processors) cable with 10-pin micro-connector for Cortex processors for any of the above debug probes.
 
-**Note:** the nRF9160 feather v5 uses 3.3V VDD and requires the Jlink to support 3.3V as well. Therefore a nRF5340 can be used. If the nRF9160-DK is used, ensure you select 3.0V for VDD-IO (SW9 on the DK). 
+**Note:** the `nRF9160 feather v5` uses 3.3V VDD and requires the Jlink to support 3.3V as well. Therefore a `nRF5340-DK` can be used. If the `nRF9160-DK` is used, ensure you select 3.0V for VDD-IO (SW9 on the DK). 
+
+## Required HW-Tools for nRF9160-DK
+
+In order to use this demo with a `nRF9160-DK`, you need:
+
+- a `nRF9160-DK` (maybe better two ;-)).
+- the `nRF9160-DK` is usually shipped with a SIM card. Check, if that covers your [area/country](https://www.nordicsemi.com/-/media/Software-and-other-downloads/3rd-party/iBasis-simplified-coverage-map-for-web.pdf). If not, you need a SIM card for your area/country. (Sometimes the `nRF9160-DK` is shipped with an expired SIM card. Then you will need also an other one.)
+- the `nRF9160-DK` comes with a internal debug probe to flash the device. No additional equipment is required.   
+
+**Note:** the `nRF9160-DK` is a great tool to develop apps for the nRF9160 on your desk. For the "wild", a `Thingy:91` or `nRF9160 feather v5` does a better job.
 
 ## Run It - Fast Track
 

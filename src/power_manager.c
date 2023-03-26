@@ -122,6 +122,38 @@ static void suspend_uart(bool suspend)
 #endif /* CONFIG_UART_CONSOLE */
 #endif /* CONFIG_SUSPEND_UART */
 
+/** A discharge curve specific to the power source. */
+static const struct transform_curve curve = {
+#ifdef CONFIG_BATTERY_TYPE_LIPO_2000_MAH
+    .points = 4,
+    .curve = {
+        {4150, 10000},
+        {4000, 8000},
+        {3500, 1000},
+        {3350, 0},
+    }
+#elif defined(CONFIG_BATTERY_TYPE_ENELOOP_2000_MAH)
+    .points = 5,
+    .curve = {
+        {4250, 10000},
+        {3900, 8260},
+        {3800, 3700},
+        {3600, 1000},
+        {3350, 0},
+    }
+#else
+    .points = 6,
+    .curve = {
+        {4200, 10000},
+        {3800, 5000},
+        {3750, 2500},
+        {3600, 1250},
+        {3400, 400},
+        {3200, 0},
+    }
+#endif
+};
+
 /*
  * first_battery_level is set, when the first complete
  * battery level epoch is detected. The very first change
@@ -218,37 +250,6 @@ static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_ma
    return -1;
 }
 
-/** A discharge curve specific to the power source. */
-static const struct transform_curve curve = {
-#ifdef CONFIG_BATTERY_TYPE_LIPO_2000_MAH
-    .points = 4,
-    .curve = {
-        {4150, 10000},
-        {4000, 8000},
-        {3500, 1000},
-        {3350, 0},
-    }
-#elif defined(CONFIG_BATTERY_TYPE_ENELOOP_2000_MAH)
-    .points = 5,
-    .curve = {
-        {4250, 10000},
-        {3900, 8260},
-        {3800, 3700},
-        {3600, 1000},
-        {3350, 0},
-    }
-#else
-    .points = 6,
-    .curve = {
-        {4200, 10000},
-        {3800, 5000},
-        {3750, 2500},
-        {3600, 1250},
-        {3400, 400},
-        {3200, 0},
-    }
-#endif
-};
 
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
 

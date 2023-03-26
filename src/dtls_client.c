@@ -158,10 +158,12 @@ static int get_socket_error(dtls_app_data_t *app)
    return error;
 }
 
-static void restart_modem(dtls_app_data_t *app)
+static void restart_modem(bool force, dtls_app_data_t *app)
 {
    int timeout_seconds = CONFIG_MODEM_SEARCH_TIMEOUT;
-   int sleep_minutes = trigger_restart_modem ? 0 : 15;
+   int sleep_minutes = 15;
+   bool network = network_registered;
+   bool first = false;
 
    dtls_warn("> reconnect modem ...");
    k_sem_reset(&dtls_trigger_search);
@@ -170,9 +172,24 @@ static void restart_modem(dtls_app_data_t *app)
       reboot(ERROR_CODE_MANUAL_TRIGGERED, false);
    }
 
-   while (!network_registered || trigger_restart_modem) {
-      dtls_info("> modem offline (%d minutes)", sleep_minutes);
+   if (force) {
+      dtls_info("> modem restart");
       modem_set_lte_offline();
+      k_sleep(K_MSEC(2000));
+      ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
+      ui_led_op(LED_COLOR_RED, LED_CLEAR);
+      ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
+      network = modem_start(K_SECONDS(timeout_seconds)) == 0;
+      timeout_seconds *= 2;
+   }
+
+   while (!network) {
+      dtls_info("> modem offline (%d minutes)", sleep_minutes);
+      if (first) {
+         modem_set_sim_on();
+      } else {
+         modem_set_lte_offline();
+      }
       k_sleep(K_MSEC(2000));
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
@@ -217,7 +234,7 @@ static void reopen_socket(dtls_app_data_t *app)
    }
    err = modem_wait_ready(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
    if (err) {
-      restart_modem(app);
+      restart_modem(true, app);
    }
    (void)close(app->fd);
    app->fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -643,7 +660,7 @@ static int
 dtls_start_connect(struct dtls_context_t *ctx, session_t *dst)
 {
    dtls_app_data_t *app = dtls_get_app_data(ctx);
-
+   dtls_info("Start DTLS 1.2 handshake.");
    app->retransmission = 0;
    app->request_state = SEND;
    return dtls_connect(ctx, dst);
@@ -732,6 +749,11 @@ int dtls_loop(session_t *dst, int flags)
    bool location_init = true;
 #endif
 
+   if (flags & FLAG_TLS) {
+      dtls_info("Start CoAP/DTLS 1.2");
+   } else {
+      dtls_info("Start CoAP/UDP");
+   }
    coap_client_init();
    app_data.fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
@@ -812,7 +834,7 @@ int dtls_loop(session_t *dst, int flags)
          }
       }
       if (trigger_restart_modem) {
-         restart_modem(&app_data);
+         restart_modem(true, &app_data);
          reopen_socket(&app_data);
       }
       udp_poll.fd = app_data.fd;
@@ -851,7 +873,7 @@ int dtls_loop(session_t *dst, int flags)
                modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
                reopen_socket(&app_data);
             } else if (trigger_restart_modem) {
-               restart_modem(&app_data);
+               restart_modem(true, &app_data);
                reopen_socket(&app_data);
             } else {
                check_socket(&app_data, false);
@@ -1043,6 +1065,7 @@ static int init_destination(int protocol, session_t *destination)
           .ai_socktype = SOCK_DGRAM};
 
       host = CONFIG_COAP_SERVER_HOSTNAME;
+      dtls_info("DNS lookup: %s", host);
       err = getaddrinfo(CONFIG_COAP_SERVER_HOSTNAME, NULL, &hints, &result);
       while (-err == EAGAIN && count < 10) {
          k_sleep(K_MSEC(1000));
@@ -1213,7 +1236,7 @@ void main(void)
 
    if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT)) != 0) {
       appl_ready = true;
-      restart_modem(NULL);
+      restart_modem(false, NULL);
    }
    appl_ready = true;
 
