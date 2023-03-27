@@ -70,6 +70,7 @@ typedef enum {
 } request_state_t;
 
 typedef struct dtls_app_data_t {
+   session_t* destination;
    int fd;
    bool dtls_pending;
    uint8_t retransmission;
@@ -184,10 +185,11 @@ static void restart_modem(bool force, dtls_app_data_t *app)
    }
 
    while (!network) {
-      dtls_info("> modem offline (%d minutes)", sleep_minutes);
       if (first) {
+         dtls_info("> modem SIM only (%d minutes)", sleep_minutes);
          modem_set_sim_on();
       } else {
+         dtls_info("> modem offline (%d minutes)", sleep_minutes);
          modem_set_lte_offline();
       }
       k_sleep(K_MSEC(2000));
@@ -245,6 +247,10 @@ static void reopen_socket(dtls_app_data_t *app)
    if (psm_off) {
       modem_set_psm(true);
    }
+#if defined(CONFIG_UDP_AS_RAI_ENABLE) && defined(USE_SO_RAI_NO_DATA)
+   // using SO_RAI_NO_DATA requires a destination, for what ever
+   connect(app->fd, (struct sockaddr *)&app->destination->addr.sin, sizeof(struct sockaddr_in));
+#endif
    modem_set_rai_mode(RAI_OFF, app->fd);
    dtls_info("> reopend socket.");
 }
@@ -679,12 +685,12 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
       network_registered = active;
       if (active) {
          if (!network_ready) {
-            dtls_info("LTE online, no network");
+            dtls_info("LTE registered, no network");
             ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
          }
       } else {
-         dtls_info("LTE offline");
+         dtls_info("LTE unregistered");
          network_ready = false;
          led_op_t op = LED_SET;
          if (lte_power_off) {
@@ -755,12 +761,17 @@ int dtls_loop(session_t *dst, int flags)
       dtls_info("Start CoAP/UDP");
    }
    coap_client_init();
+   app_data.destination = dst;
    app_data.fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
    if (app_data.fd < 0) {
       dtls_warn("Failed to create UDP socket: %d (%s)", errno, strerror(errno));
       reboot(ERROR_CODE_INIT_SOCKET, false);
    }
+#if defined(CONFIG_UDP_AS_RAI_ENABLE) && defined(USE_SO_RAI_NO_DATA)
+   // using SO_RAI_NO_DATA requires a destination, for what ever
+   connect(app_data.fd, (struct sockaddr *)&app_data.destination->addr.sin, sizeof(struct sockaddr_in));
+#endif
    modem_set_rai_mode(RAI_OFF, app_data.fd);
 
    if (flags & FLAG_TLS) {
@@ -774,10 +785,6 @@ int dtls_loop(session_t *dst, int flags)
       dtls_set_handler(dtls_context, &cb);
       app_data.dtls_pending = true;
    }
-#if defined(CONFIG_UDP_AS_RAI_ENABLE) && defined(USE_SO_RAI_NO_DATA)
-   // using SO_RAI_NO_DATA requires a destination, for what ever
-   connect(fd, (struct sockaddr *)&dst.addr.sin, sizeof(struct sockaddr_in));
-#endif
 
    app_data.timeout = COAP_ACK_TIMEOUT;
    if ((flags & FLAG_KEEP_CONNECTION) && (flags & FLAG_TLS)) {
@@ -1013,7 +1020,7 @@ int dtls_loop(session_t *dst, int flags)
                app_data.retransmission = 0;
                sendto_peer(&app_data, dst, dtls_context);
             }
-            if (app_data.request_state == NONE && !lte_power_on_off) {
+            if ((app_data.request_state == NONE || app_data.request_state == WAIT_SUSPEND) && !lte_power_on_off) {
                modem_set_rai_mode(RAI_NOW, app_data.fd);
             }
             if (app_data.request_state == NONE &&

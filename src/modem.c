@@ -11,16 +11,16 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include <modem/lte_lc.h>
+#include <modem/nrf_modem_lib.h>
+#include <modem/pdn.h>
+#include <nrf_modem_at.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/net/socket.h>
-#include <modem/lte_lc.h>
-#include <modem/nrf_modem_lib.h>
-#include <modem/pdn.h>
-#include <nrf_modem_at.h>
 
 #include "io_job_queue.h"
 #include "modem.h"
@@ -168,10 +168,10 @@ static K_WORK_DEFINE(modem_read_pdn_info_work, modem_read_pdn_info_work_fn);
 // #define CONFIG_USER_PLMN_SELECTOR "62F2204000"
 
 #ifndef CONFIG_USER_PLMN_SELECTOR
-//#define CONFIG_USER_PLMN_SELECTOR "FFFFFF0000FFFFFF0000FFFFFF0000"
+// #define CONFIG_USER_PLMN_SELECTOR "FFFFFF0000FFFFFF0000FFFFFF0000"
 #endif
 
-//#define CONFIG_FORBIDDEN_PLMN "09F104FFFFFFFFFFFFFFFFFF"
+// #define CONFIG_FORBIDDEN_PLMN "09F104FFFFFFFFFFFFFFFFFF"
 
 #ifndef CONFIG_FORBIDDEN_PLMN
 // #define CONFIG_FORBIDDEN_PLMN "FFFFFFFFFFFFFFFFFFFFFFFF"
@@ -718,7 +718,17 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          }
          break;
       case LTE_LC_EVT_CELL_UPDATE:
-         LOG_INF("LTE cell changed: Cell ID: %d, Tracking area: %d", evt->cell.id, evt->cell.tac);
+         if (evt->cell.id == LTE_LC_CELL_EUTRAN_ID_INVALID) {
+            LOG_INF("LTE cell changed: n.a");
+         } else if (evt->cell.mcc == 0) {
+            // CEREG update
+            LOG_INF("LTE cell changed: Cell ID: %d, Tracking area: %d",
+                    evt->cell.id, evt->cell.tac);
+         } else {
+            LOG_INF("LTE cell changed: PLMN %d.%d, Cell ID: %d, Tracking area: %d",
+                    evt->cell.mcc, evt->cell.mnc, evt->cell.id, evt->cell.tac);
+            LOG_INF("LTE cell changed: RSRP %d dBm, RSRQ %d dB", evt->cell.rsrp - 140, (evt->cell.rsrq - 39) / 2);
+         }
          lte_update_cell(evt->cell.tac, evt->cell.id);
          break;
       case LTE_LC_EVT_MODEM_SLEEP_ENTER:
@@ -1580,8 +1590,6 @@ int modem_set_psm(bool enable)
 #endif
 }
 
-//#define USE_SO_RAI_NO_DATA
-
 int modem_set_rai_mode(enum rai_mode mode, int socket)
 {
    int err = 0;
@@ -1694,10 +1702,10 @@ int modem_set_lte_offline(void)
    return lte_lc_func_mode_set(LTE_LC_FUNC_MODE_DEACTIVATE_LTE) ? -EFAULT : 0;
 }
 
-int modem_set_sim_on(void) 
+int modem_set_sim_on(void)
 {
    char buf[64];
-   
+
    LOG_INF("modem activate SIM only");
    return modem_at_cmd("AT+CFUN=41", buf, sizeof(buf), "+CFUN: ");
 }
@@ -1842,6 +1850,11 @@ int modem_set_lte_offline(void)
 }
 
 int modem_set_normal(void)
+{
+   return 0;
+}
+
+int modem_set_sim_on(void)
 {
    return 0;
 }

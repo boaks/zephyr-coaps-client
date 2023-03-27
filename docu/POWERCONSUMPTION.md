@@ -66,6 +66,10 @@ More details about PSM and other power saving functions can be found in:
 
 [GSMA - NB-IoT Roaming Features April 2022](https://www.gsma.com/iot/wp-content/uploads/2022/04/NB-IoT-Roaming-Features-April-2022-Landscape.pdf)
 
+[GSMA - NB-IoT Roaming Features September 2022](https://www.gsma.com/iot/wp-content/uploads/2023/03/GSMA-Mobile-IoT-Roaming-Features_Final_08.09.2022-NB-IoT.xlsx)
+
+[GSMA - LTE-M Roaming Features September 2022](https://www.gsma.com/iot/wp-content/uploads/2022/11/GSMA-Mobile-IoT-Roaming-Features_Final_09.06.2022LTM-.xlsx)
+
 [Nordic Semiconductor - LTE-M vs NB-IoT Field Test: How Distance Affects Power Consumption](https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/ltem-vs-nbiot-field-test-how-distance-affects-power-consumption)
 
 ## Summary:
