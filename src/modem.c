@@ -1080,6 +1080,10 @@ int modem_wait_ready(const k_timeout_t timeout)
    k_timeout_t time = K_MSEC(0);
    k_timeout_t interval = K_MSEC(1500);
    int led_on = 1;
+   int64_t now = k_uptime_get();
+   int64_t start = now;
+   int64_t last = now;
+
    while (!lte_ready_wait(interval)) {
       led_on = !led_on;
       if (led_on) {
@@ -1094,7 +1098,15 @@ int modem_wait_ready(const k_timeout_t timeout)
          err = -1;
          break;
       }
+      now = k_uptime_get();
+      if ((now - last) > MSEC_PER_SEC * 30) {
+         LOG_INF("Modem searching for %ld s", (long)((now - start) / MSEC_PER_SEC));
+         last = now;
+      }
    }
+   now = k_uptime_get();
+   LOG_INF("Modem network %sfound in %ld s", err ? "not " : "", (long)((now - start) / MSEC_PER_SEC));
+
    return err;
 }
 
@@ -1128,18 +1140,42 @@ int modem_start(const k_timeout_t timeout)
    memset(&sim_info, 0, sizeof(sim_info));
    sim_info.hpplmn_search_interval = -ENODATA;
 
+   err = modem_at_cmd("AT%%XRAI=0", buf, sizeof(buf), "%XRAI: ");
+   if (err < 0) {
+      LOG_WRN("Failed to disable control plane RAI, err %d", err);
+   } else {
+#ifdef CONFIG_UDP_RAI_ENABLE
+      LOG_INF("Control plane RAI initial disabled");
+#endif
+   }
+
 #ifdef CONFIG_UDP_AS_RAI_ENABLE
    /** Release Assistance Indication  */
    err = modem_at_cmd("AT%%RAI=1", buf, sizeof(buf), "%RAI: ");
    if (err < 0) {
       LOG_WRN("Failed to enable access stratum RAI, err %d", err);
+   } else {
+#ifdef USE_SO_RAI_NO_DATA
+      LOG_INF("Access stratum RAI/NO_DATA enabled");
+#else
+      LOG_INF("Access stratum RAI enabled");
+#endif
    }
 #else
-   err = modem_at_cmd("AT%%XRAI=0", buf, sizeof(buf), "%XRAI: ");
+   /** Release Assistance Indication  */
+   err = modem_at_cmd("AT%%RAI=0", buf, sizeof(buf), "%RAI: ");
    if (err < 0) {
-      LOG_WRN("Failed to disable control plane RAI, err %d", err);
-   }
+      LOG_WRN("Failed to disable access stratum RAI, err %d", err);
+   } else {
+#ifndef CONFIG_UDP_RAI_ENABLE
+      LOG_INF("Access stratum RAI disabed");
 #endif
+   }
+#ifndef CONFIG_UDP_RAI_ENABLE
+   LOG_INF("No AS nor CP RAI mode configured!");
+#endif
+#endif
+
    // activate UICC
    err = modem_at_cmd("AT+CFUN=41", buf, sizeof(buf), "+CFUN: ");
    if (err > 0) {
@@ -1286,7 +1322,7 @@ void modem_set_transmission_time(void)
 int modem_read_network_info(struct lte_network_info *info)
 {
    int result;
-   char buf[96];
+   char buf[128];
    struct lte_network_info temp;
    int16_t rsrp = INVALID_SIGNAL_VALUE;
    int16_t snr = INVALID_SIGNAL_VALUE;
@@ -1450,13 +1486,13 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
    memset(statistic, 0, sizeof(struct lte_network_statistic));
    err = modem_at_cmd("AT%%XCONNSTAT?", buf, sizeof(buf), "%XCONNSTAT: ");
    if (err > 0) {
-      LOG_INF("XCONNSTAT: %s", buf);
       err = sscanf(buf, " %*u,%*u,%u,%u,%hu,%hu",
                    &statistic->transmitted,
                    &statistic->received,
                    &statistic->max_packet_size,
                    &statistic->average_packet_size);
       if (err == 4) {
+         LOG_INF("XCONNSTAT: %s", buf);
          k_mutex_lock(&lte_mutex, K_FOREVER);
          statistic->searchs = lte_searchs;
          statistic->search_time = MSEC_TO_SEC(lte_search_time);
@@ -1465,6 +1501,8 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
          statistic->restarts = lte_restarts;
          statistic->cell_updates = lte_cell_updates;
          k_mutex_unlock(&lte_mutex);
+      } else {
+         LOG_ERR("XCONNSTAT: %s => %d", buf, err);
       }
    }
    return err;
@@ -1479,16 +1517,21 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
    memset(&temp, 0, sizeof(temp));
    err = modem_at_cmd("AT+CEINFO?", buf, sizeof(buf), "+CEINFO: ");
    if (err > 0) {
-      LOG_INF("CEINFO: %s", buf);
+      uint16_t values[3];
       // CEINFO: 0,1,I,8,2,-97,9
-      err = sscanf(buf, " %*u,%hhu,%c,%hhu,%hhu,%hd,%hd",
-                   &temp.ce_supported,
+      // "%hhu" is not supported
+      err = sscanf(buf, " %*u,%hu,%c,%hu,%hu,%hd,%hd",
+                   &values[0],
                    &temp.state,
-                   &temp.downlink_repetition,
-                   &temp.uplink_repetition,
+                   &values[1],
+                   &values[2],
                    &temp.rsrp,
                    &temp.cinr);
       if (err == 6) {
+         LOG_INF("CEINFO: %s", buf);
+         temp.ce_supported = values[0];
+         temp.downlink_repetition = values[1];
+         temp.uplink_repetition = values[2];
          if (temp.rsrp == 255) {
             temp.rsrp = INVALID_SIGNAL_VALUE;
          }
@@ -1502,6 +1545,8 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
          if (info) {
             *info = temp;
          }
+      } else {
+         LOG_ERR("CEINFO: %s => %d", buf, err);
       }
    }
    return err;
@@ -1622,7 +1667,7 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
          }
       }
    }
-#elif CONFIG_UDP_AS_RAI_ENABLE
+#elif defined(CONFIG_UDP_AS_RAI_ENABLE)
    /** Access stratum Release Assistance Indication  */
    int option = -1;
    const char *rai = "";
@@ -1679,6 +1724,7 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
    }
 #else
    (void)mode;
+   LOG_INF("No AS nor CP RAI mode configured!");
 #endif
    return err;
 }

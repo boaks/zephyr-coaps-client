@@ -166,11 +166,11 @@ static void restart_modem(bool force, dtls_app_data_t *app)
    bool network = network_registered;
    bool first = false;
 
-   dtls_warn("> reconnect modem ...");
    k_sem_reset(&dtls_trigger_search);
    trigger_restart_modem = false;
 
    if (trigger_reboot) {
+      dtls_info("> modem reboot");
       reboot(ERROR_CODE_MANUAL_TRIGGERED, false);
    }
 
@@ -201,15 +201,9 @@ static void restart_modem(bool force, dtls_app_data_t *app)
          if (k_sem_take(&dtls_trigger_search, K_MINUTES(sleep_minutes)) == 0) {
             dtls_info("> modem normal (manual)");
             sleep_minutes = 15;
-         } else if (sleep_minutes < 61) {
+         } else {
             dtls_info("> modem normal (timeout)");
             sleep_minutes *= 2;
-         } else if (app) {
-            dtls_info("> modem lost network, reboot");
-            reboot(ERROR_CODE(ERROR_CODE_SOCKET, get_socket_error(app)), true);
-         } else {
-            dtls_info("> modem no network, reboot");
-            reboot(ERROR_CODE_INIT_NO_LTE, true);
          }
       } else {
          sleep_minutes = 15;
@@ -219,8 +213,17 @@ static void restart_modem(bool force, dtls_app_data_t *app)
       if (modem_start(K_SECONDS(timeout_seconds)) == 0) {
          break;
       }
+      if (sleep_minutes > 60) {
+         if (app) {
+            dtls_info("> modem lost network, reboot");
+            reboot(ERROR_CODE(ERROR_CODE_SOCKET, get_socket_error(app)), true);
+         } else {
+            dtls_info("> modem no network, reboot");
+            reboot(ERROR_CODE_INIT_NO_LTE, true);
+         }
+      }
    }
-   dtls_info("> connected modem.");
+   dtls_info("> modem connected.");
 }
 
 static void reopen_socket(dtls_app_data_t *app)
@@ -277,7 +280,10 @@ static void dtls_trigger(void)
 static void dtls_manual_trigger(int duration)
 {
    if (duration == 1 && appl_ready) {
-      trigger_reboot = (ui_config() & 2) == 0;
+      int ui = ui_config();
+      // Thingy:91 and nRF9160 feather will reboot
+      // nRF9160-DK reboots with button2 also pressed
+      trigger_reboot = (ui < 0) || (ui & 2);
       trigger_restart_modem = true;
    }
    // LEDs for manual trigger
@@ -833,6 +839,7 @@ int dtls_loop(session_t *dst, int flags)
             dtls_trigger();
          } else if (current_failures >= 3) {
             // reboot
+            dtls_info("> Too many failures, reboot");
             reboot(ERROR_CODE_TOO_MANY_FAILURES, false);
          } else if (current_failures == 2) {
             // restart modem
@@ -911,6 +918,7 @@ int dtls_loop(session_t *dst, int flags)
             dtls_warn("select failed: errno %d (%s)", result, strerror(errno));
          }
       } else if (result == 0) { /* timeout */
+         const char *type = app_data.dtls_pending ? "DTLS hs" : "CoAP request";
          if (app_data.request_state == SEND) {
             if (lte_connected_send) {
                loops = 0;
@@ -934,11 +942,7 @@ int dtls_loop(session_t *dst, int flags)
                   check_socket(&app_data, false);
                }
             } else {
-               if (app_data.dtls_pending) {
-                  dtls_info("DTLS send timeout");
-               } else {
-                  dtls_info("CoAP send timeout");
-               }
+               dtls_info("%s send timeout", type);
                dtls_coap_failure(&app_data);
                reopen_socket(&app_data);
             }
@@ -954,9 +958,9 @@ int dtls_loop(session_t *dst, int flags)
             }
             ++loops;
             if (app_data.retransmission > 0) {
-               dtls_info("CoAP wait %d/%d/%d, retrans. %d, network %d", loops, app_data.timeout, temp, app_data.retransmission, network_ready);
+               dtls_info("%s wait %d/%d/%d, retrans. %d, network %d", type, loops, app_data.timeout, temp, app_data.retransmission, network_ready);
             } else {
-               dtls_info("CoAP wait %d/%d/%d", loops, app_data.timeout, temp);
+               dtls_info("%s wait %d/%d/%d", type, loops, app_data.timeout, temp);
             }
             if (loops > temp) {
                result = -1;
@@ -966,20 +970,15 @@ int dtls_loop(session_t *dst, int flags)
                   app_data.timeout <<= 1;
                   app_data.request_state = SEND;
 
+                  dtls_info("%s resend, timeout %d", type, app_data.timeout);
                   if (app_data.dtls_pending) {
-                     dtls_info("hs resend, timeout %d", app_data.timeout);
                      dtls_check_retransmit(dtls_context, NULL);
                   } else {
-                     dtls_info("CoAP request resend, timeout %d", app_data.timeout);
                      sendto_peer(&app_data, dst, dtls_context);
                   }
                } else {
                   // maximum retransmissions reached
-                  if (app_data.dtls_pending) {
-                     dtls_info("DTLS hs timeout %d", app_data.timeout);
-                  } else {
-                     dtls_info("CoAP request timeout %d", app_data.timeout);
-                  }
+                  dtls_info("%s timeout %d", type, app_data.timeout);
                   dtls_coap_failure(&app_data);
                }
             }
@@ -994,7 +993,7 @@ int dtls_loop(session_t *dst, int flags)
             if (network_sleeping) {
                // modem enters sleep, no more data
                app_data.request_state = NONE;
-               dtls_info("CoAP suspend after %d", loops);
+               dtls_info("%s suspend after %d", type, loops);
             } else {
                if (k_sem_count_get(&dtls_trigger_msg)) {
                   // send button pressed
@@ -1004,7 +1003,7 @@ int dtls_loop(session_t *dst, int flags)
             }
          } else if (app_data.request_state != NONE) {
             ++loops;
-            dtls_info("CoAP wait state %d, %d", app_data.request_state, loops);
+            dtls_info("%s wait state %d, %d", type, app_data.request_state, loops);
          }
       } else { /* ok */
          if (udp_poll.revents & POLLIN) {
@@ -1041,7 +1040,7 @@ int dtls_loop(session_t *dst, int flags)
                   app_data.retransmission = 0;
                   app_data.request_state = SEND;
                   if (app_data.dtls_pending) {
-                     dtls_info("hs send again");
+                     dtls_info("DTLS hs send again");
                      dtls_check_retransmit(dtls_context, NULL);
                   } else {
                      dtls_info("CoAP request send again");
