@@ -70,7 +70,7 @@ typedef enum {
 } request_state_t;
 
 typedef struct dtls_app_data_t {
-   session_t* destination;
+   session_t *destination;
    int fd;
    bool dtls_pending;
    uint8_t retransmission;
@@ -168,6 +168,7 @@ static void restart_modem(bool force, dtls_app_data_t *app)
 
    dtls_warn("> reconnect modem ...");
    k_sem_reset(&dtls_trigger_search);
+   trigger_restart_modem = false;
 
    if (trigger_reboot) {
       reboot(ERROR_CODE_MANUAL_TRIGGERED, false);
@@ -213,7 +214,6 @@ static void restart_modem(bool force, dtls_app_data_t *app)
       } else {
          sleep_minutes = 15;
       }
-      trigger_restart_modem = false;
       timeout_seconds *= 2;
       dtls_info("> modem search network (%d minutes)", timeout_seconds / 60);
       if (modem_start(K_SECONDS(timeout_seconds)) == 0) {
@@ -252,7 +252,7 @@ static void reopen_socket(dtls_app_data_t *app)
    connect(app->fd, (struct sockaddr *)&app->destination->addr.sin, sizeof(struct sockaddr_in));
 #endif
    modem_set_rai_mode(RAI_OFF, app->fd);
-   dtls_info("> reopend socket.");
+   dtls_info("> reopened socket.");
 }
 
 static int check_socket(dtls_app_data_t *app, bool event)
@@ -841,6 +841,7 @@ int dtls_loop(session_t *dst, int flags)
          }
       }
       if (trigger_restart_modem) {
+         dtls_info("Trigger restart modem.");
          restart_modem(true, &app_data);
          reopen_socket(&app_data);
       }
@@ -880,6 +881,7 @@ int dtls_loop(session_t *dst, int flags)
                modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
                reopen_socket(&app_data);
             } else if (trigger_restart_modem) {
+               dtls_info("Trigger restart modem.");
                restart_modem(true, &app_data);
                reopen_socket(&app_data);
             } else {

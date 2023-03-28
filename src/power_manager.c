@@ -142,13 +142,14 @@ static const struct transform_curve curve = {
         {3350, 0},
     }
 #else
-    .points = 6,
+    .points = 7,
     .curve = {
         {4200, 10000},
-        {3800, 5000},
-        {3750, 2500},
-        {3600, 1250},
-        {3400, 400},
+        {3810, 5440},
+        {3762, 4110},
+        {3738, 2650},
+        {3637, 1470},
+        {3474, 440},
         {3200, 0},
     }
 #endif
@@ -179,9 +180,9 @@ static int64_t last_battery_left_time = -1;
 static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_manager_status_t status)
 {
    if (battery_level == 0xff) {
-      LOG_INF("not ready.");
+      LOG_INF("forecast: not ready.");
    } else if (status != FROM_BATTERY) {
-      LOG_INF("charging.");
+      LOG_INF("forecast: charging.");
    } else {
       if (((*now) - next_forecast_uptime) >= 0) {
          int64_t passed_time = (*now) - last_battery_level_uptime;
@@ -249,7 +250,6 @@ static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_ma
 
    return -1;
 }
-
 
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
 
@@ -598,6 +598,11 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
 int power_manager_add(const struct device *dev)
 {
    if (dev) {
+      enum pm_device_state state = PM_DEVICE_STATE_OFF;
+      int rc = pm_device_state_get(dev, &state);
+      if (rc) {
+         return rc;
+      }
       if (pm_dev_counter >= MAX_PM_DEVICES) {
          return -ENOMEM;
       }

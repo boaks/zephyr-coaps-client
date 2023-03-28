@@ -87,7 +87,7 @@ enum rai_mode {
 	RAI_ONE_RESPONSE
 };
 
-#define USE_SO_RAI_NO_DATA
+// #define USE_SO_RAI_NO_DATA
 
 typedef void (*lte_state_change_callback_handler_t)(enum lte_state_type type, bool active);
 
