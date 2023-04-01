@@ -26,6 +26,7 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #define MAX_DITHER 2
 #define MAX_LOOPS 15
+#define MEASURE_INTERVAL_MILLIS 100
 
 #define VBATT DT_PATH(vbatt)
 
@@ -109,12 +110,12 @@ static int battery_adc(void)
    if (!rc) {
       int loop = MAX_LOOPS;
       int32_t val = adc_raw_data;
-      k_sleep(K_MSEC(50));
+      k_sleep(K_MSEC(MEASURE_INTERVAL_MILLIS));
       rc = adc_read(battery_adc_config.adc, &adc_seq);
       while (!rc && loop > 0 && abs(val - adc_raw_data) > MAX_DITHER) {
          --loop;
          val = adc_raw_data;
-         k_sleep(K_MSEC(50));
+         k_sleep(K_MSEC(MEASURE_INTERVAL_MILLIS));
          rc = adc_read(battery_adc_config.adc, &adc_seq);
       }
       if (!rc) {
@@ -126,11 +127,11 @@ static int battery_adc(void)
 
          if (battery_adc_config.output_ohm != 0) {
             rc = val * (uint64_t)battery_adc_config.full_ohm / battery_adc_config.output_ohm;
-            LOG_INF("raw %u ~ %u mV => %d mV",
-                    adc_raw_data, val, rc);
+            LOG_INF("#%d raw %u => %u mV", MAX_LOOPS - loop,
+                    adc_raw_data, rc);
          } else {
             rc = val;
-            LOG_INF("raw %u ~ %u mV", adc_raw_data, val);
+            LOG_INF("#%d raw %u => %u mV", MAX_LOOPS - loop, adc_raw_data, val);
          }
       }
    }

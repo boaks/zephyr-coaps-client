@@ -125,14 +125,20 @@ static void suspend_uart(bool suspend)
 /** A discharge curve specific to the power source. */
 static const struct transform_curve curve = {
 #ifdef CONFIG_BATTERY_TYPE_LIPO_2000_MAH
-    .points = 4,
+    /* nRF9160 feather */
+    .points = 8,
     .curve = {
-        {4150, 10000},
-        {4000, 8000},
-        {3500, 1000},
+        {4180, 10000},
+        {4136, 9900},
+        {4068, 9500},
+        {4022, 9000},
+        {4000, 7700},
+        {3800, 4500},
+        {3420, 500},
         {3350, 0},
     }
 #elif defined(CONFIG_BATTERY_TYPE_ENELOOP_2000_MAH)
+    /* nRF9160 feather */
     .points = 5,
     .curve = {
         {4250, 10000},
@@ -142,6 +148,7 @@ static const struct transform_curve curve = {
         {3350, 0},
     }
 #else
+    /* Thingy:91 */
     .points = 7,
     .curve = {
         {4200, 10000},

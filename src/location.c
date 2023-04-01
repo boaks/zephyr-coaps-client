@@ -349,7 +349,7 @@ static void location_gnss_pvt_work_fn(struct k_work *item)
    if (s_gnss_pvt_counter > 60) {
       s_gnss_pvt_counter = 0;
       LOG_INF("GNSS PVT, tracked satellites: %d, flags: %02x, fix %d", tracked, s_location_gnss_result.position.flags,
-           s_location_gnss_result.position.flags & NRF_MODEM_GNSS_PVT_FLAG_FIX_VALID ? 1 : 0);
+              s_location_gnss_result.position.flags & NRF_MODEM_GNSS_PVT_FLAG_FIX_VALID ? 1 : 0);
    }
 
    s_location_gnss_result.execution_time = now - s_location_last_request;
@@ -422,23 +422,29 @@ static void location_gnss_start(void)
    /* Configure GNSS to continuous tracking mode */
    err = nrf_modem_gnss_fix_interval_set(1);
 #ifdef CONFIG_LOCATION_ENABLE_CONTINUES_MODE
-   if (err == -NRF_EPERM) {
+   if (err == -NRF_EPERM || err == -NRF_EINVAL) {
       running = true;
+      err = 0;
    }
 #endif
+   if (err) {
+      LOG_ERR("Failed to configure GNSS fix interval! err %d %s", -err, strerror(-err));
+      location_event_handler(&s_location_gnss_result);
+      return;
+   }
 
    if (!running) {
-      err |= nrf_modem_gnss_use_case_set(s_location_gnss_use_case);
+      err = nrf_modem_gnss_use_case_set(s_location_gnss_use_case);
 
       if (err) {
-         LOG_ERR("Failed to configure GNSS");
+         LOG_ERR("Failed to configure GNSS use case! err %d %s", -err, strerror(-err));
          location_event_handler(&s_location_gnss_result);
          return;
       }
 
       err = nrf_modem_gnss_agps_expiry_get(&gnss_expiry);
       if (err) {
-         LOG_ERR("GNSS get A-GPS expiry failed!");
+         LOG_ERR("GNSS get A-GPS expiry failed! err %d %s", -err, strerror(-err));
       } else {
          location_print_expiry(&gnss_expiry);
       }
@@ -446,7 +452,7 @@ static void location_gnss_start(void)
       s_location_state = LOCATION_GNSS_RUNNING;
       err = nrf_modem_gnss_start();
       if (err) {
-         LOG_ERR("Failed to start GNSS, err %d", err);
+         LOG_ERR("Failed to start GNSS! err %d %s", -err, strerror(-err));
          location_event_handler(&s_location_gnss_result);
          return;
       }
