@@ -70,6 +70,8 @@ More details about PSM and other power saving functions can be found in:
 
 [GSMA - LTE-M Roaming Features September 2022](https://www.gsma.com/iot/wp-content/uploads/2022/11/GSMA-Mobile-IoT-Roaming-Features_Final_09.06.2022LTM-.xlsx)
 
+[GSMA - Mobile IoT Deployment Map](https://www.gsma.com/iot/deployment-map/)
+
 [Nordic Semiconductor - LTE-M vs NB-IoT Field Test: How Distance Affects Power Consumption](https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/ltem-vs-nbiot-field-test-how-distance-affects-power-consumption)
 
 ## Summary:
@@ -111,6 +113,7 @@ Stat: tx 1261kB, rx 170kB, max 536B, avg 290B, searchs 111, PSM delays 0
 ```
 
 Forecast: 250 days
+
 The device reseted itself after about 120 days (bug). With that I stopped this test.
 
 Thingy:91, LTE-M, PSM, 24h message interchange interval
@@ -134,6 +137,7 @@ Stat: tx 45kB, rx 6kB, max 525B, avg 279B, searchs 90, PSM delays 0
 ```
 
 Forecast: 390 days
+
 I stopped that test an will execute a new test with a nRF9160-feather and other batteries.
 
 ## Measurement Charts
