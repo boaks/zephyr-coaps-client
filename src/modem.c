@@ -453,14 +453,21 @@ static K_WORK_DEFINE(modem_read_sim_work, modem_read_sim_work_fn);
 
 static bool lte_ready_wait(k_timeout_t timeout)
 {
+   bool status = 0;
    bool res = 0;
    k_mutex_lock(&lte_mutex, timeout);
-   res = lte_ready;
+   status = lte_ready;
+   res = status;
    if (!res) {
       k_condvar_wait(&lte_condvar, &lte_mutex, timeout);
       res = lte_ready;
    }
    k_mutex_unlock(&lte_mutex);
+   if (status) {
+      LOG_INF("modem is ready.");
+   } else if (res) {
+      LOG_INF("modem becomes ready.");
+   }
    return res;
 }
 
