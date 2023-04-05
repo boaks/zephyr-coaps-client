@@ -139,19 +139,24 @@ static const struct transform_curve curve = {
     }
 #elif defined(CONFIG_BATTERY_TYPE_ENELOOP_2000_MAH)
     /* nRF9160 feather */
-    .points = 5,
+    .points = 8,
     .curve = {
-        {4250, 10000},
-        {3900, 8260},
-        {3800, 3700},
-        {3600, 1000},
-        {3350, 0},
+        {4350, 10000}, /* requires external charger */
+        {4024, 9265},
+        {3844, 8235},
+        {3722, 2794},
+        {3650, 1765},
+        {3500, 740},
+        {3370, 292},
+        {3300, 0},
     }
 #else
     /* Thingy:91 */
-    .points = 7,
+    .points = 9,
     .curve = {
         {4200, 10000},
+        {4056, 8750},
+        {3951, 7500},
         {3810, 5440},
         {3762, 4110},
         {3738, 2650},
