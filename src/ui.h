@@ -22,15 +22,19 @@ typedef enum { LED_NONE,
                LED_COLOR_RED,
                LED_COLOR_BLUE,
                LED_COLOR_GREEN,
+               LED_COLOR_ALL,
                LED_LTE_1, /* application layer */
                LED_LTE_2, /* mobile ip layer */
                LED_LTE_3  /* mobile connection layer */
-               } led_t;
+} led_t;
 
 typedef enum { LED_CLEAR,
                LED_SET,
                LED_TOGGLE,
-               LED_BLINK } led_op_t;
+               LED_BLINK,
+               LED_BLINKING,
+               LED_INTERNAL_TIMER,
+} led_op_t;
 
 int ui_led_op(led_t led, led_op_t op);
 int ui_init(ui_callback_handler_t button_callback);

@@ -36,10 +36,6 @@ int coap_client_prepare_post(void);
 
 int coap_client_message(const uint8_t** buffer);
 
-void coap_client_get_time(int64_t* now);
-
-int coap_client_time(char* buf, size_t len);
-
 int coap_client_set_id(const char* id);
 
 int coap_client_init(void);

@@ -14,6 +14,7 @@
 #include <modem/lte_lc.h>
 #include <nrf_errno.h>
 #include <nrf_modem_gnss.h>
+#include <ncs_version.h>
 #include <stdio.h>
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -421,12 +422,21 @@ static void location_gnss_start(void)
 
    /* Configure GNSS to continuous tracking mode */
    err = nrf_modem_gnss_fix_interval_set(1);
+
+#if (NCS_VERSION_NUMBER < 0x20300)
+#define NRF_RUNNING NRF_EPERM
+#else
+#define NRF_RUNNING NRF_EINVAL
+#endif
+
 #ifdef CONFIG_LOCATION_ENABLE_CONTINUES_MODE
-   if (err == -NRF_EPERM || err == -NRF_EINVAL) {
+   if (err == -NRF_RUNNING) {
+      #endif
       running = true;
       err = 0;
    }
 #endif
+
    if (err) {
       LOG_ERR("Failed to configure GNSS fix interval! err %d %s", -err, strerror(-err));
       location_event_handler(&s_location_gnss_result);

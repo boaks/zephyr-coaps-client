@@ -11,14 +11,14 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-#include <zephyr/kernel.h>
-#include <zephyr/logging/log.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 
-#include "ui.h"
 #include "io_job_queue.h"
+#include "ui.h"
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
@@ -36,19 +36,40 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #define CONFIG_SWITCH_NODE_1 DT_ALIAS(sw2)
 #define CONFIG_SWITCH_NODE_2 DT_ALIAS(sw3)
 
+#define BUTTON_LONG_MS 5000
+#define BUTTON_DITHER_MS 1000
+
 #if (!DT_NODE_HAS_STATUS(CALL_BUTTON_NODE, okay))
 /* A build error here means your board isn't set up to for sw0 (call button). */
 #error "Unsupported board: sw0 devicetree alias is not defined"
 #endif
 
 typedef struct gpio_device {
+   const char *desc;
    const struct gpio_dt_spec gpio_spec;
    bool init;
 } gpio_device_t;
 
-#define GPIO_DEVICE_INIT(NODE)             \
-   {                                       \
-      GPIO_DT_SPEC_GET(NODE, gpios), false \
+typedef struct gpio_device_ext {
+   const char *desc;
+   const struct gpio_dt_spec gpio_spec;
+   bool init;
+   led_op_t op;
+} gpio_device_ext_t;
+
+#define GPIO_DEVICE_INIT(NODE)                 \
+   {                                           \
+      "", GPIO_DT_SPEC_GET(NODE, gpios), false \
+   }
+
+#define GPIO_NAMED_DEVICE_INIT(NAME, NODE)       \
+   {                                             \
+      NAME, GPIO_DT_SPEC_GET(NODE, gpios), false \
+   }
+
+#define GPIO_NAMED_DEVICE_INIT_EXT(NAME, NODE)              \
+   {                                                        \
+      NAME, GPIO_DT_SPEC_GET(NODE, gpios), false, LED_CLEAR \
    }
 
 #if DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_2, okay)
@@ -58,23 +79,24 @@ static gpio_device_t config_switch_2_spec = GPIO_DEVICE_INIT(CONFIG_SWITCH_NODE_
 #endif
 
 #if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
-static gpio_device_t led_red_spec = GPIO_DEVICE_INIT(LED_RED_NODE);
+static gpio_device_ext_t led_red_spec = GPIO_NAMED_DEVICE_INIT_EXT("red ", LED_RED_NODE);
 #endif
 #if (DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
-static gpio_device_t led_green_spec = GPIO_DEVICE_INIT(LED_GREEN_NODE);
+static gpio_device_ext_t led_green_spec = GPIO_NAMED_DEVICE_INIT_EXT("green ", LED_GREEN_NODE);
 #endif
 #if (DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
-static gpio_device_t led_blue_spec = GPIO_DEVICE_INIT(LED_BLUE_NODE);
+static gpio_device_ext_t led_blue_spec = GPIO_NAMED_DEVICE_INIT_EXT("blue ", LED_BLUE_NODE);
 #endif
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_1, okay)
-static gpio_device_t out_lte_1_spec = GPIO_DEVICE_INIT(OUT_LTE_NODE_1);
+static gpio_device_ext_t out_lte_1_spec = GPIO_NAMED_DEVICE_INIT_EXT("lte1 ", OUT_LTE_NODE_1);
 #endif
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_2, okay)
-static gpio_device_t out_lte_2_spec = GPIO_DEVICE_INIT(OUT_LTE_NODE_2);
+static gpio_device_ext_t out_lte_2_spec = GPIO_NAMED_DEVICE_INIT_EXT("lte2 ", OUT_LTE_NODE_2);
 #endif
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_3, okay)
-static gpio_device_t out_lte_3_spec = GPIO_DEVICE_INIT(OUT_LTE_NODE_3);
+static gpio_device_ext_t out_lte_3_spec = GPIO_NAMED_DEVICE_INIT_EXT("lte3 ", OUT_LTE_NODE_3);
 #endif
+
 static gpio_device_t button_spec = GPIO_DEVICE_INIT(CALL_BUTTON_NODE);
 
 static struct gpio_callback button_cb_data;
@@ -104,27 +126,33 @@ static volatile bool ui_enabled = true;
 
 static void ui_button_pressed_fn(struct k_work *work)
 {
-   static volatile int duration = 0;
+   static int duration = 0;
+   static int64_t last = 0;
 
+   int64_t now = k_uptime_get();
    if (&button_pressed_work == work) {
       LOG_INF("UI button pressed %u", button_counter);
       duration = 0;
-      work_reschedule_for_io_queue(&button_long_pressed_work, K_MSEC(5000));
+      work_reschedule_for_io_queue(&button_long_pressed_work, K_MSEC(BUTTON_LONG_MS));
    } else if (&button_released_work == work) {
       LOG_INF("UI button released %u", button_counter);
       k_work_cancel_delayable(&button_long_pressed_work);
       if (duration == 0) {
-         duration = 1;
-         ui_enable(true);
-         ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
-         if (button_callback != NULL) {
-            button_callback(0);
-            LOG_INF("UI button callback %u", button_counter);
+         if ((now - last) > BUTTON_DITHER_MS) {
+            last = now;
+            duration = 1;
+            ui_enable(true);
+            ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
+            if (button_callback != NULL) {
+               button_callback(0);
+               LOG_INF("UI button callback %u", button_counter);
+            }
          }
       }
    } else if (&button_long_pressed_work.work == work) {
       LOG_INF("UI button long pressed %u", button_counter);
       if (duration == 0) {
+         last = now;
          duration = 2;
          ui_enable(true);
          ui_led_op(LED_COLOR_BLUE, LED_BLINK);
@@ -188,30 +216,58 @@ static int ui_init_button(void)
    return ret;
 }
 
-static void ui_op(gpio_device_t *output_spec, led_op_t op, struct k_work_delayable *timer)
+static void ui_op(gpio_device_ext_t *output_spec, led_op_t op, struct k_work_delayable *timer)
 {
    k_mutex_lock(&ui_mutex, K_FOREVER);
    if (timer) {
       k_work_cancel_delayable(timer);
    }
    if (output_spec != NULL && output_spec->init) {
+      const struct gpio_dt_spec *gpio_spec = &output_spec->gpio_spec;
       switch (op) {
          case LED_SET:
-            gpio_pin_set_dt(&output_spec->gpio_spec, 1);
+            if (output_spec->op != op) {
+               gpio_pin_set_dt(gpio_spec, 1);
+               LOG_INF("UI: %sLED set", output_spec->desc);
+            }
             break;
          case LED_CLEAR:
-            gpio_pin_set_dt(&output_spec->gpio_spec, 0);
+            if (output_spec->op != op) {
+               gpio_pin_set_dt(gpio_spec, 0);
+               LOG_INF("UI: %sLED clear", output_spec->desc);
+            }
             break;
          case LED_TOGGLE:
-            gpio_pin_toggle_dt(&output_spec->gpio_spec);
+            gpio_pin_toggle_dt(gpio_spec);
+            LOG_INF("UI: %sLED toggle", output_spec->desc);
             break;
          case LED_BLINK:
             if (timer) {
-               gpio_pin_set_dt(&output_spec->gpio_spec, 1);
-               work_schedule_for_io_queue(timer, K_MSEC(500));
+               gpio_pin_set_dt(gpio_spec, 1);
+               work_reschedule_for_io_queue(timer, K_MSEC(500));
+               LOG_INF("UI: %sLED blink", output_spec->desc);
+            }
+            break;
+         case LED_BLINKING:
+            if (timer) {
+               gpio_pin_set_dt(gpio_spec, 1);
+               work_reschedule_for_io_queue(timer, K_MSEC(300));
+               LOG_INF("UI: %sLED start blinking", output_spec->desc);
+            }
+            break;
+         case LED_INTERNAL_TIMER:
+            if (timer && output_spec->op == LED_BLINKING) {
+               gpio_pin_toggle_dt(gpio_spec);
+               work_reschedule_for_io_queue(timer, K_MSEC(300));
+               LOG_INF("UI: %sLED blinking", output_spec->desc);
+               op = LED_BLINKING;
+            } else {
+               gpio_pin_set_dt(gpio_spec, 0);
+               op = LED_CLEAR;
             }
             break;
       }
+      output_spec->op = op;
    }
    k_mutex_unlock(&ui_mutex);
 }
@@ -220,19 +276,19 @@ static void ui_led_timer_expiry_fn(struct k_work *work)
 {
 #if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
    if (&led_red_timer_work.work == work) {
-      ui_op(&led_red_spec, LED_CLEAR, &led_red_timer_work);
+      ui_op(&led_red_spec, LED_INTERNAL_TIMER, &led_red_timer_work);
       return;
    }
 #endif
 #if (DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
    if (&led_green_timer_work.work == work) {
-      ui_op(&led_green_spec, LED_CLEAR, &led_green_timer_work);
+      ui_op(&led_green_spec, LED_INTERNAL_TIMER, &led_green_timer_work);
       return;
    }
 #endif
 #if (DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
    if (&led_blue_timer_work.work == work) {
-      ui_op(&led_blue_spec, LED_CLEAR, &led_blue_timer_work);
+      ui_op(&led_blue_spec, LED_INTERNAL_TIMER, &led_blue_timer_work);
       return;
    }
 #endif
@@ -245,6 +301,11 @@ int ui_led_op(led_t led, led_op_t op)
    }
    switch (led) {
       case LED_NONE:
+         break;
+      case LED_COLOR_ALL:
+         ui_led_op(LED_COLOR_RED, op);
+         ui_led_op(LED_COLOR_BLUE, op);
+         ui_led_op(LED_COLOR_GREEN, op);
          break;
       case LED_COLOR_RED:
 #if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
@@ -280,7 +341,7 @@ int ui_led_op(led_t led, led_op_t op)
    return 0;
 }
 
-static int ui_init_output(gpio_device_t *output_spec)
+static int ui_init_output(gpio_device_ext_t *output_spec)
 {
    int ret = -ENOTSUP;
    if (output_spec && device_is_ready(output_spec->gpio_spec.port)) {

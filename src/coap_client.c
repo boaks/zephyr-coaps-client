@@ -13,7 +13,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
 #include <zephyr/net/coap.h>
 #include <zephyr/random/rand32.h>
 
@@ -25,6 +24,7 @@
 #include "ui.h"
 
 #include "appl_eeprom.h"
+#include "appl_time.h"
 #include "environment_sensor.h"
 
 #ifdef CONFIG_LOCATION_ENABLE
@@ -54,36 +54,18 @@ static uint8_t coap_message_buf[APP_COAP_MAX_MSG_LEN];
 static uint8_t read_etag[9];
 static const char *client_id;
 
-/* last coap-time in milliseconds since 1.1.1970 */
-static uint64_t coap_time = 0;
-/* uptime of last coap-time exchange */
-static int64_t coap_uptime = 0;
-
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
 unsigned int bat_level[BAT_LEVEL_SLOTS] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-static int coap_client_format_time(int64_t time_millis, char *buf, size_t len)
-{
-   time_t time = time_millis / MSEC_PER_SEC;
-   if (time > 0) {
-      // Format time, "yyyy-mm-ddThh:mm:ssZ"
-      return strftime(buf, len, "%Y-%m-%dT%H:%M:%SZ", gmtime(&time));
-   } else {
-      return 0;
-   }
-}
-
 static int coap_client_encode_time(struct coap_packet *request)
 {
-   uint64_t time = coap_time;
+   int64_t time;
    uint8_t data[8];
    uint8_t index = 0;
 
-   if (coap_uptime) {
-      time += (k_uptime_get() - coap_uptime);
-   }
+   appl_get_now(&time);
 
    sys_put_be64(time, data);
    // skip leading 0s
@@ -122,8 +104,7 @@ static void coap_client_decode_time(const struct coap_option *option)
    }
 
    dtls_info("Recv CoAP TIME option %lld %llx (%d bytes)", time, time, len);
-   coap_time = time;
-   coap_uptime = k_uptime_get();
+   appl_set_now(time);
 }
 
 static void coap_client_decode_read_etag(const struct coap_option *option)
@@ -427,13 +408,14 @@ int coap_client_prepare_post(void)
    if (err > 0) {
       start = index + 1;
       index += snprintf(buf + index, sizeof(buf) - index, "\nLast code: ");
-      index += coap_client_format_time(reboot_times[0], buf + index, sizeof(buf) - index);
+      index += appl_format_time(reboot_times[0], buf + index, sizeof(buf) - index);
       index += snprintf(buf + index, sizeof(buf) - index, " 0x%04x", reboot_codes[0]);
       for (int i = 1; i < err; ++i) {
          index += snprintf(buf + index, sizeof(buf) - index, ", 0x%04x", reboot_codes[i]);
       }
       dtls_info("%s", buf + start);
    }
+
 #if 0
    err = modem_at_cmd("AT%%CONEVAL", buf + index, sizeof(buf) - index, "%CONEVAL: ");
    if (err < 0) {
@@ -704,7 +686,7 @@ int coap_client_prepare_post(void)
       index += snprintf(buf + index, sizeof(buf) - index, "\n%s%d;%d Q (%s)", p, int_value, byte_value, desc);
       dtls_info("%s", buf + start);
    }
-#else /* ENVIRONMENT_SENSOR */
+#else  /* ENVIRONMENT_SENSOR */
    start = index;
    index += snprintf(buf + index, sizeof(buf) - index, "\n!");
    err = modem_at_cmd("AT%%XTEMP?", buf + index, sizeof(buf) - index, "%XTEMP: ");
@@ -863,23 +845,6 @@ int coap_client_message(const uint8_t **buffer)
       *buffer = coap_message_buf;
    }
    return coap_message_len;
-}
-
-void coap_client_get_time(int64_t *now)
-{
-   *now = coap_time;
-   // adjust current time
-   if (coap_uptime) {
-      *now += (k_uptime_get() - coap_uptime);
-   }
-}
-
-int coap_client_time(char *buf, size_t len)
-{
-   time_t now;
-
-   coap_client_get_time(&now);
-   return coap_client_format_time(now, buf, len);
 }
 
 int coap_client_set_id(const char *id)

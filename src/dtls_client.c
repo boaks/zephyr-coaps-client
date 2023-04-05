@@ -21,6 +21,7 @@
 #include <zephyr/sys/reboot.h>
 
 #include "appl_eeprom.h"
+#include "appl_time.h"
 #include "coap_client.h"
 #include "console_input.h"
 #include "dtls.h"
@@ -100,8 +101,8 @@ static bool appl_eeprom = false;
 static volatile bool ui_led_active = false;
 
 static volatile bool appl_ready = false;
-static volatile bool trigger_restart_modem = false;
-static volatile bool trigger_reboot = false;
+static volatile int trigger_duration = 0;
+
 static volatile bool lte_power_off = false;
 static bool lte_power_on_off = false;
 
@@ -121,6 +122,10 @@ static K_SEM_DEFINE(dtls_trigger_search, 0, 1);
 
 static K_MUTEX_DEFINE(dtls_pm_mutex);
 
+static void dtls_power_management_suspend_fn(struct k_work *work);
+
+static K_WORK_DELAYABLE_DEFINE(dtls_power_management_suspend_work, dtls_power_management_suspend_fn);
+
 static void reboot(int error, bool factoryReset)
 {
    modem_power_off();
@@ -132,7 +137,7 @@ static void reboot(int error, bool factoryReset)
    ui_led_op(LED_COLOR_RED, LED_SET);
    if (appl_eeprom) {
       int64_t now = 0;
-      coap_client_get_time(&now);
+      appl_get_now(&now);
       appl_eeprom_write_code(now, (int16_t)error);
    }
    k_sleep(K_MSEC(500));
@@ -146,6 +151,20 @@ static void reboot(int error, bool factoryReset)
    }
    k_sleep(K_MSEC(500));
    sys_reboot(SYS_REBOOT_COLD);
+}
+
+static void check_reboot(void)
+{
+   if (trigger_duration) {
+      // Thingy:91 and nRF9160 feather will reboot
+      // nRF9160-DK reboots with button2 also pressed
+      int ui = ui_config();
+      if ((ui < 0) || (ui & 2)) {
+         dtls_info("> modem reboot");
+         reboot(ERROR_CODE_MANUAL_TRIGGERED, false);
+      }
+      trigger_duration = 0;
+   }
 }
 
 static int get_socket_error(dtls_app_data_t *app)
@@ -167,20 +186,12 @@ static void restart_modem(bool force, dtls_app_data_t *app)
    bool first = false;
 
    k_sem_reset(&dtls_trigger_search);
-   trigger_restart_modem = false;
-
-   if (trigger_reboot) {
-      dtls_info("> modem reboot");
-      reboot(ERROR_CODE_MANUAL_TRIGGERED, false);
-   }
+   check_reboot();
 
    if (force) {
       dtls_info("> modem restart");
       modem_set_lte_offline();
       k_sleep(K_MSEC(2000));
-      ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
-      ui_led_op(LED_COLOR_RED, LED_CLEAR);
-      ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
       network = modem_start(K_SECONDS(timeout_seconds)) == 0;
       timeout_seconds *= 2;
    }
@@ -194,13 +205,12 @@ static void restart_modem(bool force, dtls_app_data_t *app)
          modem_set_lte_offline();
       }
       k_sleep(K_MSEC(2000));
-      ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
-      ui_led_op(LED_COLOR_RED, LED_CLEAR);
-      ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
+      ui_led_op(LED_COLOR_ALL, LED_CLEAR);
       if (sleep_minutes) {
          if (k_sem_take(&dtls_trigger_search, K_MINUTES(sleep_minutes)) == 0) {
             dtls_info("> modem normal (manual)");
             sleep_minutes = 15;
+            check_reboot();
          } else {
             dtls_info("> modem normal (timeout)");
             sleep_minutes *= 2;
@@ -279,12 +289,10 @@ static void dtls_trigger(void)
 
 static void dtls_manual_trigger(int duration)
 {
-   if (duration == 1 && appl_ready) {
-      int ui = ui_config();
-      // Thingy:91 and nRF9160 feather will reboot
-      // nRF9160-DK reboots with button2 also pressed
-      trigger_reboot = (ui < 0) || (ui & 2);
-      trigger_restart_modem = true;
+   if (!appl_ready) {
+      trigger_duration = 0;
+   } else {
+      trigger_duration = duration;
    }
    // LEDs for manual trigger
    ui_enable(true);
@@ -327,9 +335,7 @@ static void dtls_power_management(void)
 
    if (changed) {
       if (suspend) {
-         ui_led_op(LED_COLOR_RED, LED_CLEAR);
-         ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-         ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
+         ui_led_op(LED_COLOR_ALL, LED_CLEAR);
       }
       power_manager_suspend(suspend);
    }
@@ -338,14 +344,13 @@ static void dtls_power_management(void)
 static void dtls_power_management_suspend_fn(struct k_work *work)
 {
    ui_led_active = false;
-   ui_led_op(LED_COLOR_RED, LED_CLEAR);
+   ui_led_op(LED_COLOR_ALL, LED_CLEAR);
    dtls_power_management();
 }
 
-static K_WORK_DELAYABLE_DEFINE(dtls_power_management_suspend_work, dtls_power_management_suspend_fn);
-
 static void dtls_coap_next(void)
 {
+   int64_t now;
    char buf[64];
 
    ui_led_op(LED_APPLICATION, LED_CLEAR);
@@ -367,7 +372,8 @@ static void dtls_coap_next(void)
 #endif /*CONFIG_COAP_FAILURE_SEND_INTERVAL*/
 #endif /*CONFIG_COAP_SEND_INTERVAL*/
 
-   if (coap_client_time(buf, sizeof(buf))) {
+   appl_get_now(&now);
+   if (appl_format_time(now, buf, sizeof(buf))) {
       dtls_info("%s", buf);
    }
 }
@@ -384,9 +390,7 @@ static void dtls_coap_success(dtls_app_data_t *app)
    }
    k_sem_reset(&dtls_trigger_msg);
    app->request_state = WAIT_SUSPEND;
-   ui_led_op(LED_COLOR_RED, LED_CLEAR);
-   ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-   ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
+   ui_led_op(LED_COLOR_ALL, LED_CLEAR);
    dtls_info("%u/%ldms/%ldms: success", lte_connections, time1, time2);
    if (app->retransmission <= COAP_MAX_RETRANSMISSION) {
       transmissions[app->retransmission]++;
@@ -752,7 +756,7 @@ int dtls_loop(session_t *dst, int flags)
    int loops = 0;
    long time;
    bool send_request = false;
-
+   bool restarting_modem = false;
 #ifdef CONFIG_COAP_WAIT_ON_POWERMANAGER
    uint16_t battery_voltage = 0xffff;
 #endif
@@ -843,12 +847,18 @@ int dtls_loop(session_t *dst, int flags)
             reboot(ERROR_CODE_TOO_MANY_FAILURES, false);
          } else if (current_failures == 2) {
             // restart modem
-            trigger_restart_modem = true;
+            restarting_modem = true;
             dtls_trigger();
          }
       }
-      if (trigger_restart_modem) {
+
+      if (trigger_duration) {
+         restarting_modem = true;
+      }
+
+      if (restarting_modem) {
          dtls_info("Trigger restart modem.");
+         restarting_modem = false;
          restart_modem(true, &app_data);
          reopen_socket(&app_data);
       }
@@ -874,41 +884,39 @@ int dtls_loop(session_t *dst, int flags)
          result = 0;
          dtls_power_management();
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
-            app_data.request_state = SEND;
-            dtls_power_management();
-            ui_led_op(LED_APPLICATION, LED_SET);
+            if (!trigger_duration) {
+               app_data.request_state = SEND;
+               dtls_power_management();
+               ui_led_op(LED_APPLICATION, LED_SET);
 #if CONFIG_COAP_SEND_INTERVAL > 0
-            work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
+               work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
 #endif
-            if (lte_power_off) {
-               dtls_info("modem on");
-               lte_power_off = false;
-               trigger_restart_modem = false;
-               connect_time = (unsigned long)k_uptime_get();
-               modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
-               reopen_socket(&app_data);
-            } else if (trigger_restart_modem) {
-               dtls_info("Trigger restart modem.");
-               restart_modem(true, &app_data);
-               reopen_socket(&app_data);
-            } else {
-               check_socket(&app_data, false);
-            }
-            loops = 0;
-            app_data.retransmission = 0;
-            if (coap_client_prepare_post() < 0) {
-               dtls_coap_failure(&app_data);
-            } else {
-               if (app_data.dtls_pending) {
-                  dtls_peer_t *peer = dtls_get_peer(dtls_context, dst);
-                  if (peer) {
-                     dtls_reset_peer(dtls_context, peer);
-                  }
-                  ui_led_op(LED_COLOR_GREEN, LED_SET);
-                  dtls_start_connect(dtls_context, dst);
-                  send_request = true;
+               if (lte_power_off) {
+                  dtls_info("modem on");
+                  lte_power_off = false;
+                  restarting_modem = false;
+                  connect_time = (unsigned long)k_uptime_get();
+                  modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
+                  reopen_socket(&app_data);
                } else {
-                  sendto_peer(&app_data, dst, dtls_context);
+                  check_socket(&app_data, false);
+               }
+               loops = 0;
+               app_data.retransmission = 0;
+               if (coap_client_prepare_post() < 0) {
+                  dtls_coap_failure(&app_data);
+               } else {
+                  if (app_data.dtls_pending) {
+                     dtls_peer_t *peer = dtls_get_peer(dtls_context, dst);
+                     if (peer) {
+                        dtls_reset_peer(dtls_context, peer);
+                     }
+                     ui_led_op(LED_COLOR_GREEN, LED_SET);
+                     dtls_start_connect(dtls_context, dst);
+                     send_request = true;
+                  } else {
+                     sendto_peer(&app_data, dst, dtls_context);
+                  }
                }
             }
          }
