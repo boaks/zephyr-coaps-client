@@ -423,19 +423,20 @@ static void location_gnss_start(void)
    /* Configure GNSS to continuous tracking mode */
    err = nrf_modem_gnss_fix_interval_set(1);
 
-#if (NCS_VERSION_NUMBER < 0x20300)
-#define NRF_RUNNING NRF_EPERM
-#else
-#define NRF_RUNNING NRF_EINVAL
-#endif
 
 #ifdef CONFIG_LOCATION_ENABLE_CONTINUES_MODE
+
+#if (NCS_VERSION_NUMBER < 0x20300)
+#define NRF_RUNNING NRF_EPERM
+#else /* NCS_VERSION_NUMBER < 0x20300 */
+#define NRF_RUNNING NRF_EINVAL
+#endif /* NCS_VERSION_NUMBER < 0x20300 */
+
    if (err == -NRF_RUNNING) {
-      #endif
       running = true;
       err = 0;
    }
-#endif
+#endif /* CONFIG_LOCATION_ENABLE_CONTINUES_MODE */
 
    if (err) {
       LOG_ERR("Failed to configure GNSS fix interval! err %d %s", -err, strerror(-err));
