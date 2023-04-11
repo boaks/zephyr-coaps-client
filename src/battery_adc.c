@@ -26,7 +26,8 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #define MAX_DITHER 2
 #define MAX_LOOPS 15
-#define MEASURE_INTERVAL_MILLIS 100
+
+#define MEASURE_MIN_INTERVAL_MILLIS 5000
 
 #define VBATT DT_PATH(vbatt)
 
@@ -54,7 +55,7 @@ static const struct battery_adc_config battery_adc_config = {
     },
 };
 
-static int16_t adc_raw_data;
+static int16_t adc_raw_data = 0;
 
 static struct adc_sequence adc_seq = {
     .channels = BIT(0),
@@ -65,14 +66,18 @@ static struct adc_sequence adc_seq = {
     .calibrate = true,
 };
 
-static int adc_setup(void)
+static volatile bool battery_adc_ok = false;
+static volatile uint16_t battery_adc_last_voltage = 0;
+static volatile int64_t battery_adc_last_uptime = 0;
+
+static int battery_adc_setup(const struct device *arg)
 {
    const struct gpio_dt_spec *gcp = &battery_adc_config.power_gpios;
-   int rc;
+   int rc = -ENOTSUP;
 
    if (!device_is_ready(battery_adc_config.adc)) {
       LOG_ERR("ADC device is not ready %s", battery_adc_config.adc->name);
-      return -ENOENT;
+      return rc;
    }
 
    if (device_is_ready(gcp->port)) {
@@ -85,37 +90,31 @@ static int adc_setup(void)
    }
 
    rc = adc_channel_setup(battery_adc_config.adc, &battery_adc_config.adc_cfg);
-   LOG_INF("Setup AIN%u got %d", DT_IO_CHANNELS_INPUT(VBATT), rc);
-
-   return rc;
-}
-
-static bool battery_adc_ok;
-
-static int battery_adc_setup(const struct device *arg)
-{
-   int rc = adc_setup();
-
-   battery_adc_ok = (rc == 0);
-   LOG_INF("Battery ADC setup: %d %d", rc, battery_adc_ok);
+   if (rc) {
+      LOG_ERR("Setup AIN%u failed %d", DT_IO_CHANNELS_INPUT(VBATT), rc);
+   } else {
+      battery_adc_ok = true;
+      LOG_INF("Battery ADC setup OK.");
+   }
    return rc;
 }
 
 SYS_INIT(battery_adc_setup, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
 
-static int battery_adc(void)
+static int battery_adc(uint16_t *voltage)
 {
-   int rc = adc_read(battery_adc_config.adc, &adc_seq);
+   int rc = 0;
+
+   adc_seq.calibrate = true;
+   rc = adc_read(battery_adc_config.adc, &adc_seq);
    adc_seq.calibrate = false;
    if (!rc) {
       int loop = MAX_LOOPS;
       int32_t val = adc_raw_data;
-      k_sleep(K_MSEC(MEASURE_INTERVAL_MILLIS));
       rc = adc_read(battery_adc_config.adc, &adc_seq);
       while (!rc && loop > 0 && abs(val - adc_raw_data) > MAX_DITHER) {
          --loop;
          val = adc_raw_data;
-         k_sleep(K_MSEC(MEASURE_INTERVAL_MILLIS));
          rc = adc_read(battery_adc_config.adc, &adc_seq);
       }
       if (!rc) {
@@ -126,12 +125,13 @@ static int battery_adc(void)
                                &val);
 
          if (battery_adc_config.output_ohm != 0) {
-            rc = val * (uint64_t)battery_adc_config.full_ohm / battery_adc_config.output_ohm;
-            LOG_INF("#%d raw %u => %u mV", MAX_LOOPS - loop,
-                    adc_raw_data, rc);
-         } else {
-            rc = val;
-            LOG_INF("#%d raw %u => %u mV", MAX_LOOPS - loop, adc_raw_data, val);
+            val = val * (uint64_t)battery_adc_config.full_ohm / battery_adc_config.output_ohm;
+         }
+         LOG_INF("#%d raw %u => %u mV", MAX_LOOPS - loop, adc_raw_data, val);
+         battery_adc_last_voltage = (uint16_t)val;
+         battery_adc_last_uptime = k_uptime_get();
+         if (voltage) {
+            *voltage = battery_adc_last_voltage;
          }
       }
    }
@@ -146,7 +146,6 @@ int battery_measure_enable(bool enable)
    if (battery_adc_ok) {
       const struct gpio_dt_spec *gcp = &battery_adc_config.power_gpios;
 
-      rc = 0;
       if (device_is_ready(gcp->port)) {
          rc = gpio_pin_set_dt(gcp, enable);
       }
@@ -159,18 +158,19 @@ int battery_sample(uint16_t *voltage)
    int rc = -ENOENT;
 
    if (battery_adc_ok) {
-
-      rc = battery_measure_enable(true);
-      if (!rc) {
-         int value;
-         k_sleep(K_MSEC(10));
-         value = battery_adc();
-         if (value < 0) {
-            rc = value;
-         } else if (voltage) {
-            *voltage = value;
+      int64_t now = k_uptime_get();
+      if (voltage && battery_adc_last_uptime &&
+          (now - battery_adc_last_uptime) < MEASURE_MIN_INTERVAL_MILLIS) {
+         rc = 0;
+         *voltage = battery_adc_last_voltage;
+         LOG_INF("last voltage %u mV", *voltage);
+      } else {
+         rc = battery_measure_enable(true);
+         if (!rc) {
+            k_sleep(K_MSEC(10));
+            rc = battery_adc(voltage);
+            battery_measure_enable(false);
          }
-         battery_measure_enable(false);
       }
    }
 
