@@ -22,11 +22,9 @@
 #define FLAG_KEEP_CONNECTION 2
 
 #define COAP_MAX_RETRANSMISSION 3
-#define BAT_LEVEL_SLOTS 10
 #define REBOOT_INFOS 4
 
 extern unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
-extern unsigned int bat_level[BAT_LEVEL_SLOTS];
 
 typedef enum { PARSE_IGN = 0, PARSE_RST, PARSE_ACK, PARSE_RESPONSE, PARSE_CON_RESPONSE } parse_result_t;
 

@@ -283,6 +283,8 @@ static int check_socket(dtls_app_data_t *app, bool event)
 static void dtls_trigger(void)
 {
    if (app_data.request_state == NONE || app_data.request_state == WAIT_SUSPEND) {
+      // read battery status
+      power_manager_status(NULL, NULL, NULL, NULL);
       k_sem_give(&dtls_trigger_msg);
    }
 }
@@ -297,8 +299,8 @@ static void dtls_manual_trigger(int duration)
    // LEDs for manual trigger
    ui_enable(true);
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
-   k_sem_give(&dtls_trigger_search);
    dtls_trigger();
+   k_sem_give(&dtls_trigger_search);
 }
 
 #if CONFIG_COAP_SEND_INTERVAL > 0
@@ -423,8 +425,6 @@ static void dtls_coap_success(dtls_app_data_t *app)
       if (time1 > 0) {
          dtls_info("rtt: avg. %lds (%ld#)", time2 / time1, time1);
       }
-      dtls_info("vbat: %u, %u, %u, %u, %u", bat_level[0], bat_level[1], bat_level[2], bat_level[3], bat_level[4]);
-      dtls_info("      %u, %u, %u, %u, %u", bat_level[5], bat_level[6], bat_level[7], bat_level[8], bat_level[9]);
    }
    // reset failures on success
    current_failures = 0;

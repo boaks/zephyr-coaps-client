@@ -57,7 +57,6 @@ static const char *client_id;
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
-unsigned int bat_level[BAT_LEVEL_SLOTS] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 static int coap_client_encode_time(struct coap_packet *request)
 {
@@ -327,18 +326,9 @@ int coap_client_prepare_post(void)
 
    coap_message_len = 0;
 
-   for (index = BAT_LEVEL_SLOTS - 1; index > 0; --index) {
-      bat_level[index] = bat_level[index - 1];
-   }
-   bat_level[0] = 1;
-
    uptime = k_uptime_get() / MSEC_PER_SEC;
 
-   if (!power_manager_status(&battery_level, &battery_voltage, &battery_status, &battery_forecast)) {
-      if (battery_voltage != 0xffff) {
-         bat_level[0] = battery_voltage;
-      }
-   }
+   power_manager_status(&battery_level, &battery_voltage, &battery_status, &battery_forecast);
 
    start = 0;
    if ((uptime / 60) < 5) {
@@ -365,9 +355,9 @@ int coap_client_prepare_post(void)
                      CLIENT_VERSION, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
    dtls_info("%s", buf + start);
 
-   if (bat_level[0] > 1) {
+   if (battery_voltage < 0xffff) {
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\n!%u mV", bat_level[0]);
+      index += snprintf(buf + index, sizeof(buf) - index, "\n!%u mV", battery_voltage);
       if (battery_level < 0xff) {
          index += snprintf(buf + index, sizeof(buf) - index, " %u%%", battery_level);
       }
