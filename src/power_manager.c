@@ -446,10 +446,12 @@ int power_manager_1v8(bool enable)
 int power_manager_voltage(uint16_t *voltage)
 {
    if (device_is_ready(i2c_dev)) {
+      uint16_t internal_voltage 0xffff;
+      power_manager_read_voltage(&internal_voltage);
+      LOG_DBG("%umV", internal_voltage);
       if (voltage) {
-         power_manager_read_voltage(voltage);
+         *voltage = internal_voltage;
       }
-      LOG_DBG("%umV", *voltage);
       return 0;
    } else {
       LOG_WRN("Failed to read battery level!");
@@ -523,7 +525,9 @@ int power_manager_suspend(bool enable)
 {
    k_mutex_lock(&pm_mutex, K_FOREVER);
 #ifdef CONFIG_BATTERY_ADC
-   battery_measure_enable(false);
+   if (enable) {
+      battery_measure_enable(false);
+   }
 #endif
    suspend_devices(enable);
 #ifdef CONFIG_SUSPEND_UART
@@ -552,7 +556,9 @@ int power_manager_voltage(uint16_t *voltage)
    rc = battery_sample(voltage);
    if (rc) {
       LOG_WRN("Failed to measure battery level!");
-      *voltage = 0xffff;
+      if (voltage) {
+         *voltage = 0xffff;
+      }
    }
 #else
    char buf[32];
@@ -560,9 +566,13 @@ int power_manager_voltage(uint16_t *voltage)
    rc = modem_at_cmd("AT%%XVBAT", buf, sizeof(buf), "%XVBAT: ");
    if (rc < 0) {
       LOG_WRN("Failed to read battery level from modem!");
-      *voltage = 0xffff;
+      if (voltage) {
+         *voltage = 0xffff;
+      }
    } else {
-      *voltage = atoi(buf);
+      if (voltage) {
+         *voltage = atoi(buf);
+      }
       rc = 0;
    }
 #endif
