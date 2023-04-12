@@ -1162,11 +1162,7 @@ int modem_start(const k_timeout_t timeout)
    if (err < 0) {
       LOG_WRN("Failed to enable access stratum RAI, err %d", err);
    } else {
-#ifdef USE_SO_RAI_NO_DATA
-      LOG_INF("Access stratum RAI/NO_DATA enabled");
-#else
       LOG_INF("Access stratum RAI enabled");
-#endif
    }
 #else
    /** Release Assistance Indication  */
@@ -1679,33 +1675,16 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
    int option = -1;
    const char *rai = "";
 
-#ifdef USE_SO_RAI_NO_DATA
    switch (mode) {
       case RAI_NOW:
+#ifdef CONFIG_UDP_USE_CONNECT
          option = SO_RAI_NO_DATA;
          rai = "now";
-         break;
-      case RAI_OFF:
-         if (rai_current_mode != SO_RAI_ONGOING) {
-            option = SO_RAI_ONGOING;
-         }
-         rai = "off";
+#endif
          break;
       case RAI_LAST:
-         rai = "last";
-         break;
-      case RAI_ONE_RESPONSE:
-      default:
-         rai = "one response";
-         break;
-   }
-#else
-   switch (mode) {
-      case RAI_NOW:
-         break;
-      case RAI_LAST:
-         rai = "last";
          option = SO_RAI_LAST;
+         rai = "last";
          break;
       case RAI_ONE_RESPONSE:
          option = SO_RAI_ONE_RESP;
@@ -1719,7 +1698,6 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
          }
          break;
    }
-#endif
    if (option >= 0) {
       err = setsockopt(socket, SOL_SOCKET, option, NULL, 0);
       if (err) {
@@ -1730,8 +1708,8 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
       }
    }
 #else
-   (void)mode;
-   LOG_INF("No AS nor CP RAI mode configured!");
+(void)mode;
+LOG_INF("No AS nor CP RAI mode configured!");
 #endif
    return err;
 }

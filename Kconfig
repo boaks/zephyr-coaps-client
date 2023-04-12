@@ -181,13 +181,13 @@ config UDP_PSM_ENABLE
 	depends on !UDP_POWER_ON_OFF_ENABLE
 	default y
 
-config UDP_RAI_ENABLE
-	bool "Enable LTE Release Assistance Indication"
-	default y
-
 config UDP_AS_RAI_ENABLE
 	bool "Enable LTE AS Release Assistance Indication"
-	depends on !UDP_RAI_ENABLE
+	default y
+
+config UDP_RAI_ENABLE
+	bool "Enable LTE CP Release Assistance Indication (NB-IoT Rel. 13 only!)"
+	depends on !UDP_AS_RAI_ENABLE
 	default n
 
 config UDP_EDRX_ENABLE

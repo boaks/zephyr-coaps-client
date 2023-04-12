@@ -260,7 +260,7 @@ static void reopen_socket(dtls_app_data_t *app)
    if (psm_off) {
       modem_set_psm(true);
    }
-#if defined(CONFIG_UDP_AS_RAI_ENABLE) && defined(USE_SO_RAI_NO_DATA)
+#ifdef CONFIG_UDP_USE_CONNECT
    // using SO_RAI_NO_DATA requires a destination, for what ever
    connect(app->fd, (struct sockaddr *)&app->destination->addr.sin, sizeof(struct sockaddr_in));
 #endif
@@ -778,7 +778,8 @@ int dtls_loop(session_t *dst, int flags)
       dtls_warn("Failed to create UDP socket: %d (%s)", errno, strerror(errno));
       reboot(ERROR_CODE_INIT_SOCKET, false);
    }
-#if defined(CONFIG_UDP_AS_RAI_ENABLE) && defined(USE_SO_RAI_NO_DATA)
+
+#ifdef CONFIG_UDP_USE_CONNECT
    // using SO_RAI_NO_DATA requires a destination, for what ever
    connect(app_data.fd, (struct sockaddr *)&app_data.destination->addr.sin, sizeof(struct sockaddr_in));
 #endif

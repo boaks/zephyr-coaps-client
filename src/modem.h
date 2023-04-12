@@ -87,11 +87,10 @@ enum rai_mode {
 	RAI_ONE_RESPONSE
 };
 
-//#define USE_SO_RAI_NO_DATA
-//#define USE_SO_RAI_ONE_RESP
-
-#if defined(USE_SO_RAI_NO_DATA) || defined(USE_SO_RAI_ONE_RESP)
 #define CONFIG_UDP_AS_RAI_ENABLE 1
+
+#ifdef CONFIG_UDP_AS_RAI_ENABLE
+#define CONFIG_UDP_USE_CONNECT 1
 #undef CONFIG_UDP_RAI_ENABLE
 #endif
 
