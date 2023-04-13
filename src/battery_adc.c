@@ -27,7 +27,9 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #define MAX_DITHER 2
 #define MAX_LOOPS 15
 
-#define MEASURE_MIN_INTERVAL_MILLIS 5000
+#define MEASURE_INTERVAL_MILLIS 50
+
+#define SAMPLE_MIN_INTERVAL_MILLIS 5000
 
 #define VBATT DT_PATH(vbatt)
 
@@ -111,10 +113,12 @@ static int battery_adc(uint16_t *voltage)
    if (!rc) {
       int loop = MAX_LOOPS;
       int32_t val = adc_raw_data;
+      k_sleep(K_MSEC(MEASURE_INTERVAL_MILLIS));
       rc = adc_read(battery_adc_config.adc, &adc_seq);
       while (!rc && loop > 0 && abs(val - adc_raw_data) > MAX_DITHER) {
          --loop;
          val = adc_raw_data;
+         k_sleep(K_MSEC(MEASURE_INTERVAL_MILLIS));
          rc = adc_read(battery_adc_config.adc, &adc_seq);
       }
       if (!rc) {
@@ -160,7 +164,7 @@ int battery_sample(uint16_t *voltage)
    if (battery_adc_ok) {
       int64_t now = k_uptime_get();
       if (voltage && battery_adc_last_uptime &&
-          (now - battery_adc_last_uptime) < MEASURE_MIN_INTERVAL_MILLIS) {
+          (now - battery_adc_last_uptime) < SAMPLE_MIN_INTERVAL_MILLIS) {
          rc = 0;
          *voltage = battery_adc_last_voltage;
          LOG_INF("last voltage %u mV", *voltage);

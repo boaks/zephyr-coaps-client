@@ -1708,8 +1708,8 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
       }
    }
 #else
-(void)mode;
-LOG_INF("No AS nor CP RAI mode configured!");
+   (void)mode;
+   LOG_INF("No AS nor CP RAI mode configured!");
 #endif
    return err;
 }
