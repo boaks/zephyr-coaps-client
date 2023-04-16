@@ -44,8 +44,7 @@ static K_MUTEX_DEFINE(environment_mutex);
 K_THREAD_STACK_DEFINE(thread_stack, CONFIG_BME680_BSEC_THREAD_STACK_SIZE);
 
 static struct k_thread environment_thread;
-//static const struct device *environment_i2c = DEVICE_DT_GET(DT_BUS(DT_ALIAS(environment_sensor)));
-//static const uint8_t dev_addr = DT_PROP(DT_ALIAS(environment_sensor), reg); // 0x76;
+
 static const struct i2c_dt_spec environment_i2c_spec =  I2C_DT_SPEC_GET(DT_ALIAS(environment_sensor));
 
 /* Structure used to maintain internal variables used by the library. */

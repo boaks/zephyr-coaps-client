@@ -28,7 +28,9 @@ typedef enum {
 
 int power_manager_init(void);
 
-int power_manager_add(const struct device *dev);
+int power_manager_add_device(const struct device *dev);
+
+int power_manager_suspend_device(const struct device *dev);
 
 int power_manager_suspend(bool enable);
 

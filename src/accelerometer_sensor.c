@@ -94,7 +94,7 @@ int accelerometer_init(accelerometer_handler_t handler)
    if (handler) {
       accelerometer_handler = handler;
    } else {
-      power_manager_add(accelerometer_dev);
+      power_manager_suspend_device(accelerometer_dev);
    }
    return 0;
 }

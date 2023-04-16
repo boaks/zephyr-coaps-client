@@ -331,7 +331,7 @@ if ADXL362
 
 config MOTION_DETECTION
 	bool "Enable Motion Detection"
-	default n
+	default y if ADXL362_TRIGGER
 	help
 	   Enable (indirect) motion detection using accelerometer.
 	   More configuration options are available at 
@@ -342,11 +342,17 @@ if LIS2DH
 
 config MOTION_DETECTION
 	bool "Enable Motion Detection"
-	default n
+	default y if LIS2DH_TRIGGER
 	help
 	   Enable (indirect) motion detection using accelerometer.
 	   More configuration options are available at 
 	   "Zephyr Kernel > Device Drivers > Sensor Drivers > LIS2DH Three Axis Accelerometer (LIS2DH)"
+
+config MOTION_DETECTION_FILTER
+	bool "Enable Motion Detection Filter"
+	select LIS2DH_ACCEL_HP_FILTERS
+	default y if LIS2DH_TRIGGER
+
 
 endif # LIS2DH
 

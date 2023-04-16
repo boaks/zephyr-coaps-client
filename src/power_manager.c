@@ -172,15 +172,15 @@ static const struct transform_curve curve = {
  * battery level epoch is detected. The very first change
  * indicates only a partitial epoch.
  */
-static int64_t next_forecast_uptime = 0;
+static int64_t min_forecast_uptime = 0;
 
-static uint8_t first_battery_level = 0xff;
+static uint16_t first_battery_level = 0xffff;
 static int64_t first_battery_level_uptime = 0;
-static uint8_t last_battery_level = 0xff;
+static uint16_t last_battery_level = 0xffff;
 static int64_t last_battery_level_uptime = 0;
 
-static uint8_t current_battery_level = 0xff;
-static uint8_t current_battery_changes = 0;
+static uint16_t current_battery_level = 0xffff;
+static uint16_t current_battery_changes = 0;
 /*
  * last left battery time. -1, if not available
  */
@@ -191,14 +191,14 @@ static int64_t last_battery_left_time = -1;
 
 static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_manager_status_t status)
 {
-   if (battery_level == 0xff) {
+   if (battery_level == 0xffff) {
       LOG_INF("forecast: not ready.");
    } else if (status != FROM_BATTERY) {
       LOG_INF("forecast: charging.");
    } else {
-      if (((*now) - next_forecast_uptime) >= 0) {
+      if (((*now) - min_forecast_uptime) >= 0) {
          int64_t passed_time = (*now) - last_battery_level_uptime;
-         if (battery_level < current_battery_level) {
+         if (current_battery_level - battery_level > 20) {
             current_battery_level = battery_level;
             ++current_battery_changes;
             if (current_battery_changes == 1) {
@@ -245,7 +245,7 @@ static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_ma
          if (current_battery_changes >= 3) {
             // after first change
             passed_time += (MSEC_PER_DAY / 2);
-            int16_t time = (int16_t)((last_battery_left_time - passed_time) / MSEC_PER_DAY);
+            int16_t time = (int16_t)((last_battery_left_time - passed_time + MSEC_PER_DAY) / MSEC_PER_DAY);
             LOG_INF("battery %u%%, %d left days (passed %d days)", battery_level, time, (int)(passed_time / MSEC_PER_DAY));
             return time;
          }
@@ -254,11 +254,12 @@ static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_ma
    }
    // fall through, reset
    current_battery_changes = 0;
-   first_battery_level = 0xff;
-   last_battery_level = 0xff;
-   current_battery_level = 0xff;
+   first_battery_level = 0xffff;
+   last_battery_level = 0xffff;
+   current_battery_level = 0xffff;
    last_battery_left_time = -1;
-   next_forecast_uptime = *now + MSEC_PER_HOUR;
+   // first forecast 1h after start
+   min_forecast_uptime = *now + MSEC_PER_HOUR;
 
    return -1;
 }
@@ -462,19 +463,19 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
       int64_t now = k_uptime_get();
       power_manager_status_t internal_status = POWER_UNKNOWN;
       int16_t days = -1;
-      uint8_t internal_level = 0xff;
+      uint16_t internal_level = 0xffff;
       uint16_t internal_voltage = 0xffff;
 
       LOG_DBG("Read battery monitor status ...");
 
-      //      power_manager_read_level(&internal_level);
       power_manager_read_status(&internal_status);
       power_manager_read_voltage(&internal_voltage);
-      internal_level = transform_curve(internal_voltage, &curve) / 100;
+      internal_level = transform_curve(internal_voltage, &curve);
 
       days = calculate_forecast(&now, internal_level, internal_status);
+      internal_level /= 100;
       if (level) {
-         *level = internal_level;
+         *level = (uint8_t)internal_level;
       }
       if (status) {
          *status = internal_status;
@@ -587,21 +588,19 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
    if (status) {
       *status = POWER_UNKNOWN;
    }
-   if (forecast) {
-      *forecast = -1;
-   }
    rc = power_manager_voltage(&vol);
    if (!rc) {
 #ifdef CONFIG_BATTERY_ADC
-      lvl = transform_curve(vol, &curve) / 100;
+      lvl = transform_curve(vol, &curve);
 #endif
       days = calculate_forecast(&now, lvl, FROM_BATTERY);
+      lvl /= 100;
    }
    if (voltage) {
       *voltage = vol;
    }
    if (level) {
-      *level = lvl;
+      *level = (uint8_t)lvl;
    }
    if (forecast) {
       *forecast = days;
@@ -612,7 +611,7 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
 
 #endif
 
-int power_manager_add(const struct device *dev)
+int power_manager_add_device(const struct device *dev)
 {
    if (dev) {
       enum pm_device_state state = PM_DEVICE_STATE_OFF;
@@ -626,6 +625,18 @@ int power_manager_add(const struct device *dev)
       pm_dev_table[pm_dev_counter] = dev;
       pm_dev_counter++;
       LOG_INF("PM add %s", dev->name);
+   }
+   return 0;
+}
+
+int power_manager_suspend_device(const struct device *dev)
+{
+   if (dev) {
+      int rc = pm_device_action_run(dev, PM_DEVICE_ACTION_SUSPEND);
+      if (rc) {
+         return rc;
+      }
+      LOG_INF("PM suspended %s", dev->name);
    }
    return 0;
 }
