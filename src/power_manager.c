@@ -290,11 +290,6 @@ static int adp536x_reg_write(uint8_t reg, uint8_t val)
    return i2c_reg_write_byte(i2c_dev, ADP536X_I2C_ADDR, reg, val);
 }
 
-static void power_manager_read_level(uint8_t *level)
-{
-   adp536x_reg_read(ADP536X_I2C_REG_LEVEL, level);
-}
-
 static void power_manager_read_voltage(uint16_t *voltage)
 {
    uint8_t value1 = 0xff;
@@ -446,7 +441,7 @@ int power_manager_1v8(bool enable)
 int power_manager_voltage(uint16_t *voltage)
 {
    if (device_is_ready(i2c_dev)) {
-      uint16_t internal_voltage 0xffff;
+      uint16_t internal_voltage = 0xffff;
       power_manager_read_voltage(&internal_voltage);
       LOG_DBG("%umV", internal_voltage);
       if (voltage) {

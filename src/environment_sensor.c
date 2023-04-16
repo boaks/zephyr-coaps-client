@@ -44,8 +44,9 @@ static K_MUTEX_DEFINE(environment_mutex);
 K_THREAD_STACK_DEFINE(thread_stack, CONFIG_BME680_BSEC_THREAD_STACK_SIZE);
 
 static struct k_thread environment_thread;
-static const struct device *environment_i2c = DEVICE_DT_GET(DT_BUS(DT_ALIAS(environment_sensor)));
-static const uint8_t dev_addr = DT_PROP(DT_ALIAS(environment_sensor), reg); // 0x76;
+//static const struct device *environment_i2c = DEVICE_DT_GET(DT_BUS(DT_ALIAS(environment_sensor)));
+//static const uint8_t dev_addr = DT_PROP(DT_ALIAS(environment_sensor), reg); // 0x76;
+static const struct i2c_dt_spec environment_i2c_spec =  I2C_DT_SPEC_GET(DT_ALIAS(environment_sensor));
 
 /* Structure used to maintain internal variables used by the library. */
 static struct environment_values {
@@ -71,7 +72,7 @@ static BME68X_INTF_RET_TYPE environment_bus_write(uint8_t reg_addr, const uint8_
    buf[0] = reg_addr;
    memcpy(&buf[1], reg_data_ptr, len);
 
-   return i2c_write(environment_i2c, buf, len + 1, dev_addr);
+   return i2c_write_dt(&environment_i2c_spec, buf, len + 1);
 }
 
 /*
@@ -80,7 +81,7 @@ typedef BME68X_INTF_RET_TYPE (*bme68x_read_fptr_t)(uint8_t reg_addr, uint8_t *re
 */
 static BME68X_INTF_RET_TYPE environment_bus_read(uint8_t reg_addr, uint8_t *reg_data_ptr, uint32_t len, void *intf_ptr)
 {
-   return i2c_write_read(environment_i2c, dev_addr, &reg_addr, 1, reg_data_ptr, len);
+   return i2c_write_read_dt(&environment_i2c_spec, &reg_addr, 1, reg_data_ptr, len);
 }
 
 // typedef int64_t (*get_timestamp_us_fct)();
@@ -155,8 +156,8 @@ int environment_init(void)
    return_values_init bsec_ret;
 
    LOG_INF("BME680 BSEC initialize, %0.3f Hz", BSEC_SAMPLE_RATE);
-   if (!device_is_ready(environment_i2c)) {
-      LOG_ERR("%s device is not ready", environment_i2c->name);
+   if (!device_is_ready(environment_i2c_spec.bus)) {
+      LOG_ERR("%s device is not ready", environment_i2c_spec.bus->name);
       return -ENOTSUP;
    }
    environment_init_history();
