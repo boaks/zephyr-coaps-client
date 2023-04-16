@@ -20,7 +20,7 @@
 #include "io_job_queue.h"
 #include "ui.h"
 
-LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
+LOG_MODULE_REGISTER(UI, CONFIG_UI_LOG_LEVEL);
 
 #define LED_RED_NODE DT_ALIAS(led0)
 #define LED_GREEN_NODE DT_ALIAS(led1)
@@ -145,7 +145,7 @@ static void ui_button_pressed_fn(struct k_work *work)
             ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
             if (button_callback != NULL) {
                button_callback(0);
-               LOG_INF("UI button callback %u", button_counter);
+               LOG_DBG("UI button callback %u", button_counter);
             }
          }
       }
@@ -160,7 +160,7 @@ static void ui_button_pressed_fn(struct k_work *work)
          ui_led_op(LED_COLOR_RED, LED_BLINK);
          if (button_callback != NULL) {
             button_callback(1);
-            LOG_INF("UI button long callback %u", button_counter);
+            LOG_DBG("UI button long callback %u", button_counter);
          }
       }
    }
@@ -228,38 +228,38 @@ static void ui_op(gpio_device_ext_t *output_spec, led_op_t op, struct k_work_del
          case LED_SET:
             if (output_spec->op != op) {
                gpio_pin_set_dt(gpio_spec, 1);
-               LOG_INF("UI: %sLED set", output_spec->desc);
+               LOG_DBG("UI: %sLED set", output_spec->desc);
             }
             break;
          case LED_CLEAR:
             if (output_spec->op != op) {
                gpio_pin_set_dt(gpio_spec, 0);
-               LOG_INF("UI: %sLED clear", output_spec->desc);
+               LOG_DBG("UI: %sLED clear", output_spec->desc);
             }
             break;
          case LED_TOGGLE:
             gpio_pin_toggle_dt(gpio_spec);
-            LOG_INF("UI: %sLED toggle", output_spec->desc);
+            LOG_DBG("UI: %sLED toggle", output_spec->desc);
             break;
          case LED_BLINK:
             if (timer) {
                gpio_pin_set_dt(gpio_spec, 1);
                work_reschedule_for_io_queue(timer, K_MSEC(500));
-               LOG_INF("UI: %sLED blink", output_spec->desc);
+               LOG_DBG("UI: %sLED blink", output_spec->desc);
             }
             break;
          case LED_BLINKING:
             if (timer) {
                gpio_pin_set_dt(gpio_spec, 1);
                work_reschedule_for_io_queue(timer, K_MSEC(300));
-               LOG_INF("UI: %sLED start blinking", output_spec->desc);
+               LOG_DBG("UI: %sLED start blinking", output_spec->desc);
             }
             break;
          case LED_INTERNAL_TIMER:
             if (timer && output_spec->op == LED_BLINKING) {
                gpio_pin_toggle_dt(gpio_spec);
                work_reschedule_for_io_queue(timer, K_MSEC(300));
-               LOG_INF("UI: %sLED blinking", output_spec->desc);
+               LOG_DBG("UI: %sLED blinking", output_spec->desc);
                op = LED_BLINKING;
             } else {
                gpio_pin_set_dt(gpio_spec, 0);

@@ -450,6 +450,10 @@ module = COAP_CLIENT
 module-str = CoAP Client
 source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
 
+module = UI
+module-str = UI
+source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
+
 if LOCATION_ENABLE
 module = GNSS_CLIENT
 module-str = GNSS Client
