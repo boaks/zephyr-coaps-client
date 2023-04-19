@@ -11,6 +11,8 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include <stdlib.h>
+
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -18,8 +20,13 @@
 #include <zephyr/pm/device.h>
 
 #include "io_job_queue.h"
+#include "modem.h"
 #include "power_manager.h"
 #include "transform.h"
+
+#ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADC
+#include "battery_adc.h"
+#endif /* CONFIG_BATTERY_VOLTAGE_SOURCE_ADC */
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
@@ -28,6 +35,7 @@ typedef const struct device *t_devptr;
 
 #define MAX_PM_DEVICES 10
 
+static volatile bool pm_init = false;
 static int pm_dev_counter = 0;
 static t_devptr pm_dev_table[MAX_PM_DEVICES];
 
@@ -291,8 +299,10 @@ static int adp536x_reg_write(uint8_t reg, uint8_t val)
    return i2c_reg_write_byte(i2c_dev, ADP536X_I2C_ADDR, reg, val);
 }
 
-static void power_manager_read_voltage(uint16_t *voltage)
+#ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADP536X
+static int adp536x_power_manager_voltage(uint16_t *voltage)
 {
+   int rc = -EIO;
    uint8_t value1 = 0xff;
    uint8_t value2 = 0xff;
 
@@ -302,14 +312,18 @@ static void power_manager_read_voltage(uint16_t *voltage)
       value <<= 5;
       value |= ((value2 >> 3) & 0x1f);
       *voltage = value;
+      rc = 0;
    }
+   return rc;
 }
+#endif
 
-static void power_manager_read_status(power_manager_status_t *status)
+static int adp536x_power_manager_read_status(power_manager_status_t *status)
 {
    uint8_t value = 0xff;
+   int rc = adp536x_reg_read(ADP536X_I2C_REG_STATUS, &value);
 
-   if (!adp536x_reg_read(ADP536X_I2C_REG_STATUS, &value)) {
+   if (!rc) {
       switch (value & 0x7) {
          case 0:
             *status = FROM_BATTERY;
@@ -334,10 +348,11 @@ static void power_manager_read_status(power_manager_status_t *status)
             break;
       }
    }
+   return rc;
 }
 
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT_LOW_POWER
-static void power_management_sleep_mode_work_fn(struct k_work *work)
+static void adp536x_power_management_sleep_mode_work_fn(struct k_work *work)
 {
    /*
     * 0x5B: 11%, 10mA, 8 min, sleep, enable
@@ -345,22 +360,38 @@ static void power_management_sleep_mode_work_fn(struct k_work *work)
    adp536x_reg_write(ADP536X_I2C_REG_FUEL_GAUGE_MODE, 0x5B);
 }
 
-static K_WORK_DELAYABLE_DEFINE(power_management_sleep_mode_work, power_management_sleep_mode_work_fn);
+static K_WORK_DELAYABLE_DEFINE(adp536x_power_management_sleep_mode_work, adp536x_power_management_sleep_mode_work_fn);
 #endif /* CONFIG_ADP536X_POWER_MANAGEMENT_LOW_POWER */
 
-int power_manager_init(void)
+static int adp536x_power_manager_xvy(uint8_t config_register, bool enable)
 {
-#if defined(CONFIG_SUSPEND_UART) && defined(CONFIG_UART_CONSOLE) && !defined(CONFIG_CONSOLE_SUBSYS)
-   if (!device_is_ready(uart0_dev)) {
-      LOG_WRN("UART0 console not available.");
+   int rc = -ENOTSUP;
+
+   if (device_is_ready(i2c_dev)) {
+      uint8_t buck_config = 0;
+      rc = adp536x_reg_read(config_register, &buck_config);
+      if (!rc) {
+         /*         LOG_INF("buck_conf: %02x %02x", config_register, buck_config); */
+         buck_config |= 0xC0; // softstart to 11 => 512ms
+         if (enable) {
+            buck_config |= 1;
+         } else {
+            buck_config &= (~1);
+         }
+         adp536x_reg_write(config_register, buck_config);
+      } else {
+         LOG_WRN("Failed to read buckbst_cfg.");
+      }
    }
-#endif
+   return rc;
+}
+
+int adp536x_power_manager_init(void)
+{
+   int rc = -ENOTSUP;
+
    if (device_is_ready(i2c_dev)) {
       uint8_t value = 0;
-      int64_t now = k_uptime_get();
-
-      // init forecast
-      calculate_forecast(&now, 0xff, CHARGING_TRICKLE);
 
       adp536x_reg_read(ADP536X_I2C_REG_CHARGE_TERMINATION, &value);
       value &= 3;
@@ -372,244 +403,61 @@ int power_manager_init(void)
       adp536x_reg_write(ADP536X_I2C_REG_FUEL_GAUGE_MODE, 0x51);
       LOG_INF("Battery monitor initialized.");
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT_LOW_POWER
-      work_schedule_for_io_queue(&power_management_sleep_mode_work, K_MINUTES(30));
+      work_schedule_for_io_queue(&adp536x_power_management_sleep_mode_work, K_MINUTES(30));
 #endif
-      return 0;
+      rc = 0;
    } else {
       LOG_WRN("Failed to initialize battery monitor.");
-      return -1;
    }
+   return rc;
 }
 
-static int power_manager_xvy(uint8_t config_register, bool enable)
-{
-   if (device_is_ready(i2c_dev)) {
-      uint8_t buck_config = 0;
-
-      if (!adp536x_reg_read(config_register, &buck_config)) {
-         /*         LOG_INF("buck_conf: %02x %02x", config_register, buck_config); */
-         buck_config |= 0xC0; // softstart to 11 => 512ms
-         if (enable) {
-            buck_config |= 1;
-         } else {
-            buck_config &= (~1);
-         }
-         adp536x_reg_write(config_register, buck_config);
-         return 0;
-      } else {
-         LOG_WRN("Failed to read buckbst_cfg.");
-         return -1;
-      }
-   } else {
-      LOG_WRN("Failed to write buckbst_cfg.");
-      return -1;
-   }
-}
-
-int power_manager_suspend(bool enable)
-{
-#ifdef CONFIG_SUSPEND_3V3
-#ifndef CONFIG_SUSPEND_UART
-   if (enable) {
-      LOG_INF("Suspend 3.3V");
-   } else {
-      LOG_INF("Resume 3.3V");
-   }
 #endif
-#endif
-   k_mutex_lock(&pm_mutex, K_FOREVER);
-   suspend_devices(enable);
-#ifdef CONFIG_SUSPEND_UART
-   suspend_uart(enable);
-#endif
-#ifdef CONFIG_SUSPEND_3V3
-   power_manager_3v3(!enable);
-#endif
-   k_mutex_unlock(&pm_mutex);
-   return 0;
-}
-
-int power_manager_3v3(bool enable)
-{
-   return power_manager_xvy(ADP536X_I2C_REG_BUCK_BOOST_CONFIG, enable);
-}
-
-int power_manager_1v8(bool enable)
-{
-   return power_manager_xvy(ADP536X_I2C_REG_BUCK_CONFIG, enable);
-}
-
-int power_manager_voltage(uint16_t *voltage)
-{
-   if (device_is_ready(i2c_dev)) {
-      uint16_t internal_voltage = 0xffff;
-      power_manager_read_voltage(&internal_voltage);
-      LOG_DBG("%umV", internal_voltage);
-      if (voltage) {
-         *voltage = internal_voltage;
-      }
-      return 0;
-   } else {
-      LOG_WRN("Failed to read battery level!");
-   }
-   return -1;
-}
-
-#define SAVE_VALUE(X) ((X) ? *(X) : 0)
-
-int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status, int16_t *forecast)
-{
-   if (device_is_ready(i2c_dev)) {
-      int64_t now = k_uptime_get();
-      power_manager_status_t internal_status = POWER_UNKNOWN;
-      int16_t days = -1;
-      uint16_t internal_level = 0xffff;
-      uint16_t internal_voltage = 0xffff;
-
-      LOG_DBG("Read battery monitor status ...");
-
-      power_manager_read_status(&internal_status);
-      power_manager_read_voltage(&internal_voltage);
-      internal_level = transform_curve(internal_voltage, &curve);
-
-      days = calculate_forecast(&now, internal_level, internal_status);
-      internal_level /= 100;
-      if (level) {
-         *level = (uint8_t)internal_level;
-      }
-      if (status) {
-         *status = internal_status;
-      }
-      if (forecast) {
-         *forecast = days;
-      }
-      if (voltage) {
-         *voltage = internal_voltage;
-      }
-      LOG_DBG("%u%% %umV %d (%d left days)", internal_level, SAVE_VALUE(voltage), internal_status, days);
-      return 0;
-   } else {
-      LOG_WRN("Failed to read battery level!");
-   }
-   return -1;
-}
-
-#else
-
-#include <stdlib.h>
-
-#ifdef CONFIG_BATTERY_ADC
-#include "battery_adc.h"
-#else /* CONFIG_BATTERY_ADC */
-#include "modem.h"
-#endif /* CONFIG_BATTERY_ADC */
 
 int power_manager_init(void)
 {
-   int rc = 0;
-#ifdef CONFIG_BATTERY_ADC
+   int rc = -ENOTSUP;
    int64_t now = k_uptime_get();
 
-   rc = battery_measure_enable(false);
-   // init forecast
-   calculate_forecast(&now, 0xff, POWER_UNKNOWN);
-#endif
-   return rc;
-}
+   calculate_forecast(&now, 0xffff, CHARGING_TRICKLE);
 
-int power_manager_suspend(bool enable)
-{
-   k_mutex_lock(&pm_mutex, K_FOREVER);
-#ifdef CONFIG_BATTERY_ADC
-   if (enable) {
-      battery_measure_enable(false);
+#if defined(CONFIG_SUSPEND_UART) && defined(CONFIG_UART_CONSOLE) && !defined(CONFIG_CONSOLE_SUBSYS)
+   if (!device_is_ready(uart0_dev)) {
+      LOG_WRN("UART0 console not available.");
    }
 #endif
-   suspend_devices(enable);
-#ifdef CONFIG_SUSPEND_UART
-   suspend_uart(enable);
+
+#ifdef CONFIG_ADP536X_POWER_MANAGEMENT
+   rc = adp536x_power_manager_init();
 #endif
-   k_mutex_unlock(&pm_mutex);
-   return 0;
+#ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADC
+   rc = battery_sample(NULL);
+#endif
+
+   pm_init = !rc;
+
+   return rc;
 }
 
 int power_manager_3v3(bool enable)
 {
+#ifdef CONFIG_ADP536X_POWER_MANAGEMENT
+   return adp536x_power_manager_xvy(ADP536X_I2C_REG_BUCK_BOOST_CONFIG, enable);
+#else
    (void)enable;
    return 0;
+#endif
 }
 
 int power_manager_1v8(bool enable)
 {
+#ifdef CONFIG_ADP536X_POWER_MANAGEMENT
+   return adp536x_power_manager_xvy(ADP536X_I2C_REG_BUCK_CONFIG, enable);
+#else
    (void)enable;
    return 0;
-}
-
-int power_manager_voltage(uint16_t *voltage)
-{
-   int rc = 0;
-#ifdef CONFIG_BATTERY_ADC
-   rc = battery_sample(voltage);
-   if (rc) {
-      LOG_WRN("Failed to measure battery level!");
-      if (voltage) {
-         *voltage = 0xffff;
-      }
-   }
-#else
-   char buf[32];
-
-   rc = modem_at_cmd("AT%%XVBAT", buf, sizeof(buf), "%XVBAT: ");
-   if (rc < 0) {
-      LOG_WRN("Failed to read battery level from modem!");
-      if (voltage) {
-         *voltage = 0xffff;
-      }
-   } else {
-      if (voltage) {
-         *voltage = atoi(buf);
-      }
-      rc = 0;
-   }
 #endif
-   return rc;
 }
-
-int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status, int16_t *forecast)
-{
-   int rc = 0;
-   int64_t now = k_uptime_get();
-   int16_t days = -1;
-   uint16_t vol = 0xffff;
-   uint16_t lvl = 0xffff;
-
-   LOG_DBG("Read battery monitor status ...");
-
-   if (status) {
-      *status = POWER_UNKNOWN;
-   }
-   rc = power_manager_voltage(&vol);
-   if (!rc) {
-#ifdef CONFIG_BATTERY_ADC
-      lvl = transform_curve(vol, &curve);
-#endif
-      days = calculate_forecast(&now, lvl, FROM_BATTERY);
-      lvl /= 100;
-   }
-   if (voltage) {
-      *voltage = vol;
-   }
-   if (level) {
-      *level = (uint8_t)lvl;
-   }
-   if (forecast) {
-      *forecast = days;
-   }
-
-   return rc;
-}
-
-#endif
 
 int power_manager_add_device(const struct device *dev)
 {
@@ -639,4 +487,109 @@ int power_manager_suspend_device(const struct device *dev)
       LOG_INF("PM suspended %s", dev->name);
    }
    return 0;
+}
+
+int power_manager_suspend(bool enable)
+{
+#ifdef CONFIG_ADP536X_POWER_MANAGEMENT
+#ifdef CONFIG_SUSPEND_3V3
+#ifndef CONFIG_SUSPEND_UART
+   if (enable) {
+      LOG_INF("Suspend 3.3V");
+   } else {
+      LOG_INF("Resume 3.3V");
+   }
+#endif
+#endif
+#endif
+   k_mutex_lock(&pm_mutex, K_FOREVER);
+#ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADC
+   if (enable) {
+      battery_measure_enable(false);
+   }
+#endif
+   suspend_devices(enable);
+#ifdef CONFIG_SUSPEND_UART
+   suspend_uart(enable);
+#endif
+#ifdef CONFIG_SUSPEND_3V3
+   power_manager_3v3(!enable);
+#endif
+   k_mutex_unlock(&pm_mutex);
+   return 0;
+}
+
+int power_manager_voltage(uint16_t *voltage)
+{
+   int rc = -ENOTSUP;
+
+   if (pm_init) {
+      uint16_t internal_voltage = 0xffff;
+
+#ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADP536X
+      rc = adp536x_power_manager_voltage(&internal_voltage);
+      LOG_INF("ADP536X %u mV", internal_voltage);
+#elif defined(CONFIG_BATTERY_VOLTAGE_SOURCE_ADC)
+      rc = battery_sample(&internal_voltage);
+      LOG_INF("ADC %u mV", internal_voltage);
+#else
+      char buf[32];
+      rc = modem_at_cmd("AT%%XVBAT", buf, sizeof(buf), "%XVBAT: ");
+      if (rc < 0) {
+         LOG_WRN("Failed to read battery level from modem!");
+      } else {
+         internal_voltage = atoi(buf);
+         LOG_INF("Modem %u mV", internal_voltage);
+         rc = 0;
+      }
+#endif
+      if (!rc && voltage) {
+         *voltage = internal_voltage;
+      }
+   }
+   return rc;
+}
+
+int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status, int16_t *forecast)
+{
+   int rc = -ENOTSUP;
+
+   if (pm_init) {
+      uint16_t internal_voltage = 0xffff;
+
+      LOG_DBG("Read battery monitor status ...");
+
+      rc = power_manager_voltage(&internal_voltage);
+      if (!rc) {
+         int64_t now = k_uptime_get();
+         power_manager_status_t internal_status = POWER_UNKNOWN;
+         power_manager_status_t internal_status_forecast = FROM_BATTERY;
+         int16_t days = -1;
+         uint16_t internal_level = 0xffff;
+
+#ifdef CONFIG_ADP536X_POWER_MANAGEMENT
+         adp536x_power_manager_read_status(&internal_status);
+         internal_status_forecast = internal_status;
+#endif
+         internal_level = transform_curve(internal_voltage, &curve);
+         days = calculate_forecast(&now, internal_level, internal_status_forecast);
+         internal_level /= 100;
+         if (level) {
+            *level = (uint8_t)internal_level;
+         }
+         if (voltage) {
+            *voltage = internal_voltage;
+         }
+         if (status) {
+            *status = internal_status;
+         }
+         if (forecast) {
+            *forecast = days;
+         }
+         LOG_DBG("%u%% %umV %d (%d left days)", internal_level, internal_voltage, internal_status, days);
+      }
+   } else {
+      LOG_WRN("Failed to read battery status!");
+   }
+   return rc;
 }

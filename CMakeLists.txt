@@ -158,6 +158,14 @@ else()
 set(BUILD_SUMUP6 "Not suspending 3.3V nor UART.")
 endif()
 
+if (CONFIG_BATTERY_VOLTAGE_SOURCE_ADP536X)
+set(BUILD_SUMUP7 "Build with ADP536X battery voltage.")
+elseif (BATTERY_VOLTAGE_SOURCE_ADC)
+set(BUILD_SUMUP7 "Build with ADC battery voltage.")
+else()
+set(BUILD_SUMUP7 "Build with modem battery voltage.")
+endif()
+
 add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP1}"
                    COMMAND echo "${BUILD_SUMUP2}"
@@ -165,5 +173,6 @@ add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP4}"
                    COMMAND echo "${BUILD_SUMUP5}"
                    COMMAND echo "${BUILD_SUMUP6}"
+                   COMMAND echo "${BUILD_SUMUP7}"
                    COMMAND echo "Build with network search timeout ${CONFIG_MODEM_SEARCH_TIMEOUT}s"
                    )

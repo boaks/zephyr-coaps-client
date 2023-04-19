@@ -64,7 +64,7 @@ static struct adc_sequence adc_seq = {
     .buffer = &adc_raw_data,
     .buffer_size = sizeof(adc_raw_data),
     .resolution = 12,
-    .oversampling = 4,
+    .oversampling = 5,
     .calibrate = true,
 };
 
@@ -145,7 +145,7 @@ static int battery_adc(uint16_t *voltage)
 
 int battery_measure_enable(bool enable)
 {
-   int rc = -ENOENT;
+   int rc = -ENOTSUP;
 
    if (battery_adc_ok) {
       const struct gpio_dt_spec *gcp = &battery_adc_config.power_gpios;
@@ -159,7 +159,7 @@ int battery_measure_enable(bool enable)
 
 int battery_sample(uint16_t *voltage)
 {
-   int rc = -ENOENT;
+   int rc = -ENOTSUP;
 
    if (battery_adc_ok) {
       int64_t now = k_uptime_get();

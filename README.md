@@ -38,11 +38,18 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160) based devic
 | [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/)<br>Requires additonal batteries, antennas, and closures to work in the "wild". The design of the feather allows to easily add custom sensors. | ![nRF9160-DK](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
 | [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. The design allows to easily add custom sensors. | ![nRF9160-DK](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK.png) |
 
-The demo works with [ncs-2.1.2](https://github.com/nrfconnect/sdk-nrf/tree/v2.1.2).
+The demo works with [ncs-2.3.0](https://github.com/nrfconnect/sdk-nrf/tree/v2.3.0).
 
 To benefit from the newer modem features, please consider to use the modem firmware [1.3.4](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.4.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
-Maybe other modems and devices gets supported over the time as well.
+Maybe other modems and devices gets supported over the time as well. For some of the nRF9160 based devices porting should not be too hard.
+
+| nRF9160 based candidates | |
+| :- | - |
+| [Sparkfun Thing Plus nRF9160](https://www.sparkfun.com/products/17354?utm_source=sendfox&utm_medium=email&utm_campaign=nrf9160-thing-plus)<br>Qwiic and 2x5 plug for JTAG. | ![Sparkfun Thing Plus nRF9160](https://cdn.sparkfun.com//assets/parts/1/6/3/6/0/17354-SparkFun_Thing_Plus_-_nRF9160-01.jpg) |
+| [Icarus IoT Board v2](https://www.actinius.com/icarus)<br>Includes a eSIM.| ![Icarus IoT Board v2](https://www.actinius.com/images/icarus-nrf9160-feather-v2-front-sm-p-500.png) |
+| [Conexio Stratus](https://www.crowdsupply.com/conexio/stratus)<br>Built-in energy harvesting capability for autonomous operation. Includes a SIM card with 500MB in 10 years. | ![Conexio Stratus](https://www.crowdsupply.com/img/9c62/side.png) |
+
 
 ## Required HW-Tools for Thingy:91
 
