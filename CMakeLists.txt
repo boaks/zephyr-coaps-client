@@ -160,10 +160,20 @@ endif()
 
 if (CONFIG_BATTERY_VOLTAGE_SOURCE_ADP536X)
 set(BUILD_SUMUP7 "Build with ADP536X battery voltage.")
-elseif (BATTERY_VOLTAGE_SOURCE_ADC)
+elseif (CONFIG_BATTERY_VOLTAGE_SOURCE_ADC)
 set(BUILD_SUMUP7 "Build with ADC battery voltage.")
 else()
 set(BUILD_SUMUP7 "Build with modem battery voltage.")
+endif()
+
+if (CONFIG_BATTERY_TYPE_LIPO_1350_MAH)
+set(BUILD_SUMUP8 "Build for 1350 mAh LiPo")
+elseif (CONFIG_BATTERY_TYPE_LIPO_2000_MAH)
+set(BUILD_SUMUP8 "Build for 2000 mAh LiPo")
+elseif (CONFIG_BATTERY_TYPE_ENELOOP_2000_MAH)
+set(BUILD_SUMUP8 "Build for 2000 mAh Eneloop")
+else()
+set(BUILD_SUMUP8 "Build without battery.")
 endif()
 
 add_custom_command(TARGET app POST_BUILD
@@ -174,5 +184,6 @@ add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP5}"
                    COMMAND echo "${BUILD_SUMUP6}"
                    COMMAND echo "${BUILD_SUMUP7}"
+                   COMMAND echo "${BUILD_SUMUP8}"
                    COMMAND echo "Build with network search timeout ${CONFIG_MODEM_SEARCH_TIMEOUT}s"
                    )

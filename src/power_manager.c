@@ -158,7 +158,7 @@ static const struct transform_curve curve = {
         {3430, 422},
         {3300, 0},
     }
-#else
+#elif defined(CONFIG_BATTERY_TYPE_LIPO_1350_MAH)
     /* Thingy:91 */
     .points = 9,
     .curve = {
@@ -172,6 +172,11 @@ static const struct transform_curve curve = {
         {3474, 440},
         {3200, 0},
     }
+#else
+    /* no battery */
+    .points = 1,
+    .curve = {
+        {0, -1}}
 #endif
 };
 
@@ -430,9 +435,9 @@ int power_manager_init(void)
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
    rc = adp536x_power_manager_init();
 #endif
-#ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADC
-   rc = battery_sample(NULL);
-#endif
+
+   pm_init = true;
+   rc = power_manager_voltage(NULL);
 
    pm_init = !rc;
 
@@ -536,7 +541,7 @@ int power_manager_voltage(uint16_t *voltage)
       char buf[32];
       rc = modem_at_cmd("AT%%XVBAT", buf, sizeof(buf), "%XVBAT: ");
       if (rc < 0) {
-         LOG_WRN("Failed to read battery level from modem!");
+         LOG_WRN("Failed to read battery level from modem! %d", rc);
       } else {
          internal_voltage = atoi(buf);
          LOG_INF("Modem %u mV", internal_voltage);
@@ -573,7 +578,11 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
 #endif
          internal_level = transform_curve(internal_voltage, &curve);
          days = calculate_forecast(&now, internal_level, internal_status_forecast);
-         internal_level /= 100;
+         if (internal_level < 25500) {
+            internal_level /= 100;
+         } else {
+            internal_level = 255;
+         }
          if (level) {
             *level = (uint8_t)internal_level;
          }
@@ -586,7 +595,7 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
          if (forecast) {
             *forecast = days;
          }
-         LOG_DBG("%u%% %umV %d (%d left days)", internal_level, internal_voltage, internal_status, days);
+         LOG_INF("%u%% %umV %d (%d left days)", internal_level, internal_voltage, internal_status, days);
       }
    } else {
       LOG_WRN("Failed to read battery status!");

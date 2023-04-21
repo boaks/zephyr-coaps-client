@@ -1217,8 +1217,6 @@ void main(void)
    }
 
    modem_init(config, dtls_lte_state_handler);
-   dtls_trigger();
-
    power_manager_init();
 
 #ifdef CONFIG_LOCATION_ENABLE
@@ -1264,6 +1262,7 @@ void main(void)
    memset(&dst, 0, sizeof(session_t));
    init_destination(protocol, &dst);
 
+   dtls_trigger();
    dtls_loop(&dst, flags);
 }
 
