@@ -86,7 +86,7 @@ So I'm looking forward to complete my tooling, do the measurements for the Thing
 
 See [Powerconsumption-2022-06](POWERCONSUMPTION-2022-06.md#results-of-first-longterm-tests-june-2022).
 
-### Interims Results of longterm-tests using low quiescent current - October 2022
+### Results of longterm-tests using low quiescent current - October 2022 to February 2023
 
 Thingy:91, LTE-M, PSM, 1h message interchange interval
 
