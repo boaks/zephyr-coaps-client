@@ -74,6 +74,8 @@ More details about PSM and other power saving functions can be found in:
 
 [Nordic Semiconductor - LTE-M vs NB-IoT Field Test: How Distance Affects Power Consumption](https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/ltem-vs-nbiot-field-test-how-distance-affects-power-consumption)
 
+[In Compliance - Power Savings for Cellular IoT Devices](https://incompliancemag.com/article/power-savings-for-cellular-iot-devices/)
+
 ## Summary:
 
 In my experiments, the first question is, which quiescent current does your device have itself. The second one will be, which self-discarging of the battery must be considered. Only if that sum is low enough, the consumption of the message exchanges builds the calculation base for the runtime.
