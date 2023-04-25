@@ -27,7 +27,7 @@ struct transform_point {
 };
 
 struct transform_curve {
-   int points;
+   size_t points;
    struct transform_point curve[];
 };
 

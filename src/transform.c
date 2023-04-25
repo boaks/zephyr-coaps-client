@@ -24,7 +24,7 @@ int32_t transform_curve(int32_t in_value,
                         const struct transform_curve *curve)
 {
    int32_t out;
-   int points = curve->points;
+   size_t points = curve->points;
    const struct transform_point *pb = curve->curve;
 
    if (in_value >= pb->in_value) {
