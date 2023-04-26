@@ -262,14 +262,7 @@ static size_t get_plmn(const char *list, size_t len, char *plmn, size_t plmn_siz
 static void modem_read_sim_work_fn(struct k_work *work)
 {
    char buf[200];
-   char plmn[MODEM_PLMN_SIZE];
-   bool service_71 = true;
-   bool service_43 = true;
-   bool service_20 = true;
-   bool service_42 = true;
-   bool service_96 = true;
    int retries = 0;
-   size_t plmn_len = 0;
 
    int err = modem_int_at_cmd("AT+CIMI", buf, sizeof(buf), NULL, work);
    while (err < 0 && retries < 5) {
@@ -287,6 +280,14 @@ static void modem_read_sim_work_fn(struct k_work *work)
       k_mutex_unlock(&lte_mutex);
    }
    if (!sim_info.valid) {
+      char plmn[MODEM_PLMN_SIZE];
+      bool service_71 = true;
+      bool service_43 = true;
+      bool service_20 = true;
+      bool service_42 = true;
+      bool service_96 = true;
+      size_t plmn_len = 0;
+
       err = modem_at_cmd("AT%%XICCID", buf, sizeof(buf), "%XICCID: ");
       if (err < 0) {
          LOG_INF("Failed to read ICCID.");
@@ -340,10 +341,15 @@ static void modem_read_sim_work_fn(struct k_work *work)
       if (err > 0) {
          LOG_DBG("CRSM serv.: %s", buf);
          if (strncmp(buf, CRSM_SUCCESS, CRSM_SUCCESS_LEN) == 0) {
-            service_71 = has_service(buf, err, 71);
-            service_43 = has_service(buf, err, 43);
+            /* user controlled PLMN selector */
             service_20 = has_service(buf, err, 20);
+            /* operator controlled PLMN selector */
             service_42 = has_service(buf, err, 42);
+            /* Home PLMN selector */
+            service_43 = has_service(buf, err, 43);
+            /* Equivalent Home PLMN */
+            service_71 = has_service(buf, err, 71);
+            /* Non Access Stratum Configuration */
             service_96 = has_service(buf, err, 96);
          }
       }
@@ -362,7 +368,7 @@ static void modem_read_sim_work_fn(struct k_work *work)
           */
          err = modem_at_cmd("AT+CRSM=176,28514,0,0,20", buf, sizeof(buf), "+CRSM: ");
          if (err > 0) {
-            LOG_INF("CRSM home plmn: %s", buf);
+            LOG_INF("CRSM home plmn sel: %s", buf);
          }
       }
       memset(plmn, 0, sizeof(plmn));
@@ -387,7 +393,7 @@ static void modem_read_sim_work_fn(struct k_work *work)
 #endif
             plmn_len = get_plmn(buf, err, plmn, sizeof(plmn));
             if (plmn_len) {
-               LOG_INF("CRSM user plmn: %s", plmn);
+               LOG_INF("CRSM user plmn sel: %s", plmn);
             }
          }
       }
@@ -396,7 +402,7 @@ static void modem_read_sim_work_fn(struct k_work *work)
          /* 0x6F61, Serv. 42, Operator controlled PLMN selector, 5*4 */
          err = modem_at_cmd("AT+CRSM=176,28513,0,0,20", buf, sizeof(buf), "+CRSM: ");
          if (err > 0) {
-            LOG_INF("CRSM operator plmn: %s", buf);
+            LOG_INF("CRSM operator plmn sel: %s", buf);
             if (!plmn_len) {
                plmn_len = get_plmn(buf, err, plmn, sizeof(plmn));
                if (plmn_len) {
@@ -416,7 +422,7 @@ static void modem_read_sim_work_fn(struct k_work *work)
       if (plmn_len) {
          LOG_INF("HPPLMN %s", plmn);
       } else {
-         LOG_INF("HPPLMN not configured");
+         LOG_INF("No HPPLMN configured");
       }
 
       /* 0x6F7B, Forbidden PLMNs, 3*3 */
