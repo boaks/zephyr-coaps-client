@@ -38,6 +38,8 @@ LOG_MODULE_REGISTER(UI, CONFIG_UI_LOG_LEVEL);
 
 #define BUTTON_LONG_MS 5000
 #define BUTTON_DITHER_MS 1000
+#define BUTTON_DEBOUNCE_ON_MS 100
+#define BUTTON_DEBOUNCE_OFF_MS 500
 
 #if (!DT_NODE_HAS_STATUS(CALL_BUTTON_NODE, okay))
 /* A build error here means your board isn't set up to for sw0 (call button). */
@@ -110,6 +112,8 @@ static void ui_button_pressed_fn(struct k_work *work);
 static K_WORK_DEFINE(button_pressed_work, ui_button_pressed_fn);
 static K_WORK_DEFINE(button_released_work, ui_button_pressed_fn);
 static K_WORK_DELAYABLE_DEFINE(button_long_pressed_work, ui_button_pressed_fn);
+static K_WORK_DELAYABLE_DEFINE(button_debounced_released_work, ui_button_pressed_fn);
+
 #if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
 static K_WORK_DELAYABLE_DEFINE(led_red_timer_work, ui_led_timer_expiry_fn);
 #endif
@@ -121,39 +125,39 @@ static K_WORK_DELAYABLE_DEFINE(led_blue_timer_work, ui_led_timer_expiry_fn);
 #endif
 
 static K_MUTEX_DEFINE(ui_mutex);
+static K_SEM_DEFINE(ui_input_trigger, 0, 1);
+static volatile int ui_input_duration = 0;
 
 static volatile bool ui_enabled = true;
 
 static void ui_button_pressed_fn(struct k_work *work)
 {
-   static int duration = 0;
    static int64_t last = 0;
+   static int64_t time = 0;
 
    int64_t now = k_uptime_get();
    if (&button_pressed_work == work) {
       LOG_INF("UI button pressed %u", button_counter);
-      duration = 0;
+      ui_input_duration = 1;
+      time = now;
+      k_work_cancel_delayable(&button_debounced_released_work);
       work_reschedule_for_io_queue(&button_long_pressed_work, K_MSEC(BUTTON_LONG_MS));
    } else if (&button_released_work == work) {
       LOG_INF("UI button released %u", button_counter);
       k_work_cancel_delayable(&button_long_pressed_work);
-      if (duration == 0) {
-         if ((now - last) > BUTTON_DITHER_MS) {
-            last = now;
-            duration = 1;
-            ui_enable(true);
-            ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
-            if (button_callback != NULL) {
-               button_callback(0);
-               LOG_DBG("UI button callback %u", button_counter);
-            }
+      if (ui_input_duration == 1) {
+         if ((now - time) > BUTTON_DEBOUNCE_ON_MS) {
+            ui_input_duration = 2;
+            work_reschedule_for_io_queue(&button_debounced_released_work, K_MSEC(BUTTON_DEBOUNCE_OFF_MS));
+         } else {
+            ui_input_duration = 0;
          }
       }
    } else if (&button_long_pressed_work.work == work) {
       LOG_INF("UI button long pressed %u", button_counter);
-      if (duration == 0) {
+      if (ui_input_duration == 1) {
          last = now;
-         duration = 2;
+         ui_input_duration = 3;
          ui_enable(true);
          ui_led_op(LED_COLOR_BLUE, LED_BLINK);
          ui_led_op(LED_COLOR_GREEN, LED_BLINK);
@@ -161,6 +165,20 @@ static void ui_button_pressed_fn(struct k_work *work)
          if (button_callback != NULL) {
             button_callback(1);
             LOG_DBG("UI button long callback %u", button_counter);
+         }
+         k_sem_give(&ui_input_trigger);
+      }
+   } else if (&button_debounced_released_work.work == work) {
+      if (ui_input_duration == 2) {
+         if ((now - last) > BUTTON_DITHER_MS) {
+            last = now;
+            ui_enable(true);
+            ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
+            if (button_callback != NULL) {
+               button_callback(0);
+               LOG_DBG("UI button callback %u", button_counter);
+            }
+            k_sem_give(&ui_input_trigger);
          }
       }
    }
@@ -443,4 +461,30 @@ int ui_enable(bool enable)
 {
    ui_enabled = enable;
    return 0;
+}
+
+int ui_input(k_timeout_t timeout)
+{
+   int rc = 0;
+
+   ui_input_duration = 0;
+   k_sem_reset(&ui_input_trigger);
+
+   while (true) {
+      rc = k_sem_take(&ui_input_trigger, timeout);
+      if (rc == -EAGAIN || !rc) {
+         if (!ui_input_duration) {
+            LOG_INF("UI input timeout");
+            break;
+         }
+         if (!rc && ui_input_duration > 1) {
+            rc = ui_input_duration - 2;
+            ui_input_duration = 0;
+            LOG_INF("UI input duration %d", rc);
+            break;
+         }
+      }
+      LOG_INF("UI input continue");
+   }
+   return rc;
 }
