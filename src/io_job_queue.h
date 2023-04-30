@@ -16,10 +16,6 @@
 
 #include <zephyr/kernel.h>
 
-extern struct k_work_q io_job_queue;
-
-void io_job_queue_init(void);
-
 int work_schedule_for_io_queue(struct k_work_delayable *dwork,
                                k_timeout_t delay);
 

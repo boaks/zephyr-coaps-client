@@ -486,6 +486,12 @@ module = UI
 module-str = UI
 source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
 
+if FLASH || EEPROM
+module = STORAGE
+module-str = Storage
+source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
+endif
+
 if LOCATION_ENABLE
 module = GNSS_CLIENT
 module-str = GNSS Client

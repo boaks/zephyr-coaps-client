@@ -23,7 +23,8 @@
 #include "power_manager.h"
 #include "ui.h"
 
-#include "appl_eeprom.h"
+#include "appl_storage.h"
+#include "appl_storage_config.h"
 #include "appl_time.h"
 #include "environment_sensor.h"
 
@@ -394,7 +395,7 @@ int coap_client_prepare_post(void)
 
    memset(reboot_times, 0, sizeof(reboot_times));
    memset(reboot_codes, 0, sizeof(reboot_codes));
-   err = appl_eeprom_read_codes(reboot_times, reboot_codes, REBOOT_INFOS);
+   err = appl_storage_read_int_items(REBOOT_CODE_ID, 0, reboot_times, reboot_codes, REBOOT_INFOS);
    if (err > 0) {
       start = index + 1;
       index += snprintf(buf + index, sizeof(buf) - index, "\nLast code: ");

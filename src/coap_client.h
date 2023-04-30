@@ -22,6 +22,7 @@
 #define FLAG_KEEP_CONNECTION 2
 
 #define COAP_MAX_RETRANSMISSION 3
+
 #define REBOOT_INFOS 4
 
 extern unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];

@@ -11,6 +11,8 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include <zephyr/init.h>
+
 #include "io_job_queue.h"
 
 #ifdef CONFIG_USE_IO_JOB_QUEUE
@@ -21,11 +23,9 @@
 static K_THREAD_STACK_DEFINE(io_job_queue_stack, IO_JOB_QUEUE_STACK_SIZE);
 
 struct k_work_q io_job_queue;
-#endif
 
-void io_job_queue_init(void)
+static int io_job_queue_init(const struct device *arg)
 {
-#ifdef CONFIG_USE_IO_JOB_QUEUE
    struct k_work_queue_config cfg = {
        .name = "io_workq",
    };
@@ -36,8 +36,11 @@ void io_job_queue_init(void)
        K_THREAD_STACK_SIZEOF(io_job_queue_stack),
        IO_JOB_QUEUE_PRIORITY,
        &cfg);
-#endif
+   return 0;
 }
+
+SYS_INIT(io_job_queue_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
+#endif
 
 int work_schedule_for_io_queue(struct k_work_delayable *dwork,
                                k_timeout_t delay)

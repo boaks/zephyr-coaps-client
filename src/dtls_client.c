@@ -20,7 +20,8 @@
 #include <zephyr/net/socket.h>
 #include <zephyr/sys/reboot.h>
 
-#include "appl_eeprom.h"
+#include "appl_storage.h"
+#include "appl_storage_config.h"
 #include "appl_time.h"
 #include "coap_client.h"
 #include "console_input.h"
@@ -49,6 +50,7 @@
 #define ERROR_CODE_INIT_SOCKET 0x3000
 #define ERROR_CODE_INIT_NO_DTLS 0x4000
 #define ERROR_CODE_TOO_MANY_FAILURES 0x5000
+#define ERROR_CODE_NO_INITIAL_SUCCESS 0x6000
 #define ERROR_CODE_MANUAL_TRIGGERED 0xa000
 
 #define ERROR_CODE(BASE, ERR) ((BASE & 0xf000) | (ERR & 0xfff))
@@ -58,6 +60,9 @@
 
 #define LED_APPLICATION LED_LTE_1
 #define LED_DTLS LED_LTE_2
+
+#define MSEC_PER_HOUR (MSEC_PER_SEC * 60 * 60)
+#define MSEC_PER_DAY (MSEC_PER_SEC * 60 * 60 * 24)
 
 LOG_MODULE_REGISTER(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
@@ -96,8 +101,6 @@ static bool initial_success = false;
 static unsigned int current_failures = 0;
 static unsigned int handled_failures = 0;
 
-static bool appl_eeprom = false;
-
 static volatile bool ui_led_active = false;
 
 static volatile bool appl_ready = false;
@@ -135,11 +138,7 @@ static void reboot(int error, bool factoryReset)
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    ui_led_op(LED_COLOR_RED, LED_SET);
-   if (appl_eeprom) {
-      int64_t now = 0;
-      appl_get_now(&now);
-      appl_eeprom_write_code(now, (int16_t)error);
-   }
+   appl_storage_write_int_item(REBOOT_CODE_ID, (uint16_t)error);
    k_sleep(K_MSEC(500));
    for (int i = 0; i < 4; ++i) {
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
@@ -350,7 +349,7 @@ static void dtls_power_management_suspend_fn(struct k_work *work)
    dtls_power_management();
 }
 
-static void dtls_coap_next(void)
+static void dtls_coap_next(dtls_app_data_t *app)
 {
    int64_t now;
    char buf[64];
@@ -378,6 +377,8 @@ static void dtls_coap_next(void)
    if (appl_format_time(now, buf, sizeof(buf))) {
       dtls_info("%s", buf);
    }
+   app->request_state = WAIT_SUSPEND;
+   k_sem_reset(&dtls_trigger_msg);
 }
 
 static void dtls_coap_success(dtls_app_data_t *app)
@@ -390,8 +391,6 @@ static void dtls_coap_success(dtls_app_data_t *app)
    if (time2 < 0) {
       time2 = -1;
    }
-   k_sem_reset(&dtls_trigger_msg);
-   app->request_state = WAIT_SUSPEND;
    ui_led_op(LED_COLOR_ALL, LED_CLEAR);
    dtls_info("%u/%ldms/%ldms: success", lte_connections, time1, time2);
    if (app->retransmission <= COAP_MAX_RETRANSMISSION) {
@@ -430,7 +429,7 @@ static void dtls_coap_success(dtls_app_data_t *app)
    current_failures = 0;
    handled_failures = 0;
    initial_success = true;
-   dtls_coap_next();
+   dtls_coap_next(app);
 }
 
 static void dtls_coap_failure(dtls_app_data_t *app)
@@ -443,8 +442,6 @@ static void dtls_coap_failure(dtls_app_data_t *app)
    if (time2 < 0) {
       time2 = -1;
    }
-   k_sem_reset(&dtls_trigger_msg);
-   app->request_state = WAIT_SUSPEND;
    if (!ui_led_op(LED_COLOR_RED, LED_SET)) {
       ui_led_active = true;
       work_reschedule_for_io_queue(&dtls_power_management_suspend_work, K_SECONDS(10));
@@ -457,7 +454,7 @@ static void dtls_coap_failure(dtls_app_data_t *app)
       current_failures++;
       dtls_info("current failures %d.", current_failures);
    }
-   dtls_coap_next();
+   dtls_coap_next(app);
 }
 
 static int
@@ -835,6 +832,11 @@ int dtls_loop(session_t *dst, int flags)
          }
       }
 #endif
+      if (!initial_success && k_uptime_get() > MSEC_PER_DAY) {
+         // no initial_success for 1 day => reboot
+         dtls_info("> No initial succes, reboot");
+         reboot(ERROR_CODE_NO_INITIAL_SUCCESS, true);
+      }
       if (current_failures > handled_failures) {
          handled_failures = current_failures;
          dtls_info("handle failure %d.", current_failures);
@@ -1155,12 +1157,6 @@ void main(void)
    LOG_INF("CoAP/DTLS 1.2 CID sample " CLIENT_VERSION " has started");
 
    dtls_set_log_level(DTLS_LOG_INFO);
-
-   if (!appl_eeprom_init()) {
-      appl_eeprom = true;
-   }
-
-   io_job_queue_init();
 
    ui_init(dtls_manual_trigger);
    config = ui_config();
