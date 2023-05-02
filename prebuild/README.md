@@ -2,9 +2,9 @@
 
 # Zephyr - Coaps Demo Client with Eclipse/TinyDtls
 
-## Prebuild binaries v0.5.0
+## Prebuild binaries v0.6.0
 
-This folder contains 3 prebuild binaries intended to be used to get a first impression of CoAP / DTLS 1.2 CID.
+This folder contains 5 prebuild binaries intended to be used to get a first impression of CoAP / DTLS 1.2 CID.
 To gather more experience, please build and modify this example on your own.
 
 ## License
@@ -22,6 +22,19 @@ Please refer to [NOTICE](../NOTICE.md).
 > EXCEPT AS EXPRESSLY SET FORTH IN THIS AGREEMENT, AND TO THE EXTENT PERMITTED BY APPLICABLE LAW, NEITHER RECIPIENT NOR ANY CONTRIBUTORS SHALL HAVE ANY LIABILITY FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING WITHOUT LIMITATION LOST PROFITS), HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OR DISTRIBUTION OF THE PROGRAM OR THE EXERCISE OF ANY RIGHTS GRANTED HEREUNDER, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. 
 
 Therefore, before you start, ensure, that you're common with the tools in order to reset you device back in the state before you apply this firmware.
+
+## [nrf9160 feather](https://www.jaredwolff.com/store/nrf9160-feather/)
+
+- [full image: dojo_feather_nrf9160_ns_full.hex](../../../raw/main/prebuild/dojo_feather_nrf9160_ns_full.hex) using a debug probe, this is the preferred approach
+- [signed app image: dojo_feather_nrf9160_ns_app_signed.hex](../../../raw/main/prebuild/dojo_feather_nrf9160_ns_app_signed.hex) app signed with the demo keys. Maybe used without debug probe via USB and [bootloader with newtmgr](https://docs.jaredwolff.com/nrf9160-programming-and-debugging.html#bootloader-use).
+
+For automatic bootloader support on linux, please ensure, that the permissions are granted by
+
+   SUBSYSTEM=="usb", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60" GROUP="users", MODE="0666"
+
+in a file e.g. "50-nrf9160-feather.rules" and put in "/etc/udev/rules.d".
+
+For Windows you still need to switch on the bootloader mode manually by pressing the mode button during reset. 
 
 ## [nrf9160 Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91)
 

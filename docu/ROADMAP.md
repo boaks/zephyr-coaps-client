@@ -11,6 +11,8 @@
 | 01-June-2022 |  v0.1   | Initial version.<br/>Known issues:<br/>Does not reconnect after network lost.<br/>Does not start proper without network |
 | 26-June-2022 |  v0.2   | Test experience.<br/>Both network issues are solved. |
 | 01-August-2022 |  v0.4   | Enable sensors.<br/> Includes support for Bosch Sensortec library for BME680 |
+| 11-November-2022 |  v0.5   | Add support for low quiescent current. |
+| 02-May-2023 |  v0.6   | Improve stability. Support AS-RAI and persistent storage. |
 
 (The 0.3 has been skip in order to not mix up to different build alreay used the 0.3.)
 
@@ -24,8 +26,8 @@ Ongoing developments:
 
 | Planed Date    | Version | Description |
 | -------------- | ------- | ----------- |
-| ??-September-2022 |   v?.?  | Improve accelerometer-meter |
-| ??-November-2022 |   v?.?  | GNSS |
+| ??-September-2023 |   v?.?  | Improve accelerometer-meter |
+| ??-November-2023 |   v?.?  | GNSS |
 
 # Roadmap - Server
 
