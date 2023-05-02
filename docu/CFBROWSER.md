@@ -4,12 +4,12 @@
 
 # Cf-Browser
 
-If you want to check, what the server has received, download the [cf-browser-3.5.0](https://repo.eclipse.org/content/repositories/californium-releases/org/eclipse/californium/cf-browser/3.5.0/cf-browser-3.5.0.jar). It requires to install a java runtime and javafx, please refer to [github - cf-browser](https://github.com/eclipse/californium.tools/tree/main/cf-browser).
+If you want to check, what the server has received, download the [cf-browser-3.7.0](https://repo.eclipse.org/content/repositories/californium-releases/org/eclipse/californium/cf-browser/3.7.0/cf-browser-3.7.0.jar). It requires to install a java runtime and javafx, please refer to [github - cf-browser](https://github.com/eclipse/californium.tools/tree/main/cf-browser).
 
 Cf-browser is a simple client tool to demonstrate CoAP.
 
 ```
-java --module-path /usr/share/openjfx/lib --add-modules javafx.controls,javafx.fxml -jar cf-browser-3.5.0.jar coaps://californium.eclipseprojects.io/echo
+java --module-path /usr/share/openjfx/lib --add-modules javafx.controls,javafx.fxml -jar cf-browser-3.7.0.jar coaps://californium.eclipseprojects.io/echo
 ```
 
 (Start for Ubuntu using java 11.)

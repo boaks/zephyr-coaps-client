@@ -121,11 +121,11 @@ Configure used URI query parameter. Please note, that these query parameter must
 
 - **UDP_RAI_ENABLE**, enable RAI (control plane).
 
-- **UDP_AS_RAI_ENABLE**, enable RAI (access stratum), requires 3GPP release 14 supported by the Mobile Network Operator.
+- **UDP_AS_RAI_ENABLE**, enable RAI (access stratum), requires 3GPP release 14 supported by the Mobile Network Operator. If not supported, the modem implicitly uses CP-RAI.
 
 - **UDP_EDRX_ENABLE**, enable eDRX.
 
-- **STATIONARY_MODE_ENABLE**, enable stationary mode. Optimize power consumption, if device is sationary at one place and is not moved. Reduces/removes also HPPLMN searchs (automatic search for higher priorized PLMN). **Note**: with mfw 1.3.2 the implementation has changed. Using global SIMs (IMSI starting with 9) now triggers such a search independent from that setting!  
+- **STATIONARY_MODE_ENABLE**, enable stationary mode. Optimize power consumption, if device is sationary at one place and is not moved.
 
 - **MODEM_SAVE_CONFIG_THRESHOLD**, threshold to save the modem configuration. The modem is switched off and on to save the configuration.
 
@@ -151,9 +151,19 @@ Configure used URI query parameter. Please note, that these query parameter must
 
 - **ADP536X_POWER_MANAGEMENT**, enable Thingy's battery power management. Reports battery status (e.g. charging) and level (e.g. 70%). Default enabled.
 
-- **ADXL362_MOTION_DETECTION**, use ADXL362 to detect, if the Thingy:91 is moved. Only rudimentary function. Default disabled.
+- **ADP536X_POWER_MANAGEMENT_LOW_POWER**, enable sleeping mode for the Thingy's battery power management. Default enabled.
 
-- **ADXL362_MOTION_DETECTION_LED**, use green LED to signal detected move. Default disabled.
+- **BATTERY_VOLTAGE_SOURCE**, select battery voltage source.
+
+-    **BATTERY_VOLTAGE_SOURCE_ADP536X**, use Thingy's battery power management as voltage source.
+
+-    **BATTERY_VOLTAGE_SOURCE_ADC**, use ADC as voltage source.
+
+-    **BATTERY_VOLTAGE_SOURCE_MODEM**, use modem as voltage source.
+
+- **MOTION_DETECTION**, use ADXL362 (Thingy:91) or LIS2DH (feather nRF9160) to detect, if the device is moved. Only rudimentary function. Default disabled.
+
+- **MOTION_DETECTION_LED**, use green LED to signal detected move. Default disabled.
 
 ### Environment Sensors
 
@@ -196,8 +206,6 @@ As mentioned above, overlays are files, which are used to configure a set of fea
 
 [sht3x-prj.conf](../sht3x-prj.conf) prepares to use the **SHT3X Zephyr Sensor library**. Requires device tree overlay [sht3x.overlay](../sht3x.overlay) additionally.
 
-[lowpower-prj.conf](../lowpower-prj.conf) prepares to use the lowpower mode (suspend the UART and 3.3V when sleeping). 
-
 [5min-prj.conf](../5min-prj.conf) prepares to send a message every 5 minutes. Enables to use a environment history to store sensor data.
 
 [10min-prj.conf](../10min-prj.conf) prepares to send a message every 10 minutes. Enables to use a environment history to store sensor data.
@@ -209,11 +217,11 @@ As mentioned above, overlays are files, which are used to configure a set of fea
 Apply configuration overlays:
 
 ```
-west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="bme-prj.conf;60min-prj.conf;lowpower-prj.conf"
+west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="bme-prj.conf;60min-prj.conf"
 ```
 
 With device tree overlay:
 
 ```
-west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="sht3x-prj.conf;60min-prj.conf;lowpower-prj.conf" -DDTC_OVERLAY_FILE=sht3x.overlay
+west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="sht3x-prj.conf;60min-prj.conf" -DDTC_OVERLAY_FILE=sht3x.overlay
 ```

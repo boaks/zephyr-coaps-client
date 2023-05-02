@@ -4,7 +4,7 @@
 
 ## Reliable - Efficient - Encrypted
 
-Version 0.6.99 - March 2023
+Version 0.6.0 - May 2023
 
 This [zephyr](https://www.zephyrproject.org/) client demonstrates to use coaps ([CoAP](https://tools.ietf.org/html/rfc7252) over [DTLS 1.2](https://tools.ietf.org/html/rfc6347)) with the [Eclipse/TinyDtls Library](https://github.com/eclipse/tinydtls). In combination with [Eclipse/Californium](https://github.com/eclipse/californium) as Cloud-Server, it enables a device to use [DTLS 1.2 Connection ID](https://tools.ietf.org/html/rfc9146), which obsolete the commonly used frequently DTLS handshakes and eliminates that expensive overhead.
 Reducing the messages exchange mostly down to two ip-messages (one request, one response), it enables your device for
@@ -35,7 +35,7 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160) based devic
 | Device | |
 | :- | - |
 | [Nordic Semiconductor, Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91)<br>Works "out-of-the-box" in the "wild". Not easy to extend with custom sensors. | ![Thingy:91](./docu/thingy91.jpg) |
-| [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/)<br>Requires additonal batteries, antennas, and closures to work in the "wild". The design of the feather allows to easily add custom sensors. | ![nRF9160-feather-v5](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
+| [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/)<br>Requires additional batteries, antennas, and closures to work in the "wild". The design of the feather allows to easily add custom sensors. | ![nRF9160-feather-v5](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
 | [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. The design allows to easily add custom sensors. | ![nRF9160-DK](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK.png) |
 
 The demo works with [ncs-2.3.0](https://github.com/nrfconnect/sdk-nrf/tree/v2.3.0).
@@ -107,7 +107,7 @@ Please check the proper installation of your tools building some of the provided
 
 **Note:** both, the zephyr's "developing" and Nordic Semiconductor's "getting started" has changed and may change over time and so it's hard to give good advice. Currently I have good experience with [Nordic Semiconductor - Installing manually](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/gs_installing.html) and Ubuntu 20.04. Installing [nRF Connect for Desktop](https://www.nordicsemi.com/Products/Development-tools/nrf-connect-for-desktop/download#infotabs) and apply the "Toolchain Manager" app works as well on Ubuntu 20.04  (support for 18.04 has been removed for the `nRF Connect for Desktop`). To use this toolchain-manager-installation after installing, start a terminal from that app to get a command console with an setup environment.
 
-![Toolchain Manager](./docu/toolchain_manager.png)
+![Toolchain Manager](./docu/toolchain-manager.png)
 
 The toolchain-manager-installation also requires a slightly modified sources download, see ["Download the Sources into an available zephyr workspace"](#download-the-sources-into-an-available-zephyr-workspace)
 
@@ -143,7 +143,7 @@ west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git zephyr-c
 ```
 
 from a toolchain-manager-installation, fails with an error message, that a workspace already exists.
-In order to add just this coaps-demo-app and the tinydtls module library to a workspace, open the workspace (for ncs the "ncs" installation folder and change to "v2.1.0" folder there). Here you find a ".west" folder, that contains the west-configuration for the workspace. Rename that ".west" folder into ".west.org" in order to replace that west-configuration by the one from this example. Now execute 
+In order to add just this coaps-demo-app and the tinydtls module library to a workspace, open the workspace (for ncs the "ncs" installation folder and change to "v2.3.0" folder there). Here you find a ".west" folder, that contains the west-configuration for the workspace. Rename that ".west" folder into ".west.org" in order to replace that west-configuration by the one from this example. Now execute 
 
 ```sh
 west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git
@@ -167,7 +167,7 @@ cd coaps-client
 west build -b thingy91_nrf9160_ns
 ```
 
-(For the [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) use `west build -b nrf9160dk_nrf9160_ns`)
+(For the [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) use `west build -b nrf9160dk_nrf9160_ns`, and for the [nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/) use `west build -b circuitdojo_feather_nrf9160_ns`.)
 
 and then flash that resulting firmware to your device
 
