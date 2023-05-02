@@ -122,17 +122,17 @@ static int battery_adc(uint16_t *voltage)
          rc = adc_read(battery_adc_config.adc, &adc_seq);
       }
       if (!rc) {
-         val = (val + adc_raw_data) / 2;
+         int32_t val_avg = (val + adc_raw_data) / 2;
          adc_raw_to_millivolts(adc_ref_internal(battery_adc_config.adc),
                                battery_adc_config.adc_cfg.gain,
                                adc_seq.resolution,
-                               &val);
+                               &val_avg);
 
          if (battery_adc_config.output_ohm != 0) {
-            val = val * (uint64_t)battery_adc_config.full_ohm / battery_adc_config.output_ohm;
+            val_avg = val_avg * (uint64_t)battery_adc_config.full_ohm / battery_adc_config.output_ohm;
          }
-         LOG_INF("#%d raw %u => %u mV", MAX_LOOPS - loop, adc_raw_data, val);
-         battery_adc_last_voltage = (uint16_t)val;
+         LOG_INF("#%d raw %u/%u => %u mV", MAX_LOOPS - loop, val, adc_raw_data, val_avg);
+         battery_adc_last_voltage = (uint16_t)val_avg;
          battery_adc_last_uptime = k_uptime_get();
          if (voltage) {
             *voltage = battery_adc_last_voltage;
