@@ -31,8 +31,11 @@
 };
 
 &i2c2 {
-        /* delete BME680 from device tree */
+    /* delete BME680 from Thingy:91 device tree */
 	/delete-node/ bme680@76;
+};
+
+&sensor_i2c {
 
 	sht3xd: sht3xd@44 { /* ALERT P1.10 */
 		compatible = "sensirion,sht3xd";
@@ -40,4 +43,3 @@
 		label = "SHT3XD";
 	};
 };
-

@@ -40,9 +40,7 @@ target_sources_ifdef(CONFIG_LOCATION_ENABLE app PRIVATE src/location.c)
 
 target_sources_ifdef(CONFIG_MOTION_SENSOR app PRIVATE src/accelerometer_sensor.c)
 
-target_sources_ifdef(CONFIG_BME680 app PRIVATE src/environment_sensor.c src/environment_history.c)
-
-target_sources_ifdef(CONFIG_SHT3XD app PRIVATE src/environment_sensor.c src/environment_history.c)
+target_sources_ifdef(CONFIG_ENVIRONMENT_SENSOR app PRIVATE src/environment_sensor.c src/environment_history.c)
 
 target_sources_ifdef(CONFIG_SHT21 app PRIVATE src/environment_sht21.c src/environment_history.c)
 
@@ -139,18 +137,20 @@ elseif (CONFIG_SHT3XD)
 set(BUILD_SUMUP3 "Build with SHT31.")
 elseif (CONFIG_SHT21)
 set(BUILD_SUMUP3 "Build with SHT21.")
+elseif (CONFIG_DS18B20)
+set(BUILD_SUMUP3 "Build with DS18B20.")
 else()
-set(BUILD_SUMUP3 "Build without BME680/SHT21/SHT31.")
+set(BUILD_SUMUP3 "Build without BME680/SHT21/SHT31/DS18B20.")
 endif()
 
-if (CONFIG_BME680 OR CONFIG_BME680_BSEC OR CONFIG_SHT3XD OR CONFIG_SHT21)
+if (CONFIG_BME680 OR CONFIG_BME680_BSEC OR CONFIG_SHT3XD OR CONFIG_SHT21 OR CONFIG_DS18B20)
 if (CONFIG_ENVIRONMENT_HISTORY_SIZE GREATER 0)
 set(BUILD_SUMUP4 "Build with history using ${CONFIG_ENVIRONMENT_HISTORY_SIZE} values.")
 else()
 set(BUILD_SUMUP4 "Build without history.")
 endif()
 else()
-set(BUILD_SUMUP4 "Build without history, no BME680/SHT21/SHT31.")
+set(BUILD_SUMUP4 "Build without history, no BME680/SHT21/SHT31/DS18B20.")
 endif()
 
 

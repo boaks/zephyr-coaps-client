@@ -241,7 +241,7 @@ int coap_client_parse_data(uint8_t *data, size_t len)
    return PARSE_RESPONSE;
 }
 
-#ifdef ENVIRONMENT_SENSOR
+#ifdef CONFIG_ENVIRONMENT_SENSOR
 #if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
 static double s_temperatures[CONFIG_ENVIRONMENT_HISTORY_SIZE];
 static uint16_t s_iaqs[CONFIG_ENVIRONMENT_HISTORY_SIZE];
@@ -294,7 +294,7 @@ union lte_params {
 
 int coap_client_prepare_post(void)
 {
-#ifdef ENVIRONMENT_SENSOR
+#ifdef CONFIG_ENVIRONMENT_SENSOR
    double value = 0.0;
    int32_t int_value = 0;
    uint8_t byte_value = 0;
@@ -305,7 +305,7 @@ int coap_client_prepare_post(void)
    struct modem_gnss_state result;
    bool pending;
 #endif
-#if defined(ENVIRONMENT_SENSOR) || defined(CONFIG_LOCATION_ENABLE)
+#if defined(CONFIG_ENVIRONMENT_SENSOR) || defined(CONFIG_LOCATION_ENABLE)
    const char *p;
 #endif
 
@@ -655,7 +655,7 @@ int coap_client_prepare_post(void)
    }
 #endif
 
-#ifdef ENVIRONMENT_SENSOR
+#ifdef CONFIG_ENVIRONMENT_SENSOR
    p = "";
    int_value = 0;
 #if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
@@ -709,7 +709,7 @@ int coap_client_prepare_post(void)
       index += snprintf(buf + index, sizeof(buf) - index, "\n%s%d;%d Q (%s)", p, int_value, byte_value, desc);
       dtls_info("%s", buf + start);
    }
-#else  /* ENVIRONMENT_SENSOR */
+#else  /* CONFIG_ENVIRONMENT_SENSOR */
    start = index;
    index += snprintf(buf + index, sizeof(buf) - index, "\n!");
    err = modem_at_cmd("AT%%XTEMP?", buf + index, sizeof(buf) - index, "%XTEMP: ");
@@ -723,7 +723,7 @@ int coap_client_prepare_post(void)
       }
       index = start;
    }
-#endif /* ENVIRONMENT_SENSOR */
+#endif /* CONFIG_ENVIRONMENT_SENSOR */
 
    coap_current_token++;
    coap_current_mid = coap_next_id();

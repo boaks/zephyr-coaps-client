@@ -1234,7 +1234,7 @@ void main(void)
 #endif /* CONFIG_MOTION_DETECTION */
 #endif /* CONFIG_MOTION_SENSOR */
 
-#ifdef ENVIRONMENT_SENSOR
+#ifdef CONFIG_ENVIRONMENT_SENSOR
    environment_init();
 #endif
 

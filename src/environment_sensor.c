@@ -17,7 +17,7 @@
 
 #include "environment_sensor.h"
 
-#if defined(CONFIG_BME680_BSEC) || defined(CONFIG_BME680) || defined(CONFIG_SHT3XD)
+#if defined(CONFIG_ENVIRONMENT_SENSOR)
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
@@ -334,11 +334,15 @@ static int environment_sensor_init(const struct device *dev)
    return 0;
 }
 
+ 
+
 int environment_init(void)
 {
    int err = 0;
 #ifdef CONFIG_BME680
    LOG_INF("BME680 initialize, %ds minimum interval", CONFIG_SAMPLE_INTERVAL_S);
+#elif (defined CONFIG_DS18B20)
+   LOG_INF("DS18B20 initialize, %ds minimum interval", CONFIG_SAMPLE_INTERVAL_S);
 #else
    LOG_INF("SHT3x initialize, %ds minimum interval", CONFIG_SAMPLE_INTERVAL_S);
 #endif
@@ -434,4 +438,4 @@ const char *environment_get_iaq_description(int32_t value)
 }
 
 #endif /* CONFIG_BME680_BSEC */
-#endif /* CONFIG_BME680_BSEC || CONFIG_BME680 || CONFIG_SHT3XD */
+#endif /* CONFIG_ENVIRONMENT_SENSOR */

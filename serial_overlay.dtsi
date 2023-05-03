@@ -1,0 +1,34 @@
+/*
+ * Copyright (c) 2023 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * Based on 
+ * https://github.com/zephyrproject-rtos/zephyr/blob/main/samples/sensor/ds18b20/boards/serial_overlay.dtsi
+ *
+ * SPDX-License-Identifier: EPL-2.0 or Apache-2.0
+ */
+
+
+&one_wire_serial {
+	status = "okay";
+
+	w1_0: w1-zephyr-serial-0 {
+		compatible = "zephyr,w1-serial";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		status = "okay";
+
+		ds18b20: ds18b20 {
+			compatible = "maxim,ds18b20";
+			family-code = <0x28>;
+			resolution = <12>;
+			status = "okay";
+		};
+	};
+};

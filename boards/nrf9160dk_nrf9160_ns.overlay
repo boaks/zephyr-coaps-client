@@ -60,3 +60,5 @@
 		mxicy,mx25r-power-mode = "low-power";
 	};
 };
+
+sensor_i2c: &i2c2 {};

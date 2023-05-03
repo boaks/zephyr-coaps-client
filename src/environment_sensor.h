@@ -22,12 +22,7 @@
  * please switch CONFIG_BME680 or disable it in an overlay configuration.
  */
 
-#if (defined CONFIG_BME680_BSEC) || \
-    (defined CONFIG_BME680) ||      \
-    (defined CONFIG_SHT3XD) ||      \
-    (defined CONFIG_SHT21)
-
-#define ENVIRONMENT_SENSOR
+#if (defined CONFIG_ENVIRONMENT_SENSOR) || (defined CONFIG_SHT21)
 
 #include <stdbool.h>
 
@@ -78,6 +73,6 @@ void environment_init_history(void);
 
 #endif /* CONFIG_ENVIRONMENT_HISTORY_SIZE > 0 */
 
-#endif /* CONFIG_BME680_BSEC || CONFIG_BME680 || CONFIG_SHT3XD || CONFIG_SHT21 */
+#endif /* CONFIG_ENVIRONMENT_SENSOR || CONFIG_SHT21 */
 
 #endif /* ENVIRONMENT_SENSOR_H */

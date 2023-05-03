@@ -17,7 +17,7 @@
 #include "environment_sensor.h"
 #include "io_job_queue.h"
 
-#ifdef ENVIRONMENT_SENSOR
+#if (defined CONFIG_ENVIRONMENT_SENSOR) || (defined CONFIG_SHT21)
 
 #if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
 
@@ -156,4 +156,4 @@ void environment_add_iaq_history(uint16_t value, bool force)
 
 #endif /* CONFIG_ENVIRONMENT_HISTORY_SIZE > 0 */
 
-#endif /* ENVIRONMENT_SENSOR */
+#endif /* CONFIG_ENVIRONMENT_SENSOR || CONFIG_SHT21 */
