@@ -267,8 +267,17 @@ cd coaps-client
 west build -b thingy91_nrf9160_ns --pristine
 ```
 
-The `--pristine` resets the current configuration. You may need to configure it again.
-In some rare cases it may be even required to remove the "build" folder before.
+The `--pristine` resets the current configuration. You may need to configure it again. In some rare cases it may be even required to remove the "build" folder before.
+
+If `west build ... --pristine` keeps failing, the `west update` may require to update also some "west requirements". Therefore execute
+
+```sh
+pip3 install --user -r zephyr/scripts/requirements.txt
+pip3 install --user -r nrf/scripts/requirements.txt
+pip3 install --user -r bootloader/mcuboot/scripts/requirements.txt
+```
+
+and retry `west build ... --pristine` again.
 
 ## Licenses
 
