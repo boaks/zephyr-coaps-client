@@ -242,7 +242,7 @@ As mentioned at the introduction, the demo is intended as groundwork for your ow
 
 See also [Roadmap](./docu/ROADMAP.md) for the plan of the next months.
 
-If you want ot consider the pwoer consumption in your idea, please see [Power Consumption](./docu/POWERCONSUMPTION.md)
+If you want to consider the power consumption in your idea, please see [Power Consumption](./docu/POWERCONSUMPTION.md)
 
 ### Updating to a Newer Versions
 
