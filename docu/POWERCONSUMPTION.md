@@ -74,6 +74,8 @@ More details about PSM and other power saving functions can be found in:
 
 [Nordic Semiconductor - LTE-M vs NB-IoT Field Test: How Distance Affects Power Consumption](https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/ltem-vs-nbiot-field-test-how-distance-affects-power-consumption)
 
+[Nordic Semiconductor - Power optimization](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/2.3.0/nrf/app_dev/optimizing/power.html)
+
 [In Compliance - Power Savings for Cellular IoT Devices](https://incompliancemag.com/article/power-savings-for-cellular-iot-devices/)
 
 ## Summary:

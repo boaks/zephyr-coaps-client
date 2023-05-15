@@ -570,8 +570,15 @@ dtls_send_to_peer(dtls_context_t *ctx,
       app->request_state = SEND;
    }
    result = send_to_peer(app, session, data, len);
-   if (app->dtls_pending && app->request_state == SEND) {
-      app->request_state = RECEIVE;
+   if (app->dtls_pending) {
+      if (app->request_state == SEND) {
+         app->request_state = RECEIVE;
+      }
+      if (result < 0) {
+         /* don't forward send errors,
+            the dtls state machine will suffer */
+         result = len;
+      }
    }
    return result;
 }
