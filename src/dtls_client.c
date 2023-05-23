@@ -204,12 +204,14 @@ static void restart_modem(bool force, dtls_app_data_t *app)
    k_sem_reset(&dtls_trigger_search);
    check_reboot();
 
-   if (force) {
+   if (force || modem_get_sim_info(NULL) > 0) {
+      // force or
+      // multi-sim with LTE-M/NB-IoT preference swap
       dtls_info("> modem restart");
       appl_prevent_suspend = true;
       modem_set_lte_offline();
       k_sleep(K_MSEC(4000));
-      network = modem_start(K_SECONDS(timeout_seconds)) == 0;
+      network = modem_start(K_SECONDS(timeout_seconds), false) == 0;
       timeout_seconds *= 2;
       appl_prevent_suspend = false;
    }
@@ -234,7 +236,7 @@ static void restart_modem(bool force, dtls_app_data_t *app)
       dtls_info("> modem search network (%d minutes)", timeout_seconds / 60);
       network_sleeping = false;
       dtls_power_management();
-      network = modem_start(K_SECONDS(timeout_seconds)) == 0;
+      network = modem_start(K_SECONDS(timeout_seconds), false) == 0;
       if (!network && sleep_minutes > 60) {
          if (app) {
             dtls_info("> modem lost network, reboot");
@@ -685,12 +687,12 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
       network_registered = active;
       if (active) {
          if (!network_ready) {
-            dtls_info("LTE registered, no network");
+            dtls_info("LTE modem registered, no network");
             ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
          }
       } else {
-         dtls_info("LTE unregistered");
+         dtls_info("LTE modem unregistered");
          network_ready = false;
          led_op_t op = LED_SET;
          if (lte_power_off) {
@@ -703,10 +705,11 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
    } else if (type == LTE_STATE_READY) {
       if (!app_data.dtls_pending) {
          if (active) {
+            dtls_info("LTE modem ready");
             ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op(LED_COLOR_GREEN, LED_SET);
          } else if (NONE == app_data.request_state || WAIT_SUSPEND == app_data.request_state) {
-            dtls_info("LTE not ready");
+            dtls_info("LTE modem not ready");
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
             ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
          }
@@ -896,7 +899,7 @@ static int dtls_loop(session_t *dst, int flags)
                   lte_power_off = false;
                   restarting_modem = false;
                   connect_time = (unsigned long)k_uptime_get();
-                  modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
+                  modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), false);
                   reopen_socket(&app_data);
                } else {
                   check_socket(&app_data, false);
@@ -1243,7 +1246,7 @@ void main(void)
    console_init_input();
 #endif
 
-   if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT)) != 0) {
+   if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), flags & FLAG_RESET) != 0) {
       appl_ready = true;
       restart_modem(false, NULL);
    }

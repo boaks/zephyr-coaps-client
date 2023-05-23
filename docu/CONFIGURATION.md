@@ -129,6 +129,8 @@ Configure used URI query parameter. Please note, that these query parameter must
 
 - **MODEM_SAVE_CONFIG_THRESHOLD**, threshold to save the modem configuration. The modem is switched off and on to save the configuration.
 
+- **MODEM_MULTI_IMSI_SUPPORT**, enable support for SIM-cars with multiple IMSI. Switching the IMSI requires sometimes longer search times. Sets default search timeout to 10 minutes.
+
 - **MODEM_SEARCH_TIMEOUT**, modem network search timeout.
 
 ### Power Saving

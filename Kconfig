@@ -206,9 +206,16 @@ config MODEM_SAVE_CONFIG_THRESHOLD
 	   the modem is short switched off and on again in order to save
 	   the configuration. This speeds up the next start.
 
+config MODEM_MULTI_IMSI_SUPPORT
+	bool "Modem multi-IMSI support."
+	default n
+	help
+	   Set default search timeout to 10 minutes.
+
 config MODEM_SEARCH_TIMEOUT
 	int "Modem search timeout in seconds."
-	default 300 if LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO || LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO
+	default 600 if LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO || LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO || MODEM_MULTI_IMSI_SUPPORT
+	default 300 if LTE_MODE_PREFERENCE_NBIOT_PRIO || LTE_MODE_PREFERENCE_LTE_M_PRIO
 	default 180
 
 config PROTOCOL_CONFIG_SWITCH

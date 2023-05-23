@@ -32,15 +32,19 @@ typedef struct lte_sim_info {
    bool valid;
    bool edrx_cycle_support;
    int16_t hpplmn_search_interval;
+   int16_t imsi_interval;
+   char hpplmn[MODEM_PLMN_SIZE];
+   char forbidden[MODEM_PLMN_SIZE];
    char iccid[MODEM_ID_SIZE];
    char imsi[MODEM_ID_SIZE];
-   char hpplmn[MODEM_PLMN_SIZE];
+   char prev_imsi[MODEM_ID_SIZE];
 } lte_sim_info_t;
 
 typedef struct lte_network_info {
-   const char* reg_status;
    bool registered;
    bool plmn_lock;
+   enum lte_lc_nw_reg_status status;
+   enum lte_lc_lte_mode mode;
    uint8_t band;
    char provider[6];
    uint16_t tac;
@@ -96,11 +100,13 @@ typedef void (*lte_state_change_callback_handler_t)(enum lte_state_type type, bo
 
 int modem_init(int config, lte_state_change_callback_handler_t state_handler);
 
-int modem_start(const k_timeout_t timeout);
+int modem_start(const k_timeout_t timeout, bool save);
 
 int modem_wait_ready(const k_timeout_t timeout);
 
-const char* modem_get_network_mode(void);
+const char* modem_get_network_mode_description(enum lte_lc_lte_mode mode);
+
+const char *modem_get_registration_description(enum lte_lc_nw_reg_status reg_status);
 
 int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx);
 
@@ -135,8 +141,6 @@ int modem_set_rai_mode(enum rai_mode mode, int socket);
 int modem_set_offline(void);
 
 int modem_set_lte_offline(void);
-
-int modem_set_sim_on(void);
 
 int modem_set_normal(void);
 

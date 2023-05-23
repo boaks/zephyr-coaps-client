@@ -295,7 +295,7 @@ int coap_client_prepare_post(void)
    struct modem_gnss_state result;
    bool pending;
 #endif
-#if defined(CONFIG_COAP_SEND_NETWORK_INFO) || defined(CONFIG_LOCATION_ENABLE)
+#if defined(ENVIRONMENT_SENSOR) || defined(CONFIG_LOCATION_ENABLE)
    const char *p;
 #endif
 
@@ -441,19 +441,31 @@ int coap_client_prepare_post(void)
       }
       dtls_info("%s", buf + start);
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nIMSI: %s", params.sim_info.imsi);
+      if (params.sim_info.prev_imsi[0]) {
+         index += snprintf(buf + index, sizeof(buf) - index, "\nMulti-IMSI: %s, %s, %d s",
+                           params.sim_info.imsi, params.sim_info.prev_imsi, params.sim_info.imsi_interval);
+      } else {
+         index += snprintf(buf + index, sizeof(buf) - index, "\nIMSI: %s", params.sim_info.imsi);
+      }
       dtls_info("%s", buf + start);
+      if (params.sim_info.forbidden[0]) {
+         start = index + 1;
+         index += snprintf(buf + index, sizeof(buf) - index, "\nForbidden: %s",
+                           params.sim_info.forbidden);
+         dtls_info("%s", buf + start);
+      }
    }
 #endif /* CONFIG_COAP_SEND_SIM_INFO */
 
 #ifdef CONFIG_COAP_SEND_NETWORK_INFO
-   p = modem_get_network_mode();
-   start = index + 1;
-   index += snprintf(buf + index, sizeof(buf) - index, "\nNetwork: %s", p);
 
    memset(&params, 0, sizeof(params));
    if (!modem_get_network_info(&params.network_info)) {
-      index += snprintf(buf + index, sizeof(buf) - index, ",%s", params.network_info.reg_status);
+      start = index + 1;
+      index += snprintf(buf + index, sizeof(buf) - index, "\nNetwork: %s",
+                        modem_get_network_mode_description(params.network_info.mode));
+      index += snprintf(buf + index, sizeof(buf) - index, ",%s",
+                        modem_get_registration_description(params.network_info.status));
       if (params.network_info.registered) {
          index += snprintf(buf + index, sizeof(buf) - index, ",Band %d", params.network_info.band);
          if (params.network_info.plmn_lock) {
