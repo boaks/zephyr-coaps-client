@@ -16,10 +16,13 @@
 
 #include "dtls.h"
 
-#define CLIENT_VERSION "v0.7.99"
+#define CLIENT_VERSION "v0.7.100"
 
 #define FLAG_TLS 1
 #define FLAG_KEEP_CONNECTION 2
+#define FLAG_REBOOT_1 4
+#define FLAG_REBOOT 8
+#define FLAG_RESET 16
 
 #define COAP_MAX_RETRANSMISSION 3
 
@@ -27,7 +30,11 @@
 
 extern unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
 
-typedef enum { PARSE_IGN = 0, PARSE_RST, PARSE_ACK, PARSE_RESPONSE, PARSE_CON_RESPONSE } parse_result_t;
+typedef enum { PARSE_IGN = 0,
+               PARSE_RST,
+               PARSE_ACK,
+               PARSE_RESPONSE,
+               PARSE_CON_RESPONSE } parse_result_t;
 
 int coap_client_parse_data(uint8_t *data, size_t len);
 
@@ -35,8 +42,6 @@ int coap_client_prepare_post(void);
 
 int coap_client_message(const uint8_t** buffer);
 
-int coap_client_set_id(const char* id);
-
-int coap_client_init(void);
+int coap_client_init(const char *id);
 
 #endif /* COAP_CLIENT_H */

@@ -149,6 +149,17 @@ static void modem_state_change_callback_work_fn(struct k_work *work)
    }
 }
 
+#ifdef CONFIG_NRF_MODEM_LIB_ON_FAULT_APPLICATION_SPECIFIC
+
+#include "appl_diagnose.h"
+
+void nrf_modem_fault_handler(struct nrf_modem_fault_info *fault_info)
+{
+   LOG_ERR("Modem error: 0x%x, PC: 0x%x", fault_info->reason, fault_info->program_counter);
+   appl_reboot(ERROR_CODE_MODEM_FAULT);
+}
+#endif
+
 #ifdef CONFIG_PDN
 static void modem_read_pdn_info_work_fn(struct k_work *work)
 {

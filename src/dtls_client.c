@@ -18,8 +18,8 @@
 #include <string.h>
 #include <zephyr/net/coap.h>
 #include <zephyr/net/socket.h>
-#include <zephyr/sys/reboot.h>
 
+#include "appl_diagnose.h"
 #include "appl_storage.h"
 #include "appl_storage_config.h"
 #include "appl_time.h"
@@ -43,17 +43,6 @@
 #endif
 
 #include "environment_sensor.h"
-
-#define ERROR_CODE_SOCKET 0x0000
-#define ERROR_CODE_OPEN_SOCKET 0x1000
-#define ERROR_CODE_INIT_NO_LTE 0x2000
-#define ERROR_CODE_INIT_SOCKET 0x3000
-#define ERROR_CODE_INIT_NO_DTLS 0x4000
-#define ERROR_CODE_TOO_MANY_FAILURES 0x5000
-#define ERROR_CODE_NO_INITIAL_SUCCESS 0x6000
-#define ERROR_CODE_MANUAL_TRIGGERED 0xa000
-
-#define ERROR_CODE(BASE, ERR) ((BASE & 0xf000) | (ERR & 0xfff))
 
 #define COAP_ACK_TIMEOUT 3
 #define ADD_ACK_TIMEOUT 3
@@ -101,7 +90,7 @@ static bool initial_success = false;
 static unsigned int current_failures = 0;
 static unsigned int handled_failures = 0;
 
-static volatile bool ui_led_active = false;
+static volatile bool appl_prevent_suspend = false;
 
 static volatile bool appl_ready = false;
 static volatile int trigger_duration = 0;
@@ -125,12 +114,42 @@ static K_SEM_DEFINE(dtls_trigger_search, 0, 1);
 
 static K_MUTEX_DEFINE(dtls_pm_mutex);
 
-static void dtls_power_management_suspend_fn(struct k_work *work);
+static void dtls_power_management(void);
+
+static void dtls_power_management_suspend_fn(struct k_work *work)
+{
+   appl_prevent_suspend = false;
+   ui_led_op(LED_COLOR_ALL, LED_CLEAR);
+   dtls_power_management();
+}
 
 static K_WORK_DELAYABLE_DEFINE(dtls_power_management_suspend_work, dtls_power_management_suspend_fn);
 
+static void dtls_power_management(void)
+{
+   static bool power_manager_suspended = false;
+   bool suspend;
+   bool changed;
+
+   k_mutex_lock(&dtls_pm_mutex, K_FOREVER);
+   suspend = network_sleeping && !appl_prevent_suspend && app_data.request_state == NONE;
+   changed = power_manager_suspended != suspend;
+   if (changed) {
+      power_manager_suspended = suspend;
+   }
+   k_mutex_unlock(&dtls_pm_mutex);
+
+   if (changed) {
+      if (suspend) {
+         ui_led_op(LED_COLOR_ALL, LED_CLEAR);
+      }
+      power_manager_suspend(suspend);
+   }
+}
+
 static void reboot(int error, bool factoryReset)
 {
+   appl_reboot_cause(error);
    modem_power_off();
    if (factoryReset) {
       modem_factory_reset();
@@ -138,7 +157,6 @@ static void reboot(int error, bool factoryReset)
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    ui_led_op(LED_COLOR_RED, LED_SET);
-   appl_storage_write_int_item(REBOOT_CODE_ID, (uint16_t)error);
    k_sleep(K_MSEC(500));
    for (int i = 0; i < 4; ++i) {
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
@@ -148,8 +166,7 @@ static void reboot(int error, bool factoryReset)
       ui_led_op(LED_COLOR_RED, LED_SET);
       k_sleep(K_MSEC(500));
    }
-   k_sleep(K_MSEC(500));
-   sys_reboot(SYS_REBOOT_COLD);
+   appl_reboot(error);
 }
 
 static void check_reboot(void)
@@ -181,48 +198,44 @@ static void restart_modem(bool force, dtls_app_data_t *app)
 {
    int timeout_seconds = CONFIG_MODEM_SEARCH_TIMEOUT;
    int sleep_minutes = 15;
-   bool network = network_registered;
-   bool first = false;
+   bool network = network_registered && app;
 
+   watchdog_feed();
    k_sem_reset(&dtls_trigger_search);
    check_reboot();
 
    if (force) {
       dtls_info("> modem restart");
+      appl_prevent_suspend = true;
       modem_set_lte_offline();
-      k_sleep(K_MSEC(2000));
+      k_sleep(K_MSEC(4000));
       network = modem_start(K_SECONDS(timeout_seconds)) == 0;
       timeout_seconds *= 2;
+      appl_prevent_suspend = false;
    }
 
    while (!network) {
-      if (first) {
-         dtls_info("> modem SIM only (%d minutes)", sleep_minutes);
-         modem_set_sim_on();
-      } else {
-         dtls_info("> modem offline (%d minutes)", sleep_minutes);
-         modem_set_lte_offline();
-      }
+      dtls_info("> modem offline (%d minutes)", sleep_minutes);
+      modem_set_lte_offline();
       k_sleep(K_MSEC(2000));
       ui_led_op(LED_COLOR_ALL, LED_CLEAR);
-      if (sleep_minutes) {
-         if (k_sem_take(&dtls_trigger_search, K_MINUTES(sleep_minutes)) == 0) {
-            dtls_info("> modem normal (manual)");
-            sleep_minutes = 15;
-            check_reboot();
-         } else {
-            dtls_info("> modem normal (timeout)");
-            sleep_minutes *= 2;
-         }
-      } else {
+      network_sleeping = true;
+      dtls_power_management();
+      if (k_sem_take(&dtls_trigger_search, K_MINUTES(sleep_minutes)) == 0) {
+         dtls_info("> modem normal (manual)");
          sleep_minutes = 15;
+         check_reboot();
+      } else {
+         dtls_info("> modem normal (timeout)");
+         sleep_minutes *= 2;
       }
+      watchdog_feed();
       timeout_seconds *= 2;
       dtls_info("> modem search network (%d minutes)", timeout_seconds / 60);
-      if (modem_start(K_SECONDS(timeout_seconds)) == 0) {
-         break;
-      }
-      if (sleep_minutes > 60) {
+      network_sleeping = false;
+      dtls_power_management();
+      network = modem_start(K_SECONDS(timeout_seconds)) == 0;
+      if (!network && sleep_minutes > 60) {
          if (app) {
             dtls_info("> modem lost network, reboot");
             reboot(ERROR_CODE(ERROR_CODE_SOCKET, get_socket_error(app)), true);
@@ -320,35 +333,6 @@ static void dtls_timer_trigger_fn(struct k_work *work)
 }
 #endif
 
-static void dtls_power_management(void)
-{
-   static bool power_manager_suspended = false;
-   bool suspend;
-   bool changed;
-
-   k_mutex_lock(&dtls_pm_mutex, K_FOREVER);
-   suspend = network_sleeping && !ui_led_active && app_data.request_state == NONE;
-   changed = power_manager_suspended != suspend;
-   if (changed) {
-      power_manager_suspended = suspend;
-   }
-   k_mutex_unlock(&dtls_pm_mutex);
-
-   if (changed) {
-      if (suspend) {
-         ui_led_op(LED_COLOR_ALL, LED_CLEAR);
-      }
-      power_manager_suspend(suspend);
-   }
-}
-
-static void dtls_power_management_suspend_fn(struct k_work *work)
-{
-   ui_led_active = false;
-   ui_led_op(LED_COLOR_ALL, LED_CLEAR);
-   dtls_power_management();
-}
-
 static void dtls_coap_next(dtls_app_data_t *app)
 {
    int64_t now;
@@ -443,7 +427,7 @@ static void dtls_coap_failure(dtls_app_data_t *app)
       time2 = -1;
    }
    if (!ui_led_op(LED_COLOR_RED, LED_SET)) {
-      ui_led_active = true;
+      appl_prevent_suspend = true;
       work_reschedule_for_io_queue(&dtls_power_management_suspend_work, K_SECONDS(10));
    }
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
@@ -602,6 +586,8 @@ dtls_handle_event(dtls_context_t *ctx, session_t *session,
       ui_led_op(LED_COLOR_RED, LED_SET);
       ui_led_op(LED_COLOR_GREEN, LED_SET);
       ui_led_op(LED_DTLS, LED_CLEAR);
+   } else {
+      dtls_info("dtls failure 0x%04x", code);
    }
    return 0;
 }
@@ -752,7 +738,7 @@ static void accelerometer_handler(const struct accelerometer_evt *const evt)
 }
 #endif
 
-int dtls_loop(session_t *dst, int flags)
+static int dtls_loop(session_t *dst, int flags)
 {
    struct pollfd udp_poll;
    dtls_context_t *dtls_context = NULL;
@@ -774,7 +760,6 @@ int dtls_loop(session_t *dst, int flags)
    } else {
       dtls_info("Start CoAP/UDP");
    }
-   coap_client_init();
    app_data.destination = dst;
    app_data.fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
@@ -839,10 +824,15 @@ int dtls_loop(session_t *dst, int flags)
          }
       }
 #endif
-      if (!initial_success && k_uptime_get() > MSEC_PER_DAY) {
-         // no initial_success for 1 day => reboot
-         dtls_info("> No initial succes, reboot");
-         reboot(ERROR_CODE_NO_INITIAL_SUCCESS, true);
+      watchdog_feed();
+      if (!initial_success) {
+         // only effective, if modem connects to network
+         // without network, restart_modem already reboots!
+         if (k_uptime_get() > ((flags & FLAG_REBOOT_1) ? (4 * MSEC_PER_HOUR) : MSEC_PER_DAY)) {
+            // no initial_success for 4 hours / 1 day => reboot
+            dtls_info("> No initial succes, reboot%s", (flags & FLAG_REBOOT_1) ? " 1" : " N");
+            reboot(ERROR_CODE_NO_INITIAL_SUCCESS, true);
+         }
       }
       if (current_failures > handled_failures) {
          handled_failures = current_failures;
@@ -1159,9 +1149,10 @@ void main(void)
    char imei[MODEM_ID_SIZE];
    session_t dst;
 
+   watchdog_init();
    memset(&app_data, 0, sizeof(app_data));
-
    LOG_INF("CoAP/DTLS 1.2 CID sample " CLIENT_VERSION " has started");
+   appl_reset_cause(&flags);
 
    dtls_set_log_level(DTLS_LOG_INFO);
 
@@ -1260,7 +1251,7 @@ void main(void)
 
    modem_get_imei(imei, sizeof(imei));
    dtls_credentials_init_psk(imei);
-   coap_client_set_id(dtls_credentials_get_psk_identity());
+   coap_client_init(dtls_credentials_get_psk_identity());
 
    memset(&dst, 0, sizeof(session_t));
    init_destination(protocol, &dst);

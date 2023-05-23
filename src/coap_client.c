@@ -23,6 +23,7 @@
 #include "power_manager.h"
 #include "ui.h"
 
+#include "appl_diagnose.h"
 #include "appl_storage.h"
 #include "appl_storage_config.h"
 #include "appl_time.h"
@@ -52,8 +53,8 @@ static uint32_t coap_current_token;
 static uint16_t coap_current_mid;
 static uint16_t coap_message_len = 0;
 static uint8_t coap_message_buf[APP_COAP_MAX_MSG_LEN];
-static uint8_t read_etag[9];
-static const char *client_id;
+static uint8_t coap_read_etag[9];
+static const char *coap_client_id;
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
@@ -111,19 +112,19 @@ static void coap_client_decode_read_etag(const struct coap_option *option)
 {
    uint8_t index = 0;
    uint8_t len = option->len;
-   read_etag[0] = len;
+   coap_read_etag[0] = len;
 
    if (len == 0) {
       dtls_info("Recv CoAP etag option, empty");
       return;
    }
 
-   if (len > sizeof(read_etag) - 1) {
-      len = sizeof(read_etag) - 1;
+   if (len > sizeof(coap_read_etag) - 1) {
+      len = sizeof(coap_read_etag) - 1;
    }
 
    for (index = 0; index < len; ++index) {
-      read_etag[1 + index] = option->value[index];
+      coap_read_etag[1 + index] = option->value[index];
    }
 
    dtls_info("Recv CoAP etag option (%d bytes)", len);
@@ -407,6 +408,15 @@ int coap_client_prepare_post(void)
       dtls_info("%s", buf + start);
    }
 
+   start = index + 1;
+   index += snprintf(buf + index, sizeof(buf) - index, "\nRestart: ");
+   err = appl_reset_cause_description(buf + index, sizeof(buf) - index);
+   if (err > 0) {
+      dtls_info("%s", buf + start);
+      index += err;
+   } else {
+      index = start - 1;
+   }
 #if 0
    err = modem_at_cmd("AT%%CONEVAL", buf + index, sizeof(buf) - index, "%CONEVAL: ");
    if (err < 0) {
@@ -750,7 +760,7 @@ int coap_client_prepare_post(void)
    if (err < 0) {
       return err;
    }
-   err = coap_client_add_uri_query_param(&request, "id", client_id);
+   err = coap_client_add_uri_query_param(&request, "id", coap_client_id);
    if (err < 0) {
       return err;
    }
@@ -797,15 +807,15 @@ int coap_client_prepare_post(void)
    }
 
 #ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE_ENABLE
-   if (read_etag[0]) {
+   if (coap_read_etag[0]) {
       err = coap_packet_append_option(&request, CUSTOM_COAP_OPTION_READ_ETAG,
-                                      &read_etag[1],
-                                      read_etag[0]);
+                                      &coap_read_etag[1],
+                                      coap_read_etag[0]);
       if (err < 0) {
          dtls_warn("Failed to encode CoAP read-etag option, %d", err);
          return err;
       } else {
-         dtls_info("Send CoAP read-etag option (%u bytes)", read_etag[0]);
+         dtls_info("Send CoAP read-etag option (%u bytes)", coap_read_etag[0]);
       }
    } else {
       dtls_info("Send CoAP no read-etag option");
@@ -838,15 +848,9 @@ int coap_client_message(const uint8_t **buffer)
    return coap_message_len;
 }
 
-int coap_client_set_id(const char *id)
-{
-   client_id = id;
-   return id ? strlen(id) : 0;
-}
-
-int coap_client_init(void)
+int coap_client_init(const char *id)
 {
    coap_current_token = sys_rand32_get();
-
-   return 0;
+   coap_client_id = id;
+   return id ? strlen(id) : 0;
 }

@@ -33,6 +33,9 @@
 
 		/* alias for application eeprom */
 		appl-storage-eeprom = &eeprom0;
+
+		/* alias for watchdog */
+		watchdog0 = &wdt0;
 	};
 
 };

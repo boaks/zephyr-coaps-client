@@ -27,6 +27,7 @@ target_sources(app PRIVATE
 	src/appl_storage.c
 	src/appl_storage_config.c
 	src/appl_time.c
+	src/appl_diagnose.c
 	src/modem.c
 	src/dtls_client.c
 	src/dtls_credentials.c
