@@ -41,7 +41,7 @@ static const float temperature_offset = (CONFIG_TEMPERATURE_OFFSET / 100.0);
 
 static K_MUTEX_DEFINE(environment_mutex);
 
-K_THREAD_STACK_DEFINE(thread_stack, CONFIG_BME680_BSEC_THREAD_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(environment_stack, CONFIG_BME680_BSEC_THREAD_STACK_SIZE);
 
 static struct k_thread environment_thread;
 
@@ -173,10 +173,10 @@ int environment_init(void)
    }
 
    k_thread_create(&environment_thread,
-                   thread_stack,
+                   environment_stack,
                    CONFIG_BME680_BSEC_THREAD_STACK_SIZE,
                    (k_thread_entry_t)environment_bsec_thread_fn,
-                   NULL, NULL, NULL, K_HIGHEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
+                   NULL, NULL, NULL, -1, 0, K_NO_WAIT);
 
    return 0;
 }
