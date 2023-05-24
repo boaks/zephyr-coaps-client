@@ -29,11 +29,19 @@
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
-static atomic_t read_reset_cause = ATOMIC_INIT(0);
+#define CONFIG_DIAGNOSE_STACK_SIZE 2048
+
+static K_THREAD_STACK_DEFINE(appl_diagnose_stack, CONFIG_DIAGNOSE_STACK_SIZE);
+static struct k_thread appl_diagnose_thread;
+static K_SEM_DEFINE(appl_diagnose_shutdown, 0, 1);
+static atomic_t reboot_cause = ATOMIC_INIT(-1);
 static atomic_t write_reboot_cause = ATOMIC_INIT(0);
+
+static atomic_t read_reset_cause = ATOMIC_INIT(0);
 
 static const struct device *const wdt = DEVICE_DT_GET_OR_NULL(DT_ALIAS(watchdog0));
 static int wdt_channel_id = -1;
+
 static uint32_t reset_cause = 0;
 
 void watchdog_feed(void)
@@ -43,57 +51,27 @@ void watchdog_feed(void)
    }
 }
 
-int watchdog_init(void)
-{
-   int err;
-   struct wdt_timeout_cfg wdt_config = {
-       /* Reset SoC when watchdog timer expires. */
-       .flags = WDT_FLAG_RESET_SOC,
-
-       /* Expire watchdog after max window */
-       .window.min = 0,
-       .window.max = MSEC_PER_HOUR * 2,
-   };
-
-   if (!wdt) {
-      LOG_INF("No watchdog device available.\n");
-      return -ENOTSUP;
-   }
-
-   if (!device_is_ready(wdt)) {
-      LOG_INF("%s: device not ready.\n", wdt->name);
-      return -ENOTSUP;
-   }
-
-   err = wdt_install_timeout(wdt, &wdt_config);
-   if (err < 0) {
-      LOG_INF("Watchdog install error %d, %s\n", err, strerror(errno));
-      return err;
-   }
-   wdt_channel_id = err;
-
-   err = wdt_setup(wdt, WDT_OPT_PAUSE_HALTED_BY_DBG);
-   if (err < 0) {
-      LOG_INF("Watchdog setup error %d, %s\n", err, strerror(errno));
-      return err;
-   }
-   watchdog_feed();
-   LOG_INF("Watchdog initialized\n");
-   return 0;
-}
-
 void appl_reboot_cause(int error)
 {
    if (atomic_cas(&write_reboot_cause, 0, 1)) {
       appl_storage_write_int_item(REBOOT_CODE_ID, (uint16_t)error);
-      k_sleep(K_MSEC(500));
    }
+}
+
+static void appl_reboot_fn(void *p1, void *p2, void *p3)
+{
+   k_sem_take(&appl_diagnose_shutdown, K_FOREVER);
+   int error = atomic_get(&reboot_cause);
+   if (error >= 0) {
+      appl_reboot_cause(error);
+   }
+   sys_reboot(SYS_REBOOT_COLD);
 }
 
 void appl_reboot(int error)
 {
-   appl_reboot_cause(error);
-   sys_reboot(SYS_REBOOT_COLD);
+   atomic_set(&reboot_cause, error);
+   k_sem_give(&appl_diagnose_shutdown);
 }
 
 uint32_t appl_reset_cause(int *flags)
@@ -174,3 +152,57 @@ int appl_reset_cause_description(char *buf, size_t len)
    }
    return index;
 }
+
+static int appl_watchdog_init(void)
+{
+   int err;
+   struct wdt_timeout_cfg wdt_config = {
+       /* Reset SoC when watchdog timer expires. */
+       .flags = WDT_FLAG_RESET_SOC,
+
+       /* Expire watchdog after max window */
+       .window.min = 0,
+       .window.max = MSEC_PER_HOUR * 2,
+   };
+
+   if (!wdt) {
+      LOG_INF("No watchdog device available.\n");
+      return -ENOTSUP;
+   }
+
+   if (!device_is_ready(wdt)) {
+      LOG_INF("%s: device not ready.\n", wdt->name);
+      return -ENOTSUP;
+   }
+
+   err = wdt_install_timeout(wdt, &wdt_config);
+   if (err < 0) {
+      LOG_INF("Watchdog install error %d, %s\n", err, strerror(errno));
+      return err;
+   }
+   wdt_channel_id = err;
+
+   err = wdt_setup(wdt, WDT_OPT_PAUSE_HALTED_BY_DBG);
+   if (err < 0) {
+      LOG_INF("Watchdog setup error %d, %s\n", err, strerror(errno));
+      return err;
+   }
+   watchdog_feed();
+   LOG_INF("Watchdog initialized\n");
+   return 0;
+}
+
+static int appl_diagnose_init(const struct device *arg)
+{
+   appl_watchdog_init();
+
+   k_thread_create(&appl_diagnose_thread,
+                   appl_diagnose_stack,
+                   CONFIG_DIAGNOSE_STACK_SIZE,
+                   appl_reboot_fn, NULL, NULL, NULL,
+                   K_HIGHEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
+
+   return 0;
+}
+
+SYS_INIT(appl_diagnose_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);

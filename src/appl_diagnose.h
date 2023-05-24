@@ -30,7 +30,6 @@
 #define ERROR_CODE(BASE, ERR) ((BASE & 0xf000) | (ERR & 0xfff))
 
 void watchdog_feed(void);
-int watchdog_init(void);
 
 void appl_reboot_cause(int error);
 void appl_reboot(int error);

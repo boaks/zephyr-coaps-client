@@ -90,6 +90,17 @@ static volatile int rai_time = -1;
 
 #define SUSPEND_DELAY_MILLIS 100
 
+#ifdef CONFIG_NRF_MODEM_LIB_ON_FAULT_APPLICATION_SPECIFIC
+
+#include "appl_diagnose.h"
+
+void nrf_modem_fault_handler(struct nrf_modem_fault_info *fault_info)
+{
+   LOG_ERR("Modem error: 0x%x, PC: 0x%x", fault_info->reason, fault_info->program_counter);
+   appl_reboot(ERROR_CODE_MODEM_FAULT);
+}
+#endif
+
 static int modem_int_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip, bool warn);
 
 static void modem_power_management_suspend_work_fn(struct k_work *work);
@@ -151,17 +162,6 @@ static void modem_state_change_callback_work_fn(struct k_work *work)
       }
    }
 }
-
-#ifdef CONFIG_NRF_MODEM_LIB_ON_FAULT_APPLICATION_SPECIFIC
-
-#include "appl_diagnose.h"
-
-void nrf_modem_fault_handler(struct nrf_modem_fault_info *fault_info)
-{
-   LOG_ERR("Modem error: 0x%x, PC: 0x%x", fault_info->reason, fault_info->program_counter);
-   appl_reboot(ERROR_CODE_MODEM_FAULT);
-}
-#endif
 
 #ifdef CONFIG_PDN
 static void modem_read_pdn_info_work_fn(struct k_work *work)
@@ -248,6 +248,7 @@ static bool modem_set_preference(bool swap_preference)
 
 // #define CONFIG_FORBIDDEN_PLMN "09F104FFFFFFFFFFFFFFFFFF"
 // #define CONFIG_FORBIDDEN_PLMN "62F220FFFFFFFFFFFFFFFFFF"
+// #define CONFIG_FORBIDDEN_PLMN "62F210FFFFFFFFFFFFFFFFFF"
 
 #ifndef CONFIG_FORBIDDEN_PLMN
 // #define CONFIG_FORBIDDEN_PLMN "FFFFFFFFFFFFFFFFFFFFFFFF"

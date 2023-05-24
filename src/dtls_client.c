@@ -175,7 +175,10 @@ static void check_reboot(void)
       // Thingy:91 and nRF9160 feather will reboot
       // nRF9160-DK reboots with button2 also pressed
       int ui = ui_config();
-      if ((ui < 0) || (ui & 2)) {
+      if (ui < 0) {
+         dtls_info("> modem reboot / factory reset");
+         reboot(ERROR_CODE_MANUAL_TRIGGERED, true);
+      } else if (ui & 2) {
          dtls_info("> modem reboot");
          reboot(ERROR_CODE_MANUAL_TRIGGERED, false);
       }
@@ -1006,11 +1009,12 @@ static int dtls_loop(session_t *dst, int flags)
                app_data.request_state = NONE;
                dtls_info("%s suspend after %d", type, loops);
             } else {
+               ++loops;
                if (k_sem_count_get(&dtls_trigger_msg)) {
                   // send button pressed
                   app_data.request_state = NONE;
+                  dtls_info("%s next trigger after %d", type, loops);
                }
-               ++loops;
             }
          } else if (app_data.request_state != NONE) {
             ++loops;
@@ -1152,7 +1156,6 @@ void main(void)
    char imei[MODEM_ID_SIZE];
    session_t dst;
 
-   watchdog_init();
    memset(&app_data, 0, sizeof(app_data));
    LOG_INF("CoAP/DTLS 1.2 CID sample " CLIENT_VERSION " has started");
    appl_reset_cause(&flags);
