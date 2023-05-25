@@ -933,6 +933,7 @@ static int dtls_loop(session_t *dst, int flags)
          }
       } else if (result == 0) { /* timeout */
          const char *type = app_data.dtls_pending ? "DTLS hs" : "CoAP request";
+         ++loops;
          if (app_data.request_state == SEND) {
             if (lte_connected_send) {
                loops = 0;
@@ -950,8 +951,7 @@ static int dtls_loop(session_t *dst, int flags)
                   dtls_coap_success(&app_data);
                }
 #endif
-            } else if (loops < 60) {
-               ++loops;
+            } else if (loops <= 60) {
                if (loops % 5 == 4) {
                   check_socket(&app_data, false);
                }
@@ -965,12 +965,11 @@ static int dtls_loop(session_t *dst, int flags)
             if (!network_ready) {
                if (app_data.retransmission >= COAP_MAX_RETRANSMISSION) {
                   // stop waiting ...
-                  temp = loops;
+                  temp = loops - 1;
                } else {
                   temp += ADD_ACK_TIMEOUT;
                }
             }
-            ++loops;
             if (app_data.retransmission > 0) {
                dtls_info("%s wait %d/%d/%d, retrans. %d, network %d", type, loops, app_data.timeout, temp, app_data.retransmission, network_ready);
             } else {
@@ -997,9 +996,7 @@ static int dtls_loop(session_t *dst, int flags)
                }
             }
          } else if (app_data.request_state == WAIT_RESPONSE) {
-            if (loops < 60) {
-               ++loops;
-            } else {
+            if (loops > 60) {
                dtls_coap_failure(&app_data);
             }
          } else if (app_data.request_state == WAIT_SUSPEND) {
@@ -1008,16 +1005,12 @@ static int dtls_loop(session_t *dst, int flags)
                // modem enters sleep, no more data
                app_data.request_state = NONE;
                dtls_info("%s suspend after %d", type, loops);
-            } else {
-               ++loops;
-               if (k_sem_count_get(&dtls_trigger_msg)) {
-                  // send button pressed
-                  app_data.request_state = NONE;
-                  dtls_info("%s next trigger after %d", type, loops);
-               }
+            } else if (k_sem_count_get(&dtls_trigger_msg)) {
+               // send button pressed
+               app_data.request_state = NONE;
+               dtls_info("%s next trigger after %d", type, loops);
             }
          } else if (app_data.request_state != NONE) {
-            ++loops;
             dtls_info("%s wait state %d, %d", type, app_data.request_state, loops);
          }
       } else { /* ok */
