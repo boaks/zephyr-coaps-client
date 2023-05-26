@@ -218,6 +218,10 @@ config MODEM_SEARCH_TIMEOUT
 	default 300 if LTE_MODE_PREFERENCE_NBIOT_PRIO || LTE_MODE_PREFERENCE_LTE_M_PRIO
 	default 180
 
+config MODEM_CEREG_REJECTION_NOTIFICATION
+	bool "Modem logging for CEREG rejections."
+	default y
+
 config PROTOCOL_CONFIG_SWITCH
 	bool "Enable protocol configuration switch"
 	default n

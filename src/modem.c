@@ -101,6 +101,16 @@ void nrf_modem_fault_handler(struct nrf_modem_fault_info *fault_info)
 }
 #endif
 
+static int strstart(const char *value, const char *head)
+{
+   size_t len = strlen(head);
+   if (len && strncmp(value, head, len) == 0) {
+      return len;
+   } else {
+      return 0;
+   }
+}
+
 static int modem_int_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip, bool warn);
 
 static void modem_power_management_suspend_work_fn(struct k_work *work);
@@ -741,6 +751,29 @@ static void lte_pdn_status_set(bool pdn_active)
    k_mutex_unlock(&lte_mutex);
 }
 #endif
+
+#ifdef CONFIG_MODEM_CEREG_REJECTION_NOTIFICATION
+
+extern void at_monitor_dispatch(const char *notif);
+
+static volatile int lte_last_cereg_cause = 0;
+
+static void lte_at_monitor_dispatch(const char *notif)
+{
+   int skip = strstart(notif, "+CEREG:");
+   if (skip > 0) {
+      const char *cur = parse_next_chars(notif + skip, ',', 4);
+      if (cur && strstart(cur, "0,")) {
+         lte_last_cereg_cause = atoi(cur + 2);
+         LOG_INF("LTE +CEREG: rejected, cause %d", lte_last_cereg_cause);
+      } else {
+         lte_last_cereg_cause = 0;
+      }
+   }
+   at_monitor_dispatch(notif);
+}
+#endif
+
 static const char *lte_get_registration_description(enum lte_lc_nw_reg_status reg_status)
 {
    switch (reg_status) {
@@ -1014,6 +1047,9 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       LOG_INF("Modem trace disabled");
 #endif
       nrf_modem_lib_init(NORMAL_MODE);
+#ifdef CONFIG_MODEM_CEREG_REJECTION_NOTIFICATION
+      err = nrf_modem_at_notif_handler_set(lte_at_monitor_dispatch);
+#endif
       err = modem_at_cmd("AT%%HWVERSION", buf, sizeof(buf), "%HWVERSION: ");
       if (err > 0) {
          LOG_INF("hw: %s", buf);
@@ -1814,8 +1850,8 @@ static int modem_int_at_cmd(const char *cmd, char *buf, size_t max_len, const ch
    at_len = terminate_at_buffer(at_buf, at_len);
    if (buf) {
       if (skip) {
-         size_t skip_len = strlen(skip);
-         if (skip_len && strncmp(at_buf, skip, skip_len) == 0) {
+         int skip_len = strstart(at_buf, skip);
+         if (skip_len) {
             at_buf += skip_len;
             at_len -= skip_len;
          }
