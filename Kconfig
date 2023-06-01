@@ -222,6 +222,18 @@ config MODEM_CEREG_REJECTION_NOTIFICATION
 	bool "Modem logging for CEREG rejections."
 	default y
 
+config MODEM_ICCID_LTE_M_PREFERENCE
+	string "Modem ICCID header list for LTE-M preference."
+	default ""
+	help
+	  List of ICCID header (first 5 digits), which only supports LTE-M.
+
+config MODEM_ICCID_NBIOT_PREFERENCE
+	string "Modem ICCID header list for NB-IoT preference."
+	default ""
+	help
+	  List of ICCID header (first 5 digits), which only supports NB-IoT.
+
 config PROTOCOL_CONFIG_SWITCH
 	bool "Enable protocol configuration switch"
 	default n

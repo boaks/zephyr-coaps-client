@@ -184,7 +184,23 @@ static void modem_read_pdn_info_work_fn(struct k_work *work)
 static K_WORK_DEFINE(modem_read_pdn_info_work, modem_read_pdn_info_work_fn);
 #endif
 
-static bool modem_set_preference(bool swap_preference)
+static const char *find_id(const char *buf, const char *id)
+{
+   char *pos = strstr(buf, id);
+   while (pos > buf && *(pos - 1) != ',') {
+      pos = strstr(pos + 1, id);
+   }
+   return pos;
+}
+
+enum preference_mode {
+   RESET_PREFERENCE,
+   SWAP_PREFERENCE,
+   NBIOT_PREFERENCE,
+   LTE_M_PREFERENCE,
+};
+
+static bool modem_set_preference(enum preference_mode mode)
 {
    enum lte_lc_system_mode lte_mode;
    enum lte_lc_system_mode_preference lte_preference;
@@ -213,18 +229,25 @@ static bool modem_set_preference(bool swap_preference)
                break;
          }
          if (lte_new_preference != lte_preference) {
-            const char *op = "Swap";
-            const char *mode = nbiot_preference ? "LTE-M" : "NB-IoT";
-            if (!swap_preference) {
-               lte_new_preference = CONFIG_LTE_MODE_PREFERENCE;
-               if (lte_new_preference != lte_preference) {
+            const char *op = "Set";
+            const char *sys_mode = nbiot_preference ? "LTE-M" : "NB-IoT";
+            switch (mode) {
+               case RESET_PREFERENCE:
                   op = "Reset";
-               } else {
-                  mode = nbiot_preference ? "NB-IoT" : "LTE-M";
-               }
+                  lte_new_preference = CONFIG_LTE_MODE_PREFERENCE;
+                  break;
+               case SWAP_PREFERENCE:
+                  op = "Swap";
+                  break;
+               case NBIOT_PREFERENCE:
+                  lte_new_preference = LTE_LC_SYSTEM_MODE_NBIOT;
+                  break;
+               case LTE_M_PREFERENCE:
+                  lte_new_preference = LTE_LC_SYSTEM_MODE_LTEM;
+                  break;
             }
             if (lte_new_preference != lte_preference) {
-               LOG_INF("%s LTE mode preference to %s", op, mode);
+               LOG_INF("%s LTE mode preference to %s", op, sys_mode);
                enum lte_lc_func_mode func_mode;
                if (!lte_lc_func_mode_get(&func_mode)) {
                   if (func_mode != LTE_LC_FUNC_MODE_POWER_OFF) {
@@ -236,12 +259,43 @@ static bool modem_set_preference(bool swap_preference)
                   }
                }
             } else {
-               LOG_INF("Keep LTE mode preference %s", mode);
+               sys_mode = nbiot_preference ? "NB-IoT" : "LTE-M";
+               LOG_INF("Keep LTE mode preference %s", sys_mode);
             }
+            return true;
          }
-         return true;
       }
    }
+   return false;
+}
+
+static bool modem_apply_iccid_preference(void)
+{
+#if defined(CONFIG_MODEM_ICCID_LTE_M_PREFERENCE) || defined(CONFIG_MODEM_ICCID_NBIOT_PREFERENCE)
+   char iccid[6];
+
+   memset(&iccid, 0, sizeof(iccid));
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   memcpy(iccid, sim_info.iccid, sizeof(iccid) - 1);
+   k_mutex_unlock(&lte_mutex);
+
+   if (iccid[0]) {
+#ifdef CONFIG_MODEM_ICCID_LTE_M_PREFERENCE
+      if (find_id(CONFIG_MODEM_ICCID_LTE_M_PREFERENCE, iccid)) {
+         LOG_INF("Found ICCID %s in LTE-M preference list.", iccid);
+         modem_set_preference(LTE_M_PREFERENCE);
+         return true;
+      }
+#endif
+#ifdef CONFIG_MODEM_ICCID_NBIOT_PREFERENCE
+      if (find_id(CONFIG_MODEM_ICCID_NBIOT_PREFERENCE, iccid)) {
+         LOG_INF("Found ICCID %s in NB-IoT preference list.", iccid);
+         modem_set_preference(NBIOT_PREFERENCE);
+         return true;
+      }
+#endif
+   }
+#endif
    return false;
 }
 
@@ -269,17 +323,12 @@ static bool modem_set_preference(bool swap_preference)
 #define CRSM_SUCCESS "144,0,\""
 #define CRSM_SUCCESS_LEN (sizeof(CRSM_SUCCESS) - 1)
 
-static size_t copy_plmn(const char *buf, char *plmn, size_t len, const char *mnc)
+static size_t copy_plmn(const char *buf, char *plmn, size_t len, const char *mcc)
 {
    size_t result = 0;
-   if (mnc) {
-      char *pos = strstr(buf, mnc);
-      while (pos > buf && *(pos - 1) != ',') {
-         pos = strstr(pos + 1, mnc);
-      }
-      if (pos) {
-         buf = pos;
-      } else {
+   if (mcc) {
+      buf = find_id(buf, mcc);
+      if (!buf) {
          return 0;
       }
    }
@@ -1108,6 +1157,19 @@ static int modem_connect(void)
    return err;
 }
 
+static void modem_cancel_all_job(void)
+{
+   k_work_cancel(&modem_read_sim_work);
+   k_work_cancel(&modem_power_management_resume_work);
+   k_work_cancel(&modem_read_network_info_work);
+   k_work_cancel(&modem_ready_work);
+   k_work_cancel(&modem_registered_callback_work);
+   k_work_cancel(&modem_unregistered_callback_work);
+   k_work_cancel(&modem_not_ready_callback_work);
+   k_work_cancel(&modem_read_pdn_info_work);
+   k_work_cancel_delayable(&modem_power_management_suspend_work);
+}
+
 int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 {
    int err = 0;
@@ -1118,6 +1180,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       char buf[128];
       const char *plmn = NULL;
 
+      modem_cancel_all_job();
       memset(&sim_info, 0, sizeof(sim_info));
 
       s_lte_state_change_handler = state_handler;
@@ -1341,7 +1404,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          return err;
       }
       initialized = true;
-      lte_system_mode_preference = modem_set_preference(false);
+      lte_system_mode_preference = modem_set_preference(RESET_PREFERENCE);
       LOG_INF("modem initialized");
    }
 
@@ -1396,6 +1459,7 @@ int modem_start(const k_timeout_t timeout, bool save)
    int64_t time;
    char buf[32];
 
+   modem_cancel_all_job();
    if (lte_force_nb_iot) {
       LOG_INF("NB-IoT (config button 1)");
    } else if (lte_force_lte_m) {
@@ -1418,8 +1482,12 @@ int modem_start(const k_timeout_t timeout, bool save)
 #elif CONFIG_LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO
       LOG_INF("NB-IoT PLMN preference.");
 #endif
-      if (!lte_found && lte_system_mode_preference && sim_info.prev_imsi[0]) {
-         modem_set_preference(true);
+      if (lte_system_mode_preference) {
+         if (!lte_found && sim_info.prev_imsi[0]) {
+            modem_set_preference(SWAP_PREFERENCE);
+         } else {
+            modem_apply_iccid_preference();
+         }
       }
    }
    memset(&network_info, 0, sizeof(network_info));
@@ -1463,6 +1531,9 @@ int modem_start(const k_timeout_t timeout, bool save)
    err = modem_at_cmd("AT+CFUN=41", buf, sizeof(buf), "+CFUN: ");
    if (err > 0) {
       modem_read_sim_work_fn(NULL);
+      if (lte_system_mode_preference) {
+         modem_apply_iccid_preference();
+      }
    }
 
    ui_led_op(LED_COLOR_BLUE, LED_SET);
