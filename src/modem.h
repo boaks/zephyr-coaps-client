@@ -46,7 +46,7 @@ typedef struct lte_network_info {
    enum lte_lc_nw_reg_status status;
    enum lte_lc_lte_mode mode;
    uint8_t band;
-   char provider[6];
+   char provider[MODEM_PLMN_SIZE];
    uint16_t tac;
    uint32_t cell;
    char apn[16];
