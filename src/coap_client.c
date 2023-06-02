@@ -40,8 +40,10 @@
 #define COAP_OPTION_NO_RESPONSE 0x102
 #define COAP_NO_RESPONSE_IGNORE_ALL 0x1a
 
+#define CUSTOM_COAP_OPTION_INTERVAL 0xff1c
 #define CUSTOM_COAP_OPTION_TIME 0xff3c
 #define CUSTOM_COAP_OPTION_READ_ETAG 0xff5c
+#define CUSTOM_COAP_OPTION_READ_RESPONSE_CODE 0xff7c
 
 #ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
 #define COAP_MESSAGE_TYPE COAP_TYPE_NON_CON
@@ -130,6 +132,12 @@ static void coap_client_decode_read_etag(const struct coap_option *option)
    dtls_info("Recv CoAP etag option (%d bytes)", len);
 }
 
+static void coap_client_decode_read_response(const struct coap_option *option)
+{
+   int code = coap_option_value_to_int(option);
+   dtls_info("CoAP read response code %d.%02d", (code >> 5) & 7, code & 0x1f);
+}
+
 static void coap_client_decode_payload(const uint8_t *payload, uint16_t len)
 {
 }
@@ -188,14 +196,16 @@ int coap_client_parse_data(uint8_t *data, size_t len)
    coap_message_len = 0;
 
    err = coap_find_options(&reply, CUSTOM_COAP_OPTION_TIME, &custom_option, 1);
-   dtls_info("CoAP TIME option %d", err);
    if (err == 1) {
       coap_client_decode_time(&custom_option);
    }
    err = coap_find_options(&reply, CUSTOM_COAP_OPTION_READ_ETAG, &custom_option, 1);
-   dtls_info("CoAP read-etag option %d", err);
    if (err == 1) {
       coap_client_decode_read_etag(&custom_option);
+   }
+   err = coap_find_options(&reply, CUSTOM_COAP_OPTION_READ_RESPONSE_CODE, &custom_option, 1);
+   if (err == 1) {
+      coap_client_decode_read_response(&custom_option);
    }
 
    payload = coap_packet_get_payload(&reply, &payload_len);
@@ -809,6 +819,15 @@ int coap_client_prepare_post(void)
                                 COAP_NO_RESPONSE_IGNORE_ALL);
    if (err < 0) {
       dtls_warn("Failed to encode CoAP NO_RESPONSE option, %d", err);
+      return err;
+   }
+#endif
+
+#if CONFIG_COAP_SEND_INTERVAL > 0
+   err = coap_append_option_int(&request, CUSTOM_COAP_OPTION_INTERVAL,
+                                CONFIG_COAP_SEND_INTERVAL);
+   if (err < 0) {
+      dtls_warn("Failed to encode CoAP interval option, %d", err);
       return err;
    }
 #endif
