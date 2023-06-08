@@ -97,7 +97,7 @@ static volatile int rai_time = -1;
 void nrf_modem_fault_handler(struct nrf_modem_fault_info *fault_info)
 {
    LOG_ERR("Modem error: 0x%x, PC: 0x%x", fault_info->reason, fault_info->program_counter);
-   appl_reboot(ERROR_CODE_MODEM_FAULT);
+   appl_reboot(ERROR_CODE_MODEM_FAULT, 0);
 }
 #endif
 

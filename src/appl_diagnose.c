@@ -34,6 +34,11 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 static K_THREAD_STACK_DEFINE(appl_diagnose_stack, CONFIG_DIAGNOSE_STACK_SIZE);
 static struct k_thread appl_diagnose_thread;
 static K_SEM_DEFINE(appl_diagnose_shutdown, 0, 1);
+
+static volatile bool reboots = false;
+static volatile bool shutdown_now = false;
+
+static atomic_t shutdown_delay = ATOMIC_INIT(-1);
 static atomic_t reboot_cause = ATOMIC_INIT(-1);
 static atomic_t write_reboot_cause = ATOMIC_INIT(0);
 
@@ -60,18 +65,43 @@ void appl_reboot_cause(int error)
 
 static void appl_reboot_fn(void *p1, void *p2, void *p3)
 {
+   int error = 0;
    k_sem_take(&appl_diagnose_shutdown, K_FOREVER);
-   int error = atomic_get(&reboot_cause);
+
+   if (!shutdown_now) {
+      int delay = atomic_get(&shutdown_delay);
+      while (delay > 0) {
+         if (k_sem_take(&appl_diagnose_shutdown, K_SECONDS(delay)) == -EAGAIN) {
+            break;
+         }
+         if (shutdown_now) {
+            break;
+         }
+         delay = atomic_get(&shutdown_delay);
+      }
+   }
+   error = atomic_get(&reboot_cause);
    if (error >= 0) {
       appl_reboot_cause(error);
    }
    sys_reboot(SYS_REBOOT_COLD);
 }
 
-void appl_reboot(int error)
+void appl_reboot(int error, int delay)
 {
+   reboots = true;
    atomic_set(&reboot_cause, error);
+   if (delay > 0) {
+      atomic_set(&shutdown_delay, delay);
+   } else {
+      shutdown_now = true;
+   }
    k_sem_give(&appl_diagnose_shutdown);
+}
+
+bool appl_reboots(void)
+{
+   return reboots;
 }
 
 uint32_t appl_reset_cause(int *flags)

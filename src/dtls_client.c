@@ -131,6 +131,10 @@ static void dtls_power_management(void)
    bool suspend;
    bool changed;
 
+   if (appl_reboots()) {
+      return;
+   }
+
    k_mutex_lock(&dtls_pm_mutex, K_FOREVER);
    suspend = network_sleeping && !appl_prevent_suspend && app_data.request_state == NONE;
    changed = power_manager_suspended != suspend;
@@ -149,7 +153,10 @@ static void dtls_power_management(void)
 
 static void reboot(int error, bool factoryReset)
 {
+   // write error code
    appl_reboot_cause(error);
+   // reboot in 120s
+   appl_reboot(error, 120);
    modem_power_off();
    if (factoryReset) {
       modem_factory_reset();
@@ -166,7 +173,8 @@ static void reboot(int error, bool factoryReset)
       ui_led_op(LED_COLOR_RED, LED_SET);
       k_sleep(K_MSEC(500));
    }
-   appl_reboot(error);
+   // reboot now
+   appl_reboot(error, 0);
 }
 
 static void check_reboot(void)
@@ -299,6 +307,9 @@ static int check_socket(dtls_app_data_t *app, bool event)
 
 static void dtls_trigger(void)
 {
+   if (appl_reboots()) {
+      return;
+   }
    if (app_data.request_state == NONE || app_data.request_state == WAIT_SUSPEND) {
       // read battery status
       power_manager_status(NULL, NULL, NULL, NULL);
@@ -328,6 +339,9 @@ static K_WORK_DELAYABLE_DEFINE(dtls_timer_trigger_work, dtls_timer_trigger_fn);
 
 static void dtls_timer_trigger_fn(struct k_work *work)
 {
+   if (appl_reboots()) {
+      return;
+   }
    if (app_data.request_state == NONE) {
       // no LEDs for time trigger
       ui_enable(false);
@@ -576,6 +590,9 @@ static int
 dtls_handle_event(dtls_context_t *ctx, session_t *session,
                   dtls_alert_level_t level, unsigned short code)
 {
+   if (appl_reboots()) {
+      return 0;
+   }
 
    if (DTLS_EVENT_CONNECTED == code) {
       dtls_info("dtls connected.");
@@ -686,6 +703,9 @@ static dtls_handler_t cb = {
 
 static void dtls_lte_state_handler(enum lte_state_type type, bool active)
 {
+   if (appl_reboots()) {
+      return;
+   }
    if (type == LTE_STATE_REGISTRATION) {
       network_registered = active;
       if (active) {

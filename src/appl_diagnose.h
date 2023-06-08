@@ -32,7 +32,8 @@
 void watchdog_feed(void);
 
 void appl_reboot_cause(int error);
-void appl_reboot(int error);
+void appl_reboot(int error, int delay);
+bool appl_reboots(void);
 
 uint32_t appl_reset_cause(int *flags);
 int appl_reset_cause_description(char* buf, size_t len);
