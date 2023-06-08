@@ -129,7 +129,7 @@ Configure used URI query parameter. Please note, that these query parameter must
 
 - **MODEM_SAVE_CONFIG_THRESHOLD**, threshold to save the modem configuration. The modem is switched off and on to save the configuration.
 
-- **MODEM_MULTI_IMSI_SUPPORT**, enable support for SIM-cars with multiple IMSI. Switching the IMSI requires sometimes longer search times. Sets default search timeout to 10 minutes.
+- **MODEM_MULTI_IMSI_SUPPORT**, enable support for SIM-cards with multiple IMSI. Switching the IMSI requires sometimes longer search times. Sets default search timeout to 10 minutes. **Note:** using multiple IMSI cards in combination with LTE-M/NB-IoT mixed mode may cause trouble. The modem start to search in one mode (e.g. NB-IoT), if the timeout of the multi IMSI is short, then the IMSI changes and the modem restarts the search. That may cause the modem to never switch to the second mode. 
 
 - **MODEM_SEARCH_TIMEOUT**, modem network search timeout.
 
@@ -169,7 +169,7 @@ Configure used URI query parameter. Please note, that these query parameter must
 
 ### Environment Sensors
 
-- **TEMPERATURE_OFFSET**, self-heating temperature offset. Default depends on selected sensor. Supported for `BME680` and `SHT3xD`.  
+- **TEMPERATURE_OFFSET**, self-heating temperature offset. Default depends on selected sensor. Supported for `BME680`, `SHT3xD`, and `DS18B20`.  
 
 #### BME680
 
@@ -196,6 +196,12 @@ Zephyr comes also with a driver for the [SHT3xD](https://sensirion.com/de/produk
 
 - **zephyr SHT3XD driver**, access to temperature, humidity. No additional source are required. Requires a device-tree overlay, see [sht3x.overlay](../sht3x.overlay). Enabled at `Zephyr Kernel > Device Drivers > Sensor Drivers > SHT3xD`. (since NCS 2.1.0 already enabled by the overlay).
 
+#### DS180B20
+
+Zephyr comes also with a driver for the [DS180B20](https://www.analog.com/en/products/ds18b20.html) as external sensor.
+
+- **zephyr DS180B20 driver**, access to temperature. No additional source are required. Requires a device-tree overlay, see [one-wire-uart1.overlay](../one-wire-uart1.overlay) or [one-wire-uart2.overlay](../one-wire-uart2.overlay).
+
 ## Overlays
 
 As mentioned above, overlays are files, which are used to configure a set of features. 
@@ -207,6 +213,8 @@ As mentioned above, overlays are files, which are used to configure a set of fea
 [bme-prj.conf](../bme-prj.conf) prepares to use **Bosch bme680 Zephyr Sensor library**, see above. 
 
 [sht3x-prj.conf](../sht3x-prj.conf) prepares to use the **SHT3X Zephyr Sensor library**. Requires device tree overlay [sht3x.overlay](../sht3x.overlay) additionally.
+
+[one-wire-prj.conf](../one-wire-prj.conf) prepares to use the **DS18B20 Zephyr Sensor library**. Requires device tree overlay [one-wire-uart1.overlay](../one-wire-uart1.overlay) or [one-wire-uart2.overlay](../one-wire-uart2.overlay)additionally.
 
 [5min-prj.conf](../5min-prj.conf) prepares to send a message every 5 minutes. Enables to use a environment history to store sensor data.
 
@@ -225,5 +233,7 @@ west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="bme-prj.conf;6
 With device tree overlay:
 
 ```
-west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="sht3x-prj.conf;60min-prj.conf" -DDTC_OVERLAY_FILE=sht3x.overlay
+west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="sht3x-prj.conf;60min-prj.conf" -DDTC_OVERLAY_FILE="boards/nrf9160dk_nrf9160_ns.overlay;sht3x.overlay"
 ```
+
+**Note:** in difference to the "*.conf" files, using a "*.overlay" prevents the board specific project overlay "board/*.overlay" from being used. Therefore add the project board overlay also when using DTC_OVERLAY_FILE.
