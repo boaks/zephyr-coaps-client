@@ -68,7 +68,11 @@ static uint32_t lte_restarts = 0;
 static uint32_t lte_searchs = 0;
 static uint32_t lte_psm_delays = 0;
 static uint32_t lte_cell_updates = 0;
+static uint32_t lte_wakeups = 0;
 static int64_t lte_search_time = 0;
+static int64_t lte_wakeup_time = 0;
+static int64_t lte_connected_time = 0;
+static int64_t lte_asleep_time = 0;
 static int64_t lte_psm_delay_time = 0;
 static bool lte_plmn_lock = false;
 static bool lte_force_nb_iot = false;
@@ -853,6 +857,28 @@ static void lte_update_cell(uint16_t tac, uint32_t id)
    k_mutex_unlock(&lte_mutex);
 }
 
+static void lte_inc_wakeups(int64_t time)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   ++lte_wakeups;
+   lte_wakeup_time += time;
+   k_mutex_unlock(&lte_mutex);
+}
+
+static void lte_add_connected(int64_t time)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   lte_connected_time += time;
+   k_mutex_unlock(&lte_mutex);
+}
+
+static void lte_add_asleep(int64_t time)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   lte_asleep_time += time;
+   k_mutex_unlock(&lte_mutex);
+}
+
 static int64_t get_transmission_time(void)
 {
    int64_t time;
@@ -1019,8 +1045,8 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
 
 static void lte_handler(const struct lte_lc_evt *const evt)
 {
-   static int64_t connect_time = 0;
-   static int64_t idle_time = 0;
+   static uint8_t phase = 0;
+   static int64_t phase_start_time = 0;
    static int active_time = -1;
 
    if (appl_reboots()) {
@@ -1059,22 +1085,31 @@ static void lte_handler(const struct lte_lc_evt *const evt)
       case LTE_LC_EVT_RRC_UPDATE:
          {
             if (evt->rrc_mode == LTE_LC_RRC_MODE_CONNECTED) {
+               if (phase == 1) {
+                  lte_inc_wakeups(now - phase_start_time);
+               }
+               phase = 2;
+               phase_start_time = now;
                lte_connection_status_set(true);
-               connect_time = now;
                k_work_cancel_delayable(&modem_power_management_suspend_work);
                work_submit_to_io_queue(&modem_power_management_resume_work);
                LOG_INF("RRC mode: Connected");
             } else {
-               int64_t time = get_transmission_time();
+               int64_t transmission_time = get_transmission_time();
                bool lte = lte_connection_status_set(false);
-               idle_time = now;
-               if ((time - connect_time) > 0) {
-                  rai_time = (int)(now - time);
-                  LOG_INF("RRC mode: Idle after %lld ms (%d ms inactivity)", now - connect_time, rai_time);
-               } else {
-                  rai_time = -1;
-                  LOG_INF("RRC mode: Idle after %lld ms", now - connect_time);
+               if (phase == 2) {
+                  int64_t time = now - phase_start_time;
+                  lte_add_connected(time);
+                  if ((transmission_time - phase_start_time) > 0) {
+                     rai_time = (int)(now - transmission_time);
+                     LOG_INF("RRC mode: Idle after %lld ms (%d ms inactivity)", now - phase_start_time, rai_time);
+                  } else {
+                     rai_time = -1;
+                     LOG_INF("RRC mode: Idle after %lld ms", now - phase_start_time);
+                  }
                }
+               phase = 3;
+               phase_start_time = now;
                if (lte) {
                   if (active_time >= 0) {
                      work_reschedule_for_io_queue(&modem_power_management_suspend_work, K_MSEC(SUSPEND_DELAY_MILLIS + active_time * MSEC_PER_SEC));
@@ -1103,20 +1138,23 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          lte_update_cell(evt->cell.tac, evt->cell.id);
          break;
       case LTE_LC_EVT_MODEM_SLEEP_ENTER:
-         if (idle_time) {
-            int64_t time = now - idle_time;
-            bool delayed = active_time >= 0 && ((time / MSEC_PER_SEC) > (active_time + 5));
+         if (phase == 3) {
+            int64_t time = now - phase_start_time;
+            lte_add_asleep(time);
+            bool delayed = active_time >= 0 && MSEC_TO_SEC(time) > (active_time + 5);
             if (delayed) {
                lte_inc_psm_delays(time);
             }
             LOG_INF("LTE modem sleeps after %lld ms idle%s", time, delayed ? ", delayed" : "");
-            idle_time = 0;
          } else {
             LOG_INF("LTE modem sleeps");
          }
+         phase = 0;
          work_reschedule_for_io_queue(&modem_power_management_suspend_work, K_MSEC(SUSPEND_DELAY_MILLIS));
          break;
       case LTE_LC_EVT_MODEM_SLEEP_EXIT:
+         phase = 1;
+         phase_start_time = now;
          (void)k_work_cancel_delayable(&modem_power_management_suspend_work);
          work_submit_to_io_queue(&modem_power_management_resume_work);
          LOG_INF("LTE modem wakes up");
@@ -1963,6 +2001,10 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
          statistic->psm_delay_time = MSEC_TO_SEC(lte_psm_delay_time);
          statistic->restarts = lte_restarts > 0 ? lte_restarts - 1 : 0;
          statistic->cell_updates = lte_cell_updates;
+         statistic->wakeups = lte_wakeups;
+         statistic->wakeup_time = MSEC_TO_SEC(lte_wakeup_time);
+         statistic->connected_time = MSEC_TO_SEC(lte_connected_time);
+         statistic->asleep_time = MSEC_TO_SEC(lte_asleep_time);
          k_mutex_unlock(&lte_mutex);
       } else {
          LOG_ERR("XCONNSTAT: %s => %d", buf, err);

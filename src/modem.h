@@ -70,8 +70,12 @@ typedef struct lte_network_statistic {
    uint32_t psm_delays;
    uint32_t restarts;
    uint32_t cell_updates;
+   uint32_t wakeups;
    uint32_t search_time;
    uint32_t psm_delay_time;
+   uint32_t wakeup_time;
+   uint32_t connected_time;
+   uint32_t asleep_time;
    uint32_t transmitted;
    uint32_t received;
    uint16_t max_packet_size;

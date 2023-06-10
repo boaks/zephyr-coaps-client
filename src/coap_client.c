@@ -41,7 +41,7 @@
 #define COAP_NO_RESPONSE_IGNORE_ALL 0x1a
 
 #define CUSTOM_COAP_OPTION_INTERVAL 0xff00
-#define CUSTOM_COAP_OPTION_TIME 0xff20
+#define CUSTOM_COAP_OPTION_TIME 0xff3c
 #define CUSTOM_COAP_OPTION_READ_ETAG 0xff40
 #define CUSTOM_COAP_OPTION_READ_RESPONSE_CODE 0xff60
 
@@ -570,9 +570,14 @@ int coap_client_prepare_post(void)
                         params.network_statistic.max_packet_size, params.network_statistic.average_packet_size);
       dtls_info("%s", buf + start);
       start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nCell updates %u, Network searchs %u (%u [s]), PSM delays %u (%u [s]), Restarts %u",
+      index += snprintf(buf + index, sizeof(buf) - index, "\nCell updates %u, Network searchs %u (%u s), PSM delays %u (%u s), Restarts %u",
                         params.network_statistic.cell_updates, params.network_statistic.searchs, params.network_statistic.search_time,
                         params.network_statistic.psm_delays, params.network_statistic.psm_delay_time, params.network_statistic.restarts);
+      dtls_info("%s", buf + start);
+      start = index + 1;
+      index += snprintf(buf + index, sizeof(buf) - index, "\nWakeups %u, %u s, connected %u s, asleep %u s",
+                        params.network_statistic.wakeups, params.network_statistic.wakeup_time,
+                        params.network_statistic.connected_time, params.network_statistic.asleep_time);
       dtls_info("%s", buf + start);
    }
 
