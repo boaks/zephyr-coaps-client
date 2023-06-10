@@ -153,9 +153,7 @@ static void dtls_power_management(void)
 
 static void reboot(int error, bool factoryReset)
 {
-   // write error code
-   appl_reboot_cause(error);
-   // reboot in 120s
+   // write error code, reboot in 120s
    appl_reboot(error, 120);
    modem_power_off();
    if (factoryReset) {

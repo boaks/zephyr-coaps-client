@@ -40,7 +40,6 @@ static volatile bool shutdown_now = false;
 
 static atomic_t shutdown_delay = ATOMIC_INIT(-1);
 static atomic_t reboot_cause = ATOMIC_INIT(-1);
-static atomic_t write_reboot_cause = ATOMIC_INIT(0);
 
 static atomic_t read_reset_cause = ATOMIC_INIT(0);
 
@@ -56,17 +55,15 @@ void watchdog_feed(void)
    }
 }
 
-void appl_reboot_cause(int error)
-{
-   if (atomic_cas(&write_reboot_cause, 0, 1)) {
-      appl_storage_write_int_item(REBOOT_CODE_ID, (uint16_t)error);
-   }
-}
-
 static void appl_reboot_fn(void *p1, void *p2, void *p3)
 {
    int error = 0;
    k_sem_take(&appl_diagnose_shutdown, K_FOREVER);
+
+   error = atomic_get(&reboot_cause);
+   if (error >= 0) {
+      appl_storage_write_int_item(REBOOT_CODE_ID, (uint16_t)error);
+   }
 
    if (!shutdown_now) {
       int delay = atomic_get(&shutdown_delay);
@@ -79,10 +76,6 @@ static void appl_reboot_fn(void *p1, void *p2, void *p3)
          }
          delay = atomic_get(&shutdown_delay);
       }
-   }
-   error = atomic_get(&reboot_cause);
-   if (error >= 0) {
-      appl_reboot_cause(error);
    }
    sys_reboot(SYS_REBOOT_COLD);
 }
@@ -192,7 +185,7 @@ static int appl_watchdog_init(void)
 
        /* Expire watchdog after max window */
        .window.min = 0,
-       .window.max = MSEC_PER_HOUR * 2,
+       .window.max = MSEC_PER_SEC * 60 * 5,
    };
 
    if (!wdt) {

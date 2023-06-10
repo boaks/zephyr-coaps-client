@@ -22,6 +22,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/net/socket.h>
 
+#include "appl_diagnose.h"
 #include "io_job_queue.h"
 #include "modem.h"
 #include "parse.h"
@@ -91,8 +92,6 @@ static volatile int rai_time = -1;
 #define SUSPEND_DELAY_MILLIS 100
 
 #ifdef CONFIG_NRF_MODEM_LIB_ON_FAULT_APPLICATION_SPECIFIC
-
-#include "appl_diagnose.h"
 
 void nrf_modem_fault_handler(struct nrf_modem_fault_info *fault_info)
 {
@@ -945,6 +944,9 @@ static volatile int lte_last_cereg_cause = 0;
 
 static void lte_at_monitor_dispatch(const char *notif)
 {
+   if (appl_reboots()) {
+      return;
+   }
    int skip = strstart(notif, "+CEREG:");
    if (skip > 0) {
       const char *cur = parse_next_chars(notif + skip, ',', 4);
@@ -1023,6 +1025,12 @@ static void lte_handler(const struct lte_lc_evt *const evt)
    static int64_t idle_time = 0;
    static int active_time = -1;
 
+   if (appl_reboots()) {
+      return;
+   }
+
+   int64_t now = k_uptime_get();
+
    switch (evt->type) {
       case LTE_LC_EVT_NW_REG_STATUS:
          lte_registration(evt->nw_reg_status);
@@ -1055,7 +1063,6 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          }
       case LTE_LC_EVT_RRC_UPDATE:
          {
-            int64_t now = k_uptime_get();
             if (evt->rrc_mode == LTE_LC_RRC_MODE_CONNECTED) {
                lte_connection_status_set(true);
                connect_time = now;
@@ -1102,7 +1109,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          break;
       case LTE_LC_EVT_MODEM_SLEEP_ENTER:
          if (idle_time) {
-            int64_t time = (k_uptime_get() - idle_time);
+            int64_t time = now - idle_time;
             bool delayed = active_time >= 0 && ((time / MSEC_PER_SEC) > (active_time + 5));
             if (delayed) {
                lte_inc_psm_delays(time);
@@ -1145,6 +1152,9 @@ static void lte_handler(const struct lte_lc_evt *const evt)
 static void pdn_handler(uint8_t cid, enum pdn_event event,
                         int reason)
 {
+   if (appl_reboots()) {
+      return;
+   }
    char binReason[9];
    if (event == PDN_EVENT_CNEC_ESM) {
       for (int bit = 0; bit < 8; ++bit) {
@@ -1498,6 +1508,7 @@ int modem_wait_ready(const k_timeout_t timeout)
          break;
       }
       if ((now - last) > MSEC_PER_SEC * 30) {
+         watchdog_feed();
          LOG_INF("Modem searching for %ld s", (long)((now - start) / MSEC_PER_SEC));
          last = now;
       }
