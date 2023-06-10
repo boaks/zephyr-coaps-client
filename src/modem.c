@@ -51,8 +51,6 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 static K_MUTEX_DEFINE(lte_mutex);
 static K_CONDVAR_DEFINE(lte_condvar);
 
-static K_SEM_DEFINE(ptau_update, 0, 1);
-
 static lte_state_change_callback_handler_t s_lte_state_change_handler = NULL;
 static bool initialized = 0;
 
@@ -65,6 +63,7 @@ static bool lte_pdn_active = false;
 
 static struct lte_lc_edrx_cfg edrx_status = {LTE_LC_LTE_MODE_NONE, 0.0, 0.0};
 static struct lte_lc_psm_cfg psm_status = {0, -1};
+
 static uint32_t lte_restarts = 0;
 static uint32_t lte_searchs = 0;
 static uint32_t lte_psm_delays = 0;
@@ -944,17 +943,16 @@ static volatile int lte_last_cereg_cause = 0;
 
 static void lte_at_monitor_dispatch(const char *notif)
 {
-   if (appl_reboots()) {
-      return;
-   }
-   int skip = strstart(notif, "+CEREG:");
-   if (skip > 0) {
-      const char *cur = parse_next_chars(notif + skip, ',', 4);
-      if (cur && strstart(cur, "0,")) {
-         lte_last_cereg_cause = atoi(cur + 2);
-         LOG_INF("LTE +CEREG: rejected, cause %d", lte_last_cereg_cause);
-      } else {
-         lte_last_cereg_cause = 0;
+   if (!appl_reboots()) {
+      int header = strstart(notif, "+CEREG:");
+      if (header > 0) {
+         const char *cur = parse_next_chars(notif + header, ',', 4);
+         if (cur && strstart(cur, "0,")) {
+            lte_last_cereg_cause = atoi(cur + 2);
+            LOG_INF("LTE +CEREG: rejected, cause %d", lte_last_cereg_cause);
+         } else {
+            lte_last_cereg_cause = 0;
+         }
       }
    }
    at_monitor_dispatch(notif);
@@ -1044,9 +1042,6 @@ static void lte_handler(const struct lte_lc_evt *const evt)
                  evt->psm_cfg.tau, evt->psm_cfg.active_time);
          active_time = evt->psm_cfg.active_time;
          lte_set_psm_status(&evt->psm_cfg);
-         if (evt->psm_cfg.active_time >= 0) {
-            k_sem_give(&ptau_update);
-         }
          break;
       case LTE_LC_EVT_EDRX_UPDATE:
          {
@@ -1509,12 +1504,12 @@ int modem_wait_ready(const k_timeout_t timeout)
       }
       if ((now - last) > MSEC_PER_SEC * 30) {
          watchdog_feed();
-         LOG_INF("Modem searching for %ld s", (long)((now - start) / MSEC_PER_SEC));
+         LOG_INF("Modem searching for %ld s", (long)MSEC_TO_SEC(now - start));
          last = now;
       }
    }
    now = k_uptime_get();
-   LOG_INF("Modem network %sfound in %ld s", err ? "not " : "", (long)((now - start) / MSEC_PER_SEC));
+   LOG_INF("Modem network %sfound in %ld s", err ? "not " : "", (long)MSEC_TO_SEC(now - start));
 
    return err;
 }
@@ -1606,6 +1601,7 @@ int modem_start(const k_timeout_t timeout, bool save)
    ui_led_op(LED_COLOR_RED, LED_SET);
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
 
+   ++lte_restarts;
    err = modem_connect();
    if (!err) {
       time = k_uptime_get();
@@ -1690,34 +1686,36 @@ const char *modem_get_registration_description(enum lte_lc_nw_reg_status reg_sta
 
 int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx)
 {
-   enum lte_lc_lte_mode mode;
+   int res = 0;
    k_mutex_lock(&lte_mutex, K_FOREVER);
-   mode = edrx_status.mode;
    if (edrx) {
       *edrx = edrx_status;
    }
-   k_mutex_unlock(&lte_mutex);
-#ifdef CONFIG_UDP_EDRX_ENABLE
-   return 0;
-#else
-   return LTE_LC_LTE_MODE_NONE == mode ? -ENODATA : 0;
+#ifndef CONFIG_UDP_EDRX_ENABLE
+   if (LTE_LC_LTE_MODE_NONE == edrx_status.mode) {
+      // don't display inactive eDRX when disabled
+      res = -ENODATA;
+   }
 #endif
+   k_mutex_unlock(&lte_mutex);
+   return res;
 }
 
 int modem_get_psm_status(struct lte_lc_psm_cfg *psm)
 {
-   int active_time;
+   int res = 0;
    k_mutex_lock(&lte_mutex, K_FOREVER);
-   active_time = psm_status.active_time;
    if (psm) {
       *psm = psm_status;
    }
-   k_mutex_unlock(&lte_mutex);
-#ifdef CONFIG_UDP_PSM_ENABLE
-   return 0;
-#else
-   return active_time < 0 ? -ENODATA : 0;
+#ifndef CONFIG_UDP_PSM_ENABLE
+   if (psm_status.active_time < 0) {
+      // don't display inactive PSM when disabled
+      res = -ENODATA;
+   }
 #endif
+   k_mutex_unlock(&lte_mutex);
+   return res;
 }
 
 int modem_get_release_time(void)
@@ -1963,7 +1961,7 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
          statistic->search_time = MSEC_TO_SEC(lte_search_time);
          statistic->psm_delays = lte_psm_delays;
          statistic->psm_delay_time = MSEC_TO_SEC(lte_psm_delay_time);
-         statistic->restarts = lte_restarts;
+         statistic->restarts = lte_restarts > 0 ? lte_restarts - 1 : 0;
          statistic->cell_updates = lte_cell_updates;
          k_mutex_unlock(&lte_mutex);
       } else {

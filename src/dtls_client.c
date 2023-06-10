@@ -125,25 +125,18 @@ static void dtls_power_management_suspend_fn(struct k_work *work)
 
 static K_WORK_DELAYABLE_DEFINE(dtls_power_management_suspend_work, dtls_power_management_suspend_fn);
 
+static atomic_t power_manager_suspended = ATOMIC_INIT(0);
+
 static void dtls_power_management(void)
 {
-   static bool power_manager_suspended = false;
-   bool suspend;
-   bool changed;
+   bool suspend = false;
 
-   if (appl_reboots()) {
-      return;
+   if (!appl_reboots()) {
+      k_mutex_lock(&dtls_pm_mutex, K_FOREVER);
+      suspend = network_sleeping && !appl_prevent_suspend && app_data.request_state == NONE;
+      k_mutex_unlock(&dtls_pm_mutex);
    }
-
-   k_mutex_lock(&dtls_pm_mutex, K_FOREVER);
-   suspend = network_sleeping && !appl_prevent_suspend && app_data.request_state == NONE;
-   changed = power_manager_suspended != suspend;
-   if (changed) {
-      power_manager_suspended = suspend;
-   }
-   k_mutex_unlock(&dtls_pm_mutex);
-
-   if (changed) {
+   if (atomic_cas(&power_manager_suspended, suspend ? 0 : 1, suspend ? 1 : 0)) {
       if (suspend) {
          ui_led_op(LED_COLOR_ALL, LED_CLEAR);
       }
@@ -155,6 +148,7 @@ static void reboot(int error, bool factoryReset)
 {
    // write error code, reboot in 120s
    appl_reboot(error, 120);
+   ui_led_op(LED_COLOR_RED, LED_BLINKING);
    modem_power_off();
    if (factoryReset) {
       modem_factory_reset();
@@ -218,8 +212,11 @@ static void restart_modem(bool force, dtls_app_data_t *app)
       // multi-sim with LTE-M/NB-IoT preference swap
       dtls_info("> modem restart");
       appl_prevent_suspend = true;
+      ui_led_op(LED_COLOR_BLUE, LED_BLINKING);
+      ui_led_op(LED_COLOR_RED, LED_BLINKING);
       modem_set_lte_offline();
-      k_sleep(K_MSEC(4000));
+      k_sleep(K_MSEC(2000));
+      ui_led_op(LED_COLOR_ALL, LED_CLEAR);
       network = modem_start(K_SECONDS(timeout_seconds), false) == 0;
       timeout_seconds *= 2;
       appl_prevent_suspend = false;
@@ -227,6 +224,8 @@ static void restart_modem(bool force, dtls_app_data_t *app)
 
    while (!network) {
       dtls_info("> modem offline (%d minutes)", sleep_minutes);
+      ui_led_op(LED_COLOR_BLUE, LED_BLINKING);
+      ui_led_op(LED_COLOR_RED, LED_BLINKING);
       modem_set_lte_offline();
       k_sleep(K_MSEC(2000));
       ui_led_op(LED_COLOR_ALL, LED_CLEAR);
@@ -337,9 +336,6 @@ static K_WORK_DELAYABLE_DEFINE(dtls_timer_trigger_work, dtls_timer_trigger_fn);
 
 static void dtls_timer_trigger_fn(struct k_work *work)
 {
-   if (appl_reboots()) {
-      return;
-   }
    if (app_data.request_state == NONE) {
       // no LEDs for time trigger
       ui_enable(false);
@@ -872,7 +868,6 @@ static int dtls_loop(session_t *dst, int flags)
          } else if (current_failures == 2) {
             // restart modem
             restarting_modem = true;
-            dtls_trigger();
          }
       }
 
@@ -883,8 +878,12 @@ static int dtls_loop(session_t *dst, int flags)
       if (restarting_modem) {
          dtls_info("Trigger restart modem.");
          restarting_modem = false;
+         appl_prevent_suspend = true;
+         dtls_power_management();
          restart_modem(true, &app_data);
          reopen_socket(&app_data);
+         appl_prevent_suspend = false;
+         dtls_trigger();
       }
       udp_poll.fd = app_data.fd;
       udp_poll.events = POLLIN;
