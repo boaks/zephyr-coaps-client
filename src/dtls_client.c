@@ -223,6 +223,10 @@ static void restart_modem(bool force, dtls_app_data_t *app)
    }
 
    while (!network) {
+      bool trigger;
+      int64_t now;
+      int64_t start;
+
       dtls_info("> modem offline (%d minutes)", sleep_minutes);
       ui_led_op(LED_COLOR_BLUE, LED_BLINKING);
       ui_led_op(LED_COLOR_RED, LED_BLINKING);
@@ -231,7 +235,19 @@ static void restart_modem(bool force, dtls_app_data_t *app)
       ui_led_op(LED_COLOR_ALL, LED_CLEAR);
       network_sleeping = true;
       dtls_power_management();
-      if (k_sem_take(&dtls_trigger_search, K_MINUTES(sleep_minutes)) == 0) {
+
+      trigger = false;
+      start = k_uptime_get();
+      do {
+         watchdog_feed();
+         if (k_sem_take(&dtls_trigger_search, K_SECONDS(WATCHDOG_TIMEOUT_S)) == 0) {
+            trigger = true;
+            break;
+         }
+         now = k_uptime_get();
+      } while ((now - start) < (sleep_minutes * 60L * MSEC_PER_SEC));
+      watchdog_feed();
+      if (trigger) {
          dtls_info("> modem normal (manual)");
          sleep_minutes = 15;
          check_reboot();
@@ -239,7 +255,6 @@ static void restart_modem(bool force, dtls_app_data_t *app)
          dtls_info("> modem normal (timeout)");
          sleep_minutes *= 2;
       }
-      watchdog_feed();
       timeout_seconds *= 2;
       dtls_info("> modem search network (%d minutes)", timeout_seconds / 60);
       network_sleeping = false;
@@ -255,6 +270,7 @@ static void restart_modem(bool force, dtls_app_data_t *app)
          }
       }
    }
+   watchdog_feed();
    dtls_info("> modem connected.");
 }
 

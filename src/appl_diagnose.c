@@ -183,9 +183,9 @@ static int appl_watchdog_init(void)
        /* Reset SoC when watchdog timer expires. */
        .flags = WDT_FLAG_RESET_SOC,
 
-       /* Expire watchdog after max window */
        .window.min = 0,
-       .window.max = MSEC_PER_SEC * 60 * 5,
+       /* Expire watchdog after max. window, +10s extra */
+       .window.max = (WATCHDOG_TIMEOUT_S + 10) * MSEC_PER_SEC,
    };
 
    if (!wdt) {

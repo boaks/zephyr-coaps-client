@@ -29,6 +29,8 @@
 
 #define ERROR_CODE(BASE, ERR) ((BASE & 0xf000) | (ERR & 0xfff))
 
+#define WATCHDOG_TIMEOUT_S (60 * 5)
+
 void watchdog_feed(void);
 
 void appl_reboot(int error, int delay);
