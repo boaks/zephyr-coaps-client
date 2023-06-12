@@ -646,7 +646,7 @@ int coap_client_prepare_post(void)
          index = start - 1;
 #endif
       }
-      index += snprintf(buf + index, sizeof(buf) - index, "\n%sGNSS.3=%.06f,%.06f,%.01f,%.02f,%.01f",
+      index += snprintf(buf + index, sizeof(buf) - index, "\n%s!GNSS.3=%.06f,%.06f,%.01f,%.02f,%.01f",
                         err ? "*" : "",
                         result.position.latitude, result.position.longitude, result.position.accuracy,
                         result.position.altitude, result.position.altitude_accuracy);
