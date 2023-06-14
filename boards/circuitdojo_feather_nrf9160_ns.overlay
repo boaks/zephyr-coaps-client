@@ -45,14 +45,10 @@
 };
 */
 
-&i2c1 {
-
-	lis2dh: lis2dh@18 {
-		/* changed in v5 */
-		irq-gpios = <&gpio0 30 GPIO_ACTIVE_HIGH>;
-		anym-on-int1;
-	};
-
+&lis2dh {
+	/* changed in v5 */
+	irq-gpios = <&gpio0 30 GPIO_ACTIVE_HIGH>;
+	anym-on-int1;
 };
 
 sensor_i2c: &i2c1 {};
