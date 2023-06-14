@@ -1073,9 +1073,15 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          {
             char log_buf[60];
             ssize_t len;
+            const char* mode = "none";
+            if (evt->edrx_cfg.mode == LTE_LC_LTE_MODE_LTEM) {
+               mode = "LTE-M";
+            } else if (evt->edrx_cfg.mode == LTE_LC_LTE_MODE_NBIOT) {
+               mode = "NB-IoT";
+            }
             len = snprintf(log_buf, sizeof(log_buf),
-                           "eDRX parameter update: eDRX: %f, PTW: %f",
-                           evt->edrx_cfg.edrx, evt->edrx_cfg.ptw);
+                           "eDRX parameter update: %s, eDRX: %f, PTW: %f",
+                           mode, evt->edrx_cfg.edrx, evt->edrx_cfg.ptw);
             if (len > 0) {
                LOG_INF("%s", log_buf);
             }

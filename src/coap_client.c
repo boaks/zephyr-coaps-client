@@ -531,11 +531,11 @@ int coap_client_prepare_post(void)
          case LTE_LC_LTE_MODE_NBIOT:
             index += snprintf(buf + index, sizeof(buf) - index, "\neDRX: NB-IoT %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
             break;
+         default:
+            index += snprintf(buf + index, sizeof(buf) - index, "\neDRX: unknown");
+            break;
       }
       dtls_info("%s", buf + start);
-      if (params.edrx.mode == LTE_LC_LTE_MODE_NONE) {
-         index = start - 1;
-      }
    }
 #endif /* CONFIG_COAP_SEND_NETWORK_INFO */
 
