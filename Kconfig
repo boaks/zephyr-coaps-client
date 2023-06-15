@@ -69,6 +69,10 @@ config COAP_FAILURE_SEND_INTERVAL
 	int "CoAP send interval after failures in seconds. 0 to use send interval"
 	default 0
 
+config COAP_SEND_MODEM_INFO
+	bool "Include modem infos in message."
+	default y
+
 config COAP_SEND_SIM_INFO
 	bool "Include SIM infos in message."
 	default y
@@ -233,6 +237,17 @@ config MODEM_ICCID_NBIOT_PREFERENCE
 	default ""
 	help
 	  List of ICCID header (first 5 digits), which only supports NB-IoT.
+
+config MODEM_EPCO
+    bool 
+	default y
+
+config MODEM_FAULT_THRESHOLD
+    int "Threshold for modem faults per week."
+	default 2
+	depends on NRF_MODEM_LIB_ON_FAULT_APPLICATION_SPECIFIC
+	help
+	   Threshold for modem faults per week to reboot the device.
 
 config PROTOCOL_CONFIG_SWITCH
 	bool "Enable protocol configuration switch"

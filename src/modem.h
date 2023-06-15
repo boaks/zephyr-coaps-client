@@ -26,6 +26,7 @@
 typedef struct lte_modem_info {
    char version[MODEM_ID_SIZE];
    char firmware[MODEM_ID_SIZE];
+   char imei[MODEM_ID_SIZE];
 } lte_modem_info_t;
 
 typedef struct lte_sim_info {
@@ -49,6 +50,7 @@ typedef struct lte_network_info {
    char provider[MODEM_PLMN_SIZE];
    uint16_t tac;
    uint32_t cell;
+   uint32_t earfcn;
    char apn[16];
    char local_ip[16];
 } lte_network_info_t;
@@ -121,6 +123,8 @@ int modem_get_network_info(struct lte_network_info* info);
 int modem_get_coverage_enhancement_info(struct lte_ce_info* info);
 
 int modem_get_sim_info(struct lte_sim_info* info);
+
+int modem_get_modem_info(struct lte_modem_info* info);
 
 int modem_get_imei(char* buf, size_t len);
 

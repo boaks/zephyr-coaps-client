@@ -78,11 +78,10 @@ static bool lte_plmn_lock = false;
 static bool lte_force_nb_iot = false;
 static bool lte_force_lte_m = false;
 static bool lte_system_mode_preference = false;
+static struct lte_modem_info modem_info;
 static struct lte_network_info network_info;
 static struct lte_ce_info ce_info;
 static struct lte_sim_info sim_info;
-
-static uint8_t imei[MODEM_ID_SIZE];
 
 static int64_t transmission_time = 0;
 static int64_t network_search_time = 0;
@@ -96,10 +95,45 @@ static volatile int rai_time = -1;
 
 #ifdef CONFIG_NRF_MODEM_LIB_ON_FAULT_APPLICATION_SPECIFIC
 
+#define FAULT_COUNTER_MASK 0xABCDEF
+#define WEEK_IN_MILLIS (MSEC_PER_SEC * 60 * 60 * 24 * 7)
+
+static int64_t fault_time1 = 0;
+static int64_t fault_time2 = FAULT_COUNTER_MASK;
+static uint32_t fault_counter1 = 0;
+static uint32_t fault_counter2 = FAULT_COUNTER_MASK;
+
 void nrf_modem_fault_handler(struct nrf_modem_fault_info *fault_info)
 {
-   LOG_ERR("Modem error: 0x%x, PC: 0x%x", fault_info->reason, fault_info->program_counter);
-   appl_reboot(ERROR_CODE_MODEM_FAULT, 0);
+   bool reboot = true;
+#if (CONFIG_MODEM_FAULT_THRESHOLD > 0)
+   if (fault_counter1 == (fault_counter2 ^ FAULT_COUNTER_MASK) &&
+       fault_time1 == (fault_time2 ^ FAULT_COUNTER_MASK)) {
+      // counter & timer are valid
+      int64_t now = k_uptime_get();
+      if (fault_time1 + WEEK_IN_MILLIS < now) {
+         // timeout => reset
+         fault_counter1 = 0;
+      }
+      if (!fault_counter1) {
+         // first fault => start timeout
+         fault_time1 = now;
+         fault_time2 = fault_time1 ^ FAULT_COUNTER_MASK;
+      }
+      if (fault_counter1++ < CONFIG_MODEM_FAULT_THRESHOLD) {
+         fault_counter2 = fault_counter1 ^ FAULT_COUNTER_MASK;
+         reboot = false;
+      }
+   }
+#endif
+   if (fault_info) {
+      LOG_ERR("Modem error: 0x%x, PC: 0x%x, %u", fault_info->reason, fault_info->program_counter, fault_counter1);
+   } else {
+      LOG_ERR("Modem error: %u", fault_counter1);
+   }
+   if (reboot) {
+      appl_reboot(ERROR_CODE_MODEM_FAULT, 0);
+   }
 }
 #endif
 
@@ -299,6 +333,15 @@ static bool modem_apply_iccid_preference(void)
    }
 #endif
    return false;
+}
+
+static bool modem_multi_imsi(void)
+{
+   bool multi;
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   multi = sim_info.prev_imsi[0];
+   k_mutex_unlock(&lte_mutex);
+   return multi;
 }
 
 /**
@@ -522,7 +565,7 @@ static void modem_read_sim_work_fn(struct k_work *work)
       if (strcmp(sim_info.iccid, buf)) {
          // SIM card changed, clear infos
          memset(&sim_info, 0, sizeof(sim_info));
-         strncpy(sim_info.iccid, buf, sizeof(sim_info.iccid));
+         strncpy(sim_info.iccid, buf, sizeof(sim_info.iccid) - 1);
          changed = true;
       }
       memcpy(mcc, network_info.provider, 3);
@@ -548,10 +591,10 @@ static void modem_read_sim_work_fn(struct k_work *work)
       k_mutex_lock(&lte_mutex, K_FOREVER);
       if (strcmp(sim_info.imsi, buf)) {
          if (sim_info.imsi[0]) {
-            strncpy(sim_info.prev_imsi, sim_info.imsi, sizeof(sim_info.prev_imsi));
+            strncpy(sim_info.prev_imsi, sim_info.imsi, sizeof(sim_info.prev_imsi) - 1);
             sim_info.imsi_interval = MSEC_TO_SEC((now - imsi_time));
          }
-         strncpy(sim_info.imsi, buf, sizeof(sim_info.imsi));
+         strncpy(sim_info.imsi, buf, sizeof(sim_info.imsi) - 1);
          imsi_time = now;
       } else if (!work) {
          imsi_time = now;
@@ -1073,7 +1116,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          {
             char log_buf[60];
             ssize_t len;
-            const char* mode = "none";
+            const char *mode = "none";
             if (evt->edrx_cfg.mode == LTE_LC_LTE_MODE_LTEM) {
                mode = "LTE-M";
             } else if (evt->edrx_cfg.mode == LTE_LC_LTE_MODE_NBIOT) {
@@ -1286,6 +1329,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 
       modem_cancel_all_job();
       memset(&sim_info, 0, sizeof(sim_info));
+      memset(&modem_info, 0, sizeof(modem_info));
 
       s_lte_state_change_handler = state_handler;
 #ifdef CONFIG_NRF_MODEM_LIB_TRACE_ENABLED
@@ -1300,17 +1344,21 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       err = modem_at_cmd("AT%%HWVERSION", buf, sizeof(buf), "%HWVERSION: ");
       if (err > 0) {
          LOG_INF("hw: %s", buf);
+         int index = strstart(buf, "nRF9160 SICA ");
+         strncpy(modem_info.version, &buf[index], sizeof(modem_info.version) - 1);
       }
       err = modem_at_cmd("AT+CGMR", buf, sizeof(buf), NULL);
       if (err > 0) {
          LOG_INF("rev: %s", buf);
+         int index = strstart(buf, "mfw_nrf9160_");
+         strncpy(modem_info.firmware, &buf[index], sizeof(modem_info.firmware) - 1);
       }
       err = modem_at_cmd("AT+CGSN", buf, sizeof(buf), NULL);
       if (err < 0) {
          LOG_INF("Failed to read IMEI.");
       } else {
          LOG_INF("imei: %s", buf);
-         strncpy(imei, buf, sizeof(imei));
+         strncpy(modem_info.imei, buf, sizeof(modem_info.imei) - 1);
       }
       if ((config & 3) == 3) {
          err = modem_at_cmd("AT%%XFACTORYRESET=0", buf, sizeof(buf), NULL);
@@ -1340,7 +1388,8 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       if (err > 0) {
          LOG_INF("rel14feat: %s", buf);
       }
-#if 1
+
+#ifdef CONFIG_MODEM_EPCO
       err = modem_at_cmd("AT%%XEPCO=1", buf, sizeof(buf), NULL);
       if (err > 0) {
          LOG_INF("ePCO=1: %s", buf);
@@ -1536,11 +1585,9 @@ int modem_wait_ready(const k_timeout_t timeout)
       }
       timeout_ms = k_ticks_to_ms_floor64(timeout.ticks);
       if (timeout_ms < MULTI_IMSI_MINIMUM_TIMEOUT_MS) {
-         k_mutex_lock(&lte_mutex, K_FOREVER);
-         if (sim_info.prev_imsi[0]) {
+         if (modem_multi_imsi()) {
             timeout_ms = MULTI_IMSI_MINIMUM_TIMEOUT_MS;
          }
-         k_mutex_unlock(&lte_mutex);
       }
       if ((now - start) > timeout_ms) {
          err = -1;
@@ -1588,7 +1635,7 @@ int modem_start(const k_timeout_t timeout, bool save)
       LOG_INF("NB-IoT PLMN preference.");
 #endif
       if (lte_system_mode_preference) {
-         if (!lte_found && sim_info.prev_imsi[0]) {
+         if (!lte_found && modem_multi_imsi()) {
             modem_set_preference(SWAP_PREFERENCE);
          } else {
             modem_apply_iccid_preference();
@@ -1654,6 +1701,10 @@ int modem_start(const k_timeout_t timeout, bool save)
       if (!err) {
          lte_found = true;
          LOG_INF("LTE attached in %ld [ms]", (long)time);
+         if (modem_multi_imsi()) {
+            // multi imsi may get irritated by switching off the modem
+            save = false;
+         }
 #if CONFIG_MODEM_SAVE_CONFIG_THRESHOLD > 0
 #if CONFIG_MODEM_SAVE_CONFIG_THRESHOLD == 1
          if (save) {
@@ -1802,12 +1853,20 @@ int modem_get_sim_info(struct lte_sim_info *info)
    return res;
 }
 
+int modem_get_modem_info(struct lte_modem_info *info)
+{
+   if (info) {
+      *info = modem_info;
+   }
+   return 0;
+}
+
 int modem_get_imei(char *buf, size_t len)
 {
    if (buf) {
-      strncpy(buf, imei, len);
+      strncpy(buf, modem_info.imei, len);
    }
-   return strlen(imei);
+   return strlen(modem_info.imei);
 }
 
 void modem_set_transmission_time(void)
@@ -1907,10 +1966,18 @@ int modem_read_network_info(struct lte_network_info *info)
          if (cur != t) {
             temp.cell = (uint32_t)value;
          }
-         // skip 3 parameter by ,
-         cur = parse_next_chars(t, ',', 3);
+         // skip next parameter by ,
+         cur = parse_next_chars(t, ',', 2);
       }
       if (cur) {
+         value = (int)strtol(cur, &t, 10);
+         if (cur != t) {
+            temp.earfcn = (uint32_t)value;
+         }
+      }
+      if (cur && *t == ',') {
+         // skip ,
+         cur = t + 1;
          rsrp = (int)strtol(cur, &t, 10) - 140;
          if (cur == t) {
             rsrp = INVALID_SIGNAL_VALUE;
@@ -1934,8 +2001,8 @@ int modem_read_network_info(struct lte_network_info *info)
    if (network_info.cell != temp.cell || network_info.tac != temp.tac) {
       lte_cell_updates++;
    }
-   strncpy(temp.apn, network_info.apn, sizeof(temp.apn));
-   strncpy(temp.local_ip, network_info.local_ip, sizeof(temp.local_ip));
+   strncpy(temp.apn, network_info.apn, sizeof(temp.apn) - 1);
+   strncpy(temp.local_ip, network_info.local_ip, sizeof(temp.local_ip) - 1);
    network_info = temp;
    ce_info.rsrp = rsrp;
    ce_info.snr = snr;
@@ -1978,8 +2045,8 @@ int modem_read_pdn_info(char *info, size_t len)
          cur += parse_strncpy(ip, cur, '"', sizeof(ip));
       }
       k_mutex_lock(&lte_mutex, K_FOREVER);
-      strncpy(network_info.apn, apn, sizeof(network_info.apn));
-      strncpy(network_info.local_ip, ip, sizeof(network_info.local_ip));
+      strncpy(network_info.apn, apn, sizeof(network_info.apn) - 1);
+      strncpy(network_info.local_ip, ip, sizeof(network_info.local_ip) - 1);
       k_mutex_unlock(&lte_mutex);
       return strlen(buf);
    }
@@ -2309,6 +2376,12 @@ int modem_get_coverage_enhancement_info(struct lte_ce_info *info)
 }
 
 int modem_get_sim_info(struct lte_sim_info *info)
+{
+   (void)info;
+   return -ENODATA;
+}
+
+int modem_get_modem_info(struct lte_modem_info *info)
 {
    (void)info;
    return -ENODATA;

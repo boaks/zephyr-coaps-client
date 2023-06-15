@@ -150,6 +150,7 @@ static void reboot(int error, bool factoryReset)
    appl_reboot(error, 120);
    ui_led_op(LED_COLOR_RED, LED_BLINKING);
    modem_power_off();
+   dtls_info("> modem off");
    if (factoryReset) {
       modem_factory_reset();
    }
@@ -215,6 +216,7 @@ static void restart_modem(bool force, dtls_app_data_t *app)
       ui_led_op(LED_COLOR_BLUE, LED_BLINKING);
       ui_led_op(LED_COLOR_RED, LED_BLINKING);
       modem_set_lte_offline();
+      dtls_info("> modem offline");
       k_sleep(K_MSEC(2000));
       ui_led_op(LED_COLOR_ALL, LED_CLEAR);
       network = modem_start(K_SECONDS(timeout_seconds), false) == 0;
@@ -231,6 +233,7 @@ static void restart_modem(bool force, dtls_app_data_t *app)
       ui_led_op(LED_COLOR_BLUE, LED_BLINKING);
       ui_led_op(LED_COLOR_RED, LED_BLINKING);
       modem_set_lte_offline();
+      dtls_info("> modem offline");
       k_sleep(K_MSEC(2000));
       ui_led_op(LED_COLOR_ALL, LED_CLEAR);
       network_sleeping = true;
@@ -1275,7 +1278,7 @@ void main(void)
    console_init_input();
 #endif
 
-   if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), flags & FLAG_RESET) != 0) {
+   if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), true) != 0) {
       appl_ready = true;
       restart_modem(false, NULL);
    }

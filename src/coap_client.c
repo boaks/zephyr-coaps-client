@@ -41,7 +41,7 @@
 #define COAP_NO_RESPONSE_IGNORE_ALL 0x1a
 
 #define CUSTOM_COAP_OPTION_INTERVAL 0xff00
-#define CUSTOM_COAP_OPTION_TIME 0xff3c
+#define CUSTOM_COAP_OPTION_TIME 0xff20
 #define CUSTOM_COAP_OPTION_READ_ETAG 0xff40
 #define CUSTOM_COAP_OPTION_READ_RESPONSE_CODE 0xff60
 
@@ -290,6 +290,7 @@ union lte_params {
    struct lte_network_statistic network_statistic;
    struct lte_ce_info ce_info;
    struct lte_sim_info sim_info;
+   struct lte_modem_info modem_info;
 };
 
 int coap_client_prepare_post(void)
@@ -366,6 +367,15 @@ int coap_client_prepare_post(void)
    index += snprintf(buf + index, sizeof(buf) - index, ", Thingy:91 %s, 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
                      CLIENT_VERSION, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
    dtls_info("%s", buf + start);
+
+#ifdef CONFIG_COAP_SEND_MODEM_INFO
+   memset(&params, 0, sizeof(params));
+   if (!modem_get_modem_info(&params.modem_info)) {
+      start = index + 1;
+      index += snprintf(buf + index, sizeof(buf) - index, "\nHW: %s, MFW: %s, IMEI: %s",params.modem_info.version,params.modem_info.firmware, params.modem_info.imei);
+      dtls_info("%s", buf + start);
+   }
+#endif
 
    if (battery_voltage < 0xffff) {
       start = index + 1;
@@ -468,7 +478,6 @@ int coap_client_prepare_post(void)
 #endif /* CONFIG_COAP_SEND_SIM_INFO */
 
 #ifdef CONFIG_COAP_SEND_NETWORK_INFO
-
    memset(&params, 0, sizeof(params));
    if (!modem_get_network_info(&params.network_info)) {
       start = index + 1;
@@ -485,6 +494,7 @@ int coap_client_prepare_post(void)
          }
          index += snprintf(buf + index, sizeof(buf) - index, ",TAC %u", params.network_info.tac);
          index += snprintf(buf + index, sizeof(buf) - index, ",Cell %u", params.network_info.cell);
+         index += snprintf(buf + index, sizeof(buf) - index, ",EARFCN %u", params.network_info.earfcn);
       }
    }
    dtls_info("%s", buf + start);
