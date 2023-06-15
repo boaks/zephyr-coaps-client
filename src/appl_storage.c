@@ -353,7 +353,7 @@ static int appl_storage_init(const struct device *arg)
          } else if (!only_ff(data, sizeof(data))) {
             char label[24];
             snprintf(label, sizeof(label), "Storage: @0x%lx", addr);
-            LOG_HEXDUMP_INF(data, sizeof(data), label);
+            LOG_HEXDUMP_DBG(data, sizeof(data), label);
          }
       }
    }
