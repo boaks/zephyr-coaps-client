@@ -37,10 +37,8 @@ LOG_MODULE_REGISTER(UI, CONFIG_UI_LOG_LEVEL);
 #define CONFIG_SWITCH_NODE_2 DT_ALIAS(sw3)
 
 #define BUTTON_LONG_MS 5000
-#define BUTTON_DITHER_MS 1000
-#define BUTTON_DEBOUNCE_MS 25
-#define BUTTON_DEBOUNCE_ON_MS 50
-#define BUTTON_DEBOUNCE_OFF_MS 500
+#define BUTTON_DEBOUNCE_MS 50
+#define BUTTON_MIN_PAUSE_MS 1000
 
 #if (!DT_NODE_HAS_STATUS(CALL_BUTTON_NODE, okay))
 /* A build error here means your board isn't set up to for sw0 (call button). */
@@ -104,7 +102,7 @@ static gpio_device_t button_spec = GPIO_DEVICE_INIT(CALL_BUTTON_NODE);
 
 static struct gpio_callback button_cb_data;
 static ui_callback_handler_t button_callback;
-static volatile bool button_active;
+static volatile int button_active;
 static volatile int button_counter;
 
 static void ui_led_timer_expiry_fn(struct k_work *work);
@@ -143,7 +141,6 @@ static void ui_button_handle_fn(struct k_work *work)
 {
    static int64_t last = 0;
    static int64_t start = 0;
-   static int short_pressed = 0;
    static unsigned int counter = 0;
 
    int64_t now = k_uptime_get();
@@ -164,19 +161,25 @@ static void ui_button_handle_fn(struct k_work *work)
             LOG_INF("UI button released #%u-%d, %d ms on.", counter, ui_input_duration, (int)time);
             k_work_cancel_delayable(&button_timer_work);
             if (ui_input_duration == 1) {
-               if (time > BUTTON_DEBOUNCE_ON_MS || short_pressed) {
-                  short_pressed = 1;
+               int64_t time = now - last;
+               LOG_INF("UI button short pressed #%u-%d, %d ms off.", counter, ui_input_duration, (int)time);
+               if (time > BUTTON_MIN_PAUSE_MS) {
                   ui_input_duration = 2;
-                  work_reschedule_for_io_queue(&button_timer_work, K_MSEC(BUTTON_DEBOUNCE_OFF_MS));
+                  last = now;
+                  ui_enable(true);
+                  ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
+                  if (button_callback != NULL) {
+                     button_callback(0);
+                     LOG_DBG("UI button callback %u", button_counter);
+                  }
+                  k_sem_give(&ui_input_trigger);
                } else {
-                  LOG_INF("UI button on ignored.");
-                  ui_input_duration = 0;
+                  LOG_INF("UI button ignored, pause too short.");
                }
             }
          }
       }
    } else if (&button_timer_work.work == work) {
-      short_pressed = 0;
       if (ui_input_duration == 1) {
          LOG_INF("UI button long pressed #%u-%d", counter, ui_input_duration);
          last = now;
@@ -190,21 +193,6 @@ static void ui_button_handle_fn(struct k_work *work)
             LOG_DBG("UI button long callback %u", button_counter);
          }
          k_sem_give(&ui_input_trigger);
-      } else if (ui_input_duration == 2) {
-         int64_t time = now - last;
-         LOG_INF("UI button short pressed #%u-%d, %d ms off.", counter, ui_input_duration, (int)time);
-         if (time > BUTTON_DITHER_MS) {
-            last = now;
-            ui_enable(true);
-            ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
-            if (button_callback != NULL) {
-               button_callback(0);
-               LOG_DBG("UI button callback %u", button_counter);
-            }
-            k_sem_give(&ui_input_trigger);
-         } else {
-            LOG_INF("UI button off ignored.");
-         }
       }
    }
 }
@@ -212,36 +200,38 @@ static void ui_button_handle_fn(struct k_work *work)
 static void ui_button_enable_interrupt_fn(struct k_work *work)
 {
    //   LOG_DBG("UI button enable interrupt %d", button_active);
-   if (button_active) {
-      gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_LEVEL_INACTIVE);
+   int button = gpio_pin_get_dt(&button_spec.gpio_spec);
+   if (button_active != button) {
+      // stable signal
+      ++button_counter;
+      LOG_DBG("UI button %d/%d", button, button_counter);
+      struct ui_fifo *ui_notif = k_heap_alloc(&ui_heap, sizeof(struct ui_fifo), K_NO_WAIT);
+      if (ui_notif) {
+         ui_notif->counter = button ? button_counter : -button_counter;
+         k_fifo_put(&ui_call_button_fifo, ui_notif);
+         work_submit_to_io_queue(&button_work);
+      }
    } else {
-      gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_LEVEL_ACTIVE);
+      LOG_DBG("UI button ignored, instable %d/%d", button, button_counter);
    }
+   // enable interrupt again
+   button_active = button;
+   gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec,
+                                   button ? GPIO_INT_LEVEL_INACTIVE : GPIO_INT_LEVEL_ACTIVE);
 }
 
 static void ui_button_pressed(const struct device *dev, struct gpio_callback *cb,
                               uint32_t pins)
 {
-   struct ui_fifo *ui_notif;
-
+   int res;
    if ((BIT(button_spec.gpio_spec.pin) & pins) == 0) {
       return;
    }
-
-   //   LOG_DBG("UI button disable interrupt %d", button_active);
+   LOG_DBG("UI button disable interrupt");
    gpio_pin_interrupt_configure_dt(&button_spec.gpio_spec, GPIO_INT_DISABLE);
-   if (button_active) {
-      button_active = false;
-   } else {
-      button_active = true;
-      ++button_counter;
-   }
-   work_reschedule_for_io_queue(&button_enable_interrupt_work, K_MSEC(BUTTON_DEBOUNCE_MS));
-   ui_notif = k_heap_alloc(&ui_heap, sizeof(struct ui_fifo), K_NO_WAIT);
-   if (ui_notif) {
-      ui_notif->counter = button_active ? button_counter : -button_counter;
-      k_fifo_put(&ui_call_button_fifo, ui_notif);
-      work_submit_to_io_queue(&button_work);
+   res = work_reschedule_for_io_queue(&button_enable_interrupt_work, K_MSEC(BUTTON_DEBOUNCE_MS));
+   if (res != 1) {
+      LOG_WRN("UI button failed: %d", res);
    }
 }
 
@@ -264,7 +254,7 @@ static int ui_init_button(void)
       return ret;
    }
    button_counter = 0;
-   button_active = false;
+   button_active = gpio_pin_get_dt(&button_spec.gpio_spec);
    k_work_cancel_delayable(&button_enable_interrupt_work);
 
    gpio_init_callback(&button_cb_data, ui_button_pressed, BIT(button_spec.gpio_spec.pin));
