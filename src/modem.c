@@ -234,6 +234,7 @@ enum preference_mode {
    SWAP_PREFERENCE,
    NBIOT_PREFERENCE,
    LTE_M_PREFERENCE,
+   ADJUST_PREFERENCE,
 };
 
 static bool modem_set_preference(enum preference_mode mode)
@@ -246,6 +247,7 @@ static bool modem_set_preference(enum preference_mode mode)
           lte_mode == LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS) {
          bool nbiot_preference = false;
          enum lte_lc_system_mode_preference lte_new_preference = lte_preference;
+
          switch (lte_preference) {
             case LTE_LC_SYSTEM_MODE_PREFER_NBIOT:
                lte_new_preference = LTE_LC_SYSTEM_MODE_PREFER_LTEM;
@@ -280,6 +282,15 @@ static bool modem_set_preference(enum preference_mode mode)
                   break;
                case LTE_M_PREFERENCE:
                   lte_new_preference = LTE_LC_SYSTEM_MODE_LTEM;
+                  break;
+               case ADJUST_PREFERENCE:
+                  k_mutex_lock(&lte_mutex, K_FOREVER);
+                  if (network_info.mode == LTE_LC_LTE_MODE_LTEM) {
+                     lte_new_preference = LTE_LC_SYSTEM_MODE_LTEM;
+                  } else if (network_info.mode == LTE_LC_LTE_MODE_NBIOT) {
+                     lte_new_preference = LTE_LC_SYSTEM_MODE_NBIOT;
+                  }
+                  k_mutex_unlock(&lte_mutex);
                   break;
             }
             if (lte_new_preference != lte_preference) {
@@ -1713,6 +1724,9 @@ int modem_start(const k_timeout_t timeout, bool save)
 #endif
             LOG_INF("Modem saving ...");
             lte_lc_power_off();
+            if (lte_system_mode_preference) {
+               modem_set_preference(ADJUST_PREFERENCE);
+            }
             lte_lc_normal();
             LOG_INF("Modem saved.");
             err = modem_wait_ready(timeout);
