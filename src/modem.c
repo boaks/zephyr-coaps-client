@@ -2163,6 +2163,18 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
    return err;
 }
 
+int modem_read_sim_info(struct lte_sim_info *info)
+{
+   int res = 0;
+   modem_read_sim_work_fn(NULL);
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (info) {
+      *info = sim_info;
+   }
+   k_mutex_unlock(&lte_mutex);
+   return res;
+}
+
 static int modem_int_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip, bool warn)
 {
    int err;

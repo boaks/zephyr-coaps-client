@@ -34,7 +34,7 @@ target_sources(app PRIVATE
 	src/coap_client.c
 	)
 
-target_sources_ifdef(CONFIG_CONSOLE_SUBSYS app PRIVATE src/console_input.c)
+target_sources_ifdef(CONFIG_UART_ASYNC_API app PRIVATE src/uart_receiver.c)
 
 target_sources_ifdef(CONFIG_LOCATION_ENABLE app PRIVATE src/location.c)
 

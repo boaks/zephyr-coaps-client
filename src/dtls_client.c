@@ -24,7 +24,6 @@
 #include "appl_storage_config.h"
 #include "appl_time.h"
 #include "coap_client.h"
-#include "console_input.h"
 #include "dtls.h"
 #include "dtls_credentials.h"
 #include "dtls_debug.h"
@@ -1280,10 +1279,6 @@ void main(void)
 
 #ifdef CONFIG_ENVIRONMENT_SENSOR
    environment_init();
-#endif
-
-#ifdef CONFIG_CONSOLE_SUBSYS
-   console_init_input();
 #endif
 
    if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), true) != 0) {
