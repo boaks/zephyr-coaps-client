@@ -232,10 +232,6 @@ config MODEM_SEARCH_TIMEOUT
 	default 300 if LTE_MODE_PREFERENCE_NBIOT_PRIO || LTE_MODE_PREFERENCE_LTE_M_PRIO
 	default 180
 
-config MODEM_CEREG_REJECTION_NOTIFICATION
-	bool "Modem logging for CEREG rejections."
-	default y
-
 config MODEM_ICCID_LTE_M_PREFERENCE
 	string "Modem ICCID header list for LTE-M preference."
 	default ""
@@ -535,6 +531,10 @@ source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
 
 module = UI
 module-str = UI
+source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
+
+module = MODEM
+module-str = Modem
 source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
 
 if FLASH || EEPROM

@@ -11,6 +11,7 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include <modem/at_monitor.h>
 #include <modem/lte_lc.h>
 #include <modem/nrf_modem_lib.h>
 #include <modem/pdn.h>
@@ -28,7 +29,7 @@
 #include "parse.h"
 #include "ui.h"
 
-LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
+LOG_MODULE_REGISTER(MODEM, CONFIG_MODEM_LOG_LEVEL);
 
 #if defined(CONFIG_NRF_MODEM_LIB)
 
@@ -1020,29 +1021,38 @@ static void lte_pdn_status_set(bool pdn_active)
 }
 #endif
 
-#ifdef CONFIG_MODEM_CEREG_REJECTION_NOTIFICATION
-
-extern void at_monitor_dispatch(const char *notif);
+AT_MONITOR(modem, ANY, modem_handler);
 
 static volatile int lte_last_cereg_cause = 0;
 
-static void lte_at_monitor_dispatch(const char *notif)
+static void modem_handler(const char *notif)
 {
    if (!appl_reboots()) {
-      int header = strstart(notif, "+CEREG:");
-      if (header > 0) {
-         const char *cur = parse_next_chars(notif + header, ',', 4);
-         if (cur && strstart(cur, "0,")) {
-            lte_last_cereg_cause = atoi(cur + 2);
-            LOG_INF("LTE +CEREG: rejected, cause %d", lte_last_cereg_cause);
-         } else {
-            lte_last_cereg_cause = 0;
+      int len = strlen(notif) - 1;
+      while (len >= 0 && (notif[len] == '\n' || notif[len] == '\r')) {
+         --len;
+      }
+      if (len >= 0) {
+         char buf[256];
+         if (len > sizeof(buf) - 2) {
+            len = sizeof(buf) - 2;
+         }
+         memcpy(buf, notif, len + 1);
+         buf[len + 1] = 0;
+         LOG_INF("%s", buf);
+         int header = strstart(notif, "+CEREG:");
+         if (header > 0) {
+            const char *cur = parse_next_chars(notif + header, ',', 4);
+            if (cur && strstart(cur, "0,")) {
+               lte_last_cereg_cause = atoi(cur + 2);
+               LOG_INF("LTE +CEREG: rejected, cause %d", lte_last_cereg_cause);
+            } else {
+               lte_last_cereg_cause = 0;
+            }
          }
       }
    }
-   at_monitor_dispatch(notif);
 }
-#endif
 
 static const char *lte_get_registration_description(enum lte_lc_nw_reg_status reg_status)
 {
@@ -1347,9 +1357,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       LOG_INF("Modem trace disabled");
 #endif
       nrf_modem_lib_init(NORMAL_MODE);
-#ifdef CONFIG_MODEM_CEREG_REJECTION_NOTIFICATION
-      err = nrf_modem_at_notif_handler_set(lte_at_monitor_dispatch);
-#endif
+
       err = modem_at_cmd("AT%%HWVERSION", buf, sizeof(buf), "%HWVERSION: ");
       if (err > 0) {
          LOG_INF("hw: %s", buf);
