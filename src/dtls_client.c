@@ -286,7 +286,7 @@ static void reopen_socket(dtls_app_data_t *app)
    modem_set_rai_mode(RAI_OFF, app->fd);
 
    if (psm_off) {
-      modem_set_psm(false);
+      modem_set_psm(-1);
    }
    err = modem_wait_ready(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
    if (err) {
@@ -299,7 +299,7 @@ static void reopen_socket(dtls_app_data_t *app)
       reboot(ERROR_CODE(ERROR_CODE_OPEN_SOCKET, errno), false);
    }
    if (psm_off) {
-      modem_set_psm(true);
+      modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
    }
 #ifdef CONFIG_UDP_USE_CONNECT
    // using SO_RAI_NO_DATA requires a destination, for what ever
@@ -411,6 +411,9 @@ static void dtls_coap_success(dtls_app_data_t *app)
    dtls_info("%u/%ldms/%ldms: success", lte_connections, time1, time2);
    if (app->retransmission <= COAP_MAX_RETRANSMISSION) {
       transmissions[app->retransmission]++;
+   }
+   if (app->retransmission == 0) {
+      modem_set_psm(0);
    }
    time2 /= RTT_INTERVAL;
    if (time2 < RTT_SLOTS) {
@@ -647,7 +650,9 @@ recvfrom_peer(dtls_app_data_t *app, dtls_context_t *ctx)
    }
    dtls_info("received_from_peer %d bytes", result);
    if (ctx) {
-      app->retransmission = 0;
+      if (app->dtls_pending) {
+         app->retransmission = 0;
+      }
       return dtls_handle_message(ctx, &session, receive_buffer, result);
    } else {
       return read_from_peer(app, &session, receive_buffer, result);
@@ -1014,6 +1019,9 @@ static int dtls_loop(session_t *dst, int flags)
             if (loops > temp) {
                result = -1;
                if (app_data.retransmission < COAP_MAX_RETRANSMISSION) {
+                  if (app_data.retransmission == 0) {
+                     modem_set_psm(CONFIG_UDP_PSM_RETRANS_RAT);
+                  }
                   ++app_data.retransmission;
                   loops = 0;
                   app_data.timeout <<= 1;

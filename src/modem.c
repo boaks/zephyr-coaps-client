@@ -34,14 +34,6 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #define MSEC_TO_SEC(X) (((X) + (MSEC_PER_SEC / 2)) / MSEC_PER_SEC)
 
-#ifdef CONFIG_UDP_PSM_ENABLE
-#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
-#define EFFECTIVE_LTE_PSM_REQ_RAT "00000000"
-#else
-#define EFFECTIVE_LTE_PSM_REQ_RAT CONFIG_LTE_PSM_REQ_RAT
-#endif
-#endif
-
 #define MULTI_IMSI_MINIMUM_TIMEOUT_MS (300 * MSEC_PER_SEC)
 
 #define LED_CONNECTED LED_NONE
@@ -63,6 +55,7 @@ static bool lte_pdn_active = false;
 
 static struct lte_lc_edrx_cfg edrx_status = {LTE_LC_LTE_MODE_NONE, 0.0, 0.0};
 static struct lte_lc_psm_cfg psm_status = {0, -1};
+static atomic_t psm_rat = ATOMIC_INIT(-1);
 
 static uint32_t lte_restarts = 0;
 static uint32_t lte_searchs = 0;
@@ -145,6 +138,18 @@ static int strstart(const char *value, const char *head)
    } else {
       return 0;
    }
+}
+
+static void printBin(char *buf, size_t bits, int val)
+{
+   for (int bit = 0; bit < bits; ++bit) {
+      if (val & (1 << (bits - 1 - bit))) {
+         buf[bit] = '1';
+      } else {
+         buf[bit] = '0';
+      }
+   }
+   buf[bits] = 0;
 }
 
 static int modem_int_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip, bool warn);
@@ -1248,16 +1253,9 @@ static void pdn_handler(uint8_t cid, enum pdn_event event,
    if (appl_reboots()) {
       return;
    }
-   char binReason[9];
+   char binReason[9] = "00000000";
    if (event == PDN_EVENT_CNEC_ESM) {
-      for (int bit = 0; bit < 8; ++bit) {
-         if (reason & (1 << (7 - bit))) {
-            binReason[bit] = '1';
-         } else {
-            binReason[bit] = '0';
-         }
-      }
-      binReason[8] = 0;
+      printBin(binReason, 8, reason);
    }
    switch (event) {
       case PDN_EVENT_CNEC_ESM:
@@ -1463,8 +1461,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       }
 
 #ifdef CONFIG_UDP_PSM_ENABLE
-      lte_lc_psm_param_set(CONFIG_LTE_PSM_REQ_RPTAU, EFFECTIVE_LTE_PSM_REQ_RAT);
-      err = lte_lc_psm_req(true);
+      err = modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
       if (err) {
          if (err == -EFAULT) {
             LOG_WRN("Modem set PSM failed, AT cmd failed!");
@@ -2216,13 +2213,41 @@ int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
    return modem_int_at_cmd(cmd, buf, max_len, skip, true);
 }
 
-int modem_set_psm(bool enable)
+int modem_set_psm(int16_t active_time_s)
 {
 #ifdef CONFIG_UDP_PSM_ENABLE
-   LOG_INF("PSM %s", enable ? "enable" : "disable");
-   return lte_lc_psm_req(enable);
+   if (active_time_s < 0) {
+      LOG_INF("PSM disable");
+      atomic_set(&psm_rat, -1);
+      return lte_lc_psm_req(false);
+   } else {
+      int previous_rat = atomic_set(&psm_rat, active_time_s);
+      if (previous_rat != active_time_s) {
+         char rat[9] = "00000000";
+         int mul = 2;
+         // 2s
+         active_time_s /= 2;
+         if (active_time_s > 31) {
+            active_time_s /= 30;
+            mul = 60;
+            if (active_time_s > 31) {
+               active_time_s /= 6;
+               mul = 360;
+               rat[1] = '1';
+            } else {
+               rat[2] = '1';
+            }
+         }
+         printBin(&rat[3], 5, active_time_s);
+         lte_lc_psm_param_set(CONFIG_LTE_PSM_REQ_RPTAU, rat);
+         LOG_INF("PSM enable, act: %d s", active_time_s * mul);
+         return lte_lc_psm_req(true);
+      } else {
+         return 0;
+      }
+   }
 #else
-   (void)enable;
+   (void)active_time_s;
    return 0;
 #endif
 }
@@ -2444,9 +2469,9 @@ int modem_at_cmd(const char *cmd, char *buf, size_t max_len, const char *skip)
    return 0;
 }
 
-int modem_set_psm(bool enable)
+int modem_set_psm(int16_t active_time_s)
 {
-   (void)enable;
+   (void)active_time_s;
    return 0;
 }
 

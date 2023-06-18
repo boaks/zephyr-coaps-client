@@ -142,7 +142,7 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info* info);
 
 int modem_at_cmd(const char* cmd, char* buf, size_t max_len, const char *skip);
 
-int modem_set_psm(bool enable);
+int modem_set_psm(int16_t active_time_s);
 
 int modem_set_rai_mode(enum rai_mode mode, int socket);
 
