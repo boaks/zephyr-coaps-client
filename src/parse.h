@@ -16,6 +16,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 const char *parse_next_char(const char *value, char sep);
 
@@ -26,5 +27,7 @@ int parse_strncpy(char *buf, const char *value, char end, int size);
 const uint8_t *parse_next_byte(const uint8_t *value, uint16_t len, uint8_t sep);
 
 int parse_memncpy(uint8_t *buf, const uint8_t *value, uint16_t len, uint8_t end, uint16_t size);
+
+int strstart(const char *value, const char *head, bool ignoreCase);
 
 #endif /* PARSE_H */

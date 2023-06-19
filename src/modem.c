@@ -131,16 +131,6 @@ void nrf_modem_fault_handler(struct nrf_modem_fault_info *fault_info)
 }
 #endif
 
-static int strstart(const char *value, const char *head)
-{
-   size_t len = strlen(head);
-   if (len && strncmp(value, head, len) == 0) {
-      return len;
-   } else {
-      return 0;
-   }
-}
-
 static void printBin(char *buf, size_t bits, int val)
 {
    for (int bit = 0; bit < bits; ++bit) {
@@ -1040,10 +1030,10 @@ static void modem_handler(const char *notif)
          memcpy(buf, notif, len + 1);
          buf[len + 1] = 0;
          LOG_INF("%s", buf);
-         int header = strstart(notif, "+CEREG:");
+         int header = strstart(notif, "+CEREG:", false);
          if (header > 0) {
             const char *cur = parse_next_chars(notif + header, ',', 4);
-            if (cur && strstart(cur, "0,")) {
+            if (cur && strstart(cur, "0,", false)) {
                lte_last_cereg_cause = atoi(cur + 2);
                LOG_INF("LTE +CEREG: rejected, cause %d", lte_last_cereg_cause);
             } else {
@@ -1249,7 +1239,31 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          }
          break;
       case LTE_LC_EVT_NEIGHBOR_CELL_MEAS:
-         LOG_INF("LTE neighbor cell measurement %d", evt->cells_info.ncells_count);
+         LOG_INF("LTE neighbor cell measurements %d/%d", evt->cells_info.ncells_count, evt->cells_info.gci_cells_count);
+         if (evt->cells_info.current_cell.id != LTE_LC_CELL_EUTRAN_ID_INVALID) {
+            const struct lte_lc_cell *gci_cells = &(evt->cells_info.current_cell);
+            LOG_INF("[*]: plmn %3d%02d, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB",
+                    gci_cells->mcc, gci_cells->mnc,
+                    gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
+                    gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
+         }
+         if (evt->cells_info.ncells_count) {
+            const struct lte_lc_ncell *neighbor_cells = evt->cells_info.neighbor_cells;
+            for (int index = 0; index < evt->cells_info.ncells_count; ++index) {
+               LOG_INF("[%d]: earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", index,
+                       neighbor_cells->earfcn, neighbor_cells->phys_cell_id,
+                       neighbor_cells->rsrp - 140, (neighbor_cells->rsrq - 39) / 2);
+               ++neighbor_cells;
+            }
+         } else if (evt->cells_info.gci_cells_count) {
+            struct lte_lc_cell *gci_cells = evt->cells_info.gci_cells;
+            for (int index = 0; index < evt->cells_info.gci_cells_count; ++index) {
+               LOG_INF("[%d]: plmn %3d%02d, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", index, gci_cells->mcc, gci_cells->mnc,
+                       gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
+                       gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
+               ++gci_cells;
+            }
+         }
          break;
       default:
          break;
@@ -1361,13 +1375,13 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       err = modem_at_cmd("AT%%HWVERSION", buf, sizeof(buf), "%HWVERSION: ");
       if (err > 0) {
          LOG_INF("hw: %s", buf);
-         int index = strstart(buf, "nRF9160 SICA ");
+         int index = strstart(buf, "nRF9160 SICA ", true);
          strncpy(modem_info.version, &buf[index], sizeof(modem_info.version) - 1);
       }
       err = modem_at_cmd("AT+CGMR", buf, sizeof(buf), NULL);
       if (err > 0) {
          LOG_INF("rev: %s", buf);
-         int index = strstart(buf, "mfw_nrf9160_");
+         int index = strstart(buf, "mfw_nrf9160_", true);
          strncpy(modem_info.firmware, &buf[index], sizeof(modem_info.firmware) - 1);
       }
       err = modem_at_cmd("AT+CGSN", buf, sizeof(buf), NULL);
@@ -2199,7 +2213,7 @@ static int modem_int_at_cmd(const char *cmd, char *buf, size_t max_len, const ch
    at_len = terminate_at_buffer(at_buf, at_len);
    if (buf) {
       if (skip) {
-         int skip_len = strstart(at_buf, skip);
+         int skip_len = strstart(at_buf, skip, true);
          if (skip_len) {
             at_buf += skip_len;
             at_len -= skip_len;

@@ -11,8 +11,8 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-#include <stddef.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "parse.h"
 
@@ -45,9 +45,9 @@ int parse_strncpy(char *buf, const char *value, char end, int size)
    char cur = 0;
    int index;
 
-   for (index = 0; ;++index) {
+   for (index = 0;; ++index) {
       cur = value[index];
-      if (!cur ||cur == end) {
+      if (!cur || cur == end) {
          break;
       }
    }
@@ -94,4 +94,25 @@ int parse_memncpy(uint8_t *buf, const uint8_t *value, uint16_t len, uint8_t end,
       value++;
    }
    return index;
+}
+
+int strstart(const char *value, const char *head, bool ignoreCase)
+{
+   const char *cur = head;
+   if (ignoreCase) {
+      while (*cur && tolower(*value) == tolower(*cur)) {
+         ++value;
+         ++cur;
+      }
+   } else {
+      while (*cur && *value == *cur) {
+         ++value;
+         ++cur;
+      }
+   }
+   if (*cur) {
+      return 0;
+   } else {
+      return cur - head;
+   }
 }
