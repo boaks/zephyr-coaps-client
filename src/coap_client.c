@@ -40,10 +40,10 @@
 #define COAP_OPTION_NO_RESPONSE 0x102
 #define COAP_NO_RESPONSE_IGNORE_ALL 0x1a
 
-#define CUSTOM_COAP_OPTION_INTERVAL 0xff00
-#define CUSTOM_COAP_OPTION_TIME 0xff20
-#define CUSTOM_COAP_OPTION_READ_ETAG 0xff40
-#define CUSTOM_COAP_OPTION_READ_RESPONSE_CODE 0xff60
+#define CUSTOM_COAP_OPTION_TIME 0xfde8
+#define CUSTOM_COAP_OPTION_READ_ETAG 0xfdec
+#define CUSTOM_COAP_OPTION_READ_RESPONSE_CODE 0xfdf0
+#define CUSTOM_COAP_OPTION_INTERVAL 0xfdf4
 
 #ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
 #define COAP_MESSAGE_TYPE COAP_TYPE_NON_CON
@@ -838,15 +838,6 @@ int coap_client_prepare_post(void)
    }
 #endif
 
-#if CONFIG_COAP_SEND_INTERVAL > 0
-   err = coap_append_option_int(&request, CUSTOM_COAP_OPTION_INTERVAL,
-                                CONFIG_COAP_SEND_INTERVAL);
-   if (err < 0) {
-      dtls_warn("Failed to encode CoAP interval option, %d", err);
-      return err;
-   }
-#endif
-
    err = coap_client_encode_time(&request);
    if (err < 0) {
       return err;
@@ -867,6 +858,16 @@ int coap_client_prepare_post(void)
       dtls_info("Send CoAP no read-etag option");
    }
 #endif
+
+#if CONFIG_COAP_SEND_INTERVAL > 0
+   err = coap_append_option_int(&request, CUSTOM_COAP_OPTION_INTERVAL,
+                                CONFIG_COAP_SEND_INTERVAL);
+   if (err < 0) {
+      dtls_warn("Failed to encode CoAP interval option, %d", err);
+      return err;
+   }
+#endif
+
 
    err = coap_packet_append_payload_marker(&request);
    if (err < 0) {
