@@ -12,6 +12,14 @@
  */
 
 / {
+
+	ins {
+		compatible = "gpio-keys";
+		rx0: uart0_rx {
+			gpios = <&gpio0 19 0>;
+		};
+	};
+
 	/*
 	 * Map the devices to the aliases of the application.
 	 */
@@ -36,6 +44,7 @@
 
 		/* alias for watchdog */
 		watchdog0 = &wdt0;
+
 	};
 
 };

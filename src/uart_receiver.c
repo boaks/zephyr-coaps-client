@@ -15,18 +15,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/pm/device.h>
 #include <zephyr/sys/reboot.h>
 
 #include <modem/at_monitor.h>
-#include <modem/lte_lc.h>
 #include <nrf_modem_at.h>
 
 #include "modem.h"
 #include "parse.h"
+#include "ui.h"
 
 LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 
@@ -35,7 +37,12 @@ LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 #define CONFIG_AT_CMD_STACK_SIZE 2048
 #define CONFIG_UART_BUFFER_LEN 256
 
-K_THREAD_STACK_DEFINE(at_cmd_stack, CONFIG_AT_CMD_STACK_SIZE);
+#define CONFIG_UART_RX_CHECK_INTERVAL_MS 50
+#define CONFIG_UART_RX_CHECK_INTERVAL_S 60
+#define CONFIG_UART_RX_SUSPEND_DELAY_S 5
+
+static void uart_enable_rx_fn(struct k_work *work);
+void dtls_trigger(void);
 
 static const struct device *const uart_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
 
@@ -43,6 +50,90 @@ static char at_cmd_buf[CONFIG_AT_CMD_MAX_LEN];
 static char uart_buf[CONFIG_UART_BUFFER_LEN];
 
 static struct k_work_q at_cmd_work_q;
+static K_WORK_DELAYABLE_DEFINE(uart_enable_rx_work, uart_enable_rx_fn);
+static K_THREAD_STACK_DEFINE(at_cmd_stack, CONFIG_AT_CMD_STACK_SIZE);
+
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(rx0), okay))
+static const struct gpio_dt_spec uart_rx = GPIO_DT_SPEC_GET(DT_NODELABEL(rx0), gpios);
+static struct gpio_callback uart_rx_cb_data;
+
+static int uart_get_lines(void)
+{
+   int res = -ENODATA;
+   if (device_is_ready(uart_rx.port)) {
+      res = gpio_pin_get(uart_rx.port, uart_rx.pin);
+   }
+   return res;
+}
+
+static void uart_rx_line_active(const struct device *dev, struct gpio_callback *cb,
+                                uint32_t pins)
+{
+   if ((BIT(uart_rx.pin) & pins) == 0) {
+      return;
+   }
+   gpio_pin_interrupt_configure_dt(&uart_rx, GPIO_INT_DISABLE);
+   k_work_reschedule_for_queue(&at_cmd_work_q, &uart_enable_rx_work, K_MSEC(CONFIG_UART_RX_CHECK_INTERVAL_MS));
+}
+
+static int uart_enable_rx_interrupt(void)
+{
+   gpio_pin_configure_dt(&uart_rx, GPIO_INPUT);
+   return gpio_pin_interrupt_configure_dt(&uart_rx, GPIO_INT_LEVEL_HIGH);
+}
+
+static int uart_init_lines(void)
+{
+   gpio_init_callback(&uart_rx_cb_data, uart_rx_line_active, BIT(uart_rx.pin));
+   return gpio_add_callback(uart_rx.port, &uart_rx_cb_data);
+}
+
+#else
+static int uart_get_lines(void)
+{
+   return -ENODATA;
+}
+
+static int uart_enable_rx_interrupt(void)
+{
+   return -ENOTSUP;
+}
+
+static int uart_init_lines(void)
+{
+   return -ENOTSUP;
+}
+#endif
+
+static void uart_enable_rx_fn(struct k_work *work)
+{
+   int err = uart_get_lines();
+   if (err == 1) {
+      pm_device_action_run(uart_dev, PM_DEVICE_ACTION_RESUME);
+   } else if (err == 0) {
+      pm_device_action_run(uart_dev, PM_DEVICE_ACTION_SUSPEND);
+   }
+   if (err == 1 || err == -ENODATA) {
+      err = uart_err_check(uart_dev);
+      if (err && err != -ENOSYS) {
+         k_work_reschedule_for_queue(&at_cmd_work_q, &uart_enable_rx_work, K_MSEC(CONFIG_UART_RX_CHECK_INTERVAL_MS));
+         return;
+      }
+      err = uart_rx_enable(uart_dev, uart_buf, CONFIG_UART_BUFFER_LEN, 10000);
+      if (err == -EBUSY) {
+         LOG_INF("UART async rx already enabled.");
+         return;
+      } else if (err) {
+         LOG_ERR("UART async rx not enabled! %d", err);
+      } else {
+         LOG_INF("UART async rx enabled.");
+         return;
+      }
+   }
+   LOG_INF("UART not async rx ready.");
+   k_work_reschedule_for_queue(&at_cmd_work_q, &uart_enable_rx_work, K_SECONDS(CONFIG_UART_RX_CHECK_INTERVAL_S));
+   uart_enable_rx_interrupt();
+}
 
 static void at_cmd_send_fn(struct k_work *work)
 {
@@ -55,7 +146,7 @@ static void at_cmd_send_fn(struct k_work *work)
       LOG_INF(">> modem reseted.");
       return;
    } else if (strcmp(at_cmd_buf, "reboot") == 0) {
-      LOG_INF(">> modem reboot ...");
+      LOG_INF(">> device reboot ...");
       k_sleep(K_SECONDS(2));
       sys_reboot(SYS_REBOOT_COLD);
       return;
@@ -69,6 +160,20 @@ static void at_cmd_send_fn(struct k_work *work)
       return;
    } else if (strcmp(at_cmd_buf, "sim") == 0) {
       modem_read_sim_info(NULL);
+      return;
+   } else if (strcmp(at_cmd_buf, "send") == 0) {
+      dtls_trigger();
+      return;
+   } else if (strcmp(at_cmd_buf, "help") == 0) {
+      LOG_INF("> help:");
+      LOG_INF("  reset  : modem factory reset.");
+      LOG_INF("  reboot : reboot device.");
+      LOG_INF("  on     : switch modem on.");
+      LOG_INF("  on     : switch modem off.");
+      LOG_INF("  scan   : network scan.");
+      LOG_INF("  send   : send message.");
+      LOG_INF("  sim    : read SIM-card info.");
+      LOG_INF("  at???  : modem at-cmd.");
       return;
    }
 
@@ -127,7 +232,7 @@ static void at_cmd_send_fn(struct k_work *work)
 
 static K_WORK_DEFINE(at_cmd_send_work, at_cmd_send_fn);
 
-static void uart_receiver_handler(uint8_t character)
+static bool uart_receiver_handler(uint8_t character)
 {
    static bool inside_quotes = false;
    static size_t at_cmd_len = 0;
@@ -152,8 +257,9 @@ static void uart_receiver_handler(uint8_t character)
                inside_quotes = !inside_quotes;
             }
          }
-         return;
+         return false;
       case '\r':
+      case '\n':
          if (!inside_quotes) {
             at_cmd_buf[at_cmd_len] = '\0';
             at_cmd_len = 0;
@@ -161,17 +267,17 @@ static void uart_receiver_handler(uint8_t character)
             for (const char *c = at_cmd_buf; *c; c++) {
                if (*c > ' ') {
                   k_work_submit_to_queue(&at_cmd_work_q, &at_cmd_send_work);
-                  break;
+                  return true;
                }
             }
-            return;
+            return false;
          }
    }
 
    /* Detect AT command buffer overflow, leaving space for null */
    if (at_cmd_len > sizeof(at_cmd_buf) - 2) {
       LOG_ERR("Buffer overflow, dropping '%c'\n", character);
-      return;
+      return false;
    }
 
    /* Write character to AT buffer */
@@ -181,24 +287,20 @@ static void uart_receiver_handler(uint8_t character)
    if (character == '"') {
       inside_quotes = !inside_quotes;
    }
+   return false;
 }
 
 static void uart_receiver_loop(const char *buffer, size_t len)
 {
    //   LOG_INF("UART rx %u bytes", len);
-   for (int index = 0; index < len; ++index) {
-      if (!k_work_busy_get(&at_cmd_send_work)) {
-         uart_receiver_handler(buffer[index]);
+   if (!k_work_busy_get(&at_cmd_send_work)) {
+      for (int index = 0; index < len; ++index) {
+         if (uart_receiver_handler(buffer[index])) {
+            break;
+         }
       }
-   }
-}
-
-static void uart_irq_handler(const struct device *dev, void *context)
-{
-   if (uart_irq_rx_ready(dev)) {
-      uint8_t buf[10];
-      int len = uart_fifo_read(dev, buf, sizeof(buf));
-      uart_receiver_loop(buf, len);
+   } else {
+      LOG_INF("Modem busy ...");
    }
 }
 
@@ -227,6 +329,8 @@ static void uart_receiver_callback(const struct device *dev,
          break;
 
       case UART_RX_STOPPED:
+         k_work_reschedule_for_queue(&at_cmd_work_q, &uart_enable_rx_work, K_SECONDS(CONFIG_UART_RX_SUSPEND_DELAY_S));
+         uart_enable_rx_interrupt();
          break;
    }
 }
@@ -241,27 +345,20 @@ static int uart_receiver_init(const struct device *arg)
       LOG_ERR("UART device not ready");
       return -EFAULT;
    }
-   if (IS_ENABLED(CONFIG_NRF_SW_LPUART_INT_DRIVEN)) {
-      uart_irq_callback_set(uart_dev, uart_irq_handler);
-      uart_irq_rx_enable(uart_dev);
-      LOG_INF("UART irq receiver initialized.");
-   } else {
-      err = uart_callback_set(uart_dev, uart_receiver_callback, (void *)uart_dev);
-      if (err) {
-         LOG_ERR("UART callback not set!");
-      }
-      err = uart_rx_enable(uart_dev, uart_buf, CONFIG_UART_BUFFER_LEN, 10000);
-      if (err) {
-         LOG_ERR("UART rx not enabled!");
-      }
-      LOG_INF("UART async receiver initialized.");
+   err = uart_callback_set(uart_dev, uart_receiver_callback, (void *)uart_dev);
+   if (err) {
+      LOG_ERR("UART callback not set!");
       err = 0;
    }
+   uart_init_lines();
+
    k_work_queue_start(&at_cmd_work_q, at_cmd_stack,
                       K_THREAD_STACK_SIZEOF(at_cmd_stack),
                       CONFIG_AT_CMD_THREAD_PRIO, NULL);
 
+   k_work_reschedule_for_queue(&at_cmd_work_q, &uart_enable_rx_work, K_MSEC(CONFIG_UART_RX_CHECK_INTERVAL_MS));
+
    return err;
 }
 
-SYS_INIT(uart_receiver_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+SYS_INIT(uart_receiver_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);

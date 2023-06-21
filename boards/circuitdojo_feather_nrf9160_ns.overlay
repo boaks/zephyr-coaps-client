@@ -25,6 +25,13 @@
 
 	};
 
+	ins {
+		compatible = "gpio-keys";
+		rx0: uart0_rx {
+			gpios = <&gpio0 5 0>;
+		};
+	};
+
 	aliases {
 		/delete-property/ led0;
 

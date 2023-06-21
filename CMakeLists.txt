@@ -34,7 +34,7 @@ target_sources(app PRIVATE
 	src/coap_client.c
 	)
 
-target_sources_ifdef(CONFIG_UART_ASYNC_API app PRIVATE src/uart_receiver.c)
+target_sources_ifdef(CONFIG_UART_RECEIVER app PRIVATE src/uart_receiver.c)
 
 target_sources_ifdef(CONFIG_LOCATION_ENABLE app PRIVATE src/location.c)
 
@@ -188,6 +188,12 @@ else()
 set(BUILD_SUMUP8 "Build without battery.")
 endif()
 
+if (CONFIG_UART_RECEIVER)
+set(BUILD_SUMUP9 "Build with UART receiver.")
+else()
+set(BUILD_SUMUP9 "Build without UART receiver.")
+endif()
+
 add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP1}"
                    COMMAND echo "${BUILD_SUMUP2}"
@@ -197,5 +203,6 @@ add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP6}"
                    COMMAND echo "${BUILD_SUMUP7}"
                    COMMAND echo "${BUILD_SUMUP8}"
+                   COMMAND echo "${BUILD_SUMUP9}"
                    COMMAND echo "Build with network search timeout ${CONFIG_MODEM_SEARCH_TIMEOUT}s"
                    )

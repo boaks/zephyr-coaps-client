@@ -33,6 +33,13 @@
 		};
 	};
 
+	ins {
+		compatible = "gpio-keys";
+		rx0: uart0_rx {
+			gpios = <&gpio0 28 0>;
+		};
+	};
+
 	aliases {
 		out1 = &out1;
 		out2 = &out2;

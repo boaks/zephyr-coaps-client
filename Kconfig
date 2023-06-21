@@ -245,7 +245,7 @@ config MODEM_ICCID_NBIOT_PREFERENCE
 	  List of ICCID header (first 5 digits), which only supports NB-IoT.
 
 config MODEM_EPCO
-    bool 
+    bool "Modem use EPCO."
 	default y
 
 config MODEM_FAULT_THRESHOLD
@@ -282,6 +282,10 @@ endmenu
 
 menu "Extra Functions"
 
+config UART_RECEIVER
+    bool "Use UART receiver for cmd and at-cmd."
+	default n
+
 config USE_IO_JOB_QUEUE
 	bool "Use i/o job queue"
 	default y
@@ -294,7 +298,7 @@ config SUSPEND_3V3
 config SUSPEND_UART
 	bool "Low power mode, suspend UART when sleeping"
 	default y 
-	depends on !AT_HOST_LIBRARY
+	depends on !UART_RECEIVER
 
 config LOCATION_ENABLE
 	bool "Enable GNSS Location"

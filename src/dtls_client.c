@@ -320,7 +320,7 @@ static int check_socket(dtls_app_data_t *app, bool event)
    return -error;
 }
 
-static void dtls_trigger(void)
+void dtls_trigger(void)
 {
    if (appl_reboots()) {
       return;
