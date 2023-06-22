@@ -1017,7 +1017,7 @@ static volatile int lte_last_cereg_cause = 0;
 
 static void modem_handler(const char *notif)
 {
-   if (!appl_reboots()) {
+   if (!appl_reboots() && !strstart(notif, "%NCELLMEAS:", false)) {
       int len = strlen(notif) - 1;
       while (len >= 0 && (notif[len] == '\n' || notif[len] == '\r')) {
          --len;
@@ -1030,9 +1030,9 @@ static void modem_handler(const char *notif)
          memcpy(buf, notif, len + 1);
          buf[len + 1] = 0;
          LOG_INF("%s", buf);
-         int header = strstart(notif, "+CEREG:", false);
-         if (header > 0) {
-            const char *cur = parse_next_chars(notif + header, ',', 4);
+         len = strstart(notif, "+CEREG:", false);
+         if (len > 0) {
+            const char *cur = parse_next_chars(notif + len, ',', 4);
             if (cur && strstart(cur, "0,", false)) {
                lte_last_cereg_cause = atoi(cur + 2);
                LOG_INF("LTE +CEREG: rejected, cause %d", lte_last_cereg_cause);
