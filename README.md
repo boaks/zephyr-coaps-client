@@ -244,6 +244,8 @@ See also [Roadmap](./docu/ROADMAP.md) for the plan of the next months.
 
 If you want to consider the power consumption in your idea, please see [Power Consumption](./docu/POWERCONSUMPTION.md)
 
+Sometimes it is interesting, which networks are available at some locations. [Thingy:91 - Network Scanner](./docu/NETWORKSCANNER.md) may help here.
+
 ### Updating to a Newer Versions
 
 First update the project itself using 

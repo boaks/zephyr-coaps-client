@@ -169,7 +169,7 @@ static void at_cmd_send_fn(struct k_work *work)
       LOG_INF("  reset  : modem factory reset.");
       LOG_INF("  reboot : reboot device.");
       LOG_INF("  on     : switch modem on.");
-      LOG_INF("  on     : switch modem off.");
+      LOG_INF("  off    : switch modem off.");
       LOG_INF("  scan   : network scan.");
       LOG_INF("  send   : send message.");
       LOG_INF("  sim    : read SIM-card info.");
