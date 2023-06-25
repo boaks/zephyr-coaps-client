@@ -1013,11 +1013,24 @@ static void lte_pdn_status_set(bool pdn_active)
 
 AT_MONITOR(modem, ANY, modem_handler);
 
+const char *IGNORE_NOTIFY[] = {"%NCELLMEAS:", "%XMODEMSLEEP:", NULL};
+
+static bool modem_ignore_notify(const char *notif)
+{
+   const char **ignore = IGNORE_NOTIFY;
+   while (*ignore) {
+      if (strstart(notif, *ignore, false)) {
+         return true;
+      }
+      ++ignore;
+   }
+   return false;
+}
 static volatile int lte_last_cereg_cause = 0;
 
 static void modem_handler(const char *notif)
 {
-   if (!appl_reboots() && !strstart(notif, "%NCELLMEAS:", false)) {
+   if (!appl_reboots() && !modem_ignore_notify(notif)) {
       int len = strlen(notif) - 1;
       while (len >= 0 && (notif[len] == '\n' || notif[len] == '\r')) {
          --len;
@@ -1598,7 +1611,7 @@ int modem_wait_ready(const k_timeout_t timeout)
 {
    int err = 0;
    int led_on = 1;
-   uint64_t timeout_ms = 0;
+   uint64_t timeout_ms = k_ticks_to_ms_floor64(timeout.ticks);
    int64_t now = k_uptime_get();
    int64_t start = now;
    int64_t last = now;
@@ -1613,11 +1626,8 @@ int modem_wait_ready(const k_timeout_t timeout)
          ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
          ui_led_op(LED_COLOR_RED, LED_CLEAR);
       }
-      timeout_ms = k_ticks_to_ms_floor64(timeout.ticks);
-      if (timeout_ms < MULTI_IMSI_MINIMUM_TIMEOUT_MS) {
-         if (modem_multi_imsi()) {
-            timeout_ms = MULTI_IMSI_MINIMUM_TIMEOUT_MS;
-         }
+      if (timeout_ms < MULTI_IMSI_MINIMUM_TIMEOUT_MS && modem_multi_imsi()) {
+         timeout_ms = MULTI_IMSI_MINIMUM_TIMEOUT_MS;
       }
       if ((now - start) > timeout_ms) {
          err = -1;
@@ -1625,7 +1635,8 @@ int modem_wait_ready(const k_timeout_t timeout)
       }
       if ((now - last) > MSEC_PER_SEC * 30) {
          watchdog_feed();
-         LOG_INF("Modem searching for %ld s", (long)MSEC_TO_SEC(now - start));
+         LOG_INF("Modem searching for %ld s of %ld s",
+                 (long)MSEC_TO_SEC(now - start), (long)MSEC_TO_SEC(timeout_ms));
          last = now;
       }
    }
