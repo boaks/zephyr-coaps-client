@@ -115,6 +115,11 @@ static K_MUTEX_DEFINE(dtls_pm_mutex);
 
 static void dtls_power_management(void);
 
+static void dtls_power_management_fn(struct k_work *work)
+{
+   dtls_power_management();
+}
+
 static void dtls_power_management_suspend_fn(struct k_work *work)
 {
    appl_prevent_suspend = false;
@@ -122,6 +127,7 @@ static void dtls_power_management_suspend_fn(struct k_work *work)
    dtls_power_management();
 }
 
+static K_WORK_DEFINE(dtls_power_management_work, dtls_power_management_fn);
 static K_WORK_DELAYABLE_DEFINE(dtls_power_management_suspend_work, dtls_power_management_suspend_fn);
 
 static atomic_t power_manager_suspended = ATOMIC_INIT(0);
@@ -765,7 +771,7 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
    }
    if (type == LTE_STATE_SLEEPING) {
       network_sleeping = active;
-      dtls_power_management();
+      work_submit_to_io_queue(&dtls_power_management_work);
    }
 }
 
