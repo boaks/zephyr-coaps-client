@@ -14,6 +14,7 @@
 #include <stdlib.h>
 
 #include <zephyr/device.h>
+#include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/logging/log_ctrl.h>
@@ -68,12 +69,13 @@ static void suspend_devices(bool suspend)
    }
 }
 
+static const struct device *const uart_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
+
 #ifdef CONFIG_SUSPEND_UART
 #if defined(CONFIG_UART_CONSOLE) && !defined(CONFIG_CONSOLE_SUBSYS)
 
-static const struct device *const uart0_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
-static bool uart0_suspend = false;
-static int uart0_counter = 0;
+static bool uart_suspend = false;
+static int uart_counter = 0;
 
 static void suspend_uart_fn(struct k_work *work);
 
@@ -82,19 +84,20 @@ static K_WORK_DELAYABLE_DEFINE(suspend_uart_work, suspend_uart_fn);
 static void suspend_uart_fn(struct k_work *work)
 {
    k_mutex_lock(&pm_mutex, K_FOREVER);
-   if (uart0_suspend) {
-      if (++uart0_counter < 30) {
+   if (uart_suspend) {
+      if (++uart_counter < 30) {
          if (!log_data_pending()) {
-            uart0_counter = 30;
+            // final delay
+            uart_counter = 30;
          }
          work_schedule_for_io_queue(&suspend_uart_work, K_MSEC(50));
          k_mutex_unlock(&pm_mutex);
          return;
       }
-      int ret = pm_device_action_run(uart0_dev, PM_DEVICE_ACTION_SUSPEND);
+      int ret = pm_device_action_run(uart_dev, PM_DEVICE_ACTION_SUSPEND);
       if (ret < 0 && ret != -EALREADY) {
          LOG_WRN("Failed to disable UART (%d)", ret);
-         uart0_suspend = false;
+         uart_suspend = false;
       }
    }
    k_mutex_unlock(&pm_mutex);
@@ -104,19 +107,22 @@ static void suspend_uart(bool suspend)
 {
    int ret = 0;
 
-   if (device_is_ready(uart0_dev) && uart0_suspend != suspend) {
-      uart0_suspend = suspend;
+   if (device_is_ready(uart_dev) && uart_suspend != suspend) {
+      uart_suspend = suspend;
       if (suspend) {
          LOG_INF("Disable UART");
-         uart0_counter = 0;
+         uart_counter = 0;
          work_schedule_for_io_queue(&suspend_uart_work, K_MSEC(50));
       } else {
-         ret = pm_device_action_run(uart0_dev, PM_DEVICE_ACTION_RESUME);
+         ret = pm_device_action_run(uart_dev, PM_DEVICE_ACTION_RESUME);
          if (ret < 0 && ret != -EALREADY) {
             LOG_WRN("Failed to enable UART (%d)", ret);
-            uart0_suspend = !suspend;
+            uart_suspend = !suspend;
          } else {
             k_sleep(K_MSEC(50));
+#ifdef CONFIG_UART_ASYNC_API
+            uart_rx_disable(uart_dev);
+#endif
             LOG_INF("Enabled UART");
          }
       }
@@ -205,9 +211,9 @@ static int64_t last_battery_left_time = -1;
 static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_manager_status_t status)
 {
    if (battery_level == 0xffff) {
-      LOG_INF("forecast: not ready.");
+      LOG_DBG("forecast: not ready.");
    } else if (status != FROM_BATTERY) {
-      LOG_INF("forecast: charging.");
+      LOG_DBG("forecast: charging.");
    } else {
       if (((*now) - min_forecast_uptime) >= 0) {
          int64_t passed_time = (*now) - last_battery_level_uptime;
@@ -220,7 +226,7 @@ static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_ma
             }
             if (current_battery_changes == 2) {
                // first battery level change
-               LOG_INF("first battery level change");
+               LOG_DBG("first battery level change");
                first_battery_level = battery_level;
                first_battery_level_uptime = *now;
                last_battery_level = battery_level;
@@ -233,7 +239,7 @@ static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_ma
                int diff = last_battery_level - battery_level;
                if (!diff) return -1;
                last_battery_left_time = (passed_time * battery_level) / diff;
-               LOG_INF("left battery %u%% time %lld (%lld days, %lld passed)",
+               LOG_DBG("left battery %u%% time %lld (%lld days, %lld passed)",
                        battery_level, last_battery_left_time,
                        last_battery_left_time / MSEC_PER_DAY, passed_time / MSEC_PER_DAY);
                last_battery_level = battery_level;
@@ -243,7 +249,7 @@ static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_ma
                if (!diff) return -1;
                passed_time = (*now) - first_battery_level_uptime;
                time = (passed_time * battery_level) / diff;
-               LOG_INF("left battery time 2 %lld (%lld days, %lld passed)", time,
+               LOG_DBG("left battery time 2 %lld (%lld days, %lld passed)", time,
                        time / MSEC_PER_DAY, passed_time / MSEC_PER_DAY);
                last_battery_left_time = (last_battery_left_time + time) / 2;
                passed_time = 0;
@@ -252,14 +258,14 @@ static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_ma
                int diff = last_battery_level - battery_level;
                if (!diff) return -1;
                last_battery_left_time = (passed_time * battery_level) / diff;
-               LOG_INF("first left battery time %lld (%lld, d:%u%%, %u%%)", last_battery_left_time, passed_time, diff, battery_level);
+               LOG_DBG("first left battery time %lld (%lld, d:%u%%, %u%%)", last_battery_left_time, passed_time, diff, battery_level);
             }
          }
          if (current_battery_changes >= 3) {
             // after first change
             passed_time += (MSEC_PER_DAY / 2);
             int16_t time = (int16_t)((last_battery_left_time - passed_time + MSEC_PER_DAY) / MSEC_PER_DAY);
-            LOG_INF("battery %u%%, %d left days (passed %d days)", battery_level, time, (int)(passed_time / MSEC_PER_DAY));
+            LOG_DBG("battery %u%%, %d left days (passed %d days)", battery_level, time, (int)(passed_time / MSEC_PER_DAY));
             return time;
          }
       }
@@ -426,11 +432,15 @@ int power_manager_init(void)
 
    calculate_forecast(&now, 0xffff, CHARGING_TRICKLE);
 
-#if defined(CONFIG_SUSPEND_UART) && defined(CONFIG_UART_CONSOLE) && !defined(CONFIG_CONSOLE_SUBSYS)
-   if (!device_is_ready(uart0_dev)) {
-      LOG_WRN("UART0 console not available.");
-   }
+   if (device_is_ready(uart_dev)) {
+#if defined(CONFIG_UART_ASYNC_API) && !defined(CONFIG_UART_RECEIVER)
+      uart_rx_disable(uart_dev);
 #endif
+   } else {
+#if defined(CONFIG_SUSPEND_UART) && defined(CONFIG_UART_CONSOLE) && !defined(CONFIG_CONSOLE_SUBSYS)
+      LOG_WRN("UART0 console not available.");
+#endif
+   }
 
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
    rc = adp536x_power_manager_init();
@@ -533,10 +543,10 @@ int power_manager_voltage(uint16_t *voltage)
 
 #ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADP536X
       rc = adp536x_power_manager_voltage(&internal_voltage);
-      LOG_INF("ADP536X %u mV", internal_voltage);
+      LOG_DBG("ADP536X %u mV", internal_voltage);
 #elif defined(CONFIG_BATTERY_VOLTAGE_SOURCE_ADC)
       rc = battery_sample(&internal_voltage);
-      LOG_INF("ADC %u mV", internal_voltage);
+      LOG_DBG("ADC %u mV", internal_voltage);
 #else
       char buf[32];
       rc = modem_at_cmd("AT%%XVBAT", buf, sizeof(buf), "%XVBAT: ");
@@ -544,7 +554,7 @@ int power_manager_voltage(uint16_t *voltage)
          LOG_WRN("Failed to read battery level from modem! %d", rc);
       } else {
          internal_voltage = atoi(buf);
-         LOG_INF("Modem %u mV", internal_voltage);
+         LOG_DBG("Modem %u mV", internal_voltage);
          rc = 0;
       }
 #endif
@@ -595,7 +605,7 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
          if (forecast) {
             *forecast = days;
          }
-         LOG_INF("%u%% %umV %d (%d left days)", internal_level, internal_voltage, internal_status, days);
+         LOG_DBG("%u%% %umV %d (%d left days)", internal_level, internal_voltage, internal_status, days);
       }
    } else {
       LOG_WRN("Failed to read battery status!");

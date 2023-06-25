@@ -297,8 +297,7 @@ config SUSPEND_3V3
 
 config SUSPEND_UART
 	bool "Low power mode, suspend UART when sleeping"
-	default y 
-	depends on !UART_RECEIVER
+	default y if !UART_RECEIVER
 
 config LOCATION_ENABLE
 	bool "Enable GNSS Location"
