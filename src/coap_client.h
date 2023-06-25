@@ -38,6 +38,14 @@ typedef enum { PARSE_IGN = 0,
 
 int coap_client_parse_data(uint8_t *data, size_t len);
 
+int coap_client_prepare_modem_info(char *buf, size_t len);
+
+int coap_client_prepare_sim_info(char *buf, size_t len);
+
+int coap_client_prepare_net_info(char* buf, size_t len);
+
+int coap_client_prepare_env_info(char *buf, size_t len);
+
 int coap_client_prepare_post(void);
 
 int coap_client_message(const uint8_t** buffer);

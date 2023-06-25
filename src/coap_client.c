@@ -289,31 +289,433 @@ union lte_params {
    struct lte_network_info network_info;
    struct lte_network_statistic network_statistic;
    struct lte_ce_info ce_info;
-   struct lte_sim_info sim_info;
-   struct lte_modem_info modem_info;
 };
 
-int coap_client_prepare_post(void)
+int coap_client_prepare_modem_info(char *buf, size_t len)
 {
+   struct lte_modem_info modem_info;
+   int index = 0;
+   int start = 0;
+   power_manager_status_t battery_status = POWER_UNKNOWN;
+   uint16_t battery_voltage = 0xffff;
+   int16_t battery_forecast = -1;
+   uint8_t battery_level = 0xff;
+
+   memset(&modem_info, 0, sizeof(modem_info));
+   if (!modem_get_modem_info(&modem_info)) {
+      index = snprintf(buf, len, "HW: %s, MFW: %s, IMEI: %s", modem_info.version, modem_info.firmware, modem_info.imei);
+      dtls_info("%s", buf);
+   }
+
+   power_manager_status(&battery_level, &battery_voltage, &battery_status, &battery_forecast);
+   if (battery_voltage < 0xffff) {
+      if (index) {
+         buf[index++] = '\n';
+      }
+      start = index;
+      index += snprintf(buf + index, len - index, "!%u mV", battery_voltage);
+      if (battery_level < 0xff) {
+         index += snprintf(buf + index, len - index, " %u%%", battery_level);
+      }
+      if (battery_forecast > 1 || battery_forecast == 0) {
+         index += snprintf(buf + index, len - index, " (%u days left)", battery_forecast);
+      } else if (battery_forecast == 1) {
+         index += snprintf(buf + index, len - index, " (1 day left)");
+      }
+      const char *msg = "";
+      switch (battery_status) {
+         case FROM_BATTERY:
+            msg = "battery";
+            break;
+         case CHARGING_TRICKLE:
+            msg = "charging (trickle)";
+            break;
+         case CHARGING_I:
+            msg = "charging (I)";
+            break;
+         case CHARGING_V:
+            msg = "charging (V)";
+            break;
+         case CHARGING_COMPLETED:
+            msg = "full";
+            break;
+         default:
+            break;
+      }
+      if (strlen(msg)) {
+         index += snprintf(buf + index, len - index, " %s", msg);
+      }
+      dtls_info("%s", buf + start);
+   }
+
+   return index;
+}
+
+int coap_client_prepare_sim_info(char *buf, size_t len)
+{
+   struct lte_sim_info sim_info;
+   int start = 0;
+   int index = 0;
+   memset(&sim_info, 0, sizeof(sim_info));
+   if (modem_get_sim_info(&sim_info) >= 0 && sim_info.valid) {
+      index += snprintf(buf, len, "ICCID: %s, eDRX cycle: %s",
+                        sim_info.iccid, sim_info.edrx_cycle_support ? "on" : "off");
+      if (sim_info.hpplmn_search_interval && sim_info.hpplmn[0]) {
+         index += snprintf(buf + index, len - index, ", HPPLMN %s interval: %d [h]",
+                           sim_info.hpplmn, sim_info.hpplmn_search_interval);
+      } else if (sim_info.hpplmn_search_interval) {
+         index += snprintf(buf + index, len - index, ", HPPLMN interval: %d [h]", sim_info.hpplmn_search_interval);
+      } else if (sim_info.hpplmn[0]) {
+         index += snprintf(buf + index, len - index, ", HPPLMN %s", sim_info.hpplmn);
+      } else {
+         index += snprintf(buf + index, len - index, ", no HPPLMN search");
+      }
+      dtls_info("%s", buf);
+      start = index + 1;
+      if (sim_info.prev_imsi[0]) {
+         index += snprintf(buf + index, len - index, "\nMulti-IMSI: %s, %s, %d s",
+                           sim_info.imsi, sim_info.prev_imsi, sim_info.imsi_interval);
+      } else {
+         index += snprintf(buf + index, len - index, "\nIMSI: %s", sim_info.imsi);
+      }
+      dtls_info("%s", buf + start);
+      if (sim_info.forbidden[0]) {
+         start = index + 1;
+         index += snprintf(buf + index, len - index, "\nForbidden: %s",
+                           sim_info.forbidden);
+         dtls_info("%s", buf + start);
+      }
+   }
+   return index;
+}
+
+int coap_client_prepare_net_info(char *buf, size_t len)
+{
+   int start = 0;
+   int index = 0;
+   int time = 0;
+#if defined(CONFIG_COAP_SEND_NETWORK_INFO) || defined(CONFIG_COAP_SEND_STATISTIC_INFO)
+   union lte_params params;
+#endif
+
+#ifdef CONFIG_COAP_SEND_NETWORK_INFO
+   memset(&params, 0, sizeof(params));
+   if (!modem_get_network_info(&params.network_info)) {
+      index += snprintf(buf, len, "Network: %s",
+                        modem_get_network_mode_description(params.network_info.mode));
+      index += snprintf(buf + index, len - index, ",%s",
+                        modem_get_registration_description(params.network_info.status));
+      if (params.network_info.registered) {
+         index += snprintf(buf + index, len - index, ",Band %d", params.network_info.band);
+         if (params.network_info.plmn_lock) {
+            index += snprintf(buf + index, len - index, ",#PLMN %s", params.network_info.provider);
+         } else {
+            index += snprintf(buf + index, len - index, ",PLMN %s", params.network_info.provider);
+         }
+         index += snprintf(buf + index, len - index, ",TAC %u", params.network_info.tac);
+         index += snprintf(buf + index, len - index, ",Cell %u", params.network_info.cell);
+         index += snprintf(buf + index, len - index, ",EARFCN %u", params.network_info.earfcn);
+      }
+   }
+   dtls_info("%s", buf);
+
+   if (params.network_info.registered) {
+      if (index) {
+         buf[index++] = '\n';
+      }
+      start = index;
+      index += snprintf(buf + index, len - index, "PDN: %s,%s", params.network_info.apn, params.network_info.local_ip);
+      dtls_info("%s", buf + start);
+   }
+
+   if (index) {
+      buf[index++] = '\n';
+   }
+   start = index;
+
+   memset(&params, 0, sizeof(params));
+   if (modem_get_psm_status(&params.psm) == 0) {
+      if (params.psm.active_time >= 0) {
+         index += snprintf(buf + index, len - index, "PSM: TAU %d [s], Act %d [s]", params.psm.tau, params.psm.active_time);
+      } else {
+         index += snprintf(buf + index, len - index, "PSM: n.a.");
+      }
+   }
+   time = modem_get_release_time();
+   if (time > 0) {
+      if (index > start) {
+         index += snprintf(buf + index, len - index, ", ");
+      }
+      index += snprintf(buf + index, len - index, "Released: %d ms", time);
+   }
+   if (index > start) {
+      dtls_info("%s", buf + start);
+   } else {
+      index = start - 1;
+   }
+   memset(&params, 0, sizeof(params));
+   if (modem_get_edrx_status(&params.edrx) == 0) {
+      if (index) {
+         buf[index++] = '\n';
+      }
+      start = index;
+      switch (params.edrx.mode) {
+         case LTE_LC_LTE_MODE_NONE:
+            index += snprintf(buf + index, len - index, "eDRX: n.a.");
+            break;
+         case LTE_LC_LTE_MODE_LTEM:
+            index += snprintf(buf + index, len - index, "eDRX: LTE-M %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
+            break;
+         case LTE_LC_LTE_MODE_NBIOT:
+            index += snprintf(buf + index, len - index, "eDRX: NB-IoT %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
+            break;
+         default:
+            index += snprintf(buf + index, len - index, "eDRX: unknown");
+            break;
+      }
+      dtls_info("%s", buf + start);
+   }
+#endif /* CONFIG_COAP_SEND_NETWORK_INFO */
+
+#ifdef CONFIG_COAP_SEND_STATISTIC_INFO
+   memset(&params, 0, sizeof(params));
+   if (modem_get_coverage_enhancement_info(&params.ce_info) >= 0) {
+      if (params.ce_info.ce_supported) {
+         if (index) {
+            buf[index++] = '\n';
+         }
+         start = index;
+         index += snprintf(buf + index, len - index, "!CE: down: %u, up: %u",
+                           params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
+         if (params.ce_info.rsrp < INVALID_SIGNAL_VALUE) {
+            index += snprintf(buf + index, len - index, ", RSRP: %d dBm",
+                              params.ce_info.rsrp);
+         }
+         if (params.ce_info.cinr < INVALID_SIGNAL_VALUE) {
+            index += snprintf(buf + index, len - index, ", CINR: %d dB",
+                              params.ce_info.cinr);
+         }
+         if (params.ce_info.snr < INVALID_SIGNAL_VALUE) {
+            index += snprintf(buf + index, len - index, ", SNR: %d dB",
+                              params.ce_info.snr);
+         }
+         dtls_info("%s", buf + start);
+      }
+   }
+
+   memset(&params, 0, sizeof(params));
+   if (modem_read_statistic(&params.network_statistic) >= 0) {
+      if (index) {
+         buf[index++] = '\n';
+      }
+      start = index;
+      index += snprintf(buf + index, len - index, "Stat: tx %u kB, rx %u kB, max %u B, avg %u B",
+                        params.network_statistic.transmitted, params.network_statistic.received,
+                        params.network_statistic.max_packet_size, params.network_statistic.average_packet_size);
+      dtls_info("%s", buf + start);
+      start = index + 1;
+      index += snprintf(buf + index, len - index, "\nCell updates %u, Network searchs %u (%u s), PSM delays %u (%u s), Restarts %u",
+                        params.network_statistic.cell_updates, params.network_statistic.searchs, params.network_statistic.search_time,
+                        params.network_statistic.psm_delays, params.network_statistic.psm_delay_time, params.network_statistic.restarts);
+      dtls_info("%s", buf + start);
+      start = index + 1;
+      index += snprintf(buf + index, len - index, "\nWakeups %u, %u s, connected %u s, asleep %u s",
+                        params.network_statistic.wakeups, params.network_statistic.wakeup_time,
+                        params.network_statistic.connected_time, params.network_statistic.asleep_time);
+      dtls_info("%s", buf + start);
+   }
+#endif /* CONFIG_COAP_SEND_STATISTIC_INFO */
+   return index;
+}
+
+int coap_client_prepare_env_info(char *buf, size_t len)
+{
+   int index = 0;
+   int res = 0;
+
 #ifdef CONFIG_ENVIRONMENT_SENSOR
    double value = 0.0;
+   const char *p = "";
+   int start = 0;
    int32_t int_value = 0;
    uint8_t byte_value = 0;
+
+#if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
+   res = environment_get_temperature_history(s_temperatures, CONFIG_ENVIRONMENT_HISTORY_SIZE);
+   if (res > 0) {
+      int history_index;
+      buf[index++] = '!';
+      for (history_index = 0; history_index < res; ++history_index) {
+         index += snprintf(buf + index, len - index, "%.2f,", s_temperatures[history_index]);
+      }
+      --index;
+      index += snprintf(buf + index, len - index, " C");
+      dtls_info("%s", buf);
+   }
 #endif
+   if (!res && environment_get_temperature(&value) == 0) {
+      index += snprintf(buf, len, "!%.2f C", value);
+      dtls_info("%s", buf);
+      p = "!";
+   }
+   if (environment_get_humidity(&value) == 0) {
+      if (index) {
+         buf[index++] = '\n';
+      }
+      start = index;
+      index += snprintf(buf + index, len - index, "%s%.2f %%H", p, value);
+      dtls_info("%s", buf + start);
+   }
+   if (environment_get_pressure(&value) == 0) {
+      if (index) {
+         buf[index++] = '\n';
+      }
+      start = index;
+      index += snprintf(buf + index, len - index, "%s%.0f hPa", p, value);
+      dtls_info("%s", buf + start);
+   }
+#if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
+   res = environment_get_iaq_history(s_iaqs, CONFIG_ENVIRONMENT_HISTORY_SIZE);
+   if (res > 0) {
+      int history_index;
+      const char *desc = environment_get_iaq_description(IAQ_VALUE(s_iaqs[0]));
+      if (index) {
+         buf[index++] = '\n';
+      }
+      start = index;
+      buf[index++] = '!';
+      for (history_index = 0; history_index < int_value; ++history_index) {
+         index += snprintf(buf + index, len - index, "%d;%d,", IAQ_VALUE(s_iaqs[history_index]), IAQ_ACCURANCY(s_iaqs[history_index]));
+      }
+      --index;
+      index += snprintf(buf + index, len - index, " Q (%s)", desc);
+      dtls_info("%s", buf + start);
+   }
+#endif
+   if (!res && environment_get_iaq(&int_value, &byte_value) == 0) {
+      const char *desc = environment_get_iaq_description(int_value);
+      if (index) {
+         buf[index++] = '\n';
+      }
+      start = index;
+      index += snprintf(buf + index, len - index, "%s%d;%d Q (%s)", p, int_value, byte_value, desc);
+      dtls_info("%s", buf + start);
+   }
+#else  /* CONFIG_ENVIRONMENT_SENSOR */
+   buf[index++] = '!';
+   res = modem_at_cmd("AT%%XTEMP?", buf + index, len - index, "%XTEMP: ");
+   if (res > 0) {
+      index += res;
+      index += snprintf(buf + index, len - index, " C");
+      dtls_info("%s", buf);
+   } else {
+      if (res < 0) {
+         dtls_warn("Failed to read XTEMP.");
+      }
+      index = 0;
+   }
+#endif /* CONFIG_ENVIRONMENT_SENSOR */
+   return index;
+}
+
+int coap_client_prepare_location_info(char *buf, size_t len)
+{
+   int index = 0;
+
 #ifdef CONFIG_LOCATION_ENABLE
    static uint32_t max_execution_time = 0;
    static uint32_t max_satellites_time = 0;
    struct modem_gnss_state result;
    bool pending;
-#endif
-#if defined(CONFIG_ENVIRONMENT_SENSOR) || defined(CONFIG_LOCATION_ENABLE)
-   const char *p;
-#endif
+   const char *p = "???";
+   int res = 1;
+   int start = 0;
 
-   power_manager_status_t battery_status = POWER_UNKNOWN;
-   uint16_t battery_voltage = 0xffff;
-   int16_t battery_forecast = -1;
-   uint8_t battery_level = 0xff;
+   switch (location_get(&result, &pending)) {
+      case MODEM_GNSS_NOT_AVAILABLE:
+         p = "n.a.";
+         break;
+      case MODEM_GNSS_TIMEOUT:
+         p = "timeout";
+         break;
+      case MODEM_GNSS_ERROR:
+         p = "error";
+         break;
+      case MODEM_GNSS_INVISIBLE:
+         p = "invisible";
+         break;
+      case MODEM_GNSS_POSITION:
+         p = "valid";
+         res = 0;
+         break;
+      default:
+         break;
+   }
+
+   if (max_satellites_time < result.satellites_time) {
+      max_satellites_time = result.satellites_time;
+   }
+
+   if (result.valid) {
+      index += snprintf(buf, len, "GNSS.1=%s%s,%u-sats,%us-vis,%us-vis-max",
+                        p, pending ? ",pending" : "", result.max_satellites, result.satellites_time / 1000, max_satellites_time / 1000);
+      dtls_info("%s", buf);
+#ifdef GNSS_VISIBILITY
+      if (index) {
+         buf[index++] = '\n';
+      }
+      start = index;
+#else
+      index = 0;
+#endif
+      if (!res) {
+         if (!max_execution_time) {
+            /* skip the first */
+            max_execution_time = 1;
+            index += snprintf(buf + index, len - index, "GNSS.2=%us-pos",
+                              result.execution_time / 1000);
+         } else {
+            if (max_execution_time < result.execution_time) {
+               max_execution_time = result.execution_time;
+            }
+            index += snprintf(buf + index, len - index, "GNSS.2=%us-pos,%us-pos-max",
+                              result.execution_time / 1000, max_execution_time / 1000);
+         }
+      } else if (max_execution_time > 1) {
+         index += snprintf(buf + index, len - index, "GNSS.2=%us-pos-max",
+                           max_execution_time / 1000);
+      }
+      if (index > start) {
+         dtls_info("%s", buf + start);
+#ifdef GNSS_EXECUTION_TIMES
+         buf[index++] = '\n';
+         start = index;
+#else
+         if (start) {
+            index = start - 1;
+         } else {
+            index = 0;
+         }
+#endif
+      }
+      index += snprintf(buf + index, len - index, "%s!GNSS.3=%.06f,%.06f,%.01f,%.02f,%.01f",
+                        res ? "*" : "",
+                        result.position.latitude, result.position.longitude, result.position.accuracy,
+                        result.position.altitude, result.position.altitude_accuracy);
+      index += snprintf(buf + index, len - index, ",%04d-%02d-%02dT%02d:%02d:%02dZ",
+                        result.position.datetime.year, result.position.datetime.month, result.position.datetime.day,
+                        result.position.datetime.hour, result.position.datetime.minute, result.position.datetime.seconds);
+      dtls_info("%s", buf + start);
+   } else {
+      index += snprintf(buf, len, "GNSS.1=%s%s", p, pending ? ",pending" : "");
+      dtls_info("%s", buf);
+   }
+#endif
+   return index;
+}
+
+int coap_client_prepare_post(void)
+{
    int64_t reboot_times[REBOOT_INFOS];
    uint16_t reboot_codes[REBOOT_INFOS];
 
@@ -331,17 +733,9 @@ int coap_client_prepare_post(void)
    char query[30];
 #endif
 
-#if defined(CONFIG_COAP_SEND_NETWORK_INFO) || defined(CONFIG_COAP_SEND_SIM_INFO) || defined(CONFIG_COAP_SEND_STATISTIC_INFO)
-   union lte_params params;
-
-   memset(&params, 0, sizeof(params));
-#endif
-
    coap_message_len = 0;
 
    uptime = k_uptime_get() / MSEC_PER_SEC;
-
-   power_manager_status(&battery_level, &battery_voltage, &battery_status, &battery_forecast);
 
    start = 0;
    if ((uptime / 60) < 5) {
@@ -369,50 +763,13 @@ int coap_client_prepare_post(void)
    dtls_info("%s", buf + start);
 
 #ifdef CONFIG_COAP_SEND_MODEM_INFO
-   memset(&params, 0, sizeof(params));
-   if (!modem_get_modem_info(&params.modem_info)) {
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nHW: %s, MFW: %s, IMEI: %s",params.modem_info.version,params.modem_info.firmware, params.modem_info.imei);
-      dtls_info("%s", buf + start);
+   buf[index] = '\n';
+   start = index + 1;
+   err = coap_client_prepare_modem_info(buf + start, sizeof(buf) - start);
+   if (err > 0) {
+      index = start + err;
    }
 #endif
-
-   if (battery_voltage < 0xffff) {
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\n!%u mV", battery_voltage);
-      if (battery_level < 0xff) {
-         index += snprintf(buf + index, sizeof(buf) - index, " %u%%", battery_level);
-      }
-      if (battery_forecast > 1 || battery_forecast == 0) {
-         index += snprintf(buf + index, sizeof(buf) - index, " (%u days left)", battery_forecast);
-      } else if (battery_forecast == 1) {
-         index += snprintf(buf + index, sizeof(buf) - index, " (1 day left)");
-      }
-      const char *msg = "";
-      switch (battery_status) {
-         case FROM_BATTERY:
-            msg = "battery";
-            break;
-         case CHARGING_TRICKLE:
-            msg = "charging (trickle)";
-            break;
-         case CHARGING_I:
-            msg = "charging (I)";
-            break;
-         case CHARGING_V:
-            msg = "charging (V)";
-            break;
-         case CHARGING_COMPLETED:
-            msg = "full";
-            break;
-         default:
-            break;
-      }
-      if (strlen(msg)) {
-         index += snprintf(buf + index, sizeof(buf) - index, " %s", msg);
-      }
-      dtls_info("%s", buf + start);
-   }
 
    memset(reboot_times, 0, sizeof(reboot_times));
    memset(reboot_codes, 0, sizeof(reboot_codes));
@@ -437,308 +794,40 @@ int coap_client_prepare_post(void)
    } else {
       index = start - 1;
    }
-#if 0
-   err = modem_at_cmd("AT%%CONEVAL", buf + index, sizeof(buf) - index, "%CONEVAL: ");
-   if (err < 0) {
-      dtls_warn("Failed to read CONEVAL.");
-   } else {
-      dtls_info("CONEVAL: %s", buf + index);
-   }
-#endif
 
 #ifdef CONFIG_COAP_SEND_SIM_INFO
-   memset(&params, 0, sizeof(params));
-   if (modem_get_sim_info(&params.sim_info) >= 0 && params.sim_info.valid) {
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nICCID: %s, eDRX cycle: %s",
-                        params.sim_info.iccid, params.sim_info.edrx_cycle_support ? "on" : "off");
-      if (params.sim_info.hpplmn_search_interval && params.sim_info.hpplmn[0]) {
-         index += snprintf(buf + index, sizeof(buf) - index, ", HPPLMN %s interval: %d [h]",
-                           params.sim_info.hpplmn, params.sim_info.hpplmn_search_interval);
-      } else if (params.sim_info.hpplmn_search_interval) {
-         index += snprintf(buf + index, sizeof(buf) - index, ", HPPLMN interval: %d [h]",
-                           params.sim_info.hpplmn_search_interval);
-      }
-      dtls_info("%s", buf + start);
-      start = index + 1;
-      if (params.sim_info.prev_imsi[0]) {
-         index += snprintf(buf + index, sizeof(buf) - index, "\nMulti-IMSI: %s, %s, %d s",
-                           params.sim_info.imsi, params.sim_info.prev_imsi, params.sim_info.imsi_interval);
-      } else {
-         index += snprintf(buf + index, sizeof(buf) - index, "\nIMSI: %s", params.sim_info.imsi);
-      }
-      dtls_info("%s", buf + start);
-      if (params.sim_info.forbidden[0]) {
-         start = index + 1;
-         index += snprintf(buf + index, sizeof(buf) - index, "\nForbidden: %s",
-                           params.sim_info.forbidden);
-         dtls_info("%s", buf + start);
-      }
+   buf[index] = '\n';
+   start = index + 1;
+   err = coap_client_prepare_sim_info(buf + start, sizeof(buf) - start);
+   if (err > 0) {
+      index = start + err;
    }
 #endif /* CONFIG_COAP_SEND_SIM_INFO */
 
-#ifdef CONFIG_COAP_SEND_NETWORK_INFO
-   memset(&params, 0, sizeof(params));
-   if (!modem_get_network_info(&params.network_info)) {
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nNetwork: %s",
-                        modem_get_network_mode_description(params.network_info.mode));
-      index += snprintf(buf + index, sizeof(buf) - index, ",%s",
-                        modem_get_registration_description(params.network_info.status));
-      if (params.network_info.registered) {
-         index += snprintf(buf + index, sizeof(buf) - index, ",Band %d", params.network_info.band);
-         if (params.network_info.plmn_lock) {
-            index += snprintf(buf + index, sizeof(buf) - index, ",#PLMN %s", params.network_info.provider);
-         } else {
-            index += snprintf(buf + index, sizeof(buf) - index, ",PLMN %s", params.network_info.provider);
-         }
-         index += snprintf(buf + index, sizeof(buf) - index, ",TAC %u", params.network_info.tac);
-         index += snprintf(buf + index, sizeof(buf) - index, ",Cell %u", params.network_info.cell);
-         index += snprintf(buf + index, sizeof(buf) - index, ",EARFCN %u", params.network_info.earfcn);
-      }
-   }
-   dtls_info("%s", buf + start);
-
-   if (params.network_info.registered) {
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nPDN: %s,%s", params.network_info.apn, params.network_info.local_ip);
-      dtls_info("%s", buf + start);
-   }
-
-   index += snprintf(buf + index, sizeof(buf) - index, "\n");
-   start = index;
-
-   memset(&params, 0, sizeof(params));
-   if (modem_get_psm_status(&params.psm) == 0) {
-      if (params.psm.active_time >= 0) {
-         index += snprintf(buf + index, sizeof(buf) - index, "PSM: TAU %d [s], Act %d [s]", params.psm.tau, params.psm.active_time);
-      } else {
-         index += snprintf(buf + index, sizeof(buf) - index, "PSM: n.a.");
-      }
-   }
-   err = modem_get_release_time();
+#if defined(CONFIG_COAP_SEND_NETWORK_INFO) || defined(CONFIG_COAP_SEND_STATISTIC_INFO)
+   buf[index] = '\n';
+   start = index + 1;
+   err = coap_client_prepare_net_info(buf + start, sizeof(buf) - start);
    if (err > 0) {
-      if (index > start) {
-         index += snprintf(buf + index, sizeof(buf) - index, ", ");
-      }
-      index += snprintf(buf + index, sizeof(buf) - index, "Released: %d ms", err);
+      index = start + err;
    }
-   if (index > start) {
-      dtls_info("%s", buf + start);
-   } else {
-      index = start - 1;
-   }
-   memset(&params, 0, sizeof(params));
-   if (modem_get_edrx_status(&params.edrx) == 0) {
-      start = index + 1;
-      switch (params.edrx.mode) {
-         case LTE_LC_LTE_MODE_NONE:
-            index += snprintf(buf + index, sizeof(buf) - index, "\neDRX: n.a.");
-            break;
-         case LTE_LC_LTE_MODE_LTEM:
-            index += snprintf(buf + index, sizeof(buf) - index, "\neDRX: LTE-M %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
-            break;
-         case LTE_LC_LTE_MODE_NBIOT:
-            index += snprintf(buf + index, sizeof(buf) - index, "\neDRX: NB-IoT %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
-            break;
-         default:
-            index += snprintf(buf + index, sizeof(buf) - index, "\neDRX: unknown");
-            break;
-      }
-      dtls_info("%s", buf + start);
-   }
-#endif /* CONFIG_COAP_SEND_NETWORK_INFO */
-
-#ifdef CONFIG_COAP_SEND_STATISTIC_INFO
-   memset(&params, 0, sizeof(params));
-   if (modem_get_coverage_enhancement_info(&params.ce_info) >= 0) {
-      if (params.ce_info.ce_supported) {
-         start = index + 1;
-         index += snprintf(buf + index, sizeof(buf) - index, "\n!CE: down: %u, up: %u",
-                           params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
-         if (params.ce_info.rsrp < INVALID_SIGNAL_VALUE) {
-            index += snprintf(buf + index, sizeof(buf) - index, ", RSRP: %d dBm",
-                              params.ce_info.rsrp);
-         }
-         if (params.ce_info.cinr < INVALID_SIGNAL_VALUE) {
-            index += snprintf(buf + index, sizeof(buf) - index, ", CINR: %d dB",
-                              params.ce_info.cinr);
-         }
-         if (params.ce_info.snr < INVALID_SIGNAL_VALUE) {
-            index += snprintf(buf + index, sizeof(buf) - index, ", SNR: %d dB",
-                              params.ce_info.snr);
-         }
-         dtls_info("%s", buf + start);
-      }
-   }
-
-   memset(&params, 0, sizeof(params));
-   if (modem_read_statistic(&params.network_statistic) >= 0) {
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nStat: tx %u kB, rx %u kB, max %u B, avg %u B",
-                        params.network_statistic.transmitted, params.network_statistic.received,
-                        params.network_statistic.max_packet_size, params.network_statistic.average_packet_size);
-      dtls_info("%s", buf + start);
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nCell updates %u, Network searchs %u (%u s), PSM delays %u (%u s), Restarts %u",
-                        params.network_statistic.cell_updates, params.network_statistic.searchs, params.network_statistic.search_time,
-                        params.network_statistic.psm_delays, params.network_statistic.psm_delay_time, params.network_statistic.restarts);
-      dtls_info("%s", buf + start);
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nWakeups %u, %u s, connected %u s, asleep %u s",
-                        params.network_statistic.wakeups, params.network_statistic.wakeup_time,
-                        params.network_statistic.connected_time, params.network_statistic.asleep_time);
-      dtls_info("%s", buf + start);
-   }
-
-#endif /* CONFIG_COAP_SEND_STATISTIC_INFO */
+#endif
 
 #ifdef CONFIG_LOCATION_ENABLE
-   err = 1;
+   buf[index] = '\n';
    start = index + 1;
-   p = "???";
-   switch (location_get(&result, &pending)) {
-      case MODEM_GNSS_NOT_AVAILABLE:
-         p = "n.a.";
-         break;
-      case MODEM_GNSS_TIMEOUT:
-         p = "timeout";
-         break;
-      case MODEM_GNSS_ERROR:
-         p = "error";
-         break;
-      case MODEM_GNSS_INVISIBLE:
-         p = "invisible";
-         break;
-      case MODEM_GNSS_POSITION:
-         p = "valid";
-         err = 0;
-         break;
-      default:
-         break;
-   }
-
-   if (max_satellites_time < result.satellites_time) {
-      max_satellites_time = result.satellites_time;
-   }
-
-   if (result.valid) {
-      index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.1=%s%s,%u-sats,%us-vis,%us-vis-max",
-                        p, pending ? ",pending" : "", result.max_satellites, result.satellites_time / 1000, max_satellites_time / 1000);
-      dtls_info("%s", buf + start);
-#ifdef GNSS_VISIBILITY
-      start = index + 1;
-#else
-      index = start - 1;
-#endif
-      if (!err) {
-         if (!max_execution_time) {
-            /* skip the first */
-            max_execution_time = 1;
-            index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.2=%us-pos",
-                              result.execution_time / 1000);
-         } else {
-            if (max_execution_time < result.execution_time) {
-               max_execution_time = result.execution_time;
-            }
-            index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.2=%us-pos,%us-pos-max",
-                              result.execution_time / 1000, max_execution_time / 1000);
-         }
-      } else if (max_execution_time > 1) {
-         index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.2=%us-pos-max",
-                           max_execution_time / 1000);
-      }
-      if (index > start) {
-         dtls_info("%s", buf + start);
-#ifdef GNSS_EXECUTION_TIMES
-         start = index + 1;
-#else
-         index = start - 1;
-#endif
-      }
-      index += snprintf(buf + index, sizeof(buf) - index, "\n%s!GNSS.3=%.06f,%.06f,%.01f,%.02f,%.01f",
-                        err ? "*" : "",
-                        result.position.latitude, result.position.longitude, result.position.accuracy,
-                        result.position.altitude, result.position.altitude_accuracy);
-      index += snprintf(buf + index, sizeof(buf) - index, ",%04d-%02d-%02dT%02d:%02d:%02dZ",
-                        result.position.datetime.year, result.position.datetime.month, result.position.datetime.day,
-                        result.position.datetime.hour, result.position.datetime.minute, result.position.datetime.seconds);
-      dtls_info("%s", buf + start);
-   } else {
-      index += snprintf(buf + index, sizeof(buf) - index, "\nGNSS.1=%s%s", p, pending ? ",pending" : "");
-      dtls_info("%s", buf + start);
-   }
-#endif
-
-#ifdef CONFIG_ENVIRONMENT_SENSOR
-   p = "";
-   int_value = 0;
-#if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
-   int_value = environment_get_temperature_history(s_temperatures, CONFIG_ENVIRONMENT_HISTORY_SIZE);
-   if (int_value > 0) {
-      int history_index;
-      index += snprintf(buf + index, sizeof(buf) - index, "\n!");
-      start = index - 1;
-      for (history_index = 0; history_index < int_value; ++history_index) {
-         index += snprintf(buf + index, sizeof(buf) - index, "%.2f,", s_temperatures[history_index]);
-      }
-      --index;
-      index += snprintf(buf + index, sizeof(buf) - index, " C");
-      dtls_info("%s", buf + start);
-   }
-#endif
-   if (!int_value && environment_get_temperature(&value) == 0) {
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\n!%.2f C", value);
-      dtls_info("%s", buf + start);
-      p = "!";
-   }
-   if (environment_get_humidity(&value) == 0) {
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\n%s%.2f %%H", p, value);
-      dtls_info("%s", buf + start);
-   }
-   if (environment_get_pressure(&value) == 0) {
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\n%s%.1f hPa", p, value);
-      dtls_info("%s", buf + start);
-   }
-#if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
-   int_value = environment_get_iaq_history(s_iaqs, CONFIG_ENVIRONMENT_HISTORY_SIZE);
-   if (int_value > 0) {
-      int history_index;
-      const char *desc = environment_get_iaq_description(IAQ_VALUE(s_iaqs[0]));
-      index += snprintf(buf + index, sizeof(buf) - index, "\n!");
-      start = index - 1;
-      for (history_index = 0; history_index < int_value; ++history_index) {
-         index += snprintf(buf + index, sizeof(buf) - index, "%d;%d,", IAQ_VALUE(s_iaqs[history_index]), IAQ_ACCURANCY(s_iaqs[history_index]));
-      }
-      --index;
-      index += snprintf(buf + index, sizeof(buf) - index, " Q (%s)", desc);
-      dtls_info("%s", buf + start);
-   }
-#endif
-   if (!int_value && environment_get_iaq(&int_value, &byte_value) == 0) {
-      const char *desc = environment_get_iaq_description(int_value);
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\n%s%d;%d Q (%s)", p, int_value, byte_value, desc);
-      dtls_info("%s", buf + start);
-   }
-#else  /* CONFIG_ENVIRONMENT_SENSOR */
-   start = index;
-   index += snprintf(buf + index, sizeof(buf) - index, "\n!");
-   err = modem_at_cmd("AT%%XTEMP?", buf + index, sizeof(buf) - index, "%XTEMP: ");
+   err = coap_client_prepare_location_info(buf + start, sizeof(buf) - start);
    if (err > 0) {
-      index += err;
-      index += snprintf(buf + index, sizeof(buf) - index, " C");
-      dtls_info("%s", buf + start + 1);
-   } else {
-      if (err < 0) {
-         dtls_warn("Failed to read XTEMP.");
-      }
-      index = start;
+      index = start + err;
    }
-#endif /* CONFIG_ENVIRONMENT_SENSOR */
+#endif
+
+   buf[index] = '\n';
+   start = index + 1;
+   err = coap_client_prepare_env_info(buf + start, sizeof(buf) - start);
+   if (err > 0) {
+      index = start + err;
+   }
 
    coap_current_token++;
    coap_current_mid = coap_next_id();
@@ -867,7 +956,6 @@ int coap_client_prepare_post(void)
       return err;
    }
 #endif
-
 
    err = coap_packet_append_payload_marker(&request);
    if (err < 0) {
