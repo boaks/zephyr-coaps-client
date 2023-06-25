@@ -21,11 +21,11 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/pm/device.h>
-#include <zephyr/sys/reboot.h>
 
 #include <modem/at_monitor.h>
 #include <nrf_modem_at.h>
 
+#include "appl_diagnose.h"
 #include "modem.h"
 #include "parse.h"
 #include "ui.h"
@@ -147,8 +147,7 @@ static void at_cmd_send_fn(struct k_work *work)
       return;
    } else if (strcmp(at_cmd_buf, "reboot") == 0) {
       LOG_INF(">> device reboot ...");
-      k_sleep(K_SECONDS(2));
-      sys_reboot(SYS_REBOOT_COLD);
+      appl_reboot(ERROR_CODE_CMD, 2000);
       return;
    } else if (strcmp(at_cmd_buf, "off") == 0) {
       modem_set_offline();
@@ -165,15 +164,15 @@ static void at_cmd_send_fn(struct k_work *work)
       dtls_trigger();
       return;
    } else if (strcmp(at_cmd_buf, "help") == 0) {
-      LOG_INF("> help:");
-      LOG_INF("  reset  : modem factory reset.");
-      LOG_INF("  reboot : reboot device.");
+      LOG_INF("> help: 0.1");
+      LOG_INF("  at???  : modem at-cmd.");
       LOG_INF("  on     : switch modem on.");
       LOG_INF("  off    : switch modem off.");
+      LOG_INF("  reset  : modem factory reset.");
+      LOG_INF("  reboot : reboot device.");
       LOG_INF("  scan   : network scan.");
       LOG_INF("  send   : send message.");
       LOG_INF("  sim    : read SIM-card info.");
-      LOG_INF("  at???  : modem at-cmd.");
       return;
    }
 
