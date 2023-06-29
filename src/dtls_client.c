@@ -550,7 +550,9 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
    const char *tag = app->dtls_pending ? (app->retransmission ? "hs_re" : "hs_") : (app->retransmission ? "re" : "");
 
    if (!lte_power_on_off) {
-      connect_time = (unsigned long)k_uptime_get();
+      if (!app->retransmission) {
+         connect_time = (unsigned long)k_uptime_get();
+      }
       prepare_socket(app);
    }
    result = sendto(app->fd, data, len, MSG_DONTWAIT, &session->addr.sa, session->size);
