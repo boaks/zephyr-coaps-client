@@ -46,7 +46,7 @@ static atomic_t read_reset_cause = ATOMIC_INIT(0);
 static const struct device *const wdt = DEVICE_DT_GET_OR_NULL(DT_ALIAS(watchdog0));
 static int wdt_channel_id = -1;
 
-static uint32_t reset_cause = 0;
+static volatile uint32_t reset_cause = 0;
 
 void watchdog_feed(void)
 {
@@ -83,7 +83,7 @@ static void appl_reboot_fn(void *p1, void *p2, void *p3)
 void appl_reboot(int error, const k_timeout_t delay)
 {
    reboots = true;
-   uint32_t delay_ms = (uint32_t) k_ticks_to_ms_floor64(delay.ticks);
+   uint32_t delay_ms = (uint32_t)k_ticks_to_ms_floor64(delay.ticks);
    atomic_set(&reboot_cause, error);
    if (delay_ms > 0) {
       atomic_set(&shutdown_delay, delay_ms);
@@ -96,6 +96,29 @@ void appl_reboot(int error, const k_timeout_t delay)
 bool appl_reboots(void)
 {
    return reboots;
+}
+
+const char *appl_get_reboot_desciption(int error)
+{
+   switch (ERROR_CLASS(error)) {
+      case ERROR_CODE_INIT_NO_LTE:
+         return "no initial network";
+      case ERROR_CODE_INIT_NO_DTLS:
+         return "no dtls";
+      case ERROR_CODE_INIT_NO_SUCCESS:
+         return "no initial success";
+      case ERROR_CODE_OPEN_SOCKET:
+         return "open socket";
+      case ERROR_CODE_TOO_MANY_FAILURES:
+         return "too many failures";
+      case ERROR_CODE_MODEM_FAULT:
+         return "modem fault";
+      case ERROR_CODE_CMD:
+         return "reboot cmd";
+      case ERROR_CODE_MANUAL_TRIGGERED:
+         return "reboot triggered";
+   }
+   return "\?\?\?";
 }
 
 uint32_t appl_reset_cause(int *flags)
@@ -143,35 +166,37 @@ uint32_t appl_reset_cause(int *flags)
 int appl_reset_cause_description(char *buf, size_t len)
 {
    int index = 0;
-   uint32_t cause = reset_cause;
 
-   if (atomic_get(&read_reset_cause) && cause && len > 8) {
-      if (cause & RESET_PIN) {
-         cause &= ~RESET_PIN;
-         index += snprintf(buf + index, len - index, "Reset, ");
-      }
-      if (cause & RESET_SOFTWARE && index < len) {
-         cause &= ~RESET_SOFTWARE;
-         index += snprintf(buf + index, len - index, "Reboot, ");
-      }
-      if (cause & RESET_POR && index < len) {
-         cause &= ~RESET_POR;
-         index += snprintf(buf + index, len - index, "Power On, ");
-      }
-      if (cause & RESET_WATCHDOG && index < len) {
-         cause &= ~RESET_WATCHDOG;
-         index += snprintf(buf + index, len - index, "Watchdog, ");
-      }
-      if (((index - 2) > len) || (cause && (index + 8 > len))) {
-         // buffer overflow, reset output
-         cause = reset_cause;
-         index = 0;
-      }
+   if (atomic_get(&read_reset_cause) && len > 8) {
+      uint32_t cause = reset_cause;
       if (cause) {
-         index += snprintf(buf + index, len - index, " 0x%04x", reset_cause);
-      } else if (index > 2) {
-         index -= 2;
-         buf[index] = 0;
+         if (cause & RESET_PIN) {
+            cause &= ~RESET_PIN;
+            index += snprintf(buf + index, len - index, "Reset, ");
+         }
+         if (cause & RESET_SOFTWARE && index < len) {
+            cause &= ~RESET_SOFTWARE;
+            index += snprintf(buf + index, len - index, "Reboot, ");
+         }
+         if (cause & RESET_POR && index < len) {
+            cause &= ~RESET_POR;
+            index += snprintf(buf + index, len - index, "Power On, ");
+         }
+         if (cause & RESET_WATCHDOG && index < len) {
+            cause &= ~RESET_WATCHDOG;
+            index += snprintf(buf + index, len - index, "Watchdog, ");
+         }
+         if (((index - 2) > len) || (cause && (index + 8 > len))) {
+            // buffer overflow, reset output
+            cause = reset_cause;
+            index = 0;
+         }
+         if (cause) {
+            index += snprintf(buf + index, len - index, " 0x%04x", reset_cause);
+         } else if (index > 2) {
+            index -= 2;
+            buf[index] = 0;
+         }
       }
    }
    return index;

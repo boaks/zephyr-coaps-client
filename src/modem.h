@@ -34,6 +34,7 @@ typedef struct lte_sim_info {
    bool edrx_cycle_support;
    int16_t hpplmn_search_interval;
    int16_t imsi_interval;
+   uint16_t imsi_counter;
    char hpplmn[MODEM_PLMN_SIZE];
    char forbidden[MODEM_PLMN_SIZE];
    char iccid[MODEM_ID_SIZE];
@@ -41,9 +42,18 @@ typedef struct lte_sim_info {
    char prev_imsi[MODEM_ID_SIZE];
 } lte_sim_info_t;
 
+enum lte_network_state_type {
+	LTE_NETWORK_STATE_INIT = 0,
+	LTE_NETWORK_STATE_OFF = 1,
+	LTE_NETWORK_STATE_ON = 3
+};
+
 typedef struct lte_network_info {
-   bool registered;
-   bool plmn_lock;
+   uint16_t registered:2;
+   uint16_t pdn_active:2;
+   uint16_t rrc_active:2;
+   uint16_t sleeping:2;
+   uint16_t plmn_lock:2;
    enum lte_lc_nw_reg_status status;
    enum lte_lc_lte_mode mode;
    uint8_t band;
@@ -87,6 +97,7 @@ typedef struct lte_network_statistic {
 enum lte_state_type {
 	LTE_STATE_REGISTRATION,
 	LTE_STATE_READY,
+	LTE_STATE_CONNECTED,
 	LTE_STATE_SLEEPING
 };
 
@@ -95,6 +106,14 @@ enum rai_mode {
 	RAI_NOW, /* intended to uses a extra dummy message! */
 	RAI_LAST,
 	RAI_ONE_RESPONSE
+};
+
+enum preference_mode {
+   RESET_PREFERENCE,
+   SWAP_PREFERENCE,
+   NBIOT_PREFERENCE,
+   LTE_M_PREFERENCE,
+   ADJUST_PREFERENCE,
 };
 
 #ifdef CONFIG_UDP_AS_RAI_ENABLE
@@ -108,17 +127,19 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler);
 
 int modem_start(const k_timeout_t timeout, bool save);
 
+int modem_start_search(void);
+
 int modem_wait_ready(const k_timeout_t timeout);
 
-const char* modem_get_network_mode_description(enum lte_lc_lte_mode mode);
-
-const char *modem_get_registration_description(enum lte_lc_nw_reg_status reg_status);
+bool modem_set_preference(enum preference_mode mode);
 
 int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx);
 
 int modem_get_psm_status(struct lte_lc_psm_cfg *psm);
 
 int modem_get_network_info(struct lte_network_info* info);
+
+int modem_get_mcc(char* mcc);
 
 int modem_get_coverage_enhancement_info(struct lte_ce_info* info);
 
@@ -132,17 +153,11 @@ int modem_get_release_time(void);
 
 void modem_set_transmission_time(void);
 
-int modem_read_network_info(struct lte_network_info* info);
-
-int modem_read_pdn_info(char* buf, size_t len);
+int modem_read_network_info(struct lte_network_info* info, bool callbacks);
 
 int modem_read_statistic(struct lte_network_statistic* statistic);
 
 int modem_read_coverage_enhancement_info(struct lte_ce_info* info);
-
-int modem_read_sim_info(struct lte_sim_info* info);
-
-int modem_at_cmd(const char* cmd, char* buf, size_t max_len, const char *skip);
 
 int modem_set_psm(int16_t active_time_s);
 

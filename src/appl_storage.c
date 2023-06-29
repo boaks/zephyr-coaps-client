@@ -473,7 +473,7 @@ int appl_storage_read_int_items(size_t id, size_t index, int64_t *times, uint16_
          current = setup->current_offset;
          k_mutex_unlock(&storage_mutex);
          while (read < count) {
-            LOG_INF("Read %s %d/%d", setup->desc, read, count);
+            LOG_DBG("Read %s %d/%d", setup->desc, read, count);
             rc = appl_storage_read_item(setup, &current, times, data, sizeof(data));
             if (rc <= 0) {
                break;

@@ -30,6 +30,7 @@
 #include "global.h"
 #include "io_job_queue.h"
 #include "modem.h"
+#include "modem_sim.h"
 #include "power_manager.h"
 #include "ui.h"
 
@@ -63,6 +64,14 @@ typedef enum {
    WAIT_SUSPEND,
 } request_state_t;
 
+typedef enum {
+   NO_SEARCH,
+   MANUAL_SEARCH,
+   CMD_SEARCH,
+   EVENT_SEARCH,
+   READY_SEARCH
+} search_trigger_t;
+
 typedef struct dtls_app_data_t {
    session_t *destination;
    int fd;
@@ -73,26 +82,32 @@ typedef struct dtls_app_data_t {
    int64_t start_time;
 } dtls_app_data_t;
 
-static volatile bool network_registered = false;
-static volatile bool network_ready = false;
-static volatile bool network_sleeping = false;
-static volatile bool lte_connected_send = false;
-static volatile unsigned int lte_connections = 0;
-static volatile unsigned long connected_time = 0;
+#define LTE_REGISTERED 0
+#define LTE_READY 1
+#define LTE_CONNECTED 2
+#define LTE_SLEEPING 3
+#define LTE_CONNECTED_SEND 4
+#define LTE_SOCKET_ERROR 5
+#define PM_PREVENT_SUSPEND 6
+#define PM_SUSPENDED 7
+
+static atomic_t general_states = ATOMIC_INIT(0);
+
+static atomic_t lte_connections = ATOMIC_INIT(0);
+static atomic_t ready_time = ATOMIC_INIT(0);
+static atomic_t connected_time = ATOMIC_INIT(0);
+static long connect_time = 0;
+static long response_time = 0;
 
 static dtls_app_data_t app_data;
-
-static unsigned long connect_time = 0;
-static unsigned long response_time = 0;
 
 static bool initial_success = false;
 static unsigned int current_failures = 0;
 static unsigned int handled_failures = 0;
 
-static volatile bool appl_prevent_suspend = false;
-
 static volatile bool appl_ready = false;
 static volatile int trigger_duration = 0;
+static volatile search_trigger_t trigger_search = NO_SEARCH;
 
 static volatile bool lte_power_off = false;
 static bool lte_power_on_off = false;
@@ -105,7 +120,7 @@ static volatile bool moved = false;
 static uint8_t receive_buffer[MAX_READ_BUF];
 
 #define RTT_SLOTS 9
-#define RTT_INTERVAL 2000
+#define RTT_INTERVAL (2 * MSEC_PER_SEC)
 static unsigned int rtts[RTT_SLOTS + 2] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20};
 
 static K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
@@ -122,7 +137,7 @@ static void dtls_power_management_fn(struct k_work *work)
 
 static void dtls_power_management_suspend_fn(struct k_work *work)
 {
-   appl_prevent_suspend = false;
+   atomic_clear_bit(&general_states, PM_PREVENT_SUSPEND);
    ui_led_op(LED_COLOR_ALL, LED_CLEAR);
    dtls_power_management();
 }
@@ -130,18 +145,26 @@ static void dtls_power_management_suspend_fn(struct k_work *work)
 static K_WORK_DEFINE(dtls_power_management_work, dtls_power_management_fn);
 static K_WORK_DELAYABLE_DEFINE(dtls_power_management_suspend_work, dtls_power_management_suspend_fn);
 
-static atomic_t power_manager_suspended = ATOMIC_INIT(0);
-
 static void dtls_power_management(void)
 {
+   bool previous = false;
    bool suspend = false;
 
    if (!appl_reboots()) {
       k_mutex_lock(&dtls_pm_mutex, K_FOREVER);
-      suspend = network_sleeping && !appl_prevent_suspend && app_data.request_state == NONE;
+      suspend = atomic_test_bit(&general_states, LTE_SLEEPING) &&
+                !atomic_test_bit(&general_states, PM_PREVENT_SUSPEND) &&
+                app_data.request_state == NONE;
       k_mutex_unlock(&dtls_pm_mutex);
    }
-   if (atomic_cas(&power_manager_suspended, suspend ? 0 : 1, suspend ? 1 : 0)) {
+
+   if (suspend) {
+      previous = atomic_test_and_set_bit(&general_states, PM_SUSPENDED);
+   } else {
+      previous = atomic_test_and_clear_bit(&general_states, PM_SUSPENDED);
+   }
+
+   if (previous != suspend) {
       if (suspend) {
          ui_led_op(LED_COLOR_ALL, LED_CLEAR);
       }
@@ -194,142 +217,105 @@ static void check_reboot(void)
 
 static int get_socket_error(dtls_app_data_t *app)
 {
-   int error = 0;
-   socklen_t len = sizeof(error);
-   int result = getsockopt(app->fd, SOL_SOCKET, SO_ERROR, &error, &len);
-   if (result) {
-      error = errno;
+   int error = -ENOTCONN;
+   if (app->fd >= 0) {
+      socklen_t len = sizeof(error);
+      int result = getsockopt(app->fd, SOL_SOCKET, SO_ERROR, &error, &len);
+      if (result) {
+         error = errno;
+      }
    }
    return error;
 }
 
-#define INITIAL_SLEEP_MINUTES 15
-#define MAX_MODEM_SEARCH_TIMEOUT_S 900
-
-static void restart_modem(bool force, dtls_app_data_t *app)
+static bool restart_modem(void)
 {
-   int timeout_seconds = CONFIG_MODEM_SEARCH_TIMEOUT;
-   int sleep_minutes = INITIAL_SLEEP_MINUTES;
-   bool network = network_registered && app;
-
    watchdog_feed();
-   k_sem_reset(&dtls_trigger_search);
    check_reboot();
 
-   if (force || modem_get_sim_info(NULL) > 0) {
-      // force or
-      // multi-sim with LTE-M/NB-IoT preference swap
-      dtls_info("> modem restart");
-      appl_prevent_suspend = true;
-      ui_led_op(LED_COLOR_BLUE, LED_BLINKING);
-      ui_led_op(LED_COLOR_RED, LED_BLINKING);
-      modem_set_lte_offline();
-      dtls_info("> modem offline");
-      k_sleep(K_MSEC(2000));
-      ui_led_op(LED_COLOR_ALL, LED_CLEAR);
-      network = modem_start(K_SECONDS(timeout_seconds), false) == 0;
-      timeout_seconds *= 2;
-      appl_prevent_suspend = false;
-   }
-
-   while (!network) {
-      bool trigger;
-      int64_t now;
-      int64_t start;
-
-      dtls_info("> modem offline (%d minutes)", sleep_minutes);
-      ui_led_op(LED_COLOR_BLUE, LED_BLINKING);
-      ui_led_op(LED_COLOR_RED, LED_BLINKING);
-      modem_set_lte_offline();
-      dtls_info("> modem offline");
-      k_sleep(K_MSEC(2000));
-      ui_led_op(LED_COLOR_ALL, LED_CLEAR);
-      network_sleeping = true;
-      dtls_power_management();
-
-      trigger = false;
-      start = k_uptime_get();
-      do {
-         watchdog_feed();
-         if (k_sem_take(&dtls_trigger_search, K_SECONDS(WATCHDOG_TIMEOUT_S)) == 0) {
-            trigger = true;
-            break;
-         }
-         now = k_uptime_get();
-      } while ((now - start) < (sleep_minutes * 60L * MSEC_PER_SEC));
-      watchdog_feed();
-      if (trigger) {
-         dtls_info("> modem normal (manual)");
-         sleep_minutes = INITIAL_SLEEP_MINUTES;
-         check_reboot();
-      } else {
-         dtls_info("> modem normal (timeout)");
-         sleep_minutes *= 2;
-      }
-      timeout_seconds *= 2;
-      if (timeout_seconds > MAX_MODEM_SEARCH_TIMEOUT_S) {
-         timeout_seconds = MAX_MODEM_SEARCH_TIMEOUT_S;
-      }
-      dtls_info("> modem search network (%d minutes)", timeout_seconds / 60);
-      network_sleeping = false;
-      dtls_power_management();
-      network = modem_start(K_SECONDS(timeout_seconds), false) == 0;
-      if (!network && sleep_minutes > 120) {
-         if (app) {
-            dtls_info("> modem lost network, reboot");
-            reboot(ERROR_CODE(ERROR_CODE_SOCKET, get_socket_error(app)), true);
-         } else {
-            dtls_info("> modem no network, reboot");
-            reboot(ERROR_CODE_INIT_NO_LTE, true);
-         }
-      }
-   }
+   dtls_info("> modem restart");
+   atomic_set_bit(&general_states, PM_PREVENT_SUSPEND);
+   dtls_power_management();
+   ui_led_op(LED_COLOR_BLUE, LED_BLINKING);
+   ui_led_op(LED_COLOR_RED, LED_BLINKING);
+   modem_set_lte_offline();
+   dtls_info("> modem offline");
+   k_sleep(K_MSEC(2000));
+   ui_led_op(LED_COLOR_ALL, LED_CLEAR);
+   dtls_info("> modem restarting ...");
+   modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), false);
+   atomic_clear_bit(&general_states, PM_PREVENT_SUSPEND);
+   dtls_power_management();
    watchdog_feed();
-   dtls_info("> modem connected.");
+   if (atomic_test_bit(&general_states, LTE_READY)) {
+      dtls_info("> modem ready.");
+      return true;
+   } else if (atomic_test_bit(&general_states, LTE_REGISTERED)) {
+      dtls_info("> modem registered, not ready.");
+      return false;
+   } else {
+      dtls_info("> modem not registered.");
+      return false;
+   }
 }
 
-static void reopen_socket(dtls_app_data_t *app)
+static void close_socket(dtls_app_data_t *app)
 {
-   int err;
-   bool psm_off = !network_ready;
-
-   dtls_info("> reopen socket ... %s", psm_off ? "(no network)" : "");
-   modem_set_rai_mode(RAI_OFF, app->fd);
-   (void)close(app->fd);
-
-   if (psm_off) {
-      modem_set_psm(-1);
+   if (app->fd >= 0) {
+      modem_set_rai_mode(RAI_OFF, app->fd);
+      (void)close(app->fd);
+      app->fd = -1;
    }
-   err = modem_wait_ready(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT));
-   if (err) {
-      restart_modem(true, app);
+}
+
+static bool reopen_socket(dtls_app_data_t *app, const char *loc)
+{
+   bool ready = atomic_test_bit(&general_states, LTE_READY);
+   if (!ready) {
+      bool registered = atomic_test_bit(&general_states, LTE_REGISTERED);
+      dtls_info("> %s, reopen socket (modem %s)", loc,
+                registered ? "registered, not ready" : "not ready");
+   } else {
+      dtls_info("> %s, reopen socket (modem ready)", loc);
    }
+   close_socket(app);
+   if (!ready) {
+      return false;
+   }
+
    app->fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
    if (app->fd < 0) {
-      dtls_warn("> reopen UDP socket failed, %d, errno %d (%s), reboot", app->fd, errno, strerror(errno));
+      dtls_warn("> %s, reopen UDP socket failed, %d, errno %d (%s), reboot",
+                loc, app->fd, errno, strerror(errno));
       reboot(ERROR_CODE(ERROR_CODE_OPEN_SOCKET, errno), false);
    }
-   if (psm_off) {
-      modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
-   }
+   modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
 #ifdef CONFIG_UDP_USE_CONNECT
    // using SO_RAI_NO_DATA requires a destination, for what ever
    connect(app->fd, (struct sockaddr *)&app->destination->addr.sin, sizeof(struct sockaddr_in));
 #endif
    modem_set_rai_mode(RAI_OFF, app->fd);
-   dtls_info("> reopened socket.");
+   dtls_info("> %s, reopened socket.", loc);
+   return true;
 }
 
-static int check_socket(dtls_app_data_t *app, bool event)
+static int check_socket(dtls_app_data_t *app)
 {
-   int error = get_socket_error(app);
-   if (error) {
-      if (event) {
-         k_sleep(K_MSEC(1000));
+   int error = -1;
+   if (app->fd >= 0) {
+      error = get_socket_error(app);
+      if (error) {
+         dtls_info("socket error %d", error);
+         close_socket(app);
       }
-      reopen_socket(app);
    }
-   return -error;
+   return error;
+}
+
+static inline bool dtls_no_pending_request(void)
+{
+   request_state_t state = app_data.request_state;
+   return (state == NONE) || (state == WAIT_SUSPEND);
 }
 
 static void dtls_trigger(void)
@@ -337,7 +323,7 @@ static void dtls_trigger(void)
    if (appl_reboots()) {
       return;
    }
-   if (app_data.request_state == NONE || app_data.request_state == WAIT_SUSPEND) {
+   if (dtls_no_pending_request()) {
       // read battery status
       power_manager_status(NULL, NULL, NULL, NULL);
       k_sem_give(&dtls_trigger_msg);
@@ -355,16 +341,23 @@ static void dtls_manual_trigger(int duration)
    ui_enable(true);
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
    dtls_trigger();
+   trigger_search = MANUAL_SEARCH;
    k_sem_give(&dtls_trigger_search);
 }
 
 void dtls_cmd_trigger(bool led, int mode)
 {
-   ui_enable(led);
    if (mode & 1) {
-      dtls_trigger();
+      if (dtls_no_pending_request()) {
+         ui_enable(led);
+         dtls_trigger();
+      } else {
+         LOG_INF("Busy, request pending ... (state %d)", app_data.request_state);
+      }
    }
    if (mode & 2) {
+      ui_enable(led);
+      trigger_search = CMD_SEARCH;
       k_sem_give(&dtls_trigger_search);
    }
 }
@@ -377,11 +370,12 @@ static K_WORK_DELAYABLE_DEFINE(dtls_timer_trigger_work, dtls_timer_trigger_fn);
 
 static void dtls_timer_trigger_fn(struct k_work *work)
 {
-   if (app_data.request_state == NONE) {
+   if (dtls_no_pending_request()) {
       // no LEDs for time trigger
       ui_enable(false);
       dtls_trigger();
    } else {
+      LOG_DBG("Busy, schedule again in %d s.", CONFIG_COAP_SEND_INTERVAL);
       work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
    }
 }
@@ -402,11 +396,14 @@ static void dtls_coap_next(dtls_app_data_t *app)
 #if CONFIG_COAP_SEND_INTERVAL > 0
 #if CONFIG_COAP_FAILURE_SEND_INTERVAL > 0
    if (current_failures > 0) {
+      LOG_DBG("Failure, schedule in %d s.", CONFIG_COAP_FAILURE_SEND_INTERVAL);
       work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_FAILURE_SEND_INTERVAL));
    } else {
+      LOG_DBG("Success, schedule in %d s.", CONFIG_COAP_SEND_INTERVAL);
       work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
    }
 #else  /*CONFIG_COAP_FAILURE_SEND_INTERVAL*/
+   LOG_DBG("Next, schedule in %d s.", CONFIG_COAP_SEND_INTERVAL);
    work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
 #endif /*CONFIG_COAP_FAILURE_SEND_INTERVAL*/
 #endif /*CONFIG_COAP_SEND_INTERVAL*/
@@ -421,8 +418,9 @@ static void dtls_coap_next(dtls_app_data_t *app)
 
 static void dtls_coap_success(dtls_app_data_t *app)
 {
-   long time1 = connected_time - connect_time;
-   long time2 = response_time - connect_time;
+   int index;
+   int time1 = (int)(atomic_get(&connected_time) - connect_time);
+   int time2 = (int)(response_time - connect_time);
    if (time1 < 0) {
       time1 = -1;
    }
@@ -430,40 +428,40 @@ static void dtls_coap_success(dtls_app_data_t *app)
       time2 = -1;
    }
    ui_led_op(LED_COLOR_ALL, LED_CLEAR);
-   dtls_info("%u/%ldms/%ldms: success", lte_connections, time1, time2);
+   dtls_info("%ld/%dms/%dms: success", atomic_get(&lte_connections), time1, time2);
    if (app->retransmission <= COAP_MAX_RETRANSMISSION) {
       transmissions[app->retransmission]++;
    }
    if (app->retransmission == 0) {
       modem_set_psm(0);
    }
-   time2 /= RTT_INTERVAL;
-   if (time2 < RTT_SLOTS) {
-      rtts[time2]++;
+   index = time2 / RTT_INTERVAL;
+   if (index < RTT_SLOTS) {
+      rtts[index]++;
    } else {
       rtts[RTT_SLOTS]++;
-      time2 = (response_time - connect_time) / 1000;
+      time2 /= MSEC_PER_SEC;
       if (time2 > rtts[RTT_SLOTS + 1]) {
+         // new max. time
          rtts[RTT_SLOTS + 1] = time2;
       }
    }
    if (time1 < 2000) {
-      int index = 0;
+      unsigned long sum = 0;
+      unsigned int num = 0;
       unsigned int rtt = 0;
       dtls_info("retrans: 0*%u, 1*%u, 2*%u, 3*%u, failures %u", transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
       dtls_info("rtt: 0-2s: %u, 2-4s: %u, 4-6s: %u, 6-8s: %u, 8-10s: %u", rtts[0], rtts[1], rtts[2], rtts[3], rtts[4]);
       dtls_info("rtt: 10-12s: %u, 12-14s: %u, 14-16s: %u, 16-18s: %u, 18-%u: %u", rtts[5], rtts[6], rtts[7], rtts[8], rtts[10], rtts[9]);
-      time1 = 0;
-      time2 = 0;
       for (index = 0; index <= RTT_SLOTS; ++index) {
          rtt = rtts[index];
          if (rtt > 0) {
-            time1 += rtt;
-            time2 += rtt * (index * 2 + 1);
+            num += rtt;
+            sum += rtt * (index * 2 + 1);
          }
       }
-      if (time1 > 0) {
-         dtls_info("rtt: avg. %lds (%ld#)", time2 / time1, time1);
+      if (num > 0) {
+         dtls_info("rtt: avg. %lus (%u#)", sum / num, num);
       }
    }
    // reset failures on success
@@ -473,10 +471,10 @@ static void dtls_coap_success(dtls_app_data_t *app)
    dtls_coap_next(app);
 }
 
-static void dtls_coap_failure(dtls_app_data_t *app)
+static void dtls_coap_failure(dtls_app_data_t *app, const char *cause)
 {
-   long time1 = connected_time - connect_time;
-   long time2 = response_time - connect_time;
+   int time1 = (int)(atomic_get(&connected_time) - connect_time);
+   int time2 = (int)(response_time - connect_time);
    if (time1 < 0) {
       time1 = -1;
    }
@@ -484,12 +482,12 @@ static void dtls_coap_failure(dtls_app_data_t *app)
       time2 = -1;
    }
    if (!ui_led_op(LED_COLOR_RED, LED_SET)) {
-      appl_prevent_suspend = true;
+      atomic_set_bit(&general_states, PM_PREVENT_SUSPEND);
       work_reschedule_for_io_queue(&dtls_power_management_suspend_work, K_SECONDS(10));
    }
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
-   dtls_info("%u/%ldms/%ldms: failure", lte_connections, time1, time2);
+   dtls_info("%ld/%dms/%dms: failure, %s", atomic_get(&lte_connections), time1, time2, cause);
    transmissions[COAP_MAX_RETRANSMISSION + 1]++;
    if (initial_success) {
       current_failures++;
@@ -513,8 +511,8 @@ read_from_peer(dtls_app_data_t *app, session_t *session, uint8 *data, size_t len
          break;
       case PARSE_RST:
          if (NONE != app->request_state) {
-            response_time = (unsigned long)k_uptime_get();
-            dtls_coap_failure(app);
+            response_time = (long)k_uptime_get();
+            dtls_coap_failure(app, "rst");
          }
          break;
       case PARSE_ACK:
@@ -524,13 +522,13 @@ read_from_peer(dtls_app_data_t *app, session_t *session, uint8 *data, size_t len
          break;
       case PARSE_RESPONSE:
          if (NONE != app->request_state) {
-            response_time = (unsigned long)k_uptime_get();
+            response_time = (long)k_uptime_get();
             dtls_coap_success(app);
          }
          break;
       case PARSE_CON_RESPONSE:
          if (NONE != app->request_state) {
-            response_time = (unsigned long)k_uptime_get();
+            response_time = (long)k_uptime_get();
             app->request_state = SEND_ACK;
          }
          break;
@@ -548,7 +546,7 @@ dtls_read_from_peer(dtls_context_t *ctx, session_t *session, uint8 *data, size_t
 
 static void prepare_socket(dtls_app_data_t *app)
 {
-   lte_connected_send = false;
+   atomic_clear_bit(&general_states, LTE_CONNECTED_SEND);
    if (!app->dtls_pending && !lte_power_on_off) {
 #ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
       modem_set_rai_mode(RAI_LAST, app->fd);
@@ -563,12 +561,13 @@ static void prepare_socket(dtls_app_data_t *app)
 static int
 send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size_t len)
 {
+   bool ready;
    int result = 0;
    const char *tag = app->dtls_pending ? (app->retransmission ? "hs_re" : "hs_") : (app->retransmission ? "re" : "");
 
    if (!lte_power_on_off) {
       if (!app->retransmission) {
-         connect_time = (unsigned long)k_uptime_get();
+         connect_time = (long)k_uptime_get();
       }
       prepare_socket(app);
    }
@@ -577,7 +576,8 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
       dtls_warn("%ssend_to_peer failed: %d, errno %d (%s)", tag, result, errno, strerror(errno));
       return result;
    }
-   if (network_ready) {
+   ready = atomic_test_bit(&general_states, LTE_READY);
+   if (ready) {
       modem_set_transmission_time();
    }
    if (app->retransmission == 0) {
@@ -586,13 +586,13 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
 #ifndef NDEBUG
    /* logging */
    if (SEND == app->request_state) {
-      if (network_ready) {
+      if (ready) {
          dtls_info("%ssent_to_peer %d", tag, result);
       } else {
          dtls_info("%ssend_to_peer %d", tag, result);
       }
    } else if (RECEIVE == app->request_state) {
-      if (network_ready) {
+      if (ready) {
          dtls_info("%sunintended resent_to_peer %d", tag, result);
       } else {
          dtls_info("%sunintended resend_to_peer %d", tag, result);
@@ -694,24 +694,31 @@ sendto_peer(dtls_app_data_t *app, session_t *dst, struct dtls_context_t *ctx)
       app->request_state = SEND;
    }
    coap_message_len = coap_client_message(&coap_message_buf);
-   if (ctx) {
-      if (coap_message_len > 0) {
-         result = dtls_write(ctx, dst, (uint8_t *)coap_message_buf, coap_message_len);
-         if (result < 0) {
-            dtls_warn("Failed to send CoAP request via DTLS, %d", errno);
-         }
+   if (!coap_message_len) {
+      dtls_warn("send empty UDP message.");
+   }
+   if (ctx && coap_message_len) {
+      result = dtls_write(ctx, dst, (uint8_t *)coap_message_buf, coap_message_len);
+      if (result < 0) {
+         dtls_warn("Failed to send CoAP request with %d bytes via DTLS, %d (%s)",
+                   coap_message_len, errno, strerror(errno));
       }
    } else {
       result = send_to_peer(app, dst, coap_message_buf, coap_message_len);
       if (result < 0) {
-         dtls_warn("Failed to send CoAP request via UDP, %d (%s)", errno, strerror(errno));
+         dtls_warn("Failed to send CoAP request with %d bytes via UDP, %d (%s)",
+                   coap_message_len, errno, strerror(errno));
       }
    }
-   if (result > 0) {
+   if (result < 0) {
+      if (!check_socket(app)) {
+         dtls_coap_failure(app, "send");
+      }
+   } else {
       if (!lte_power_off) {
          ui_led_op(LED_COLOR_GREEN, LED_SET);
       }
-      if (network_ready) {
+      if (atomic_test_bit(&general_states, LTE_READY)) {
          ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
          app->request_state = RECEIVE;
 #ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
@@ -720,8 +727,6 @@ sendto_peer(dtls_app_data_t *app, session_t *dst, struct dtls_context_t *ctx)
          }
 #endif
       }
-   } else {
-      dtls_coap_failure(app);
    }
    return result;
 }
@@ -745,52 +750,110 @@ static dtls_handler_t cb = {
 
 static void dtls_lte_state_handler(enum lte_state_type type, bool active)
 {
+   long now;
+   int bit = -1;
+   const char *desc = NULL;
+
    if (appl_reboots()) {
       return;
    }
-   if (type == LTE_STATE_REGISTRATION) {
-      network_registered = active;
+   now = (long)k_uptime_get();
+   switch (type) {
+      case LTE_STATE_REGISTRATION:
+         desc = "registration";
+         bit = LTE_REGISTERED;
+         break;
+      case LTE_STATE_READY:
+         desc = "ready";
+         bit = LTE_READY;
+         break;
+      case LTE_STATE_CONNECTED:
+         desc = "connect";
+         bit = LTE_CONNECTED;
+         break;
+      case LTE_STATE_SLEEPING:
+         desc = "sleeping";
+         bit = LTE_SLEEPING;
+         break;
+      default:
+         break;
+   }
+
+   if (desc) {
+      dtls_info("modem state handler %s %s", desc, active ? "on" : "off");
+   } else {
+      dtls_info("modem state handler %d %s", type, active ? "on" : "off");
+   }
+   bool previous = active;
+   if (bit >= 0) {
       if (active) {
-         if (!network_ready) {
-            dtls_info("LTE modem registered, no network");
+         previous = atomic_test_and_set_bit(&general_states, bit);
+      } else {
+         previous = atomic_test_and_clear_bit(&general_states, bit);
+      }
+   }
+
+   if (type == LTE_STATE_REGISTRATION) {
+      if (active) {
+         if (!atomic_test_bit(&general_states, LTE_READY)) {
+            dtls_info("LTE modem registered, not ready");
             ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
          }
       } else {
-         dtls_info("LTE modem unregistered");
-         network_ready = false;
+         dtls_info("LTE modem unregistered%s", atomic_test_bit(&general_states, LTE_SLEEPING) ? " sleeping" : "");
+         atomic_clear_bit(&general_states, LTE_READY);
+         atomic_clear_bit(&general_states, LTE_CONNECTED);
          led_op_t op = LED_SET;
-         if (lte_power_off || network_sleeping) {
+         if (lte_power_off || atomic_test_bit(&general_states, LTE_SLEEPING)) {
             op = LED_CLEAR;
+         } else {
+            trigger_search = EVENT_SEARCH;
+            k_sem_give(&dtls_trigger_search);
          }
          ui_led_op(LED_COLOR_BLUE, op);
          ui_led_op(LED_COLOR_RED, op);
          ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
       }
    } else if (type == LTE_STATE_READY) {
+      if (previous != active) {
+         atomic_set(&ready_time, now);
+      }
+      if (active) {
+         dtls_info("LTE modem ready");
+         if (previous != active) {
+            trigger_search = READY_SEARCH;
+            k_sem_give(&dtls_trigger_search);
+         }
+      } else {
+         dtls_info("LTE modem not ready");
+         atomic_clear_bit(&general_states, LTE_CONNECTED);
+      }
+   } else if (type == LTE_STATE_CONNECTED) {
       if (!app_data.dtls_pending) {
          if (active) {
-            dtls_info("LTE modem ready");
             ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op(LED_COLOR_GREEN, LED_SET);
          } else if (NONE == app_data.request_state || WAIT_SUSPEND == app_data.request_state) {
-            dtls_info("LTE modem not ready");
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
             ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
          }
       }
-      if (network_ready != active) {
-         network_ready = active;
-         if (active) {
-            connected_time = (unsigned long)k_uptime_get();
-            ++lte_connections;
-            lte_connected_send = true;
-            k_sem_give(&dtls_trigger_search);
+      if (active) {
+         dtls_info("LTE modem connected");
+         if (!previous) {
+            atomic_set(&connected_time, now);
+            atomic_inc(&lte_connections);
+            atomic_set_bit(&general_states, LTE_CONNECTED_SEND);
          }
+      } else {
+         dtls_info("LTE modem not connected");
       }
-   }
-   if (type == LTE_STATE_SLEEPING) {
-      network_sleeping = active;
+   } else if (type == LTE_STATE_SLEEPING) {
+      if (!active) {
+         trigger_search = EVENT_SEARCH;
+         k_sem_give(&dtls_trigger_search);
+      }
       work_submit_to_io_queue(&dtls_power_management_work);
    }
 }
@@ -807,10 +870,101 @@ static void accelerometer_handler(const struct accelerometer_evt *const evt)
 }
 #endif
 
+#define MAX_MULTI_IMSI_SEARCH_TIME_S (30 * 60)
+
+union lte_info {
+   struct lte_sim_info sim_info;
+   struct lte_network_info net_info;
+};
+
+static int dtls_network_searching(const k_timeout_t timeout)
+{
+   union lte_info info;
+   bool off = false;
+   int64_t now = k_uptime_get();
+   int64_t swap_time = now;
+   atomic_val_t last_ready_time = atomic_get(&ready_time);
+   int64_t timeout_ms = k_ticks_to_ms_floor64(timeout.ticks);
+   int trigger = MANUAL_SEARCH;
+   int swap_state = 1;
+
+   while ((now - last_ready_time) < timeout_ms) {
+      atomic_val_t time = atomic_get(&ready_time);
+      if (time != last_ready_time) {
+         last_ready_time = time;
+         trigger = READY_SEARCH;
+      }
+      if (trigger != NO_SEARCH) {
+         trigger = NO_SEARCH;
+         if (off) {
+            watchdog_feed();
+            modem_set_normal();
+            off = false;
+         }
+         if (trigger != READY_SEARCH) {
+            dtls_info("Start network search");
+            modem_start_search();
+         }
+         if (modem_wait_ready(K_SECONDS(60)) == 0) {
+            dtls_info("Network found");
+            return false;
+         }
+         ui_led_op(LED_APPLICATION, LED_CLEAR);
+         dtls_info("Pause network search");
+      }
+
+      if (!off) {
+         if (modem_get_sim_info(&info.sim_info)) {
+            int timeout_s = info.sim_info.imsi_interval * (1 << swap_state);
+            int time_s = (now - swap_time) / MSEC_PER_SEC;
+            dtls_info("Multi IMSI interval %d s, swap timeout %d, last %d s.",
+                      info.sim_info.imsi_interval, timeout_s, time_s);
+            if (time_s > timeout_s) {
+               dtls_info("Multi IMSI, timeout => swap preferences");
+               modem_set_preference(SWAP_PREFERENCE);
+               swap_state++;
+               trigger = EVENT_SEARCH;
+            }
+         } else if (info.sim_info.imsi_interval > 0) {
+            int timeout_s = info.sim_info.imsi_interval;
+            if (timeout_s < MAX_MULTI_IMSI_SEARCH_TIME_S) {
+               timeout_s = MAX_MULTI_IMSI_SEARCH_TIME_S;
+            }
+            dtls_info("Multi IMSI, interval %d s.", info.sim_info.imsi_interval);
+            if ((now - last_ready_time) > (MSEC_PER_SEC * timeout_s)) {
+               dtls_info("Multi IMSI, offline");
+               watchdog_feed();
+               modem_set_offline();
+               off = true;
+            }
+         }
+      }
+      if (trigger == NO_SEARCH) {
+         k_sem_reset(&dtls_trigger_search);
+         watchdog_feed();
+         if (k_sem_take(&dtls_trigger_search, K_SECONDS(WATCHDOG_TIMEOUT_S)) == 0) {
+            trigger = trigger_search;
+            trigger_search = NO_SEARCH;
+         }
+         watchdog_feed();
+         if (trigger < EVENT_SEARCH) {
+            modem_read_network_info(&info.net_info, false);
+            if (info.net_info.registered == LTE_NETWORK_STATE_ON) {
+               return false;
+            }
+         }
+      }
+      now = k_uptime_get();
+   }
+
+   return true;
+}
+
 static int dtls_loop(session_t *dst, int flags)
 {
    struct pollfd udp_poll;
    dtls_context_t *dtls_context = NULL;
+   const char *reopen_cause = NULL;
    int result;
    int loops = 0;
    long time;
@@ -830,24 +984,13 @@ static int dtls_loop(session_t *dst, int flags)
       dtls_info("Start CoAP/UDP");
    }
    app_data.destination = dst;
-   app_data.fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-
-   if (app_data.fd < 0) {
-      dtls_warn("Failed to create UDP socket: %d (%s)", errno, strerror(errno));
-      reboot(ERROR_CODE_INIT_SOCKET, false);
-   }
-
-#ifdef CONFIG_UDP_USE_CONNECT
-   // using SO_RAI_NO_DATA requires a destination, for what ever
-   connect(app_data.fd, (struct sockaddr *)&app_data.destination->addr.sin, sizeof(struct sockaddr_in));
-#endif
-   modem_set_rai_mode(RAI_OFF, app_data.fd);
+   app_data.fd = -1;
 
    if (flags & FLAG_TLS) {
       dtls_init();
       dtls_context = dtls_new_context(&app_data);
       if (!dtls_context) {
-         dtls_emerg("cannot create context");
+         dtls_emerg("cannot create dtls context");
          reboot(ERROR_CODE_INIT_NO_DTLS, false);
       }
       dtls_credentials_init_handler(&cb);
@@ -856,11 +999,7 @@ static int dtls_loop(session_t *dst, int flags)
    }
 
    app_data.timeout = COAP_ACK_TIMEOUT;
-   if ((flags & FLAG_KEEP_CONNECTION) && (flags & FLAG_TLS)) {
-      dtls_start_connect(dtls_context, dst);
-   } else {
-      app_data.request_state = NONE;
-   }
+   app_data.request_state = NONE;
 
    while (1) {
 
@@ -895,14 +1034,22 @@ static int dtls_loop(session_t *dst, int flags)
 #endif
       watchdog_feed();
       if (!initial_success) {
-         // only effective, if modem connects to network
-         // without network, restart_modem already reboots!
          if (k_uptime_get() > ((flags & FLAG_REBOOT_1) ? (4 * MSEC_PER_HOUR) : MSEC_PER_DAY)) {
             // no initial_success for 4 hours / 1 day => reboot
-            dtls_info("> No initial succes, reboot%s", (flags & FLAG_REBOOT_1) ? " 1" : " N");
-            reboot(ERROR_CODE_NO_INITIAL_SUCCESS, true);
+            dtls_info("> No initial success, reboot%s", (flags & FLAG_REBOOT_1) ? " 1" : " N");
+            reboot(ERROR_CODE_INIT_NO_SUCCESS, true);
          }
       }
+
+      if (!atomic_test_bit(&general_states, LTE_READY) || app_data.fd < 0) {
+         if (dtls_network_searching(K_HOURS(4))) {
+            ++current_failures;
+            reopen_cause = "modem not registered, failure.";
+         } else {
+            reopen_cause = "modem registered";
+         }
+      }
+
       if (current_failures > handled_failures) {
          handled_failures = current_failures;
          dtls_info("handle failure %d.", current_failures);
@@ -927,12 +1074,40 @@ static int dtls_loop(session_t *dst, int flags)
       if (restarting_modem) {
          dtls_info("Trigger restart modem.");
          restarting_modem = false;
-         appl_prevent_suspend = true;
-         dtls_power_management();
-         restart_modem(true, &app_data);
-         reopen_socket(&app_data);
-         appl_prevent_suspend = false;
-         dtls_trigger();
+         if (restart_modem()) {
+            reopen_cause = "restart modem";
+            dtls_trigger();
+         }
+      }
+
+      if (!atomic_test_bit(&general_states, LTE_READY)) {
+         dtls_info("Modem not ready.");
+         k_sleep(K_MSEC(1000));
+         continue;
+      }
+
+      if (check_socket(&app_data)) {
+         if (!reopen_cause) {
+            reopen_cause = "check";
+         }
+         if (reopen_socket(&app_data, reopen_cause)) {
+            if (app_data.request_state == SEND ||
+                app_data.request_state == RECEIVE) {
+               loops = 0;
+               app_data.retransmission = 0;
+               app_data.request_state = SEND;
+
+               ui_led_op(LED_APPLICATION, LED_SET);
+               if (app_data.dtls_pending) {
+                  dtls_info("DTLS hs send again");
+                  dtls_check_retransmit(dtls_context, NULL);
+               } else {
+                  dtls_info("CoAP request send again");
+                  sendto_peer(&app_data, dst, dtls_context);
+               }
+            }
+         }
+         reopen_cause = NULL;
       }
       udp_poll.fd = app_data.fd;
       udp_poll.events = POLLIN;
@@ -967,31 +1142,28 @@ static int dtls_loop(session_t *dst, int flags)
                   dtls_info("modem on");
                   lte_power_off = false;
                   restarting_modem = false;
-                  connect_time = (unsigned long)k_uptime_get();
+                  connect_time = (long)k_uptime_get();
                   modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), false);
-                  reopen_socket(&app_data);
-               } else {
-                  check_socket(&app_data, false);
+                  reopen_socket(&app_data, "on");
                }
                loops = 0;
                app_data.retransmission = 0;
                if (coap_client_prepare_post() < 0) {
-                  dtls_coap_failure(&app_data);
-               } else {
-                  if (app_data.dtls_pending) {
-                     dtls_peer_t *peer = dtls_get_peer(dtls_context, dst);
-                     if (peer) {
-                        dtls_reset_peer(dtls_context, peer);
-                     }
-                     ui_led_op(LED_COLOR_GREEN, LED_SET);
-                     dtls_start_connect(dtls_context, dst);
-                     send_request = true;
-                  } else {
-                     sendto_peer(&app_data, dst, dtls_context);
+                  dtls_coap_failure(&app_data, "prepare post");
+               } else if (app_data.dtls_pending) {
+                  dtls_peer_t *peer = dtls_get_peer(dtls_context, dst);
+                  if (peer) {
+                     dtls_reset_peer(dtls_context, peer);
                   }
+                  ui_led_op(LED_COLOR_GREEN, LED_SET);
+                  dtls_start_connect(dtls_context, dst);
+                  send_request = true;
+               } else {
+                  sendto_peer(&app_data, dst, dtls_context);
                }
             }
          }
+         continue;
       }
       if (result < 0) { /* error */
          if (errno != EINTR) {
@@ -1001,15 +1173,20 @@ static int dtls_loop(session_t *dst, int flags)
          const char *type = app_data.dtls_pending ? "DTLS hs" : "CoAP request";
          ++loops;
          if (app_data.request_state == SEND) {
-            if (lte_connected_send) {
+            bool ready = atomic_test_bit(&general_states, LTE_READY);
+            if (atomic_test_bit(&general_states, LTE_CONNECTED_SEND)) {
+               atomic_val_t connections = atomic_get(&lte_connections);
                loops = 0;
-               time = connected_time - connect_time;
-               if (time < 0)
+               time = (long)(connected_time - connect_time);
+               if (time < 0) {
                   time = -1;
+               }
                if (app_data.request_state == SEND) {
-                  dtls_info("%d/%d/%u-%ld ms: connected => sent", network_ready, lte_connected_send, lte_connections, time);
+                  dtls_info("%d/%d/%ld-%ld ms: connected => sent",
+                            ready, true, connections, time);
                } else {
-                  dtls_info("%d/%d/%u-%ld ms: connected => resent", network_ready, lte_connected_send, lte_connections, time);
+                  dtls_info("%d/%d/%ld-%ld ms: connected => resent",
+                            ready, true, connections, time);
                }
                app_data.request_state = RECEIVE;
 #ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
@@ -1017,18 +1194,14 @@ static int dtls_loop(session_t *dst, int flags)
                   dtls_coap_success(&app_data);
                }
 #endif
-            } else if (loops <= 60) {
-               if (loops % 5 == 4) {
-                  check_socket(&app_data, false);
-               }
-            } else {
-               dtls_info("%s send timeout", type);
-               dtls_coap_failure(&app_data);
-               reopen_socket(&app_data);
+            } else if (loops > 60) {
+               dtls_info("%s send timeout %d s (%s)", type, loops, ready ? "ready" : "not ready");
+               dtls_coap_failure(&app_data, "timeout");
             }
          } else if (app_data.request_state == RECEIVE) {
             int temp = app_data.timeout;
-            if (!network_ready) {
+            bool ready = atomic_test_bit(&general_states, LTE_READY);
+            if (!ready) {
                if (app_data.retransmission >= COAP_MAX_RETRANSMISSION) {
                   // stop waiting ...
                   temp = loops - 1;
@@ -1037,7 +1210,7 @@ static int dtls_loop(session_t *dst, int flags)
                }
             }
             if (app_data.retransmission > 0) {
-               dtls_info("%s wait %d/%d/%d, retrans. %d, network %d", type, loops, app_data.timeout, temp, app_data.retransmission, network_ready);
+               dtls_info("%s wait %d/%d/%d, retrans. %d, network %d", type, loops, app_data.timeout, temp, app_data.retransmission, ready);
             } else {
                dtls_info("%s wait %d/%d/%d", type, loops, app_data.timeout, temp);
             }
@@ -1060,17 +1233,18 @@ static int dtls_loop(session_t *dst, int flags)
                   }
                } else {
                   // maximum retransmissions reached
-                  dtls_info("%s timeout %d", type, app_data.timeout);
-                  dtls_coap_failure(&app_data);
+                  dtls_info("%s receive timeout %d", type, app_data.timeout);
+                  dtls_coap_failure(&app_data, "receive timeout");
                }
             }
          } else if (app_data.request_state == WAIT_RESPONSE) {
             if (loops > 60) {
-               dtls_coap_failure(&app_data);
+               dtls_info("%s response timeout %d", type, loops);
+               dtls_coap_failure(&app_data, "response timeout");
             }
          } else if (app_data.request_state == WAIT_SUSPEND) {
             // wait for late received data
-            if (network_sleeping) {
+            if (atomic_test_bit(&general_states, LTE_SLEEPING)) {
                // modem enters sleep, no more data
                app_data.request_state = NONE;
                dtls_info("%s suspend after %d", type, loops);
@@ -1086,7 +1260,7 @@ static int dtls_loop(session_t *dst, int flags)
          if (udp_poll.revents & POLLIN) {
             recvfrom_peer(&app_data, dtls_context);
             if (app_data.request_state == SEND_ACK) {
-               unsigned long temp_time = connect_time;
+               int64_t temp_time = connect_time;
                sendto_peer(&app_data, dst, dtls_context);
                connect_time = temp_time;
                dtls_coap_success(&app_data);
@@ -1109,21 +1283,8 @@ static int dtls_loop(session_t *dst, int flags)
                ui_led_op(LED_DTLS, LED_CLEAR);
             }
          } else if (udp_poll.revents & (POLLERR | POLLNVAL)) {
-            result = check_socket(&app_data, true);
-            if (result) {
-               if (app_data.request_state == SEND ||
-                   app_data.request_state == RECEIVE) {
-                  loops = 0;
-                  app_data.retransmission = 0;
-                  app_data.request_state = SEND;
-                  if (app_data.dtls_pending) {
-                     dtls_info("DTLS hs send again");
-                     dtls_check_retransmit(dtls_context, NULL);
-                  } else {
-                     dtls_info("CoAP request send again");
-                     sendto_peer(&app_data, dst, dtls_context);
-                  }
-               }
+            if (check_socket(&app_data)) {
+               k_sleep(K_MSEC(1000));
             }
          }
       }
@@ -1309,7 +1470,9 @@ int main(void)
 
    if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), true) != 0) {
       appl_ready = true;
-      restart_modem(false, NULL);
+      if (dtls_network_searching(K_HOURS(8))) {
+         reboot(ERROR_CODE_INIT_NO_LTE, false);
+      }
    }
    appl_ready = true;
 

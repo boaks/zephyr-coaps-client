@@ -22,6 +22,9 @@
 #include "coap_client.h"
 #include "dtls_debug.h"
 #include "modem.h"
+#include "modem_at.h"
+#include "modem_desc.h"
+#include "modem_sim.h"
 #include "parse.h"
 #include "power_manager.h"
 #include "ui.h"
@@ -296,26 +299,58 @@ union lte_params {
 
 int coap_client_prepare_modem_info(char *buf, size_t len)
 {
+   int64_t reboot_times[REBOOT_INFOS];
+   uint16_t reboot_codes[REBOOT_INFOS];
    struct lte_modem_info modem_info;
+   int64_t uptime;
+   power_manager_status_t battery_status = POWER_UNKNOWN;
    int index = 0;
    int start = 0;
-   power_manager_status_t battery_status = POWER_UNKNOWN;
+   int err;
    uint16_t battery_voltage = 0xffff;
    int16_t battery_forecast = -1;
    uint8_t battery_level = 0xff;
 
+   uptime = k_uptime_get() / MSEC_PER_SEC;
+
+   start = 0;
+   if ((uptime / 60) < 5) {
+      index = snprintf(buf, len, "%lu [s]", (unsigned long)uptime);
+   } else {
+      uint8_t secs = uptime % 60;
+      uptime = uptime / 60;
+      if (uptime < 60) {
+         index = snprintf(buf, len, "%u:%02u [m:ss]", (uint8_t)uptime, secs);
+      } else {
+         uint8_t mins = uptime % 60;
+         uptime = uptime / 60;
+         if (uptime < 24) {
+            index = snprintf(buf, len, "%u:%02u:%02u [h:mm:ss]", (uint8_t)uptime, mins, secs);
+         } else {
+            uint8_t hours = uptime % 24;
+            uptime = uptime / 24;
+            index = snprintf(buf, len, "%u-%02u:%02u:%02u [d-hh:mm:ss]", (uint8_t)uptime, hours, mins, secs);
+         }
+      }
+   }
+
+   index += snprintf(buf + index, len - index, ", Thingy:91 %s (%s), 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
+                     CLIENT_VERSION, NCS_VERSION_STRING, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
+   dtls_info("%s", buf + start);
+
+   buf[index++] = '\n';
+   start = index;
+
    memset(&modem_info, 0, sizeof(modem_info));
    if (!modem_get_modem_info(&modem_info)) {
-      index = snprintf(buf, len, "HW: %s, MFW: %s, IMEI: %s", modem_info.version, modem_info.firmware, modem_info.imei);
-      dtls_info("%s", buf);
+      index += snprintf(buf + index, len - index, "HW: %s, MFW: %s, IMEI: %s", modem_info.version, modem_info.firmware, modem_info.imei);
+      dtls_info("%s", buf + start);
+      buf[index++] = '\n';
+      start = index;
    }
 
    power_manager_status(&battery_level, &battery_voltage, &battery_status, &battery_forecast);
    if (battery_voltage < 0xffff) {
-      if (index) {
-         buf[index++] = '\n';
-      }
-      start = index;
       index += snprintf(buf + index, len - index, "!%u mV", battery_voltage);
       if (battery_level < 0xff) {
          index += snprintf(buf + index, len - index, " %u%%", battery_level);
@@ -349,9 +384,29 @@ int coap_client_prepare_modem_info(char *buf, size_t len)
          index += snprintf(buf + index, len - index, " %s", msg);
       }
       dtls_info("%s", buf + start);
+      buf[index++] = '\n';
+      start = index;
    }
 
-   return index;
+   memset(reboot_times, 0, sizeof(reboot_times));
+   memset(reboot_codes, 0, sizeof(reboot_codes));
+   err = appl_storage_read_int_items(REBOOT_CODE_ID, 0, reboot_times, reboot_codes, REBOOT_INFOS);
+   if (err > 0) {
+      index += snprintf(buf + index, len - index, "Last code: ");
+      index += appl_format_time(reboot_times[0], buf + index, len - index);
+      index += snprintf(buf + index, len - index, " %s", appl_get_reboot_desciption(reboot_codes[0]));
+      dtls_info("%s", buf + start);
+      buf[index++] = '\n';
+      start = index;
+      for (int i = 1; i < err; ++i) {
+         index += appl_format_time(reboot_times[i], buf + index, len - index);
+         index += snprintf(buf + index, len - index, " %s", appl_get_reboot_desciption(reboot_codes[i]));
+         dtls_info("%s", buf + start);
+         index = start;
+      }
+   }
+
+   return index - 1;
 }
 
 int coap_client_prepare_sim_info(char *buf, size_t len)
@@ -360,7 +415,7 @@ int coap_client_prepare_sim_info(char *buf, size_t len)
    int start = 0;
    int index = 0;
    memset(&sim_info, 0, sizeof(sim_info));
-   if (modem_get_sim_info(&sim_info) >= 0 && sim_info.valid) {
+   if (modem_sim_get_info(&sim_info) >= 0 && sim_info.valid) {
       index += snprintf(buf, len, "ICCID: %s, eDRX cycle: %s",
                         sim_info.iccid, sim_info.edrx_cycle_support ? "on" : "off");
       if (sim_info.hpplmn_search_interval && sim_info.hpplmn[0]) {
@@ -407,7 +462,7 @@ int coap_client_prepare_net_info(char *buf, size_t len)
       index += snprintf(buf, len, "Network: %s",
                         modem_get_network_mode_description(params.network_info.mode));
       index += snprintf(buf + index, len - index, ",%s",
-                        modem_get_registration_description(params.network_info.status));
+                        modem_get_registration_short_description(params.network_info.status));
       if (params.network_info.registered) {
          index += snprintf(buf + index, len - index, ",Band %d", params.network_info.band);
          if (params.network_info.plmn_lock) {
@@ -606,7 +661,7 @@ int coap_client_prepare_env_info(char *buf, size_t len)
    }
 #else  /* CONFIG_ENVIRONMENT_SENSOR */
    buf[index++] = '!';
-   res = modem_at_cmd("AT%%XTEMP?", buf + index, len - index, "%XTEMP: ");
+   res = modem_at_cmd(buf + index, len - index, "%XTEMP: ", "AT%XTEMP?");
    if (res > 0) {
       index += res;
       index += snprintf(buf + index, len - index, " C");
@@ -719,14 +774,10 @@ int coap_client_prepare_location_info(char *buf, size_t len)
 
 int coap_client_prepare_post(void)
 {
-   int64_t reboot_times[REBOOT_INFOS];
-   uint16_t reboot_codes[REBOOT_INFOS];
-
    char buf[800];
    int err;
-   int index;
-   int start;
-   int64_t uptime;
+   int index = 0;
+   int start = 0;
 
    uint8_t *token = (uint8_t *)&coap_current_token;
    struct coap_packet request;
@@ -738,55 +789,12 @@ int coap_client_prepare_post(void)
 
    coap_message_len = 0;
 
-   uptime = k_uptime_get() / MSEC_PER_SEC;
-
-   start = 0;
-   if ((uptime / 60) < 5) {
-      index = snprintf(buf, sizeof(buf), "%lu [s]", (unsigned long)uptime);
-   } else {
-      uint8_t secs = uptime % 60;
-      uptime = uptime / 60;
-      if (uptime < 60) {
-         index = snprintf(buf, sizeof(buf), "%u:%02u [m:ss]", (uint8_t)uptime, secs);
-      } else {
-         uint8_t mins = uptime % 60;
-         uptime = uptime / 60;
-         if (uptime < 24) {
-            index = snprintf(buf, sizeof(buf), "%u:%02u:%02u [h:mm:ss]", (uint8_t)uptime, mins, secs);
-         } else {
-            uint8_t hours = uptime % 24;
-            uptime = uptime / 24;
-            index = snprintf(buf, sizeof(buf), "%u-%02u:%02u:%02u [d-hh:mm:ss]", (uint8_t)uptime, hours, mins, secs);
-         }
-      }
-   }
-
-   index += snprintf(buf + index, sizeof(buf) - index, ", Thingy:91 %s (%s), 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
-                     CLIENT_VERSION, NCS_VERSION_STRING, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
-   dtls_info("%s", buf + start);
-
 #ifdef CONFIG_COAP_SEND_MODEM_INFO
-   buf[index] = '\n';
-   start = index + 1;
    err = coap_client_prepare_modem_info(buf + start, sizeof(buf) - start);
    if (err > 0) {
       index = start + err;
    }
 #endif
-
-   memset(reboot_times, 0, sizeof(reboot_times));
-   memset(reboot_codes, 0, sizeof(reboot_codes));
-   err = appl_storage_read_int_items(REBOOT_CODE_ID, 0, reboot_times, reboot_codes, REBOOT_INFOS);
-   if (err > 0) {
-      start = index + 1;
-      index += snprintf(buf + index, sizeof(buf) - index, "\nLast code: ");
-      index += appl_format_time(reboot_times[0], buf + index, sizeof(buf) - index);
-      index += snprintf(buf + index, sizeof(buf) - index, " 0x%04x", reboot_codes[0]);
-      for (int i = 1; i < err; ++i) {
-         index += snprintf(buf + index, sizeof(buf) - index, ", 0x%04x", reboot_codes[i]);
-      }
-      dtls_info("%s", buf + start);
-   }
 
    start = index + 1;
    index += snprintf(buf + index, sizeof(buf) - index, "\nRestart: ");

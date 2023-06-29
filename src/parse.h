@@ -30,4 +30,10 @@ int parse_memncpy(uint8_t *buf, const uint8_t *value, uint16_t len, uint8_t end,
 
 int strstart(const char *value, const char *head, bool ignoreCase);
 
+int strend(const char *value, const char *tail, bool ignoreCase);
+
+int stricmp(const char *value1, const char *value2);
+
+int strtrunc(char *value, char quote);
+
 #endif /* PARSE_H */

@@ -17,18 +17,17 @@
 #include <stdbool.h>
 #include <sys/types.h>
 
-#define ERROR_CODE_SOCKET 0x0000
-#define ERROR_CODE_OPEN_SOCKET 0x1000
-#define ERROR_CODE_INIT_NO_LTE 0x2000
-#define ERROR_CODE_INIT_SOCKET 0x3000
-#define ERROR_CODE_INIT_NO_DTLS 0x4000
-#define ERROR_CODE_TOO_MANY_FAILURES 0x5000
-#define ERROR_CODE_NO_INITIAL_SUCCESS 0x6000
-#define ERROR_CODE_MODEM_FAULT 0x7000
-#define ERROR_CODE_CMD 0x9000
-#define ERROR_CODE_MANUAL_TRIGGERED 0xa000
+#define ERROR_CODE_INIT_NO_LTE 0x0000
+#define ERROR_CODE_INIT_NO_DTLS 0x1000
+#define ERROR_CODE_INIT_NO_SUCCESS 0x2000
+#define ERROR_CODE_OPEN_SOCKET 0x3000
+#define ERROR_CODE_TOO_MANY_FAILURES 0x4000
+#define ERROR_CODE_MODEM_FAULT 0x5000
+#define ERROR_CODE_CMD 0x6000
+#define ERROR_CODE_MANUAL_TRIGGERED 0x7000
 
 #define ERROR_CODE(BASE, ERR) ((BASE & 0xf000) | (ERR & 0xfff))
+#define ERROR_CLASS(ERR) (ERR & 0xf000)
 
 #define WATCHDOG_TIMEOUT_S (60 * 5)
 
@@ -36,6 +35,7 @@ void watchdog_feed(void);
 
 void appl_reboot(int error, const k_timeout_t delay);
 bool appl_reboots(void);
+const char* appl_get_reboot_desciption(int error);
 
 uint32_t appl_reset_cause(int *flags);
 int appl_reset_cause_description(char* buf, size_t len);

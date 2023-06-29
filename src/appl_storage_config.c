@@ -19,7 +19,7 @@
 const struct storage_config storage_configs[] = {
     {.desc = "boot-code",
      .magic = 0x01200340,
-     .version = 2,
+     .version = 1,
      .value_size = sizeof(uint16_t),
      .pages = 4},
 };

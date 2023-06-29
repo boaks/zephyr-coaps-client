@@ -21,7 +21,7 @@
 #include <zephyr/pm/device.h>
 
 #include "io_job_queue.h"
-#include "modem.h"
+#include "modem_at.h"
 #include "power_manager.h"
 #include "transform.h"
 
@@ -549,7 +549,7 @@ int power_manager_voltage(uint16_t *voltage)
       LOG_DBG("ADC %u mV", internal_voltage);
 #else
       char buf[32];
-      rc = modem_at_cmd("AT%%XVBAT", buf, sizeof(buf), "%XVBAT: ");
+      rc = modem_at_cmd(buf, sizeof(buf), "%XVBAT: ", "AT%XVBAT");
       if (rc < 0) {
          LOG_WRN("Failed to read battery level from modem! %d", rc);
       } else {

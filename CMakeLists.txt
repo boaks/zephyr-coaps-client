@@ -29,6 +29,10 @@ target_sources(app PRIVATE
 	src/appl_time.c
 	src/appl_diagnose.c
 	src/modem.c
+	src/modem_desc.c
+	src/modem_sim.c
+	src/modem_at.c
+	src/modem_cmd.c
 	src/dtls_client.c
 	src/dtls_credentials.c
 	src/coap_client.c

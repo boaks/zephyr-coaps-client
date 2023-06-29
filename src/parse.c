@@ -11,8 +11,8 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-#include <string.h>
 #include <ctype.h>
+#include <string.h>
 
 #include "parse.h"
 
@@ -55,11 +55,11 @@ int parse_strncpy(char *buf, const char *value, char end, int size)
       strncpy(buf, value, index);
       buf[index] = 0;
    } else {
-      strncpy(buf, value, size);
+      strncpy(buf, value, size - 1);
       buf[size - 1] = 0;
    }
-   if (cur && cur == end) {
-      ++index;
+   while (cur && cur == end) {
+      cur = value[++index];
    }
    return index;
 }
@@ -115,4 +115,39 @@ int strstart(const char *value, const char *head, bool ignoreCase)
    } else {
       return cur - head;
    }
+}
+
+int strend(const char *value, const char *tail, bool ignoreCase)
+{
+   int offset = strlen(value) - strlen(tail);
+
+   if (offset > 0) {
+      value += offset;
+   }
+   return strstart(value, tail, ignoreCase);
+}
+
+int stricmp(const char *value1, const char *value2)
+{
+   int res = tolower(*value1) - tolower(*value2);
+   while (*value1 && res == 0) {
+      ++value1;
+      ++value2;
+      res = tolower(*value1) - tolower(*value2);
+   }
+   return res;
+}
+
+int strtrunc(char *value, char quote)
+{
+   int index = 0;
+   if (value[0] == quote) {
+      int index = strlen(value);
+      if (value[index - 1] == quote) {
+         index -= 2;
+         memmove(value, value + 1, index);
+      }
+      value[index] = 0;
+   }
+   return index;
 }

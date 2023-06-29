@@ -197,7 +197,7 @@ config UDP_RAI_ENABLE
 config UDP_PSM_CONNECT_RAT
 	int "PSM RAT on connect"
 	depends on UDP_PSM_ENABLE
-	default 15
+	default 16
 
 config UDP_PSM_RETRANS_RAT
 	int "PSM RAT on retransmissions"
@@ -229,7 +229,7 @@ config MODEM_MULTI_IMSI_SUPPORT
 config MODEM_SEARCH_TIMEOUT
 	int "Modem search timeout in seconds."
 	default 600 if LTE_MODE_PREFERENCE_NBIOT_PLMN_PRIO || LTE_MODE_PREFERENCE_LTE_M_PLMN_PRIO || MODEM_MULTI_IMSI_SUPPORT
-	default 300 if LTE_MODE_PREFERENCE_NBIOT || LTE_MODE_PREFERENCE_LTE_M
+	default 360 if LTE_MODE_PREFERENCE_NBIOT || LTE_MODE_PREFERENCE_LTE_M
 	default 180
 
 config MODEM_ICCID_LTE_M_PREFERENCE
@@ -243,10 +243,6 @@ config MODEM_ICCID_NBIOT_PREFERENCE
 	default ""
 	help
 	  List of ICCID header (first 5 digits), which only supports NB-IoT.
-
-config MODEM_EPCO
-    bool "Modem use EPCO."
-	default y
 
 config MODEM_FAULT_THRESHOLD
     int "Threshold for modem faults per week."
@@ -276,7 +272,7 @@ config PROTOCOL_MODE_DTLS
 	help
 	  Use coap over dtls.
 
-endchoice # BME680_BSEC_SAMPLE_MODE
+endchoice # PROTOCOL_MODE
 
 endmenu
 
@@ -524,10 +520,20 @@ config ENVIRONMENT_HISTORY_INTERVAL_S
 	int "Environment history interval in seconds"
 	default 30
 
-
 endif
 
 # Logging
+
+config LOG_BACKEND_UART_RECEIVER
+   bool
+   depends on UART_RECEIVER
+   default y if UART_RECEIVER
+
+config LOG_BACKEND_UART_RECEIVER_AUTOSTART
+   bool
+   depends on LOG_BACKEND_UART_RECEIVER
+   default y if LOG_BACKEND_UART_RECEIVER
+
 module = COAP_CLIENT
 module-str = CoAP Client
 source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"

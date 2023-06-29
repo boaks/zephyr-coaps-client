@@ -125,8 +125,6 @@ Configure used URI query parameter. Please note, that these query parameter must
 
 - **UDP_AS_RAI_ENABLE**, enable RAI (access stratum), requires 3GPP release 14 supported by the Mobile Network Operator. If not supported, the modem implicitly uses CP-RAI.
 
-- **UDP_EDRX_ENABLE**, enable eDRX.
-
 - **STATIONARY_MODE_ENABLE**, enable stationary mode. Optimize power consumption, if device is sationary at one place and is not moved.
 
 - **MODEM_SAVE_CONFIG_THRESHOLD**, threshold to save the modem configuration. The modem is switched off and on to save the configuration.
