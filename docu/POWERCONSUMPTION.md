@@ -256,5 +256,12 @@ About 1800 bytes for a PSK handshake seems to be large, maybe someone forgot to 
 [Power Consumption Analysis of NB-IoT and eMTC
 in Challenging Smart City Environments](https://cni.etit.tu-dortmund.de/storages/cni-etit/r/Research/Publications/2018/Joerke_GLOBECOM/Joerke_GLOBECOM_12_2018.pdf)
 
+## Alternative Tools to Measure Power
+
+| Products | Price |
+| - | - |
+|[joulescope](https://www.joulescope.com/) | [\$999](https://www.joulescope.com/cart) |
+|[qoitech](https://www.qoitech.com/) | [\$899 - \$1599](https://www.qoitech.com/buy/) |
+
 
 ** !!! Under Construction !!! **
