@@ -72,7 +72,7 @@ static volatile bool battery_adc_ok = false;
 static volatile uint16_t battery_adc_last_voltage = 0;
 static volatile int64_t battery_adc_last_uptime = 0;
 
-static int battery_adc_setup(const struct device *arg)
+static int battery_adc_setup(void)
 {
    const struct gpio_dt_spec *gcp = &battery_adc_config.power_gpios;
    int rc = -ENOTSUP;

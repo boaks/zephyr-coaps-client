@@ -215,7 +215,7 @@ static int appl_watchdog_init(void)
    return 0;
 }
 
-static int appl_diagnose_init(const struct device *arg)
+static int appl_diagnose_init(void)
 {
    appl_watchdog_init();
 

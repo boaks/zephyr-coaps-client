@@ -24,7 +24,7 @@ static K_THREAD_STACK_DEFINE(io_job_queue_stack, IO_JOB_QUEUE_STACK_SIZE);
 
 struct k_work_q io_job_queue;
 
-static int io_job_queue_init(const struct device *arg)
+static int io_job_queue_init(void)
 {
    struct k_work_queue_config cfg = {
        .name = "io_workq",

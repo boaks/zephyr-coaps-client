@@ -47,7 +47,7 @@
 #define ADD_ACK_TIMEOUT 3
 
 #define LED_APPLICATION LED_LTE_1
-#define LED_DTLS LED_LTE_2
+#define LED_DTLS LED_NONE
 
 #define MSEC_PER_HOUR (MSEC_PER_SEC * 60 * 60)
 #define MSEC_PER_DAY (MSEC_PER_SEC * 60 * 60 * 24)
@@ -1192,7 +1192,7 @@ static int init_destination(int protocol, session_t *destination)
    return 0;
 }
 
-void main(void)
+int main(void)
 {
    int config = 0;
    int protocol = -1;
@@ -1304,9 +1304,10 @@ void main(void)
 
    dtls_trigger();
    dtls_loop(&dst, flags);
+   return 0;
 }
 
-void main_(void)
+int main_(void)
 {
    modem_power_off();
    power_manager_init();
@@ -1315,4 +1316,5 @@ void main_(void)
    // power_manager_1v8(false);
    k_sleep(K_MSEC(1000));
    NRF_REGULATORS->SYSTEMOFF = 1;
+   return 0;
 }

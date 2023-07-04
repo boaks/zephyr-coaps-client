@@ -1312,6 +1312,10 @@ static void pdn_handler(uint8_t cid, enum pdn_event event,
       case PDN_EVENT_IPV6_DOWN:
          LOG_INF("PDN CID %u, IPv6 down", cid);
          break;
+      case PDN_EVENT_NETWORK_DETACH:
+         LOG_INF("PDN CID %u, detach", cid);
+         lte_pdn_status_set(false);
+         break;
    }
 }
 #endif
@@ -1383,7 +1387,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 #else
       LOG_INF("Modem trace disabled");
 #endif
-      nrf_modem_lib_init(NORMAL_MODE);
+      nrf_modem_lib_init();
 
       err = modem_at_cmd("AT%%HWVERSION", buf, sizeof(buf), "%HWVERSION: ");
       if (err > 0) {

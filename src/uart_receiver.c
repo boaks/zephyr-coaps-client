@@ -334,10 +334,9 @@ static void uart_receiver_callback(const struct device *dev,
    }
 }
 
-static int uart_receiver_init(const struct device *arg)
+static int uart_receiver_init(void)
 {
    int err;
-   ARG_UNUSED(arg);
 
    /* Initialize the UART module */
    if (!device_is_ready(uart_dev)) {

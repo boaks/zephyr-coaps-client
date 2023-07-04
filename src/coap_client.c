@@ -16,6 +16,9 @@
 #include <zephyr/net/coap.h>
 #include <zephyr/random/rand32.h>
 
+/* auto generated header file during west build */
+#include "ncs_version.h"
+
 #include "coap_client.h"
 #include "dtls_debug.h"
 #include "modem.h"
@@ -758,8 +761,8 @@ int coap_client_prepare_post(void)
       }
    }
 
-   index += snprintf(buf + index, sizeof(buf) - index, ", Thingy:91 %s, 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
-                     CLIENT_VERSION, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
+   index += snprintf(buf + index, sizeof(buf) - index, ", Thingy:91 %s (%s), 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
+                     CLIENT_VERSION, NCS_VERSION_STRING, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
    dtls_info("%s", buf + start);
 
 #ifdef CONFIG_COAP_SEND_MODEM_INFO

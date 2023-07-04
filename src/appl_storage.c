@@ -288,7 +288,7 @@ static void appl_storage_init_offset(struct storage_setup *config)
    k_mutex_unlock(&storage_mutex);
 }
 
-static int appl_storage_init(const struct device *arg)
+static int appl_storage_init(void)
 {
    const struct storage_config *configs = storage_configs;
 

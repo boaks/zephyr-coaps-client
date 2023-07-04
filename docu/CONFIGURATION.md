@@ -32,6 +32,8 @@ The application enables per default to suspend the UART and the 3.3V.
 
 Depending on the SIM-Card, the HPPLMN (automatic search for higher priorized PLMN) consumes quite a lot energy. e.g. a HPPLMN interval of 2h and an average searchtime of 60s ends up at a power consumption comparable with 10 message exchanges every hour. So check your SIM-card (enable COAP_SEND_SIM_INFO), not that you get surprised!
 
+The modem firmware versions 1.3.2 to 1.3.4 are also applying HPPLMN searchs for global IMSIs (starting with 9), which consumes a lot of energy. This behavior is disabled again with version 1.3.5. Please update to 1.3.5 when using such global SIM cards. 
+
 The usage of the sensors also reduces that time. Consider to measure less frequent, e.g. every 10 minutes instead of every couple of seconds.
 
 ## Basic
