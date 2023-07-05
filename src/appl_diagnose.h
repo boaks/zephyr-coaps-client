@@ -34,7 +34,7 @@
 
 void watchdog_feed(void);
 
-void appl_reboot(int error, int delay);
+void appl_reboot(int error, const k_timeout_t delay);
 bool appl_reboots(void);
 
 uint32_t appl_reset_cause(int *flags);

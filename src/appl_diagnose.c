@@ -66,26 +66,27 @@ static void appl_reboot_fn(void *p1, void *p2, void *p3)
    }
 
    if (!shutdown_now) {
-      int delay = atomic_get(&shutdown_delay);
-      while (delay > 0) {
-         if (k_sem_take(&appl_diagnose_shutdown, K_SECONDS(delay)) == -EAGAIN) {
+      uint32_t delay_ms = atomic_get(&shutdown_delay);
+      while (delay_ms > 0) {
+         if (k_sem_take(&appl_diagnose_shutdown, K_MSEC(delay_ms)) == -EAGAIN) {
             break;
          }
          if (shutdown_now) {
             break;
          }
-         delay = atomic_get(&shutdown_delay);
+         delay_ms = atomic_get(&shutdown_delay);
       }
    }
    sys_reboot(SYS_REBOOT_COLD);
 }
 
-void appl_reboot(int error, int delay)
+void appl_reboot(int error, const k_timeout_t delay)
 {
    reboots = true;
+   uint32_t delay_ms = (uint32_t) k_ticks_to_ms_floor64(delay.ticks);
    atomic_set(&reboot_cause, error);
-   if (delay > 0) {
-      atomic_set(&shutdown_delay, delay);
+   if (delay_ms > 0) {
+      atomic_set(&shutdown_delay, delay_ms);
    } else {
       shutdown_now = true;
    }

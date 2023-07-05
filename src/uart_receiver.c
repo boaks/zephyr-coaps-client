@@ -42,7 +42,7 @@ LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 #define CONFIG_UART_RX_SUSPEND_DELAY_S 5
 
 static void uart_enable_rx_fn(struct k_work *work);
-void dtls_trigger(void);
+void dtls_cmd_trigger(bool led, int mode);
 
 static const struct device *const uart_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
 
@@ -147,7 +147,7 @@ static void at_cmd_send_fn(struct k_work *work)
       return;
    } else if (strcmp(at_cmd_buf, "reboot") == 0) {
       LOG_INF(">> device reboot ...");
-      appl_reboot(ERROR_CODE_CMD, 2000);
+      appl_reboot(ERROR_CODE_CMD,  K_MSEC(2000));
       return;
    } else if (strcmp(at_cmd_buf, "off") == 0) {
       modem_set_offline();
@@ -161,7 +161,7 @@ static void at_cmd_send_fn(struct k_work *work)
       modem_read_sim_info(NULL);
       return;
    } else if (strcmp(at_cmd_buf, "send") == 0) {
-      dtls_trigger();
+      dtls_cmd_trigger(true, 3);
       return;
    } else if (strcmp(at_cmd_buf, "help") == 0) {
       LOG_INF("> help: 0.1");

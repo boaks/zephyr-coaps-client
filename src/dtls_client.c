@@ -152,7 +152,7 @@ static void dtls_power_management(void)
 static void reboot(int error, bool factoryReset)
 {
    // write error code, reboot in 120s
-   appl_reboot(error, 120);
+   appl_reboot(error, K_SECONDS(120));
    ui_led_op(LED_COLOR_RED, LED_BLINKING);
    modem_power_off();
    dtls_info("> modem off");
@@ -172,7 +172,7 @@ static void reboot(int error, bool factoryReset)
       k_sleep(K_MSEC(500));
    }
    // reboot now
-   appl_reboot(error, 0);
+   appl_reboot(error, K_NO_WAIT);
 }
 
 static void check_reboot(void)
@@ -203,10 +203,13 @@ static int get_socket_error(dtls_app_data_t *app)
    return error;
 }
 
+#define INITIAL_SLEEP_MINUTES 15
+#define MAX_MODEM_SEARCH_TIMEOUT_S 900
+
 static void restart_modem(bool force, dtls_app_data_t *app)
 {
    int timeout_seconds = CONFIG_MODEM_SEARCH_TIMEOUT;
-   int sleep_minutes = 15;
+   int sleep_minutes = INITIAL_SLEEP_MINUTES;
    bool network = network_registered && app;
 
    watchdog_feed();
@@ -257,18 +260,21 @@ static void restart_modem(bool force, dtls_app_data_t *app)
       watchdog_feed();
       if (trigger) {
          dtls_info("> modem normal (manual)");
-         sleep_minutes = 15;
+         sleep_minutes = INITIAL_SLEEP_MINUTES;
          check_reboot();
       } else {
          dtls_info("> modem normal (timeout)");
          sleep_minutes *= 2;
       }
       timeout_seconds *= 2;
+      if (timeout_seconds > MAX_MODEM_SEARCH_TIMEOUT_S) {
+         timeout_seconds = MAX_MODEM_SEARCH_TIMEOUT_S;
+      }
       dtls_info("> modem search network (%d minutes)", timeout_seconds / 60);
       network_sleeping = false;
       dtls_power_management();
       network = modem_start(K_SECONDS(timeout_seconds), false) == 0;
-      if (!network && sleep_minutes > 60) {
+      if (!network && sleep_minutes > 120) {
          if (app) {
             dtls_info("> modem lost network, reboot");
             reboot(ERROR_CODE(ERROR_CODE_SOCKET, get_socket_error(app)), true);
@@ -287,8 +293,9 @@ static void reopen_socket(dtls_app_data_t *app)
    int err;
    bool psm_off = !network_ready;
 
-   dtls_info("> reopen socket ...");
+   dtls_info("> reopen socket ... %s", psm_off ? "(no network)" : "");
    modem_set_rai_mode(RAI_OFF, app->fd);
+   (void)close(app->fd);
 
    if (psm_off) {
       modem_set_psm(-1);
@@ -297,7 +304,6 @@ static void reopen_socket(dtls_app_data_t *app)
    if (err) {
       restart_modem(true, app);
    }
-   (void)close(app->fd);
    app->fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
    if (app->fd < 0) {
       dtls_warn("> reopen UDP socket failed, %d, errno %d (%s), reboot", app->fd, errno, strerror(errno));
@@ -326,7 +332,7 @@ static int check_socket(dtls_app_data_t *app, bool event)
    return -error;
 }
 
-void dtls_trigger(void)
+static void dtls_trigger(void)
 {
    if (appl_reboots()) {
       return;
@@ -350,6 +356,17 @@ static void dtls_manual_trigger(int duration)
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
    dtls_trigger();
    k_sem_give(&dtls_trigger_search);
+}
+
+void dtls_cmd_trigger(bool led, int mode)
+{
+   ui_enable(led);
+   if (mode & 1) {
+      dtls_trigger();
+   }
+   if (mode & 2) {
+      k_sem_give(&dtls_trigger_search);
+   }
 }
 
 #if CONFIG_COAP_SEND_INTERVAL > 0
@@ -743,7 +760,7 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
          dtls_info("LTE modem unregistered");
          network_ready = false;
          led_op_t op = LED_SET;
-         if (lte_power_off) {
+         if (lte_power_off || network_sleeping) {
             op = LED_CLEAR;
          }
          ui_led_op(LED_COLOR_BLUE, op);
@@ -768,6 +785,7 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
             connected_time = (unsigned long)k_uptime_get();
             ++lte_connections;
             lte_connected_send = true;
+            k_sem_give(&dtls_trigger_search);
          }
       }
    }
