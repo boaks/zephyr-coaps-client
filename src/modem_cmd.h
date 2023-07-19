@@ -26,4 +26,7 @@ void modem_cmd_connect_help(void);
 int modem_cmd_scan(const char *config);
 void modem_cmd_scan_help(void);
 
+int modem_cmd_sms(const char *config);
+void modem_cmd_sms_help(void);
+
 #endif /* MODEM_CMD_H */

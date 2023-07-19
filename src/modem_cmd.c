@@ -328,6 +328,39 @@ void modem_cmd_scan_help(void)
    LOG_INF("  <n>         : maximum cells to list");
 }
 
+#ifdef CONFIG_SMS
+
+#include <modem/sms.h>
+
+int modem_cmd_sms(const char *config)
+{
+   char destination[32];
+   const char *cur = config;
+
+   memset(destination, 0, sizeof(destination));
+   while (*cur == ' ') {
+      ++cur;
+   }
+   cur += parse_strncpy(destination, cur, ' ', sizeof(destination));
+   modem_set_psm(120);
+   if (destination[0]) {
+      return sms_send_text(destination, cur);
+   } else {
+      return 0;
+   }
+}
+
+void modem_cmd_sms_help(void)
+{
+   LOG_INF("> help sms:");
+   LOG_INF("  sms                  : receive sms (120s).");
+   LOG_INF("  sms <dest> <message> : send sms and receive sms (120s).");
+   LOG_INF("  <dest>               : international IMSI");
+   LOG_INF("  <message>            : message");
+}
+
+#endif
+
 #else
 
 int modem_config(const char *config)
