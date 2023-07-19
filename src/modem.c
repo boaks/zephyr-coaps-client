@@ -809,6 +809,76 @@ static void pdn_handler(uint8_t cid, enum pdn_event event,
 }
 #endif
 
+#ifdef CONFIG_SMS
+
+#include <modem/sms.h>
+
+static int modem_sms_callback_id = -1;
+
+static void modem_sms_callback(struct sms_data *const data, void *context)
+{
+   if (data == NULL) {
+      LOG_INF("SMS with NULL data");
+      return;
+   }
+
+   if (data->type == SMS_TYPE_DELIVER) {
+      /* When SMS message is received, print information */
+      struct sms_deliver_header *header = &data->header.deliver;
+
+      LOG_INF("SMS received, time:   %02d-%02d-%02d %02d:%02d:%02d",
+              header->time.year,
+              header->time.month,
+              header->time.day,
+              header->time.hour,
+              header->time.minute,
+              header->time.second);
+
+      LOG_INF("\tText:   '%s'", data->payload);
+      LOG_INF("\tLength: %d", data->payload_len);
+
+      if (header->app_port.present) {
+         LOG_INF("\tApplication port addressing scheme: dest_port=%d, src_port=%d",
+                 header->app_port.dest_port,
+                 header->app_port.src_port);
+      }
+      if (header->concatenated.present) {
+         LOG_INF("\tConcatenated short message: ref_number=%d, msg %d/%d",
+                 header->concatenated.ref_number,
+                 header->concatenated.seq_number,
+                 header->concatenated.total_msgs);
+      }
+   } else if (data->type == SMS_TYPE_STATUS_REPORT) {
+      LOG_INF("SMS status report received");
+   } else {
+      LOG_INF("SMS protocol message with unknown type received");
+   }
+}
+
+#endif
+
+#if defined(CONFIG_LTE_LINK_CONTROL)
+
+LTE_LC_ON_CFUN(modem_on_cfun_hook, modem_on_cfun, NULL);
+
+static void modem_on_cfun(enum lte_lc_func_mode mode, void *ctx)
+{
+   int err;
+
+   if (mode == LTE_LC_FUNC_MODE_NORMAL ||
+       mode == LTE_LC_FUNC_MODE_ACTIVATE_LTE) {
+#ifdef CONFIG_SMS
+      LOG_DBG("Subscribing to +CNEC=16 and +CGEREP=1");
+      err = modem_at_cmd(NULL, 0, NULL, "AT+CNMI=3,2,0,1");
+      if (err < 0) {
+         LOG_ERR("Unable to subscribe to +CNMI=3,2,0,1, err %d", err);
+      }
+#endif
+      modem_read_network_info(NULL, true);
+   }
+}
+#endif /* CONFIG_LTE_LINK_CONTROL */
+
 static int modem_connect(void)
 {
    int err = 0;
@@ -1119,6 +1189,21 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          }
          return err;
       }
+
+#ifdef CONFIG_SMS
+      if (modem_sms_callback_id >= 0) {
+         sms_unregister_listener(modem_sms_callback_id);
+         modem_sms_callback_id = -1;
+      }
+      err = sms_register_listener(modem_sms_callback, NULL);
+      if (err < 0) {
+         LOG_WRN("sms_register_listener returned err: %d", err);
+      } else {
+         LOG_INF("sms_register_listener returned success");
+         modem_sms_callback_id = err;
+      }
+#endif
+
       initialized = true;
       modem_set_preference(RESET_PREFERENCE);
       LOG_INF("Modem initialized");
@@ -1213,7 +1298,6 @@ int modem_start(const k_timeout_t timeout, bool save)
    ui_led_op(LED_COLOR_BLUE, LED_SET);
    ui_led_op(LED_COLOR_RED, LED_SET);
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-   modem_read_network_info(NULL, true);
 
    ++lte_restarts;
    err = modem_connect();

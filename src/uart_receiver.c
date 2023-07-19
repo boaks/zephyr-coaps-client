@@ -518,6 +518,15 @@ static int at_cmd_send()
       return RESULT(res);
    }
 
+#ifdef CONFIG_SMS
+   i = strstart(at_cmd_buf, "sms", true);
+   if (i > 0) {
+      uart_tx_pause(false);
+      res = modem_cmd_sms(&at_cmd_buf[i]);
+      return RESULT(res);
+   }
+#endif
+
    i = strstart(at_cmd_buf, "scan", true);
    if (i == 0) {
       i = strstart(at_cmd_buf, "AT%NCELLMEAS", true);
@@ -574,6 +583,9 @@ static int at_cmd()
       LOG_INF("  scan   : network scan.(*?)");
       LOG_INF("  send   : send message.");
       LOG_INF("  sim    : read SIM-card info.(*)");
+#ifdef CONFIG_SMS
+      LOG_INF("  sms    : send SMS.(*?)");
+#endif
       LOG_INF("  state  : read modem state.(*)");
       LOG_INF("  *      : AT-cmd is used, maybe busy.");
       LOG_INF("  ?      : help <cmd> available.");
@@ -587,6 +599,10 @@ static int at_cmd()
             modem_cmd_connect_help();
          } else if (!stricmp(&at_cmd_buf[i], "scan")) {
             modem_cmd_scan_help();
+#ifdef CONFIG_SMS
+         } else if (!stricmp(&at_cmd_buf[i], "sms")) {
+            modem_cmd_sms_help();
+#endif
          } else {
             LOG_INF("> help %s:", &at_cmd_buf[i]);
             LOG_INF("  no details available.");

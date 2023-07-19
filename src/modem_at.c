@@ -59,7 +59,7 @@ int modem_at_cmd(char *buf, size_t len, const char *skip, const char *cmd)
    int err;
    int at_len;
 
-   LOG_INF("%s", cmd);
+   LOG_DBG("%s", cmd);
    err = modem_at_lock(K_FOREVER);
    if (err) {
       LOG_INF("Modem busy");
