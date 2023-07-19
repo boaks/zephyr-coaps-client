@@ -135,6 +135,8 @@ static void dtls_power_management_fn(struct k_work *work)
    dtls_power_management();
 }
 
+static K_WORK_DEFINE(dtls_power_management_work, dtls_power_management_fn);
+
 static void dtls_power_management_suspend_fn(struct k_work *work)
 {
    atomic_clear_bit(&general_states, PM_PREVENT_SUSPEND);
@@ -142,8 +144,36 @@ static void dtls_power_management_suspend_fn(struct k_work *work)
    dtls_power_management();
 }
 
-static K_WORK_DEFINE(dtls_power_management_work, dtls_power_management_fn);
 static K_WORK_DELAYABLE_DEFINE(dtls_power_management_suspend_work, dtls_power_management_suspend_fn);
+
+static void dtls_log_state(void)
+{
+   char buf[128];
+   int index = 0;
+   if (atomic_test_bit(&general_states, LTE_CONNECTED_SEND)) {
+      index = snprintf(buf, sizeof(buf), "connected send");
+   } else if (atomic_test_bit(&general_states, LTE_CONNECTED)) {
+      index = snprintf(buf, sizeof(buf), "connected");
+   } else if (atomic_test_bit(&general_states, LTE_READY)) {
+      index = snprintf(buf, sizeof(buf), "ready");
+   } else if (atomic_test_bit(&general_states, LTE_REGISTERED)) {
+      index = snprintf(buf, sizeof(buf), "registered");
+   } else {
+      index = snprintf(buf, sizeof(buf), "not registered");
+   }
+   if (atomic_test_bit(&general_states, LTE_SLEEPING)) {
+      index += snprintf(&buf[index], sizeof(buf) - index, ", modem sleeping");
+   }
+   if (atomic_test_bit(&general_states, LTE_SOCKET_ERROR)) {
+      index += snprintf(&buf[index], sizeof(buf) - index, ", socket error");
+   }
+   if (atomic_test_bit(&general_states, PM_PREVENT_SUSPEND)) {
+      index += snprintf(&buf[index], sizeof(buf) - index, ", prevent suspend");
+   } else if (atomic_test_bit(&general_states, PM_SUSPENDED)) {
+      index += snprintf(&buf[index], sizeof(buf) - index, ", suspended");
+   }
+   LOG_INF("State: %s", buf);
+}
 
 static void dtls_power_management(void)
 {
@@ -428,7 +458,7 @@ static void dtls_coap_success(dtls_app_data_t *app)
       time2 = -1;
    }
    ui_led_op(LED_COLOR_ALL, LED_CLEAR);
-   dtls_info("%ld/%dms/%dms: success", atomic_get(&lte_connections), time1, time2);
+   dtls_info("%dms/%dms: success", time1, time2);
    if (app->retransmission <= COAP_MAX_RETRANSMISSION) {
       transmissions[app->retransmission]++;
    }
@@ -487,7 +517,7 @@ static void dtls_coap_failure(dtls_app_data_t *app, const char *cause)
    }
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
-   dtls_info("%ld/%dms/%dms: failure, %s", atomic_get(&lte_connections), time1, time2, cause);
+   dtls_info("%dms/%dms: failure, %s", time1, time2, cause);
    transmissions[COAP_MAX_RETRANSMISSION + 1]++;
    if (initial_success) {
       current_failures++;
@@ -561,7 +591,7 @@ static void prepare_socket(dtls_app_data_t *app)
 static int
 send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size_t len)
 {
-   bool ready;
+   bool connected;
    int result = 0;
    const char *tag = app->dtls_pending ? (app->retransmission ? "hs_re" : "hs_") : (app->retransmission ? "re" : "");
 
@@ -576,8 +606,8 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
       dtls_warn("%ssend_to_peer failed: %d, errno %d (%s)", tag, result, errno, strerror(errno));
       return result;
    }
-   ready = atomic_test_bit(&general_states, LTE_READY);
-   if (ready) {
+   connected = atomic_test_bit(&general_states, LTE_CONNECTED);
+   if (connected) {
       modem_set_transmission_time();
    }
    if (app->retransmission == 0) {
@@ -586,13 +616,13 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
 #ifndef NDEBUG
    /* logging */
    if (SEND == app->request_state) {
-      if (ready) {
+      if (connected) {
          dtls_info("%ssent_to_peer %d", tag, result);
       } else {
          dtls_info("%ssend_to_peer %d", tag, result);
       }
    } else if (RECEIVE == app->request_state) {
-      if (ready) {
+      if (connected) {
          dtls_info("%sunintended resent_to_peer %d", tag, result);
       } else {
          dtls_info("%sunintended resend_to_peer %d", tag, result);
@@ -718,7 +748,7 @@ sendto_peer(dtls_app_data_t *app, session_t *dst, struct dtls_context_t *ctx)
       if (!lte_power_off) {
          ui_led_op(LED_COLOR_GREEN, LED_SET);
       }
-      if (atomic_test_bit(&general_states, LTE_READY)) {
+      if (atomic_test_bit(&general_states, LTE_CONNECTED)) {
          ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
          app->request_state = RECEIVE;
 #ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
@@ -780,9 +810,9 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
    }
 
    if (desc) {
-      dtls_info("modem state handler %s %s", desc, active ? "on" : "off");
+      dtls_info("modem state: %s %s", desc, active ? "on" : "off");
    } else {
-      dtls_info("modem state handler %d %s", type, active ? "on" : "off");
+      dtls_info("modem state: %d %s", type, active ? "on" : "off");
    }
    bool previous = active;
    if (bit >= 0) {
@@ -796,12 +826,10 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
    if (type == LTE_STATE_REGISTRATION) {
       if (active) {
          if (!atomic_test_bit(&general_states, LTE_READY)) {
-            dtls_info("LTE modem registered, not ready");
             ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
          }
       } else {
-         dtls_info("LTE modem unregistered%s", atomic_test_bit(&general_states, LTE_SLEEPING) ? " sleeping" : "");
          atomic_clear_bit(&general_states, LTE_READY);
          atomic_clear_bit(&general_states, LTE_CONNECTED);
          led_op_t op = LED_SET;
@@ -820,13 +848,11 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
          atomic_set(&ready_time, now);
       }
       if (active) {
-         dtls_info("LTE modem ready");
          if (previous != active) {
             trigger_search = READY_SEARCH;
             k_sem_give(&dtls_trigger_search);
          }
       } else {
-         dtls_info("LTE modem not ready");
          atomic_clear_bit(&general_states, LTE_CONNECTED);
       }
    } else if (type == LTE_STATE_CONNECTED) {
@@ -840,21 +866,21 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
          }
       }
       if (active) {
-         dtls_info("LTE modem connected");
          if (!previous) {
             atomic_set(&connected_time, now);
             atomic_inc(&lte_connections);
             atomic_set_bit(&general_states, LTE_CONNECTED_SEND);
          }
-      } else {
-         dtls_info("LTE modem not connected");
       }
    } else if (type == LTE_STATE_SLEEPING) {
-      if (!active) {
+      if (active) {
+         atomic_set_bit(&general_states, PM_PREVENT_SUSPEND);
+         work_schedule_for_io_queue(&dtls_power_management_suspend_work, K_SECONDS(2));
+      } else {
          trigger_search = EVENT_SEARCH;
          k_sem_give(&dtls_trigger_search);
+         work_submit_to_io_queue(&dtls_power_management_work);
       }
-      work_submit_to_io_queue(&dtls_power_management_work);
    }
 }
 
@@ -910,7 +936,7 @@ static int dtls_network_searching(const k_timeout_t timeout)
             return false;
          }
          ui_led_op(LED_APPLICATION, LED_CLEAR);
-         dtls_info("Pause network search");
+         dtls_info("Pause LEDs");
       }
 
       if (!off) {
@@ -1173,20 +1199,19 @@ static int dtls_loop(session_t *dst, int flags)
          const char *type = app_data.dtls_pending ? "DTLS hs" : "CoAP request";
          ++loops;
          if (app_data.request_state == SEND) {
-            bool ready = atomic_test_bit(&general_states, LTE_READY);
             if (atomic_test_bit(&general_states, LTE_CONNECTED_SEND)) {
-               atomic_val_t connections = atomic_get(&lte_connections);
                loops = 0;
                time = (long)(connected_time - connect_time);
                if (time < 0) {
                   time = -1;
                }
+               dtls_log_state();
                if (app_data.request_state == SEND) {
-                  dtls_info("%d/%d/%ld-%ld ms: connected => sent",
-                            ready, true, connections, time);
+                  dtls_info("%ld ms: connected => sent",
+                            time);
                } else {
-                  dtls_info("%d/%d/%ld-%ld ms: connected => resent",
-                            ready, true, connections, time);
+                  dtls_info("%ld ms: connected => resent",
+                            time);
                }
                app_data.request_state = RECEIVE;
 #ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
@@ -1195,13 +1220,13 @@ static int dtls_loop(session_t *dst, int flags)
                }
 #endif
             } else if (loops > 60) {
-               dtls_info("%s send timeout %d s (%s)", type, loops, ready ? "ready" : "not ready");
+               dtls_log_state();
+               dtls_info("%s send timeout %d s", type, loops);
                dtls_coap_failure(&app_data, "timeout");
             }
          } else if (app_data.request_state == RECEIVE) {
             int temp = app_data.timeout;
-            bool ready = atomic_test_bit(&general_states, LTE_READY);
-            if (!ready) {
+            if (!atomic_test_bit(&general_states, LTE_READY)) {
                if (app_data.retransmission >= COAP_MAX_RETRANSMISSION) {
                   // stop waiting ...
                   temp = loops - 1;
@@ -1209,10 +1234,11 @@ static int dtls_loop(session_t *dst, int flags)
                   temp += ADD_ACK_TIMEOUT;
                }
             }
+            dtls_log_state();
             if (app_data.retransmission > 0) {
-               dtls_info("%s wait %d/%d/%d, retrans. %d, network %d", type, loops, app_data.timeout, temp, app_data.retransmission, ready);
+               dtls_info("%s wait %d of %d s, retrans. %d", type, loops, temp, app_data.retransmission);
             } else {
-               dtls_info("%s wait %d/%d/%d", type, loops, app_data.timeout, temp);
+               dtls_info("%s wait %d of %d s", type, loops, temp);
             }
             if (loops > temp) {
                result = -1;
@@ -1225,7 +1251,7 @@ static int dtls_loop(session_t *dst, int flags)
                   app_data.timeout <<= 1;
                   app_data.request_state = SEND;
 
-                  dtls_info("%s resend, timeout %d", type, app_data.timeout);
+                  dtls_info("%s resend, timeout %d s", type, app_data.timeout);
                   if (app_data.dtls_pending) {
                      dtls_check_retransmit(dtls_context, NULL);
                   } else {
@@ -1233,13 +1259,14 @@ static int dtls_loop(session_t *dst, int flags)
                   }
                } else {
                   // maximum retransmissions reached
-                  dtls_info("%s receive timeout %d", type, app_data.timeout);
+                  dtls_info("%s receive timeout %d s", type, app_data.timeout);
                   dtls_coap_failure(&app_data, "receive timeout");
                }
             }
          } else if (app_data.request_state == WAIT_RESPONSE) {
             if (loops > 60) {
-               dtls_info("%s response timeout %d", type, loops);
+               dtls_log_state();
+               dtls_info("%s response timeout %d s", type, loops);
                dtls_coap_failure(&app_data, "response timeout");
             }
          } else if (app_data.request_state == WAIT_SUSPEND) {
@@ -1247,14 +1274,15 @@ static int dtls_loop(session_t *dst, int flags)
             if (atomic_test_bit(&general_states, LTE_SLEEPING)) {
                // modem enters sleep, no more data
                app_data.request_state = NONE;
-               dtls_info("%s suspend after %d", type, loops);
+               dtls_info("%s suspend after %d s", type, loops);
             } else if (k_sem_count_get(&dtls_trigger_msg)) {
                // send button pressed
                app_data.request_state = NONE;
-               dtls_info("%s next trigger after %d", type, loops);
+               dtls_info("%s next trigger after %d s", type, loops);
             }
          } else if (app_data.request_state != NONE) {
-            dtls_info("%s wait state %d, %d", type, app_data.request_state, loops);
+            dtls_log_state();
+            dtls_info("%s wait state %d, %d s", type, app_data.request_state, loops);
          }
       } else { /* ok */
          if (udp_poll.revents & POLLIN) {

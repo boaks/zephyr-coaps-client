@@ -35,7 +35,6 @@ LOG_MODULE_REGISTER(MODEM, CONFIG_MODEM_LOG_LEVEL);
 #include <modem/at_monitor.h>
 #include <modem/lte_lc.h>
 #include <modem/nrf_modem_lib.h>
-#include <modem/pdn.h>
 #include <nrf_modem_at.h>
 
 #define MSEC_TO_SEC(X) (((X) + (MSEC_PER_SEC / 2)) / MSEC_PER_SEC)
@@ -174,7 +173,7 @@ static K_WORK_DEFINE(modem_not_ready_callback_work, modem_state_change_callback_
 static K_WORK_DEFINE(modem_connected_callback_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_unconnected_callback_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_power_management_resume_work, modem_state_change_callback_work_fn);
-static K_WORK_DELAYABLE_DEFINE(modem_power_management_suspend_work, modem_state_change_callback_work_fn);
+static K_WORK_DEFINE(modem_power_management_suspend_work, modem_state_change_callback_work_fn);
 
 static void modem_ready_work_fn(struct k_work *work);
 
@@ -213,7 +212,7 @@ static void modem_state_change_callback_work_fn(struct k_work *work)
          callback(LTE_STATE_REGISTRATION, false);
       } else if (work == &modem_power_management_resume_work) {
          callback(LTE_STATE_SLEEPING, false);
-      } else if (work == &modem_power_management_suspend_work.work) {
+      } else if (work == &modem_power_management_suspend_work) {
          callback(LTE_STATE_SLEEPING, true);
       }
    }
@@ -478,18 +477,15 @@ static void lte_registration_set(bool registered)
    k_mutex_unlock(&lte_mutex);
 }
 
-static bool lte_connection_status_set(bool connect)
+static void lte_connection_status_set(bool connect)
 {
-   bool lte;
    k_mutex_lock(&lte_mutex, K_FOREVER);
-   lte = lte_ready;
    if (network_info.rrc_active != (connect ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF)) {
       ui_led_op(LED_CONNECTED, connect ? LED_SET : LED_CLEAR);
       network_info.rrc_active = connect ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
       lte_connection_status();
    }
    k_mutex_unlock(&lte_mutex);
-   return lte;
 }
 
 static void lte_network_mode_set(enum lte_lc_lte_mode mode)
@@ -502,14 +498,15 @@ static void lte_network_mode_set(enum lte_lc_lte_mode mode)
 static void lte_network_sleeping_set(bool sleep)
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
-   network_info.sleeping = sleep;
-   k_mutex_unlock(&lte_mutex);
-   if (sleep) {
-      work_reschedule_for_io_queue(&modem_power_management_suspend_work, K_MSEC(SUSPEND_DELAY_MILLIS));
-   } else {
-      (void)k_work_cancel_delayable(&modem_power_management_suspend_work);
-      work_submit_to_io_queue(&modem_power_management_resume_work);
+   if (network_info.sleeping != (sleep ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF)) {
+      network_info.sleeping = sleep ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
+      if (sleep) {
+         work_submit_to_io_queue(&modem_power_management_suspend_work);
+      } else {
+         work_submit_to_io_queue(&modem_power_management_resume_work);
+      }
    }
+   k_mutex_unlock(&lte_mutex);
 }
 
 #ifndef CONFIG_LOG_BACKEND_UART_RECEIVER
@@ -648,12 +645,11 @@ static void lte_handler(const struct lte_lc_evt *const evt)
                phase = 2;
                phase_start_time = now;
                lte_connection_status_set(true);
-               k_work_cancel_delayable(&modem_power_management_suspend_work);
                work_submit_to_io_queue(&modem_power_management_resume_work);
                LOG_INF("RRC mode: Connected");
             } else {
                int64_t transmission_time = get_transmission_time();
-               bool lte = lte_connection_status_set(false);
+               lte_connection_status_set(false);
                if (phase == 2) {
                   int64_t time = now - phase_start_time;
                   lte_add_connected(time);
@@ -667,13 +663,6 @@ static void lte_handler(const struct lte_lc_evt *const evt)
                }
                phase = 3;
                phase_start_time = now;
-               if (lte) {
-                  if (active_time >= 0) {
-                     work_reschedule_for_io_queue(&modem_power_management_suspend_work, K_MSEC(SUSPEND_DELAY_MILLIS + active_time * MSEC_PER_SEC));
-                  } else {
-                     work_reschedule_for_io_queue(&modem_power_management_suspend_work, K_MSEC(SUSPEND_DELAY_MILLIS));
-                  }
-               }
             }
             break;
          }
@@ -761,6 +750,9 @@ static void lte_handler(const struct lte_lc_evt *const evt)
 }
 
 #ifdef CONFIG_PDN
+
+#include <modem/pdn.h>
+
 static void lte_pdn_status_set(bool pdn_active)
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
@@ -844,13 +836,16 @@ static int modem_connect(void)
 static void modem_cancel_all_job(void)
 {
    k_work_cancel(&modem_read_sim_work);
-   k_work_cancel(&modem_power_management_resume_work);
    k_work_cancel(&modem_read_network_info_work);
    k_work_cancel(&modem_registered_callback_work);
    k_work_cancel(&modem_unregistered_callback_work);
+   k_work_cancel(&modem_ready_callback_work);
    k_work_cancel(&modem_not_ready_callback_work);
+   k_work_cancel(&modem_connected_callback_work);
+   k_work_cancel(&modem_unconnected_callback_work);
+   k_work_cancel(&modem_power_management_resume_work);
+   k_work_cancel(&modem_power_management_suspend_work);
    k_work_cancel_delayable(&modem_ready_work);
-   k_work_cancel_delayable(&modem_power_management_suspend_work);
 }
 
 static void modem_init_rai(void)
