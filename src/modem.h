@@ -66,6 +66,7 @@ typedef struct lte_network_info {
 } lte_network_info_t;
 
 #define INVALID_SIGNAL_VALUE 0x7fff
+#define NONE_SIGNAL_VALUE 0x7ffe
 
 typedef struct lte_ce_info {
    uint8_t ce_supported;
@@ -162,6 +163,12 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info* info);
 int modem_set_psm(int16_t active_time_s);
 
 int modem_set_rai_mode(enum rai_mode mode, int socket);
+
+int modem_set_edrx(int16_t edrx_time_s);
+
+void modem_lock_psm(bool on);
+
+void modem_lock_plmn(bool on);
 
 int modem_set_offline(void);
 

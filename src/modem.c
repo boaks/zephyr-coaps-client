@@ -61,7 +61,10 @@ static bool lte_cell_updated = false;
 
 static struct lte_lc_edrx_cfg edrx_status = {LTE_LC_LTE_MODE_NONE, 0.0, 0.0};
 static struct lte_lc_psm_cfg psm_status = {0, -1};
-static atomic_t psm_rat = ATOMIC_INIT(-1);
+
+#ifdef CONFIG_UDP_PSM_ENABLE
+static int psm_rat = -1;
+#endif
 
 static uint32_t lte_restarts = 0;
 static uint32_t lte_searchs = 0;
@@ -131,18 +134,6 @@ void nrf_modem_fault_handler(struct nrf_modem_fault_info *fault_info)
    }
 }
 #endif
-
-static void printBin(char *buf, size_t bits, int val)
-{
-   for (int bit = 0; bit < bits; ++bit) {
-      if (val & (1 << (bits - 1 - bit))) {
-         buf[bit] = '1';
-      } else {
-         buf[bit] = '0';
-      }
-   }
-   buf[bits] = 0;
-}
 
 static void modem_read_sim_work_fn(struct k_work *work)
 {
@@ -628,7 +619,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
                mode = "NB-IoT";
             }
             len = snprintf(log_buf, sizeof(log_buf),
-                           "eDRX parameter update: %s, eDRX: %f, PTW: %f",
+                           "eDRX parameter update: %s, eDRX: %.2fs, PTW: %.2fs",
                            mode, evt->edrx_cfg.edrx, evt->edrx_cfg.ptw);
             if (len > 0) {
                LOG_INF("%s", log_buf);
@@ -773,7 +764,7 @@ static void pdn_handler(uint8_t cid, enum pdn_event event,
    const char *reason_description = NULL;
    char reason_bin[9] = "00000000";
    if (event == PDN_EVENT_CNEC_ESM) {
-      printBin(reason_bin, 8, reason);
+      print_bin(reason_bin, 8, reason);
 #if CONFIG_PDN_ESM_STRERROR
       reason_description = pdn_esm_strerror(reason);
 #endif
@@ -1448,16 +1439,24 @@ void modem_set_transmission_time(void)
    k_mutex_unlock(&lte_mutex);
 }
 
+int parse_psm(const char *active_time_str, const char *tau_ext_str,
+              const char *tau_legacy_str, struct lte_lc_psm_cfg *psm_cfg);
+
 int modem_read_network_info(struct lte_network_info *info, bool callbacks)
 {
    int result;
    char buf[160];
    struct lte_network_info temp;
-   int16_t rsrp = INVALID_SIGNAL_VALUE;
-   int16_t snr = INVALID_SIGNAL_VALUE;
+   int16_t rsrp = NONE_SIGNAL_VALUE;
+   int16_t snr = NONE_SIGNAL_VALUE;
 
    long value;
    const char *cur = buf;
+   const char *n = cur;
+   const char *edrx = NULL;
+   const char *act = NULL;
+   const char *tau_ext = NULL;
+   const char *tau = NULL;
    char *t = NULL;
 
    result = modem_at_cmd(buf, sizeof(buf), "%XMONITOR: ", "AT%XMONITOR");
@@ -1469,8 +1468,8 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
    LOG_INF("XMONITOR: %s", buf);
 
    memset(&temp, 0, sizeof(temp));
-   value = strtol(cur, &t, 10);
-   if (cur != t) {
+   n = parse_next_long(cur, 10, &value);
+   if (cur != n) {
       switch (value) {
          case LTE_LC_NW_REG_REGISTERED_HOME:
          case LTE_LC_NW_REG_REGISTERED_ROAMING:
@@ -1492,81 +1491,154 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
             break;
       }
    }
-   if (temp.registered && *t == ',') {
-      cur = t + 1;
-      // skip 2 parameter "...", find start of 3th parameter.
-      cur = parse_next_chars(cur, '"', 5);
-      if (cur) {
-         // copy 5 character plmn
-         cur += parse_strncpy(temp.provider, cur, '"', sizeof(temp.provider));
-         // skip  ," find start of next parameter
-         cur = parse_next_chars(cur, '"', 1);
+   if (temp.registered && *n == ',') {
+      cur = n + 1;
+      // skip 2 parameter "...".
+      n = parse_next_chars(cur, '"', 4);
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         // plmn
+         LOG_DBG("PLMN> %s", cur);
+         n = parse_next_text(cur, '"', temp.provider, sizeof(temp.provider));
       }
-      if (cur) {
-         // 4 character tac
-         value = strtol(cur, &t, 16);
-         if (cur != t && 0 <= value && value < 0x10000) {
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         // tac
+         LOG_DBG("TAC> %s", cur);
+         n = parse_next_long_text(cur, '"', 16, &value);
+         if (cur != n && 0 <= value && value < 0x10000) {
             temp.tac = (uint16_t)value;
-            if (*t == '"') {
-               ++t;
-            }
          }
       }
-      if (cur && *t == ',') {
+      if (*n == ',') {
          // skip ,
+         cur = n + 1;
          // Act LTE-M/NB-IoT
-         cur = t + 1;
-         value = strtol(cur, &t, 10);
-         if (cur != t &&
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n &&
              (value == LTE_LC_LTE_MODE_NONE || value == LTE_LC_LTE_MODE_NBIOT || value == LTE_LC_LTE_MODE_LTEM)) {
             temp.mode = (enum lte_lc_lte_mode)value;
          }
       }
-      if (cur && *t == ',') {
+      if (*n == ',') {
          // skip ,
+         cur = n + 1;
          // Band
-         cur = t + 1;
-         value = strtol(cur, &t, 10);
-         if (cur != t && 0 <= value && value < 90) {
-            temp.band = (int)value;
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n && 0 <= value && value < 90) {
+            temp.band = (uint8_t)value;
          }
       }
-      if (cur && *t == ',') {
+      if (*n == ',') {
          // skip ,"
-         cur = t + 2;
+         cur = n + 1;
          // copy 8 character cell
-         value = strtol(cur, &t, 16);
-         if (cur != t) {
+         LOG_DBG("CELL> %s", cur);
+         n = parse_next_long_text(cur, '"', 16, &value);
+         if (cur != n) {
             temp.cell = (uint32_t)value;
          }
-         // skip next parameter by ,
-         cur = parse_next_chars(t, ',', 2);
       }
-      if (cur) {
-         value = (int)strtol(cur, &t, 10);
-         if (cur != t) {
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         // skip Physical Cell ID
+         n = parse_next_long(cur, 10, &value);
+      }
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         // earfcn
+         LOG_DBG("EARFCN> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
             temp.earfcn = (uint32_t)value;
          }
       }
-      if (cur && *t == ',') {
+      if (*n == ',') {
          // skip ,
-         cur = t + 1;
-         rsrp = (int)strtol(cur, &t, 10) - 140;
-         if (cur == t) {
-            rsrp = INVALID_SIGNAL_VALUE;
-         } else if (rsrp == 255) {
-            rsrp = INVALID_SIGNAL_VALUE;
+         cur = n + 1;
+         // rsrp
+         LOG_DBG("RSRP> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
+            if (value == 255) {
+               rsrp = INVALID_SIGNAL_VALUE;
+            } else {
+               rsrp = (int16_t)(value - 140);
+            }
          }
       }
-      if (cur && *t == ',') {
+      if (*n == ',') {
          // skip ,
-         cur = t + 1;
-         snr = (int)strtol(cur, &t, 10) - 24;
-         if (cur == t) {
-            snr = INVALID_SIGNAL_VALUE;
-         } else if (snr == 127) {
-            snr = INVALID_SIGNAL_VALUE;
+         cur = n + 1;
+         // snr
+         LOG_DBG("SNR> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
+            if (value == 127) {
+               snr = INVALID_SIGNAL_VALUE;
+            } else {
+               snr = (int16_t)(value - 24);
+            }
          }
+      }
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         LOG_DBG("eDRX> %s", cur);
+         edrx = cur;
+         t = &buf[edrx - buf];
+         n = parse_next_text(cur, '"', t, 5);
+      }
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         LOG_DBG("Act> %s", cur);
+         act = cur;
+         t = &buf[act - buf];
+         n = parse_next_text(cur, '"', t, 9);
+      }
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         // tau_ext
+         tau_ext = cur;
+         LOG_DBG("TauExt> %s", cur);
+         t = &buf[tau_ext - buf];
+         n = parse_next_text(cur, '"', t, 9);
+      }
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         tau = cur;
+         LOG_DBG("Tau> %s", cur);
+         t = &buf[tau - buf];
+         n = parse_next_text(cur, '"', t, 9);
+      }
+   }
+
+   if (edrx) {
+      LOG_INF("eDRX: %s", edrx);
+   }
+   if (act && tau_ext && tau) {
+      struct lte_lc_psm_cfg temp_psm_status = {0, -1};
+      if (!parse_psm(act, tau_ext, tau, &temp_psm_status)) {
+         LOG_INF("PSM update: TAU: %d s, Active time: %d s",
+                 temp_psm_status.tau, temp_psm_status.active_time);
+         lte_set_psm_status(&temp_psm_status);
+      }
+   } else {
+      if (act) {
+         LOG_INF("PSM Act.: %s", act);
+      }
+      if (tau_ext) {
+         LOG_INF("PSM TauExt: %s", tau_ext);
+      }
+      if (tau) {
+         LOG_INF("PSM Tau: %s", tau);
       }
    }
 
@@ -1589,15 +1661,15 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
       LOG_INF("CGDCONT: %s", buf);
       // skip 1 parameter "...", find start of 3th parameter.
       cur = parse_next_chars(buf, '"', 3);
-      if (cur) {
-         // copy apn
-         cur += parse_strncpy(temp.apn, cur, '"', sizeof(temp.apn));
+      if (*cur) {
+         // apn
+         cur = parse_next_text(cur, '"', temp.apn, sizeof(temp.apn));
       }
       // skip 1 ", find start of 4th parameter.
       cur = parse_next_chars(cur, '"', 1);
-      if (cur) {
+      if (*cur) {
          // copy ip
-         cur += parse_strncpy(temp.local_ip, cur, '"', sizeof(temp.local_ip));
+         cur = parse_next_text(cur, '"', temp.local_ip, sizeof(temp.local_ip));
          temp.pdn_active = temp.local_ip[0] ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
       }
    }
@@ -1610,8 +1682,12 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
    temp.plmn_lock = network_info.plmn_lock;
    temp.sleeping = network_info.sleeping;
    network_info = temp;
-   ce_info.rsrp = rsrp;
-   ce_info.snr = snr;
+   if (rsrp != NONE_SIGNAL_VALUE) {
+      ce_info.rsrp = rsrp;
+   }
+   if (snr != NONE_SIGNAL_VALUE) {
+      ce_info.snr = snr;
+   }
    if (callbacks) {
       network_info.registered = LTE_NETWORK_STATE_INIT;
       network_info.rrc_active = LTE_NETWORK_STATE_INIT;
@@ -1702,21 +1778,31 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
 int modem_set_psm(int16_t active_time_s)
 {
 #ifdef CONFIG_UDP_PSM_ENABLE
-   if (active_time_s < 0) {
-      LOG_INF("PSM disable");
-      atomic_set(&psm_rat, -1);
-      return lte_lc_psm_req(false);
-   } else {
-      int previous_rat = atomic_set(&psm_rat, active_time_s);
-      if (previous_rat != active_time_s) {
+   int current;
+   if (active_time_s < -1) {
+      active_time_s = -1;
+   }
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   current = psm_rat;
+   if (-2 <= psm_rat) {
+      psm_rat = active_time_s;
+   }
+   k_mutex_unlock(&lte_mutex);
+   if (-2 <= current && current != active_time_s) {
+      if (active_time_s < 0) {
+         LOG_INF("PSM disable");
+         return lte_lc_psm_req(false);
+      } else {
          char rat[9] = "00000000";
          int mul = 2;
          // 2s
          active_time_s /= 2;
          if (active_time_s > 31) {
+            // 60s
             active_time_s /= 30;
             mul = 60;
             if (active_time_s > 31) {
+               // 360s
                active_time_s /= 6;
                mul = 360;
                rat[1] = '1';
@@ -1724,14 +1810,13 @@ int modem_set_psm(int16_t active_time_s)
                rat[2] = '1';
             }
          }
-         printBin(&rat[3], 5, active_time_s);
+         print_bin(&rat[3], 5, active_time_s);
          lte_lc_psm_param_set(CONFIG_LTE_PSM_REQ_RPTAU, rat);
          LOG_INF("PSM enable, act: %d s", active_time_s * mul);
          return lte_lc_psm_req(true);
-      } else {
-         return 0;
       }
    }
+   return 0;
 #else
    (void)active_time_s;
    return 0;
@@ -1812,6 +1897,94 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
    LOG_INF("No AS nor CP RAI mode configured!");
 #endif
    return err;
+}
+
+int modem_set_edrx(int16_t edrx_time_s)
+{
+   int res = 0;
+   int res2 = 0;
+   int edrx_code = 0;
+   char edrx[5] = "0000";
+   int edrx_mul = 1;
+   if (edrx_time_s == 0) {
+      LOG_INF("eDRX off");
+      res = modem_at_cmd(NULL, 0, NULL, "AT+CEDRXS=0");
+      if (res >= 0) {
+         k_mutex_lock(&lte_mutex, K_FOREVER);
+         edrx_status.mode = LTE_LC_LTE_MODE_NONE;
+         k_mutex_unlock(&lte_mutex);
+      }
+      return res;
+   } else if (edrx_time_s < 6) {
+      edrx_code = 0;
+   } else if (edrx_time_s < 11) {
+      edrx_code = 1;
+      edrx_mul = 2;
+   } else if (edrx_time_s < 21) {
+      edrx_code = 2;
+      edrx_mul = 4;
+   } else if (edrx_time_s < 41) {
+      edrx_code = 3;
+      edrx_mul = 8;
+   } else if (edrx_time_s < 62) {
+      edrx_code = 4;
+      edrx_mul = 12;
+   } else if (edrx_time_s < 82) {
+      edrx_code = 5;
+      edrx_mul = 16;
+   } else if (edrx_time_s < 103) {
+      edrx_code = 6;
+      edrx_mul = 20;
+   } else if (edrx_time_s < 123) {
+      edrx_code = 7;
+      edrx_mul = 24;
+   } else if (edrx_time_s < 144) {
+      edrx_code = 8;
+      edrx_mul = 28;
+   } else if (edrx_time_s < 164) {
+      edrx_code = 9;
+      edrx_mul = 32;
+   } else if (edrx_time_s < 328) {
+      edrx_code = 10;
+      edrx_mul = 64;
+   } else if (edrx_time_s < 656) {
+      edrx_code = 11;
+      edrx_mul = 128;
+   } else if (edrx_time_s < 1311) {
+      edrx_code = 12;
+      edrx_mul = 256;
+   } else if (edrx_time_s < 2622) {
+      edrx_code = 13;
+      edrx_mul = 512;
+   } else if (edrx_time_s < 5243) {
+      edrx_code = 14;
+      edrx_mul = 1024;
+   } else {
+      edrx_code = 15;
+      edrx_mul = 2048;
+   }
+   print_bin(edrx, 4, edrx_code);
+   LOG_INF("eDRX enable, %.2f s", 5.12F * edrx_mul);
+   res2 = modem_at_cmdf(NULL, 0, NULL, "AT+CEDRXS=2,5,\"%s\"", edrx);
+   res = modem_at_cmdf(NULL, 0, NULL, "AT+CEDRXS=2,4,\"%s\"", edrx);
+   if (res2 < 0) {
+      return res2;
+   }
+   return res;
+}
+
+void modem_lock_psm(bool on)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   psm_rat = on ? -3 : -2;
+   k_mutex_unlock(&lte_mutex);
+}
+
+void modem_lock_plmn(bool on)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   network_info.plmn_lock = on ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
+   k_mutex_unlock(&lte_mutex);
 }
 
 int modem_set_offline(void)

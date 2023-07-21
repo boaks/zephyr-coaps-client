@@ -29,7 +29,6 @@
 
 #include <modem/at_monitor.h>
 #include <modem_at.h>
-#include <nrf_errno.h>
 
 #include "appl_diagnose.h"
 #include "coap_client.h"
@@ -361,7 +360,7 @@ static void uart_monitor_handler(const char *notif)
       len = strstart(notif, "+CEREG:", false);
       if (len > 0) {
          const char *cur = parse_next_chars(notif + len, ',', 4);
-         if (cur && strstart(cur, "0,", false)) {
+         if (*cur && strstart(cur, "0,", false)) {
             LOG_INF("LTE +CEREG: rejected, cause %d", atoi(cur + 2));
          }
       }
@@ -424,10 +423,13 @@ static void at_cmd_result(int res)
       if (res < -1) {
          const char *desc;
          switch (res) {
-            case -NRF_EFAULT:
+            case -EFAULT:
                desc = " (off)";
                break;
-            case -NRF_EINPROGRESS:
+            case -EINVAL:
+               desc = " (invalid parameter)";
+               break;
+            case -EINPROGRESS:
                desc = " (in progress)";
                break;
             default:
@@ -518,6 +520,20 @@ static int at_cmd_send()
       return RESULT(res);
    }
 
+   i = strstart(at_cmd_buf, "psm", true);
+   if (i > 0) {
+      uart_tx_pause(false);
+      res = modem_cmd_psm(&at_cmd_buf[i]);
+      return RESULT(res);
+   }
+
+   i = strstart(at_cmd_buf, "edrx", true);
+   if (i > 0) {
+      uart_tx_pause(false);
+      res = modem_cmd_edrx(&at_cmd_buf[i]);
+      return RESULT(res);
+   }
+
 #ifdef CONFIG_SMS
    i = strstart(at_cmd_buf, "sms", true);
    if (i > 0) {
@@ -574,10 +590,12 @@ static int at_cmd()
       LOG_INF("  cfg    : configure modem.(*?)");
       LOG_INF("  con    : connect modem.(*?)");
       LOG_INF("  dev    : read device info.");
+      LOG_INF("  edrx   : configure eDRX.(*?)");
       LOG_INF("  env    : read environment sensor.");
       LOG_INF("  net    : read network info.");
       LOG_INF("  on     : switch modem on.(*)");
       LOG_INF("  off    : switch modem off.(*)");
+      LOG_INF("  psm    : configure PSM.(*?)");
       LOG_INF("  reset  : modem factory reset.(*)");
       LOG_INF("  reboot : reboot device.");
       LOG_INF("  scan   : network scan.(*?)");
@@ -597,6 +615,10 @@ static int at_cmd()
             modem_cmd_config_help();
          } else if (!stricmp(&at_cmd_buf[i], "con")) {
             modem_cmd_connect_help();
+         } else if (!stricmp(&at_cmd_buf[i], "edrx")) {
+            modem_cmd_edrx_help();
+         } else if (!stricmp(&at_cmd_buf[i], "psm")) {
+            modem_cmd_psm_help();
          } else if (!stricmp(&at_cmd_buf[i], "scan")) {
             modem_cmd_scan_help();
 #ifdef CONFIG_SMS

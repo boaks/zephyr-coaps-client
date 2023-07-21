@@ -18,15 +18,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+void print_bin(char *buf, size_t bits, int val);
+
 const char *parse_next_char(const char *value, char sep);
 
 const char *parse_next_chars(const char *value, char sep, int count);
 
-int parse_strncpy(char *buf, const char *value, char end, int size);
+const char *parse_next_long(const char *value, int base, long* result);
 
-const uint8_t *parse_next_byte(const uint8_t *value, uint16_t len, uint8_t sep);
+const char *parse_next_long_text(const char *value, char sep, int base, long *result);
 
-int parse_memncpy(uint8_t *buf, const uint8_t *value, uint16_t len, uint8_t end, uint16_t size);
+const char *parse_next_text(const char *value, char sep, char* result, size_t len);
 
 int strstart(const char *value, const char *head, bool ignoreCase);
 

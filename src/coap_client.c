@@ -465,7 +465,7 @@ int coap_client_prepare_net_info(char *buf, size_t len)
                         modem_get_registration_short_description(params.network_info.status));
       if (params.network_info.registered) {
          index += snprintf(buf + index, len - index, ",Band %d", params.network_info.band);
-         if (params.network_info.plmn_lock) {
+         if (params.network_info.plmn_lock == LTE_NETWORK_STATE_ON) {
             index += snprintf(buf + index, len - index, ",#PLMN %s", params.network_info.provider);
          } else {
             index += snprintf(buf + index, len - index, ",PLMN %s", params.network_info.provider);

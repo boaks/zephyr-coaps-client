@@ -63,9 +63,9 @@ int modem_cmd_config(const char *config)
       while (*cur == ' ') {
          ++cur;
       }
-      cur += parse_strncpy(value1, cur, ' ', sizeof(value1));
-      cur += parse_strncpy(value2, cur, ' ', sizeof(value2));
-      cur += parse_strncpy(value3, cur, ' ', sizeof(value3));
+      cur = parse_next_text(cur, ' ', value1, sizeof(value1));
+      cur = parse_next_text(cur, ' ', value2, sizeof(value2));
+      cur = parse_next_text(cur, ' ', value3, sizeof(value3));
       if (!value1[0]) {
          char mode = 0;
          char type = 0;
@@ -197,8 +197,14 @@ int modem_cmd_config(const char *config)
       }
       if (!stricmp("auto", value1)) {
          err = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS=0");
+         if (err >= 0) {
+            modem_lock_plmn(false);
+         }
       } else {
          err = modem_at_cmdf(buf, sizeof(buf), "+COPS: ", "AT+COPS=1,2,\"%s\"", value1);
+         if (err >= 0) {
+            modem_lock_plmn(true);
+         }
       }
       if (err < 0) {
          LOG_WRN("AT+COPS failed, err %d", err);
@@ -241,8 +247,8 @@ int modem_cmd_connect(const char *config)
    while (*cur == ' ') {
       ++cur;
    }
-   cur += parse_strncpy(value1, cur, ' ', sizeof(value1));
-   cur += parse_strncpy(value2, cur, ' ', sizeof(value2));
+   cur = parse_next_text(cur, ' ', value1, sizeof(value1));
+   cur = parse_next_text(cur, ' ', value2, sizeof(value2));
    if (!modem_is_plmn(value1)) {
       LOG_INF("con %s", config);
       LOG_INF("plmn '%s' not supported, only numerical plmn.", value1);
@@ -267,6 +273,7 @@ int modem_cmd_connect(const char *config)
       LOG_WRN("AT+COPS failed, err %d", err);
    } else {
       err = 1;
+      modem_lock_plmn(true);
    }
    if (value2[0]) {
       LOG_INF(">> con %s %s ready", value1, value2);
@@ -341,12 +348,12 @@ int modem_cmd_sms(const char *config)
    while (*cur == ' ') {
       ++cur;
    }
-   cur += parse_strncpy(destination, cur, ' ', sizeof(destination));
+   cur = parse_next_text(cur, ' ', destination, sizeof(destination));
    modem_set_psm(120);
    if (destination[0]) {
       return sms_send_text(destination, cur);
    } else {
-      return 0;
+      return -EINVAL;
    }
 }
 
@@ -361,6 +368,146 @@ void modem_cmd_sms_help(void)
 
 #endif
 
+int modem_cmd_psm(const char *config)
+{
+   unsigned int active_time = 0;
+   unsigned int tau_time = 0;
+   char tau_unit = 's';
+   int err = sscanf(config, "%u %u%c", &active_time, &tau_time, &tau_unit);
+   if (err >= 2) {
+      char rat[9] = "00000000";
+      char tau[9] = "00000000";
+      int rat_mul = 2;
+      int tau_mul = 2;
+      int tau_unit_id = 0x3;
+      // requested active time
+      // 2s
+      active_time /= 2;
+      if (active_time > 31) {
+         // 60s
+         active_time /= 30;
+         rat_mul = 60;
+         if (active_time > 31) {
+            // 360s
+            active_time /= 6;
+            rat_mul = 360;
+            rat[1] = '1';
+         } else {
+            rat[2] = '1';
+         }
+      }
+      print_bin(&rat[3], 5, active_time);
+      // requested tracking aree update time
+      // 2s
+      if (tau_unit == 'h') {
+         tau_time *= 3600;
+      }
+      tau_time /= 2;
+      if (tau_time > 31) {
+         // 30s
+         tau_time /= 15;
+         tau_mul = 30;
+         tau_unit_id = 0x4;
+         if (tau_time > 31) {
+            // 60s
+            tau_time /= 2;
+            tau_mul = 60;
+            tau_unit_id = 0x5;
+            if (tau_time > 31) {
+               // 600s
+               tau_time /= 10;
+               tau_mul = 600;
+               tau_unit_id = 0;
+               if (tau_time > 31) {
+                  // 3600s / 1h
+                  tau_time /= 6;
+                  tau_mul = 3600;
+                  tau_unit_id = 1;
+                  if (tau_time > 31) {
+                     // 36000s / 10h
+                     tau_time /= 10;
+                     tau_mul = 36000;
+                     tau_unit_id = 2;
+                     if (tau_time > 31) {
+                        // 320h
+                        tau_time /= 32;
+                        tau_mul = 36000 * 32;
+                        tau_unit_id = 6;
+                     }
+                  }
+               }
+            }
+         }
+      }
+      print_bin(&tau[0], 3, tau_unit_id);
+      print_bin(&tau[3], 5, tau_time);
+
+      if (tau_unit == 'h') {
+         LOG_INF("PSM enable, act: %d s, tau: %d h", active_time * rat_mul, (tau_time * tau_mul) / 3600);
+      } else {
+         LOG_INF("PSM enable, act: %d s, tau: %d s", active_time * rat_mul, tau_time * tau_mul);
+      }
+      modem_lock_psm(true);
+      lte_lc_psm_param_set(tau, rat);
+      return lte_lc_psm_req(true);
+   } else {
+      char value[8];
+      const char *cur = config;
+
+      memset(value, 0, sizeof(value));
+      while (*cur == ' ') {
+         ++cur;
+      }
+      cur = parse_next_text(cur, ' ', value, sizeof(value));
+      if (!stricmp("normal", value)) {
+         modem_lock_psm(false);
+         return modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
+      }
+   }
+   return -EINVAL;
+}
+
+void modem_cmd_psm_help(void)
+{
+   LOG_INF("> help psm:");
+   LOG_INF("  psm <act-time> <tau-time>[h] : request PSM times.");
+   LOG_INF("     <act-time>    : active time in s.");
+   LOG_INF("     <tau-time>    : tracking area update time in s.");
+   LOG_INF("     <tau-time>h   : tracking area update time in h.");
+   LOG_INF("  psm normal       : PSM handled by application.");
+}
+
+int modem_cmd_edrx(const char *config)
+{
+   int edrx_time = 0;
+   int err = sscanf(config, "%d", &edrx_time);
+   if (err == 1) {
+      return modem_set_edrx(edrx_time);
+   } else {
+      char value[5];
+      const char *cur = config;
+
+      memset(value, 0, sizeof(value));
+      while (*cur == ' ') {
+         ++cur;
+      }
+      cur = parse_next_text(cur, ' ', value, sizeof(value));
+      if (!stricmp("off", value)) {
+         return modem_set_edrx(0);
+      }
+   }
+   return -EINVAL;
+}
+
+void modem_cmd_edrx_help(void)
+{
+   LOG_INF("> help edrx:");
+   LOG_INF("  edrx <edrx-time> : request eDRX time.");
+   LOG_INF("     <edrx-time>   : eDRX time in s.");
+   LOG_INF("                   : 0 to disable eDRX.");
+   LOG_INF("  edrx off         : disable eDRX.");
+}
+
 #else
 
 int modem_config(const char *config)
@@ -371,6 +518,62 @@ int modem_config(const char *config)
 
 void modem_cmd_config_help(void)
 {
+   LOG_WRN("> 'cfg' not supported!");
+}
+
+int modem_cmd_connect(const char *config)
+{
+   (void)config;
+   return 0;
+}
+
+void modem_cmd_connect_help(void)
+{
+   LOG_WRN("> 'con' not supported!");
+}
+
+int modem_cmd_scan(const char *config)
+{
+   (void)config;
+   return 0;
+}
+
+void modem_cmd_scan_help(void)
+{
+   LOG_WRN("> 'scan' not supported!");
+}
+
+int modem_cmd_sms(const char *config)
+{
+   (void)config;
+   return 0;
+}
+
+void modem_cmd_sms_help(void)
+{
+   LOG_WRN("> 'sms' not supported!");
+}
+
+int modem_cmd_psm(const char *config)
+{
+   (void)config;
+   return 0;
+}
+
+void modem_cmd_psm_help(void)
+{
+   LOG_WRN("> 'psm' not supported!");
+}
+
+int modem_cmd_edrx(const char *config)
+{
+   (void)config;
+   return 0;
+}
+
+void modem_cmd_edrx_help(void)
+{
+   LOG_WRN("> 'edrx' not supported!");
 }
 
 #endif

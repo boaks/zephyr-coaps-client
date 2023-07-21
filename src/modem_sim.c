@@ -56,10 +56,12 @@ static const char *find_id(const char *buf, const char *id)
  */
 
 // #define CONFIG_USER_PLMN_SELECTOR "62F2204000"
-// #define CONFIG_FORBIDDEN_PLMN "62F240FFFFFFFFFFFFFFFFFFFFFFFF"
+// #define CONFIG_FORBIDDEN_PLMN "62F240FFFFFFFFFFFFFFFFFF"
+
+// #define CONFIG_USER_PLMN_SELECTOR "FFFFFF0000"
+// #define CONFIG_FORBIDDEN_PLMN "FFFFFFFFFFFFFFFFFFFFFFFF"
 
 #define CRSM_SUCCESS "144,0,\""
-#define CRSM_SUCCESS_LEN (sizeof(CRSM_SUCCESS) - 1)
 
 static size_t copy_plmn(const char *buf, char *plmn, size_t len, const char *mcc)
 {
@@ -128,10 +130,7 @@ static bool has_service(const char *service_table, size_t len, int service)
    int flags;
    int bit;
 
-   if (strncmp(service_table, CRSM_SUCCESS, CRSM_SUCCESS_LEN)) {
-      return false;
-   }
-   index = CRSM_SUCCESS_LEN + (service / 8) * 2;
+   index = (service / 8) * 2;
    LOG_DBG("Service %d, idx %d", service, index);
    if (index + 1 > len) {
       return false;
@@ -163,12 +162,13 @@ static size_t find_plmns(const char *list, size_t len, char *plmn, size_t plmn_s
    int select = 0;
    char access[MODEM_PLMN_SELECTOR_SIZE];
 
-   if (strncmp(list, CRSM_SUCCESS, CRSM_SUCCESS_LEN)) {
+   int success = strstart(list, CRSM_SUCCESS, false);
+   if (!success) {
       return 0;
    }
 
-   list += CRSM_SUCCESS_LEN;
-   len -= CRSM_SUCCESS_LEN;
+   list += success;
+   len -= success;
    access[MODEM_PLMN_SELECTOR_SIZE - 1] = 0;
    while (*list && *list != '"' &&
           len >= (MODEM_PLMN_SELECTOR_SIZE - 1) &&
@@ -204,12 +204,13 @@ static size_t get_plmns(const char *list, size_t len, char *plmn, size_t plmn_si
    size_t result = 0;
    int err = 0;
 
-   if (strncmp(list, CRSM_SUCCESS, CRSM_SUCCESS_LEN)) {
+   int success = strstart(list, CRSM_SUCCESS, false);
+   if (!success) {
       return 0;
    }
 
-   list += CRSM_SUCCESS_LEN;
-   len -= CRSM_SUCCESS_LEN;
+   list += success;
+   len -= success;
    while (*list && *list != '"' &&
           len >= (MODEM_PLMN_SIZE - 1) &&
           plmn_size >= MODEM_PLMN_SIZE) {
@@ -255,31 +256,38 @@ static void modem_sim_read(bool init)
    char c_plmn[MODEM_PLMN_SIZE];
    char mcc[4];
    int retries = 0;
-   int err = 0;
+   int res = 0;
+   int start = 0;
+   bool locked = false;
 
    if (init) {
-      err = modem_at_lock_no_warn(K_FOREVER);
-      if (err == -EBUSY) {
+      res = modem_at_lock_no_warn(K_FOREVER);
+      if (res == -EBUSY) {
          return;
       }
+      locked = true;
    }
-   err = modem_at_cmd(buf, sizeof(buf), "%XICCID: ", "AT%XICCID");
-   if (err == -EBUSY) {
+   res = modem_at_cmd(buf, sizeof(buf), "%XICCID: ", "AT%XICCID");
+   if (res == -EBUSY) {
+      if (locked) {
+         modem_at_unlock();
+      }
       return;
    }
-   while (err < 0 && retries < MAX_SIM_RETRIES) {
+   while (res < 0 && retries < MAX_SIM_RETRIES) {
       ++retries;
       k_sleep(K_MSEC(300));
-      if (init && retries == MAX_SIM_RETRIES) {
+      if (locked && retries == MAX_SIM_RETRIES) {
          modem_at_unlock();
-         init = false;
+         locked = false;
       }
-      err = modem_at_cmd(buf, sizeof(buf), "%XICCID: ", "AT%XICCID");
+      res = modem_at_cmd(buf, sizeof(buf), "%XICCID: ", "AT%XICCID");
    }
-   if (init) {
+   if (locked) {
       modem_at_unlock();
+      locked = false;
    }
-   if (err < 0) {
+   if (res < 0) {
       LOG_INF("Failed to read ICCID.");
       return;
    } else {
@@ -301,8 +309,36 @@ static void modem_sim_read(bool init)
          LOG_INF("iccid: %s", buf);
       }
    }
-   err = modem_at_cmdf(buf, sizeof(buf), NULL, "AT+CIMI");
-   if (err < 0) {
+
+   if (init) {
+      res = modem_at_lock_no_warn(K_FOREVER);
+      if (res == -EBUSY) {
+         return;
+      }
+      locked = true;
+   }
+   res = modem_at_cmdf(buf, sizeof(buf), NULL, "AT+CIMI");
+   if (res == -EBUSY) {
+      if (locked) {
+         modem_at_unlock();
+      }
+      return;
+   }
+   while (res < 0 && retries < MAX_SIM_RETRIES) {
+      ++retries;
+      k_sleep(K_MSEC(300));
+      if (locked && retries == MAX_SIM_RETRIES) {
+         modem_at_unlock();
+         locked = false;
+      }
+      res = modem_at_cmdf(buf, sizeof(buf), NULL, "AT+CIMI");
+   }
+   if (locked) {
+      modem_at_unlock();
+      locked = false;
+   }
+
+   if (res < 0) {
       LOG_INF("Failed to read IMSI.");
       return;
    } else {
@@ -329,15 +365,16 @@ static void modem_sim_read(bool init)
    }
 
    /* 0x6FAD, check for eDRX SIM suspend support*/
-   err = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28589,0,0,0");
-   if (err < 0) {
+   res = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28589,0,0,0");
+   if (res < 0) {
       LOG_INF("Failed to read CRSM eDRX.");
       return;
    } else {
       LOG_DBG("CRSM eDRX: %s", buf);
-      if (strncmp(buf, CRSM_SUCCESS, CRSM_SUCCESS_LEN) == 0) {
+      res = strstart(buf, CRSM_SUCCESS, false);
+      if (res) {
          // successful read
-         char n = buf[CRSM_SUCCESS_LEN + 6]; // byte 3, low nibble
+         char n = buf[res + 6]; // byte 3, low nibble
          if (n > '7') {
             LOG_INF("eDRX cycle supported.");
          } else {
@@ -350,15 +387,16 @@ static void modem_sim_read(bool init)
    }
 
    /* 0x6F31, Higher Priority PLMN search period */
-   err = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28465,0,0,0");
-   if (err < 0) {
+   res = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28465,0,0,0");
+   if (res < 0) {
       LOG_INF("Failed to read CRSM HPPLMN period.");
       return;
    } else {
       LOG_DBG("CRSM hpplmn: %s", buf);
-      if (strncmp(buf, CRSM_SUCCESS, CRSM_SUCCESS_LEN) == 0) {
+      res = strstart(buf, CRSM_SUCCESS, false);
+      if (res) {
          // successful read
-         int interval = (int)strtol(&buf[CRSM_SUCCESS_LEN], NULL, 16);
+         int interval = (int)strtol(&buf[res], NULL, 16);
          interval *= 2;
          if (interval > 80) {
             interval *= 2;
@@ -374,38 +412,41 @@ static void modem_sim_read(bool init)
    }
 
    /* 0x6F38, Service table */
-   err = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28472,0,0,40");
-   if (err < 0) {
+   res = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28472,0,0,40");
+   if (res < 0) {
       LOG_INF("Failed to read CRSM service table.");
       return;
    } else {
       LOG_DBG("CRSM service table: %s", buf);
-      if (strncmp(buf, CRSM_SUCCESS, CRSM_SUCCESS_LEN) == 0) {
+      start = strstart(buf, CRSM_SUCCESS, false);
+      if (start) {
+         char *table = &buf[start];
          /* user controlled PLMN selector */
-         service = check_service(service, SERVICE_20_BIT, buf, err, 20);
+         res -= start;
+         service = check_service(service, SERVICE_20_BIT, table, res, 20);
          /* operator controlled PLMN selector */
-         service = check_service(service, SERVICE_42_BIT, buf, err, 42);
+         service = check_service(service, SERVICE_42_BIT, table, res, 42);
          /* Home PLMN selector */
-         service = check_service(service, SERVICE_43_BIT, buf, err, 43);
+         service = check_service(service, SERVICE_43_BIT, table, res, 43);
          /* Mailbox Dialling Numbers */
-         service = check_service(service, SERVICE_47_BIT, buf, err, 47);
+         service = check_service(service, SERVICE_47_BIT, table, res, 47);
          /* Equivalent Home PLMN */
-         service = check_service(service, SERVICE_71_BIT, buf, err, 71);
+         service = check_service(service, SERVICE_71_BIT, table, res, 71);
          /* Non Access Stratum Configuration */
-         service = check_service(service, SERVICE_96_BIT, buf, err, 96);
+         service = check_service(service, SERVICE_96_BIT, table, res, 96);
       }
    }
 
    if (service & SERVICE_71_BIT) {
       /* 0x6FD9, Serv. 71, equivalent H(ome)PLMN, 15*3 */
-      err = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28633,0,0,%d", MAX_PLMNS * 3);
-      if (err < 0) {
+      res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28633,0,0,%d", MAX_PLMNS * 3);
+      if (res < 0) {
          LOG_INF("Failed to read CRSM eq. home plmn.");
          return;
       } else {
          LOG_DBG("CRSM eq. home plmn: %s", buf);
-         err = get_plmns(buf, err, temp, sizeof(temp));
-         if (err) {
+         res = get_plmns(buf, res, temp, sizeof(temp));
+         if (res) {
             LOG_INF("CRSM eq. home plmn: %s", temp);
          } else {
             LOG_INF("CRSM no eq. home plmn");
@@ -421,14 +462,14 @@ static void modem_sim_read(bool init)
        * 0x6F62, Serv. 43, H(ome)PLMN selector, 15*5,
        * only used to determine access technology for (Equivalent)H(ome)PLMN
        */
-      err = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28514,0,0,%d", MAX_PLMNS * 5);
-      if (err < 0) {
+      res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28514,0,0,%d", MAX_PLMNS * 5);
+      if (res < 0) {
          LOG_INF("Failed to read CRSM home plmn sel.");
          return;
       } else {
          LOG_DBG("CRSM home plmn sel: %s", buf);
-         err = find_plmns(buf, err, temp, sizeof(temp));
-         if (err) {
+         res = find_plmns(buf, res, temp, sizeof(temp));
+         if (res) {
             LOG_INF("CRSM home plmn sel: %s", temp);
             if (!plmn[0]) {
                copy_plmn(temp, plmn, sizeof(plmn), NULL);
@@ -443,33 +484,35 @@ static void modem_sim_read(bool init)
    }
    if (service & SERVICE_20_BIT) {
       /* 0x6F60, Serv. 20, User controlled PLMN selector, 15*5 */
-      err = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28512,0,0,%d", MAX_PLMNS * 5);
-      if (err < 0) {
+      res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28512,0,0,%d", MAX_PLMNS * 5);
+      if (res < 0) {
          LOG_INF("Failed to read CRSM user plmn sel.");
          return;
       } else {
          LOG_DBG("CRSM user plmn sel: %s", buf);
 #ifdef CONFIG_USER_PLMN_SELECTOR
-         if (strncmp(buf, CRSM_SUCCESS, CRSM_SUCCESS_LEN) == 0) {
+         start = strstart(buf, CRSM_SUCCESS, false);
+         if (start) {
             int len = strlen(CONFIG_USER_PLMN_SELECTOR);
-            if (len > (err - CRSM_SUCCESS_LEN - 1)) {
-               len = err - CRSM_SUCCESS_LEN - 1;
+            int comp_len = res - start - 1;
+            if (len < comp_len) {
+               comp_len = len;
             }
-            if (strncmp(buf + CRSM_SUCCESS_LEN, CONFIG_USER_PLMN_SELECTOR, len) != 0) {
-               err = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=214,28512,0,0,%d,\"%s\"", len / 2, CONFIG_USER_PLMN_SELECTOR);
-               if (!err) {
-                  if (strncmp(buf, CRSM_SUCCESS, CRSM_SUCCESS_LEN) == 0) {
+            if (strncmp(buf + start, CONFIG_USER_PLMN_SELECTOR, comp_len) != 0) {
+               res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=214,28512,0,0,%d,\"%s\"", len / 2, CONFIG_USER_PLMN_SELECTOR);
+               if (res >= 0) {
+                  if (strstart(buf, CRSM_SUCCESS, false)) {
                      LOG_INF("CRSM user plmn sel written.");
                   } else {
                      LOG_WRN("CRSM user plmn sel not written.");
                   }
                }
-               err = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28512,0,0,%d", MAX_PLMNS * 5);
+               res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28512,0,0,%d", MAX_PLMNS * 5);
             }
          }
 #endif
-         err = find_plmns(buf, err, temp, sizeof(temp));
-         if (err) {
+         res = find_plmns(buf, res, temp, sizeof(temp));
+         if (res) {
             LOG_INF("CRSM user plmn sel: %s", temp);
             if (!plmn[0]) {
                copy_plmn(temp, plmn, sizeof(plmn), NULL);
@@ -485,14 +528,14 @@ static void modem_sim_read(bool init)
 
    if (service & SERVICE_42_BIT) {
       /* 0x6F61, Serv. 42, Operator controlled PLMN selector, 15*5 */
-      err = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28513,0,0,%d", MAX_PLMNS * 5);
-      if (err < 0) {
+      res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28513,0,0,%d", MAX_PLMNS * 5);
+      if (res < 0) {
          LOG_INF("Failed to read CRSM operator plmn sel.");
          return;
       } else {
          LOG_DBG("CRSM operator plmn sel: %s", buf);
-         err = find_plmns(buf, err, temp, sizeof(temp));
-         if (err) {
+         res = find_plmns(buf, res, temp, sizeof(temp));
+         if (res) {
             LOG_INF("CRSM operator plmn sel: %s", temp);
             if (!plmn[0]) {
                copy_plmn(temp, plmn, sizeof(plmn), NULL);
@@ -530,35 +573,39 @@ static void modem_sim_read(bool init)
    }
 
    /* 0x6F7B, Forbidden PLMNs, 15*3 */
-   err = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28539,0,0,%d", MAX_PLMNS * 3);
-   if (err < 0) {
+   res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28539,0,0,%d", MAX_PLMNS * 3);
+   if (res < 0) {
       LOG_INF("Failed to read CRSM forbidden plmn.");
       return;
    } else {
       LOG_DBG("CRSM forbidden plmn: %s", buf);
 #ifdef CONFIG_FORBIDDEN_PLMN
-      int len = strlen(CONFIG_FORBIDDEN_PLMN);
-      if (len > (err - CRSM_SUCCESS_LEN - 1)) {
-         len = err - CRSM_SUCCESS_LEN - 1;
-      }
-      if (strncmp(buf + CRSM_SUCCESS_LEN, CONFIG_FORBIDDEN_PLMN, len) != 0) {
-         err = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=214,28539,0,0,%d,\"%s\"", len / 2, CONFIG_FORBIDDEN_PLMN);
-         if (!err) {
-            if (strncmp(buf, CRSM_SUCCESS, CRSM_SUCCESS_LEN) == 0) {
-               LOG_INF("Forbidden PLMN written (%d bytes).", len);
-            } else {
-               LOG_WRN("Forbidden PLMN not written (%d bytes).", len);
-            }
+      start = strstart(buf, CRSM_SUCCESS, false);
+      if (start) {
+         int len = strlen(CONFIG_FORBIDDEN_PLMN);
+         int comp_len = res - start - 1;
+         if (len < comp_len) {
+            comp_len = len;
          }
-         err = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28539,0,0,%d", MAX_PLMNS * 3);
-         if (err > 0) {
-            LOG_INF("CRSM forbidden plmn: %s", buf);
+         if (strncmp(buf + start, CONFIG_FORBIDDEN_PLMN, comp_len) != 0) {
+            res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=214,28539,0,0,%d,\"%s\"", len / 2, CONFIG_FORBIDDEN_PLMN);
+            if (res >= 0) {
+               if (strstart(buf, CRSM_SUCCESS, false)) {
+                  LOG_INF("Forbidden PLMN written (%d bytes).", len);
+               } else {
+                  LOG_WRN("Forbidden PLMN not written (%d bytes).", len);
+               }
+            }
+            res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28539,0,0,%d", MAX_PLMNS * 3);
+            if (res > 0) {
+               LOG_INF("CRSM forbidden plmn: %s", buf);
+            }
          }
       }
 #endif
       memset(plmn, 0, sizeof(plmn));
-      err = get_plmns(buf, err, temp, sizeof(temp));
-      if (err) {
+      res = get_plmns(buf, res, temp, sizeof(temp));
+      if (res) {
          LOG_INF("CRSM forbidden plmn: %s", temp);
          if (!copy_plmn(temp, plmn, sizeof(plmn), mcc)) {
             copy_plmn(temp, plmn, sizeof(plmn), NULL);
@@ -573,12 +620,13 @@ static void modem_sim_read(bool init)
 
    if (service & SERVICE_47_BIT) {
       /* 0x6FC8, Serv. 47, Mailbox Dialling Numbers */
-      err = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=178,28616,1,4,13");
-      if (err < 0) {
+      res = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=178,28616,1,4,13");
+      if (res < 0) {
          LOG_INF("Failed to read CRSM MBDN/EXT6.");
          return;
       } else {
-         if (strncmp(buf, CRSM_SUCCESS, CRSM_SUCCESS_LEN) == 0) {
+         start = strstart(buf, CRSM_SUCCESS, false);
+         if (start) {
             LOG_INF("CRSM MBDN/EXT6: %s", buf);
          } else {
             service &= ~SERVICE_47_BIT;
@@ -588,8 +636,8 @@ static void modem_sim_read(bool init)
 
    if (service & SERVICE_96_BIT) {
       /* 0x6FE8, Serv. 96, NAS Config */
-      err = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28648,0,0,%d", MAX_SIM_BYTES);
-      if (err < 0) {
+      res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28648,0,0,%d", MAX_SIM_BYTES);
+      if (res < 0) {
          LOG_INF("Failed to read CRSM NAS config.");
          return;
       } else {

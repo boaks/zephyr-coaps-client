@@ -12,88 +12,97 @@
  */
 
 #include <ctype.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "parse.h"
 
-const char *parse_next_char(const char *value, char sep)
+void print_bin(char *buf, size_t bits, int val)
 {
-   if (value) {
-      while (*value && *value != sep) {
-         ++value;
-      }
-      if (*value == sep) {
-         ++value;
-         if (*value) {
-            return value;
-         }
+   for (int bit = 0; bit < bits; ++bit) {
+      if (val & (1 << (bits - 1 - bit))) {
+         buf[bit] = '1';
+      } else {
+         buf[bit] = '0';
       }
    }
-   return NULL;
+   buf[bits] = 0;
+}
+
+const char *parse_next_char(const char *value, char sep)
+{
+   if (!value) {
+      return value;
+   }
+   while (*value && *value != sep) {
+      ++value;
+   }
+   if (*value == sep) {
+      ++value;
+   }
+   return value;
 }
 
 const char *parse_next_chars(const char *value, char sep, int count)
 {
    for (int index = 0; index < count; ++index) {
       value = parse_next_char(value, sep);
+      if (*value == 0) {
+         break;
+      }
    }
    return value;
 }
 
-int parse_strncpy(char *buf, const char *value, char end, int size)
+const char *parse_next_long(const char *value, int base, long *result)
 {
-   char cur = 0;
-   int index;
-
-   for (index = 0;; ++index) {
-      cur = value[index];
-      if (!cur || cur == end) {
-         break;
-      }
+   char *t = NULL;
+   long l = strtol(value, &t, base);
+   if (value != t && result) {
+      *result = l;
    }
-   if (index < size) {
-      strncpy(buf, value, index);
-      buf[index] = 0;
-   } else {
-      strncpy(buf, value, size - 1);
-      buf[size - 1] = 0;
-   }
-   while (cur && cur == end) {
-      cur = value[++index];
-   }
-   return index;
+   return t;
 }
 
-const uint8_t *parse_next_byte(const uint8_t *value, uint16_t len, uint8_t sep)
+const char *parse_next_long_text(const char *value, char sep, int base, long *result)
 {
-   if (value) {
-      while (len > 0 && *value != sep) {
-         ++value;
-         --len;
-      }
-      if (*value == sep) {
-         ++value;
-         --len;
-         if (len > 0) {
-            return value;
-         }
-      }
+   char *t = NULL;
+   if (*value == sep) {
+      ++value;
    }
-   return NULL;
+   long l = strtol(value, &t, base);
+   if (value != t && result) {
+      *result = l;
+   }
+   if (*t == sep) {
+      ++t;
+   }
+   return t;
 }
 
-int parse_memncpy(uint8_t *buf, const uint8_t *value, uint16_t len, uint8_t end, uint16_t size)
+const char *parse_next_text(const char *value, char sep, char *result, size_t len)
 {
-   int index;
-   for (index = 0; index < size; ++index) {
-      char cur = *value;
-      if (index >= len || cur == end) {
-         break;
-      }
-      buf[index] = cur;
-      value++;
+   if (*value == sep) {
+      ++value;
    }
-   return index;
+   while (*value && *value != sep && len > 0) {
+      if (result) {
+         *result++ = *value;
+      }
+      ++value;
+      --len;
+   }
+   if (*value && *value == sep) {
+      ++value;
+   }
+   if (result) {
+      if (len > 0) {
+         *result = 0;
+      } else {
+         *(result - 1) = 0;
+      }
+   }
+   return value;
 }
 
 int strstart(const char *value, const char *head, bool ignoreCase)
