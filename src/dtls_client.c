@@ -206,7 +206,11 @@ static void reboot(int error, bool factoryReset)
 {
    // write error code, reboot in 120s
    appl_reboot(error, K_SECONDS(120));
+
+   atomic_set_bit(&general_states, PM_PREVENT_SUSPEND);
+   dtls_power_management();
    ui_led_op(LED_COLOR_RED, LED_BLINKING);
+
    modem_power_off();
    dtls_info("> modem off");
    if (factoryReset) {
