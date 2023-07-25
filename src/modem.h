@@ -168,6 +168,8 @@ int modem_set_edrx(int16_t edrx_time_s);
 
 void modem_lock_psm(bool on);
 
+void modem_lock_rai(bool on);
+
 void modem_lock_plmn(bool on);
 
 int modem_set_offline(void);

@@ -477,6 +477,34 @@ void modem_cmd_psm_help(void)
    LOG_INF("  psm normal       : PSM handled by application.");
 }
 
+int modem_cmd_rai(const char *config)
+{
+   char value[5];
+   const char *cur = config;
+
+   memset(value, 0, sizeof(value));
+   while (*cur == ' ') {
+      ++cur;
+   }
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+   if (!stricmp("on", value)) {
+      modem_lock_rai(false);
+      return 0;
+   } else if (!stricmp("off", value)) {
+      modem_set_rai_mode(RAI_OFF, -1);
+      modem_lock_rai(true);
+      return 0;
+   } else {
+      return -EINVAL;
+   }
+}
+
+void modem_cmd_rai_help(void)
+{
+   LOG_INF("> help rai:");
+   LOG_INF("  rai off|on : enable or disable RAI.");
+}
+
 int modem_cmd_edrx(const char *config)
 {
    int edrx_time = 0;

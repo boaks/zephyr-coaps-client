@@ -32,6 +32,9 @@ void modem_cmd_sms_help(void);
 int modem_cmd_psm(const char *config);
 void modem_cmd_psm_help(void);
 
+int modem_cmd_rai(const char *config);
+void modem_cmd_rai_help(void);
+
 int modem_cmd_edrx(const char *config);
 void modem_cmd_edrx_help(void);
 

@@ -494,6 +494,9 @@ static int at_cmd_send()
    } else if (!stricmp(at_cmd_buf, "state")) {
       res = modem_read_network_info(NULL, true);
       return RESULT(res);
+   } else if (!stricmp(at_cmd_buf, "net")) {
+      res = coap_client_prepare_net_info(at_cmd_buf, sizeof(at_cmd_buf));
+      return RESULT(res);
    }
 
    i = strstart(at_cmd_buf, "cfg", true);
@@ -520,6 +523,13 @@ static int at_cmd_send()
       return RESULT(res);
    }
 
+   i = strstart(at_cmd_buf, "edrx", true);
+   if (i > 0) {
+      uart_tx_pause(false);
+      res = modem_cmd_edrx(&at_cmd_buf[i]);
+      return RESULT(res);
+   }
+
    i = strstart(at_cmd_buf, "psm", true);
    if (i > 0) {
       uart_tx_pause(false);
@@ -527,10 +537,10 @@ static int at_cmd_send()
       return RESULT(res);
    }
 
-   i = strstart(at_cmd_buf, "edrx", true);
+   i = strstart(at_cmd_buf, "rai", true);
    if (i > 0) {
       uart_tx_pause(false);
-      res = modem_cmd_edrx(&at_cmd_buf[i]);
+      res = modem_cmd_rai(&at_cmd_buf[i]);
       return RESULT(res);
    }
 
@@ -578,9 +588,6 @@ static int at_cmd()
    } else if (!stricmp(at_cmd_buf, "env")) {
       res = coap_client_prepare_env_info(at_cmd_buf, sizeof(at_cmd_buf));
       return RESULT(res);
-   } else if (!stricmp(at_cmd_buf, "net")) {
-      res = coap_client_prepare_net_info(at_cmd_buf, sizeof(at_cmd_buf));
-      return RESULT(res);
    } else if (!stricmp(at_cmd_buf, "dev")) {
       res = coap_client_prepare_modem_info(at_cmd_buf, sizeof(at_cmd_buf));
       return RESULT(res);
@@ -592,12 +599,13 @@ static int at_cmd()
       LOG_INF("  dev    : read device info.");
       LOG_INF("  edrx   : configure eDRX.(*?)");
       LOG_INF("  env    : read environment sensor.");
-      LOG_INF("  net    : read network info.");
+      LOG_INF("  net    : read network info.(*)");
       LOG_INF("  on     : switch modem on.(*)");
       LOG_INF("  off    : switch modem off.(*)");
       LOG_INF("  psm    : configure PSM.(*?)");
       LOG_INF("  reset  : modem factory reset.(*)");
       LOG_INF("  reboot : reboot device.");
+      LOG_INF("  rai    : configure RAI.(*?)");
       LOG_INF("  scan   : network scan.(*?)");
       LOG_INF("  send   : send message.");
       LOG_INF("  sim    : read SIM-card info.(*)");
@@ -619,6 +627,8 @@ static int at_cmd()
             modem_cmd_edrx_help();
          } else if (!stricmp(&at_cmd_buf[i], "psm")) {
             modem_cmd_psm_help();
+         } else if (!stricmp(&at_cmd_buf[i], "rai")) {
+            modem_cmd_rai_help();
          } else if (!stricmp(&at_cmd_buf[i], "scan")) {
             modem_cmd_scan_help();
 #ifdef CONFIG_SMS

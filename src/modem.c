@@ -66,6 +66,8 @@ static struct lte_lc_psm_cfg psm_status = {0, -1};
 static int psm_rat = -1;
 #endif
 
+static int rai_lock = 0;
+
 static uint32_t lte_restarts = 0;
 static uint32_t lte_searchs = 0;
 static uint32_t lte_psm_delays = 0;
@@ -1825,7 +1827,14 @@ int modem_set_psm(int16_t active_time_s)
 
 int modem_set_rai_mode(enum rai_mode mode, int socket)
 {
-   int err = 0;
+   int err;
+
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   err = rai_lock;
+   k_mutex_unlock(&lte_mutex);
+   if (err) {
+      return 0;
+   }
 #ifdef CONFIG_UDP_RAI_ENABLE
    if (rai_current_mode != mode) {
       int rai = -1;
@@ -1977,6 +1986,13 @@ void modem_lock_psm(bool on)
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
    psm_rat = on ? -3 : -2;
+   k_mutex_unlock(&lte_mutex);
+}
+
+void modem_lock_rai(bool on)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   rai_lock = on ? 1 : 0;
    k_mutex_unlock(&lte_mutex);
 }
 
