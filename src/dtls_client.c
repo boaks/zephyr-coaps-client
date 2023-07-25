@@ -1249,8 +1249,6 @@ static int dtls_loop(session_t *dst, int flags)
                if (app_data.retransmission < COAP_MAX_RETRANSMISSION) {
                   if (app_data.retransmission == 0) {
                      modem_set_psm(CONFIG_UDP_PSM_RETRANS_RAT);
-                  } else if (app_data.retransmission == 1) {
-                     modem_read_network_info(NULL, true);
                   }
                   ++app_data.retransmission;
                   loops = 0;

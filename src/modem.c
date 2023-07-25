@@ -147,13 +147,10 @@ static K_WORK_DEFINE(modem_read_sim_work, modem_read_sim_work_fn);
 static void modem_read_info_work_fn(struct k_work *work);
 
 static K_WORK_DEFINE(modem_read_network_info_work, modem_read_info_work_fn);
-static K_WORK_DEFINE(modem_read_coverage_enhancement_info_work, modem_read_info_work_fn);
 
 static void modem_read_info_work_fn(struct k_work *work)
 {
-   if (&modem_read_network_info_work == work) {
-      modem_read_network_info(NULL, false);
-   }
+   modem_read_network_info(NULL, false);
    modem_read_coverage_enhancement_info(NULL);
 }
 
@@ -433,11 +430,7 @@ static void lte_connection_status(void)
       ui_led_op(LED_READY, ready ? LED_SET : LED_CLEAR);
       ui_led_op(LED_SEARCH, LED_CLEAR);
       if (ready) {
-         if (lte_cell_updated) {
-            work_submit_to_io_queue(&modem_read_network_info_work);
-         } else {
-            work_submit_to_io_queue(&modem_read_coverage_enhancement_info_work);
-         }
+         work_submit_to_io_queue(&modem_read_network_info_work);
          work_submit_to_io_queue(&modem_ready_callback_work);
          work_reschedule_for_io_queue(&modem_ready_work, K_MSEC(1000));
          LOG_INF("Modem ready.");
@@ -1493,23 +1486,22 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
             break;
       }
    }
-   if (temp.registered && *n == ',') {
+   if (temp.registered == LTE_NETWORK_STATE_ON && *n == ',') {
       cur = n + 1;
-      // skip 2 parameter "...".
-      n = parse_next_chars(cur, '"', 4);
-      if (*n == ',') {
-         // skip ,
-         cur = n + 1;
+      // skip 2 parameter .
+      n = parse_next_chars(cur, ',', 2);
+      if (*n == '"') {
+         cur = n;
          // plmn
          LOG_DBG("PLMN> %s", cur);
-         n = parse_next_text(cur, '"', temp.provider, sizeof(temp.provider));
+         n = parse_next_qtext(cur, '"', temp.provider, sizeof(temp.provider));
       }
       if (*n == ',') {
          // skip ,
          cur = n + 1;
          // tac
          LOG_DBG("TAC> %s", cur);
-         n = parse_next_long_text(cur, '"', 16, &value);
+         n = parse_next_long_qtext(cur, '"', 16, &value);
          if (cur != n && 0 <= value && value < 0x10000) {
             temp.tac = (uint16_t)value;
          }
@@ -1538,7 +1530,7 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
          cur = n + 1;
          // copy 8 character cell
          LOG_DBG("CELL> %s", cur);
-         n = parse_next_long_text(cur, '"', 16, &value);
+         n = parse_next_long_qtext(cur, '"', 16, &value);
          if (cur != n) {
             temp.cell = (uint32_t)value;
          }
@@ -1593,7 +1585,7 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
          LOG_DBG("eDRX> %s", cur);
          edrx = cur;
          t = &buf[edrx - buf];
-         n = parse_next_text(cur, '"', t, 5);
+         n = parse_next_qtext(cur, '"', t, 5);
       }
       if (*n == ',') {
          // skip ,
@@ -1601,7 +1593,7 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
          LOG_DBG("Act> %s", cur);
          act = cur;
          t = &buf[act - buf];
-         n = parse_next_text(cur, '"', t, 9);
+         n = parse_next_qtext(cur, '"', t, 9);
       }
       if (*n == ',') {
          // skip ,
@@ -1610,7 +1602,7 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
          tau_ext = cur;
          LOG_DBG("TauExt> %s", cur);
          t = &buf[tau_ext - buf];
-         n = parse_next_text(cur, '"', t, 9);
+         n = parse_next_qtext(cur, '"', t, 9);
       }
       if (*n == ',') {
          // skip ,
@@ -1618,7 +1610,7 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
          tau = cur;
          LOG_DBG("Tau> %s", cur);
          t = &buf[tau - buf];
-         n = parse_next_text(cur, '"', t, 9);
+         n = parse_next_qtext(cur, '"', t, 9);
       }
    }
 
@@ -1662,16 +1654,13 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
       // CGDCONT: 0,"IP","iot.1nce.net","10.223.63.3",0,0
       LOG_INF("CGDCONT: %s", buf);
       // skip 1 parameter "...", find start of 3th parameter.
-      cur = parse_next_chars(buf, '"', 3);
-      if (*cur) {
-         // apn
-         cur = parse_next_text(cur, '"', temp.apn, sizeof(temp.apn));
-      }
-      // skip 1 ", find start of 4th parameter.
-      cur = parse_next_chars(cur, '"', 1);
-      if (*cur) {
+      cur = parse_next_chars(buf, ',', 2);
+      // apn
+      cur = parse_next_qtext(cur, '"', temp.apn, sizeof(temp.apn));
+      if (*cur == ',') {
+         ++cur;
          // copy ip
-         cur = parse_next_text(cur, '"', temp.local_ip, sizeof(temp.local_ip));
+         cur = parse_next_qtext(cur, '"', temp.local_ip, sizeof(temp.local_ip));
          temp.pdn_active = temp.local_ip[0] ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
       }
    }

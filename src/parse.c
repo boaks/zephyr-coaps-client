@@ -80,6 +80,17 @@ const char *parse_next_long_text(const char *value, char sep, int base, long *re
    return t;
 }
 
+const char *parse_next_long_qtext(const char *value, char sep, int base, long *result)
+{
+   if (*value != sep) {
+      if (result) {
+         *result = 0;
+      }
+      return value;
+   }
+   return parse_next_long_text(value, sep, base, result);
+}
+
 const char *parse_next_text(const char *value, char sep, char *result, size_t len)
 {
    if (*value == sep) {
@@ -103,6 +114,17 @@ const char *parse_next_text(const char *value, char sep, char *result, size_t le
       }
    }
    return value;
+}
+
+const char *parse_next_qtext(const char *value, char sep, char *result, size_t len)
+{
+   if (*value != sep) {
+      if (result && len > 0) {
+         *result = 0;
+      }
+      return value;
+   }
+   return parse_next_text(value, sep, result, len);
 }
 
 int strstart(const char *value, const char *head, bool ignoreCase)

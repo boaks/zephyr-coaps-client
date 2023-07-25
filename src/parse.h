@@ -28,7 +28,11 @@ const char *parse_next_long(const char *value, int base, long* result);
 
 const char *parse_next_long_text(const char *value, char sep, int base, long *result);
 
+const char *parse_next_long_qtext(const char *value, char sep, int base, long *result);
+
 const char *parse_next_text(const char *value, char sep, char* result, size_t len);
+
+const char *parse_next_qtext(const char *value, char sep, char* result, size_t len);
 
 int strstart(const char *value, const char *head, bool ignoreCase);
 
