@@ -375,23 +375,34 @@ static void dtls_manual_trigger(int duration)
    ui_enable(true);
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
    dtls_trigger();
-   trigger_search = MANUAL_SEARCH;
-   k_sem_give(&dtls_trigger_search);
+
+   if (!atomic_test_bit(&general_states, LTE_READY)) {
+      trigger_search = MANUAL_SEARCH;
+      modem_start_search();
+      k_sem_give(&dtls_trigger_search);
+   }
 }
 
 void dtls_cmd_trigger(bool led, int mode)
 {
+   bool ready = atomic_test_bit(&general_states, LTE_READY);
    if (mode & 1) {
       if (dtls_no_pending_request()) {
          ui_enable(led);
          dtls_trigger();
-      } else {
+         if (!ready && !(mode & 2)) {
+            LOG_INF("No network ...");
+         }
+      } else if (ready) {
          LOG_INF("Busy, request pending ... (state %d)", app_data.request_state);
+      } else {
+         LOG_INF("Busy, searching network");
       }
    }
-   if (mode & 2) {
+   if (!ready && mode & 2) {
       ui_enable(led);
       trigger_search = CMD_SEARCH;
+      modem_start_search();
       k_sem_give(&dtls_trigger_search);
    }
 }

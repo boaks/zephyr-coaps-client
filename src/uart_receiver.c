@@ -36,6 +36,7 @@
 #include "modem.h"
 #include "modem_cmd.h"
 #include "modem_sim.h"
+#include "modem_desc.h"
 #include "parse.h"
 #include "ui.h"
 
@@ -361,7 +362,13 @@ static void uart_monitor_handler(const char *notif)
       if (len > 0) {
          const char *cur = parse_next_chars(notif + len, ',', 4);
          if (*cur && strstart(cur, "0,", false)) {
-            LOG_INF("LTE +CEREG: rejected, cause %d", atoi(cur + 2));
+            int code = atoi(cur + 2);
+            const char *desc = modem_get_emm_cause_description(code);
+            if (desc) {
+               LOG_INF("LTE +CEREG: rejected, %s", desc);
+            } else {
+               LOG_INF("LTE +CEREG: rejected, cause %d", code);
+            }
          }
       }
    }

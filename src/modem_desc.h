@@ -30,4 +30,6 @@ const char *modem_get_registration_short_description(enum lte_lc_nw_reg_status r
 
 const char *modem_get_network_mode_description(enum lte_lc_lte_mode mode);
 
+const char *modem_get_emm_cause_description(int cause);
+
 #endif /* MODEM_DESC_H */

@@ -11,7 +11,6 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-
 #if defined(CONFIG_NRF_MODEM_LIB)
 #include <modem/lte_lc.h>
 
@@ -25,9 +24,9 @@ const char *modem_get_system_mode_description(
       case LTE_LC_SYSTEM_MODE_NONE:
          return "none";
       case LTE_LC_SYSTEM_MODE_LTEM:
-            return "LTE-M";
+         return "LTE-M";
       case LTE_LC_SYSTEM_MODE_NBIOT:
-            return "NB-IoT";
+         return "NB-IoT";
       case LTE_LC_SYSTEM_MODE_GPS:
          return "GPS";
       case LTE_LC_SYSTEM_MODE_LTEM_GPS:
@@ -178,4 +177,80 @@ const char *modem_get_network_mode_description(enum lte_lc_lte_mode mode)
    return "Unknown";
 }
 
+const char *modem_get_emm_cause_description(int cause)
+{
+   switch (cause) {
+      case 2:
+         return "IMSI unknown";
+      case 3:
+         return "UE illegal";
+      case 5:
+         return "IMEI not accepted";
+      case 6:
+         return "ME illegal";
+      case 7:
+         return "EPS not allowed";
+      case 8:
+         return "EPS and non-EPS not allowed";
+      case 9:
+         return "UE unknown";
+      case 10:
+         return "Detached";
+      case 11:
+         return "PLMN not allowed";
+      case 12:
+         return "TAC not allowed";
+      case 13:
+         return "Roaming in TAC not allowed";
+      case 14:
+         return "EPS in PLMN not allowed";
+      case 15:
+         return "No suitable cells in TAC";
+      case 16:
+         return "MSC temporary not reachable";
+      case 17:
+         return "Network failure";
+      case 18:
+         return "CS domain not available";
+      case 19:
+         return "ESM failure";
+      case 20:
+         return "MAC failure";
+      case 21:
+         return "Synch failure";
+      case 22:
+         return "Congestion";
+      case 23:
+         return "UE security capabilities mismatch";
+      case 24:
+         return "Security mode rejected";
+      case 25:
+         return "Not authorized for CSG";
+      case 26:
+         return "Non-EPS authentication not accepted";
+      case 35:
+         return "Service option not authorized for PLMN";
+      case 39:
+         return "CS temporary not available";
+      case 40:
+         return "No EPS bearer";
+      case 95:
+         return "Incorrect message";
+      case 96:
+         return "Invalid mandatory information";
+      case 97:
+         return "Message type unknown";
+      case 98:
+         return "Message type uncompatible";
+      case 99:
+         return "Information unknown";
+      case 100:
+         return "Conditional IE error";
+      case 101:
+         return "Message uncompatible";
+      case 111:
+         return "Protocol error";
+   }
+   return NULL;
+}
 #endif
