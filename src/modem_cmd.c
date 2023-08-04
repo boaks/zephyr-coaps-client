@@ -95,7 +95,7 @@ int modem_cmd_config(const char *config)
          } else if (net_mode == '9') {
             desc = "nb";
          }
-         LOG_INF("cur.reg. %s %s", plmn, desc);
+         LOG_INF("currently %s %s", plmn, desc);
          return 0;
       }
       if (!stricmp("init", value1)) {
@@ -249,7 +249,22 @@ int modem_cmd_connect(const char *config)
    }
    cur = parse_next_text(cur, ' ', value1, sizeof(value1));
    cur = parse_next_text(cur, ' ', value2, sizeof(value2));
-   if (!modem_is_plmn(value1)) {
+   if (stricmp("auto", value1) == 0) {
+      if (value2[0]) {
+         LOG_INF("con auto %s", value2);
+         LOG_INF("mode %s is not supported for 'auto'.", value2);
+         return -EINVAL;
+      }
+      err = modem_at_cmd(NULL, 0, "+COPS: ", "AT+COPS=0");
+      if (err < 0) {
+         LOG_WRN("AT+COPS=0 failed, err %d", err);
+      } else {
+         err = 1;
+         modem_lock_plmn(false);
+      }
+      LOG_INF(">> con auto ready");
+      return err;
+   } else if (!modem_is_plmn(value1)) {
       LOG_INF("con %s", config);
       LOG_INF("plmn '%s' not supported, only numerical plmn.", value1);
       return -EINVAL;
@@ -267,7 +282,6 @@ int modem_cmd_connect(const char *config)
    } else {
       cur = "";
    }
-
    err = modem_at_cmdf(NULL, 0, "+COPS: ", "AT+COPS=1,2,\"%s\"%s", value1, cur);
    if (err < 0) {
       LOG_WRN("AT+COPS failed, err %d", err);
@@ -287,11 +301,12 @@ int modem_cmd_connect(const char *config)
 void modem_cmd_connect_help(void)
 {
    LOG_INF("> help con:");
-   LOG_INF("  con <plmn> <mode>");
+   LOG_INF("  con <plmn> [<mode>]");
    LOG_INF("      <plmn>  : numerical plmn, e.g. 26202");
-   LOG_INF("      <mode> : " CFG_NB_IOT " or " CFG_LTE_M ".");
+   LOG_INF("      <mode>  : optional mode, " CFG_NB_IOT " or " CFG_LTE_M ".");
    LOG_INF("              : " CFG_NB_IOT " := NB-IoT");
    LOG_INF("              : " CFG_LTE_M " := LTE-M");
+   LOG_INF("  con auto    : automatic network selection.");
 }
 
 int modem_cmd_scan(const char *config)
