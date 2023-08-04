@@ -37,8 +37,6 @@ static struct lte_sim_info sim_info;
 
 static int64_t imsi_time = 0;
 
-#define SUSPEND_DELAY_MILLIS 100
-
 static const char *find_id(const char *buf, const char *id)
 {
    char *pos = strstr(buf, id);
@@ -236,6 +234,7 @@ static size_t get_plmns(const char *list, size_t len, char *plmn, size_t plmn_si
 }
 
 #define MAX_SIM_RETRIES 5
+#define SIM_READ_RETRY_MILLIS 300
 #define MAX_PLMNS 15
 #define MAX_SIM_BYTES (MAX_PLMNS * 5)
 
@@ -276,7 +275,7 @@ static void modem_sim_read(bool init)
    }
    while (res < 0 && retries < MAX_SIM_RETRIES) {
       ++retries;
-      k_sleep(K_MSEC(300));
+      k_sleep(K_MSEC(SIM_READ_RETRY_MILLIS));
       if (locked && retries == MAX_SIM_RETRIES) {
          modem_at_unlock();
          locked = false;
@@ -326,7 +325,7 @@ static void modem_sim_read(bool init)
    }
    while (res < 0 && retries < MAX_SIM_RETRIES) {
       ++retries;
-      k_sleep(K_MSEC(300));
+      k_sleep(K_MSEC(SIM_READ_RETRY_MILLIS));
       if (locked && retries == MAX_SIM_RETRIES) {
          modem_at_unlock();
          locked = false;
@@ -563,7 +562,7 @@ static void modem_sim_read(bool init)
          if (c_plmn[0]) {
             LOG_INF("HPPLMN %s/%s/%s", mcc, c_plmn, plmn);
          } else {
-            LOG_INF("HPPLMN %s/%s", mcc, plmn);
+            LOG_INF("HPPLMN %s/-/%s", mcc, plmn);
          }
       } else {
          LOG_INF("HPPLMN %s", plmn);
