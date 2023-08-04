@@ -280,6 +280,7 @@ static int coap_client_add_uri_query_param(struct coap_packet *request, const ch
    return 0;
 }
 
+#if defined(CONFIG_COAP_QUERY_READ_SUBRESOURCE_ENABLE) || defined(CONFIG_COAP_QUERY_WRITE_SUBRESOURCE_ENABLE)
 static int coap_client_add_uri_query_param_opt(struct coap_packet *request, const char *query, const char *value)
 {
    if (value && strlen(value) > 0) {
@@ -288,6 +289,7 @@ static int coap_client_add_uri_query_param_opt(struct coap_packet *request, cons
       return coap_client_add_uri_query(request, query);
    }
 }
+#endif
 
 union lte_params {
    struct lte_lc_psm_cfg psm;
