@@ -707,8 +707,8 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          LOG_INF("LTE neighbor cell measurements %d/%d", evt->cells_info.ncells_count, evt->cells_info.gci_cells_count);
          if (evt->cells_info.current_cell.id != LTE_LC_CELL_EUTRAN_ID_INVALID) {
             const struct lte_lc_cell *gci_cells = &(evt->cells_info.current_cell);
-            LOG_INF("[*]: plmn %3d%02d, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB",
-                    gci_cells->mcc, gci_cells->mnc,
+            LOG_INF("[*]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB",
+                    gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
                     gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
                     gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
          }
@@ -723,7 +723,8 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          } else if (evt->cells_info.gci_cells_count) {
             struct lte_lc_cell *gci_cells = evt->cells_info.gci_cells;
             for (int index = 0; index < evt->cells_info.gci_cells_count; ++index) {
-               LOG_INF("[%d]: plmn %3d%02d, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", index, gci_cells->mcc, gci_cells->mnc,
+               LOG_INF("[%d]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", index, 
+                       gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
                        gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
                        gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
                ++gci_cells;
