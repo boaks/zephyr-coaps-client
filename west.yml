@@ -15,20 +15,18 @@ manifest:
   remotes:
     - name: ncs
       url-base: https://github.com/nrfconnect
-# boaks is only temporary used. The origin is eclipse and after
-# some open PRs get merged, boaks will be replaced by eclipse
-    - name: boaks
-      url-base: https://github.com/boaks
+    - name: eclipse
+      url-base: https://github.com/eclipse
   projects:
     - name: nrf
       repo-path: sdk-nrf
       remote: ncs
-      revision: v2.4.0
+      revision: v2.4.1
       import: true
     - name: tinydtls
       repo-path: tinydtls
-      remote: boaks
-      revision: zephyr_cid_develop
+      remote: eclipse
+      revision: feature/connection_id
       path: modules/lib/tinydtls
   self:
     path: coaps-client

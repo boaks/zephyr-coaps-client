@@ -42,7 +42,7 @@ The demo works with [ncs-2.3.0](https://github.com/nrfconnect/sdk-nrf/tree/v2.3.
 
 To benefit from the newer modem features, please consider to use the modem firmware [1.3.4](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.4.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
-(The current development (`main` branch) uses [ncs-2.4.0](https://github.com/nrfconnect/sdk-nrf/tree/v2.4.0) and the modem firmware [1.3.5](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.5.zip).)
+(The current development (`main` branch) uses [ncs-2.4.1](https://github.com/nrfconnect/sdk-nrf/tree/v2.4.1) and the modem firmware [1.3.5](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.5.zip).)
 
 Maybe other modems and devices gets supported over the time as well. For some of the nRF9160 based devices porting should not be too hard.
 
@@ -134,7 +134,7 @@ west update
 
 That takes a while (couple of minutes). It downloads zephyr, the Nordic Semiconductor SDK and the tinydlts zephyr module.
 
-Currently the demo uses the [zephyr-cid-develop](https://github.com/boaks/tinydtls/tree/zephyr_cid_develop) branch of my tinydtls fork. This is only intended for temporary convenience because currently many PRs are pending at the [eclipse repo](https://github.com/eclipse/tinydtls) and it will take some time to get them merged into "develop" or "main" there. When done, this demo will be switched to that [eclipse repo](https://github.com/eclipse/tinydtls).
+Currently the demo uses the [feature/connection_id](https://github.com/eclipse/tinydtls/tree/feature/connection_id) branch of tinydtls. When that feature branch gets merged into main, this demo will be switched to that.
 
 ### Download the Sources into an available zephyr workspace
 
