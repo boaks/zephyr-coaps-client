@@ -297,6 +297,7 @@ union lte_params {
    struct lte_network_info network_info;
    struct lte_network_statistic network_statistic;
    struct lte_ce_info ce_info;
+   enum lte_network_rai rai_info;
 };
 
 int coap_client_prepare_modem_info(char *buf, size_t len)
@@ -502,9 +503,26 @@ int coap_client_prepare_net_info(char *buf, size_t len)
       }
    }
    time = modem_get_release_time();
-   if (time > 0) {
+   if (time >= 0) {
       if (index > start) {
          index += snprintf(buf + index, len - index, ", ");
+         memset(&params, 0, sizeof(params));
+         if (modem_get_rai_status(&params.rai_info) == 0) {
+            switch (params.rai_info) {
+               case LTE_NETWORK_NO_RAI:
+                  index += snprintf(buf + index, len - index, "no RAI, ");
+                  break;
+               case LTE_NETWORK_CP_RAI:
+                  index += snprintf(buf + index, len - index, "CP-RAI, ");
+                  break;
+               case LTE_NETWORK_AS_RAI:
+                  index += snprintf(buf + index, len - index, "AS-RAI, ");
+                  break;
+               case LTE_NETWORK_RAI_UNKNOWN:
+               default:
+                  break;
+            }
+         }
       }
       index += snprintf(buf + index, len - index, "Released: %d ms", time);
    }

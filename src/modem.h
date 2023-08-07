@@ -48,6 +48,14 @@ enum lte_network_state_type {
 	LTE_NETWORK_STATE_ON = 3
 };
 
+enum lte_network_rai {
+	LTE_NETWORK_RAI_UNKNOWN = 0,
+	LTE_NETWORK_NO_RAI = 1,
+	LTE_NETWORK_CP_RAI = 2,
+	LTE_NETWORK_AS_RAI = 3
+};
+
+
 typedef struct lte_network_info {
    uint16_t registered:2;
    uint16_t pdn_active:2;
@@ -137,6 +145,8 @@ bool modem_set_preference(enum preference_mode mode);
 int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx);
 
 int modem_get_psm_status(struct lte_lc_psm_cfg *psm);
+
+int modem_get_rai_status(enum lte_network_rai *rai);
 
 int modem_get_network_info(struct lte_network_info* info);
 

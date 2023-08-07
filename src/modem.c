@@ -88,6 +88,9 @@ static struct lte_ce_info ce_info;
 static int64_t transmission_time = 0;
 static int64_t network_search_time = 0;
 
+#define CP_RAI_MAX_DELAY 500
+#define AS_RAI_MAX_DELAY 3000
+
 static volatile enum rai_mode rai_current_mode = RAI_OFF;
 static volatile int rai_time = -1;
 
@@ -723,7 +726,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          } else if (evt->cells_info.gci_cells_count) {
             struct lte_lc_cell *gci_cells = evt->cells_info.gci_cells;
             for (int index = 0; index < evt->cells_info.gci_cells_count; ++index) {
-               LOG_INF("[%d]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", index, 
+               LOG_INF("[%d]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", index,
                        gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
                        gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
                        gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
@@ -1364,6 +1367,34 @@ int modem_get_psm_status(struct lte_lc_psm_cfg *psm)
    }
 #endif
    k_mutex_unlock(&lte_mutex);
+   return res;
+}
+
+int modem_get_rai_status(enum lte_network_rai *rai)
+{
+   int res = 0;
+   enum lte_network_rai state = LTE_NETWORK_RAI_UNKNOWN;
+
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (psm_status.active_time < 0) {
+      // don't display RAI for inactive PSM
+      res = -ENODATA;
+   } else {
+      int time = rai_time;
+      if (time < 0) {
+         res = -ENODATA;
+      } else if (time < CP_RAI_MAX_DELAY) {
+         state = LTE_NETWORK_CP_RAI;
+      } else if (time < AS_RAI_MAX_DELAY) {
+         state = LTE_NETWORK_AS_RAI;
+      } else {
+         state = LTE_NETWORK_NO_RAI;
+      }
+   }
+   k_mutex_unlock(&lte_mutex);
+   if (rai) {
+      *rai = state;
+   }
    return res;
 }
 
