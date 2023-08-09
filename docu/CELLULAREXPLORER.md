@@ -10,7 +10,7 @@ The
 | [Nordic Semiconductor, Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) | ![Thingy:91](./thingy91.jpg) |
 | :- | - |
 
-comes with an Bluetooth Low Energy interface, that allows to connect the `Thingy:91` to a smartphone and send locally commands to the `Thingy:91` and receive the responses without cellular connectivity.
+comes with an Bluetooth Low Energy interface, that allows to connect the `Thingy:91` to a smartphone and send locally commands to the `Thingy:91`. That helps to analyze network situations even without valid cellular connectivity of your SIM card.
 
 In order to enable this function, the [at-cmd-prj.conf](../at-cmd-prj.conf) must be used to build the app.
 
@@ -20,6 +20,8 @@ Other devices without Bluetooth Low Energy interface may also be used via a USB 
 | :- | - |
 
 comes with a USB-C plug and if the smartphone is also equipped with USB-C, a simple USB-C to USB-C wire will do it. Not that comfortable as  Bluetooth Low Energy, but it works.
+
+For some more sophisticated tests, e.g. adapting some lists on the SIM card, it may be easier to use a PC via a USB serial and open a terminal on that PC.
 
 ## Enable Bluetooth Low Energy
 
@@ -62,7 +64,9 @@ The most [nRF9160 AT-commands](https://infocenter.nordicsemi.com/pdf/nrf9160_at_
 
 ![help](./serial_bluetooth_terminal_help.jpg)
 
-If the App offers macros, add you favorite AT-commands or commands as macro.
+(The screenshot shows only the list of commands in July 2023, the current list may contain more commands.)
+
+If the smart phone App offers macros, add you favorite AT-commands or commands as macro.
 
 ## Explore the Cellular Network
 
@@ -70,13 +74,13 @@ Hopefully in the most areas the device should be able to connect to the network 
 
 ![send](./serial_bluetooth_terminal_send_scan.jpg)
 
-If that doesn't work or, if you want to see, which cellular networks are available, then type `scan` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg)
+If that doesn't work or if you want to see, which cellular networks are available at your location, then type `scan` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg)
 
-The displayed list will vary. As default, `scan` measure the currently already known channels. If you want to perform a network search, provide additional parameters. For such cases, a command comes also with a specific help. Type `help scan` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg)
+The displayed list of networks will vary. As default, `scan` measure the currently already known channels. If you want to search for new channels, provide additional parameters. For such cases, a command comes also with a specific help. Type `help scan` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg)
 
 ![help scan](./serial_bluetooth_terminal_help_scan.jpg)
 
-To perform a complete network search, use `scan 5 <n>` where `n` is the maximum expected number of network. It will take a while. The provided parameters will become the new default. if you decide to use `scan 5 6`, the next execution of `scan` will also use these parameters.
+To perform a scan with new channels, use `scan 5 <n>` where `n` is the maximum expected number of network. It will take a while. The provided parameters will become the new default. if you decide to use `scan 5 6`, the next execution of `scan` will also use these parameters.
 
 ![search](./serial_bluetooth_terminal_search.jpg)
 
@@ -89,5 +93,120 @@ To switch the provider and technology, use `cfg 26202 m1`.
 ![cfg](./serial_bluetooth_terminal_cfg.jpg)
 
 that requires some time. If the network operator rejects your SIM, you need to change the `cfg` again.
+
+When you change the list of network technologies, the `nb` or `m1` support or preference, this usually requires a modem restart. If you want to test a provider or technology without changing that technology configuration, you may use `con`. 
+
+```
+con 26202 m1
+```
+
+will switch to 26201 and use LTE-M for the connection. 
+Note: to switch the technology requires to use that technology in the `cfg`. Btu you may chose the technology with lower priority without restarting the modem.
+
+## Test Functions and Parameter of a Cellular Network
+
+If you have connected the device with the provider and technology you want to investigate, you may check with `net`, which functions are supported.
+
+```
+> net
+
+I 60.855: Network: CAT-M1,roaming,Band 20,PLMN 26202,TAC 47490,Cell 52262913,EARFCN 6300
+I 60.855: PDN: flolive.net,100.64.55.203
+I 60.856: PSM: TAU 90000 [s], Act 0 [s], AS-RAI, Released: 2015 ms
+I 60.856: !CE: down: 8, up: 1, RSRP: -108 dBm, CINR: -3 dB, SNR: -2 dB
+I 60.865: Stat: tx 1 kB, rx 0 kB, max 748 B, avg 155 B
+I 60.865: Cell updates 3, Network searchs 2 (8 s), PSM delays 0 (0 s), Restarts 0
+I 60.865: Wakeups 1, 1 s, connected 11 s, asleep 0 s
+OK
+```
+
+Each line may starts with a level ('E'rror, 'W'arning, 'I'nfo, or 'D'ebug), which is sometimes usefull for development. Then a relative time follows with seconds and milliseconds, e.g. "60.856".
+
+That is followed by text, which explains itself a lot. E.g. CAT-M1, roaming, PLMN and so on. 
+
+For energy saving thre function are available for cellular devices:
+
+| Mode | Description | |
+| - | :- | :- |
+| RAI | Release Assistance Indication | Indicates to switch from RRC active to idle earlier than using a timeout |
+| eDRX | Extended Discontinuous Reception | Used in RRC idle mode to reduce power consumption. Usually seconds to a couple of minutes |
+| PSM | Power Saving Mode | Enables the device to go from idle into deep sleep. Usually hours or a couple of days |
+
+### rai Command
+
+The device usually tries to request RAI support. If not available, then the timeout is used. Therefore rai is always enabled and if supported, the `net` command shows that in the PSM information.
+
+```
+I 60.856: PSM: TAU 90000 [s], Act 0 [s], AS-RAI, Released: 2015 ms
+```
+
+In this case, AS-RAI (Access Stratum RAI) is supported from LTE-M network provider.
+
+To disble RAI for tests, you may use 
+
+```
+rai off
+```
+
+and with 
+
+```
+rai on
+```
+
+RAI is requested again.
+
+### edrx Command
+
+To request or disable eDRX, use the edrx command:
+
+```
+edrx 600
+```
+
+requests eDRX with about 600s. Only selected values are supported, the network will assign the next larger value, in this case 655s.
+
+```
+I 14.984: eDRX enable, 655.36 s
+```
+
+```
+edrx off
+```
+
+disables eDRX again.
+
+### psm Command
+
+To request or disable PSM, the psm command is used.
+
+```
+I 78.096: > help psm:
+I 78.096:   psm <act-time> <tau-time>[h] : request PSM times.
+I 78.096:      <act-time>    : active time in s.
+I 78.096:      <tau-time>    : tracking area update time in s.
+I 78.096:      <tau-time>h   : tracking area update time in h.
+I 78.096:   psm normal       : PSM handled by application.
+```
+
+```
+psm 10 48h
+```
+
+requests psm with an active timeout of 10s and a tracking are update time of 48 hours or 2 days.
+
+```
+I 28.595: PSM enable, act: 10 s, tau: 50 h
+...
+I 29.265: PSM parameter update: TAU: 180000 s, Active time: 10 s
+```
+
+Also here, not all values are available and the next larger one is used. 
+
+```
+psm normal
+```
+
+Switches the back to the application specific PSM parameters.
 
 ** !!! Under Construction !!! **

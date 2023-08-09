@@ -1737,7 +1737,6 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
              &statistic->received,
              &statistic->max_packet_size,
              &statistic->average_packet_size);
-      LOG_INF("XCONNSTAT: %s", buf);
    }
    k_mutex_lock(&lte_mutex, K_FOREVER);
    statistic->searchs = lte_searchs;

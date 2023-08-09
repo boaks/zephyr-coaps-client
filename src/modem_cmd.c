@@ -383,6 +383,8 @@ void modem_cmd_sms_help(void)
 
 #endif
 
+#define ROUND_UP_TIME(T, D) (((T) + ((D)-1)) / (D))
+
 int modem_cmd_psm(const char *config)
 {
    unsigned int active_time = 0;
@@ -397,14 +399,14 @@ int modem_cmd_psm(const char *config)
       int tau_unit_id = 0x3;
       // requested active time
       // 2s
-      active_time /= 2;
+      active_time = ROUND_UP_TIME(active_time, 2);
       if (active_time > 31) {
          // 60s
-         active_time /= 30;
+         active_time = ROUND_UP_TIME(active_time, 30);
          rat_mul = 60;
          if (active_time > 31) {
             // 360s
-            active_time /= 6;
+            active_time = ROUND_UP_TIME(active_time, 6);
             rat_mul = 360;
             rat[1] = '1';
          } else {
@@ -417,35 +419,35 @@ int modem_cmd_psm(const char *config)
       if (tau_unit == 'h') {
          tau_time *= 3600;
       }
-      tau_time /= 2;
+      tau_time = ROUND_UP_TIME(tau_time, 2);
       if (tau_time > 31) {
          // 30s
-         tau_time /= 15;
+         tau_time = ROUND_UP_TIME(tau_time, 15);
          tau_mul = 30;
          tau_unit_id = 0x4;
          if (tau_time > 31) {
             // 60s
-            tau_time /= 2;
+            tau_time = ROUND_UP_TIME(tau_time, 2);
             tau_mul = 60;
             tau_unit_id = 0x5;
             if (tau_time > 31) {
                // 600s
-               tau_time /= 10;
+               tau_time = ROUND_UP_TIME(tau_time, 10);
                tau_mul = 600;
                tau_unit_id = 0;
                if (tau_time > 31) {
                   // 3600s / 1h
-                  tau_time /= 6;
+                  tau_time = ROUND_UP_TIME(tau_time, 6);
                   tau_mul = 3600;
                   tau_unit_id = 1;
                   if (tau_time > 31) {
                      // 36000s / 10h
-                     tau_time /= 10;
+                     tau_time = ROUND_UP_TIME(tau_time, 10);
                      tau_mul = 36000;
                      tau_unit_id = 2;
                      if (tau_time > 31) {
                         // 320h
-                        tau_time /= 32;
+                        tau_time = ROUND_UP_TIME(tau_time, 32);
                         tau_mul = 36000 * 32;
                         tau_unit_id = 6;
                      }
