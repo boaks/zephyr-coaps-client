@@ -62,9 +62,10 @@ Install the App and connect the `Thingy:91`.
 
 The most [nRF9160 AT-commands](https://infocenter.nordicsemi.com/pdf/nrf9160_at_commands_v2.3.pdf) are supported. Additionally some shortcuts and extra functions are available. Type `help` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg):
 
+{#help}
 ![help](./serial_bluetooth_terminal_help.jpg)
 
-(The screenshot shows only the list of commands in July 2023, the current list may contain more commands.)
+(The screenshot shows only the list of commands in August 2023, the current list may contain more commands.)
 
 If the smart phone App offers macros, add you favorite AT-commands or commands as macro.
 
@@ -76,11 +77,9 @@ Hopefully in the most areas the device should be able to connect to the network 
 
 If that doesn't work or if you want to see, which cellular networks are available at your location, then type `scan` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg)
 
-The displayed list of networks will vary. As default, `scan` measure the currently already known channels. If you want to search for new channels, provide additional parameters. For such cases, a command comes also with a specific help. Type `help scan` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg)
+The displayed list of networks will vary. As default, `scan` measure the currently already known channels. If you want to search for new channels, provide additional parameters. For such cases, a command comes also with a specific help. Type `help scan` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg) (see [screenshot above](#help)). 
 
-![help scan](./serial_bluetooth_terminal_help_scan.jpg)
-
-To perform a scan with new channels, use `scan 5 <n>` where `n` is the maximum expected number of network. It will take a while. The provided parameters will become the new default. if you decide to use `scan 5 6`, the next execution of `scan` will also use these parameters.
+To perform a scan with searching for new channels, use `scan 5 <n>` where `n` is the maximum expected number of network. It will take a while. The provided parameters will become the new default. if you decide to use `scan 5 6`, the next execution of `scan` will also use these parameters.
 
 ![search](./serial_bluetooth_terminal_search.jpg)
 
