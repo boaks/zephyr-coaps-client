@@ -79,28 +79,37 @@ If that doesn't work or if you want to see, which cellular networks are availabl
 
 The displayed list of networks will vary. As default, `scan` measure the currently already known channels. If you want to search for new channels, provide additional parameters. For such cases, a command comes also with a specific help. Type `help scan` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg) (see [screenshot above](#help)). 
 
-To perform a scan with searching for new channels, use `scan 5 <n>` where `n` is the maximum expected number of network. It will take a while. The provided parameters will become the new default. if you decide to use `scan 5 6`, the next execution of `scan` will also use these parameters.
+To perform a scan with searching for new channels, use `scan 5 <n>` where `n` is the maximum expected number of networks. It will take a while. The provided parameters will become the new default. if you decide to use `scan 5 6`, the next execution of `scan` will also use these parameters.
 
 ![search](./serial_bluetooth_terminal_search.jpg)
 
-In some case you may get aware, that your modem connects to a network with less signal strenght than other available networks. With the `net` command you see, to which provider the device is connected and which technology is used, `LTE-M` or `NB-IoT`. If you want to test the communication with an other provider and/or switching the technology, use to `cfg` command. Also this command has a specific help.
+In some case you may get aware, that your modem connects to a network with less signal strenght than other available networks. With the `net` command you see, to which provider (the [PLMN](https://mcc-mnc.com/)) the device is connected and which technology is used, `LTE-M` or `NB-IoT`. If you want to test the communication with an other provider and/or switching the technology, use to `con` command. Also this command has a specific help.
 
-![help cfg](./serial_bluetooth_terminal_help_cfg.jpg)
+![help cfg](./serial_bluetooth_terminal_help_con.jpg)
 
-To switch the provider and technology, use `cfg 26202 m1`.
+To switch the network operator (e.g. `26202`) and technology (`m1` or `nb`), use `con 26202 m1`.
 
-![cfg](./serial_bluetooth_terminal_cfg.jpg)
+![cfg](./serial_bluetooth_terminal_con.jpg)
 
-that requires some time. If the network operator rejects your SIM, you need to change the `cfg` again.
+that requires some time. If the network operator rejects your SIM, you need to `con` to an other network operator again.
 
-When you change the list of network technologies, the `nb` or `m1` support or preference, this usually requires a modem restart. If you want to test a provider or technology without changing that technology configuration, you may use `con`. 
+## Locating a Device
 
-```
-con 26202 m1
-```
+Sometimes it may be interesting to know the current location of the device. If the App doesn't use GPS, you still may be able to get a rough location using the base station as reference. There are several web-sites which offers a service for that. One service fro non-commercial usage is [cellmapper](https://www.cellmapper.net).
 
-will switch to 26201 and use LTE-M for the connection. 
-Note: to switch the technology requires to use that technology in the `cfg`. Btu you may chose the technology with lower priority without restarting the modem.
+You will need the PLMN and the tower code (Cell devided by 256), e.g. PLMN `24008` and Cell `28609803` resulting in `111757`. Open the [cellmapper](https://www.cellmapper.net) and first set the PLMN using `Menu` -> `Provider`. 
+
+![CellMapper - Provider](./cellmapper_provider.png)
+
+Then close the `Provider Menu` and open the `Search Menu`. 
+
+![CellMapper - Search](./cellmapper_search.png) 
+
+enter the calculated tower number and press `<return>`. I dialog will show up and, if the position of the tower is available, the entry of that tower will be shown.
+
+![CellMapper - Search](./cellmapper_result.png) 
+
+Select the entry (`eNB <tower number>`) and a map will be opened showing the position of the base station.
 
 ## Test Functions and Parameter of a Cellular Network
 
