@@ -319,9 +319,18 @@ int modem_cmd_scan(const char *config)
       char *t = NULL;
       int type = (int)strtol(++config, &t, 10);
       if (config != t) {
+         if (type < 0 || type > 5) {
+            LOG_INF("Type %d out of range [0,5]", type);
+            return -EINVAL;
+         }
          params.search_type = type + 1;
          if (*t == ',' || *t == ' ') {
-            params.gci_count = (int)strtol(++t, NULL, 10);
+            int count = (int)strtol(++t, NULL, 10);
+            if (count < 2 || count > 15) {
+               LOG_INF("Count %d out of range [2,15]", count);
+               return -EINVAL;
+            }
+            params.gci_count = count;
          }
       }
    } else if (*config) {
@@ -347,7 +356,7 @@ void modem_cmd_scan_help(void)
    LOG_INF("  scan 3 <n>  : displays cell history");
    LOG_INF("  scan 4 <n>  : start cell search");
    LOG_INF("  scan 5 <n>  : start cell search, all bands");
-   LOG_INF("  <n>         : maximum cells to list");
+   LOG_INF("  <n>         : maximum cells to list, values 2 to 15.");
 }
 
 #ifdef CONFIG_SMS
