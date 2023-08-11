@@ -580,6 +580,44 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
    lte_registration_set(registered);
 }
 
+static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
+{
+   int current_cell;
+
+   LOG_INF("LTE neighbor cell measurements %d/%d", cells_info->ncells_count, cells_info->gci_cells_count);
+
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   current_cell = network_info.cell;
+   k_mutex_unlock(&lte_mutex);
+
+   if (cells_info->current_cell.id != LTE_LC_CELL_EUTRAN_ID_INVALID) {
+      const struct lte_lc_cell *gci_cells = &(cells_info->current_cell);
+      LOG_INF("[*]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB",
+              gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
+              gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
+              gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
+   }
+   if (cells_info->ncells_count) {
+      const struct lte_lc_ncell *neighbor_cells = cells_info->neighbor_cells;
+      for (int index = 0; index < cells_info->ncells_count; ++index) {
+         LOG_INF("[%d]: earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", index,
+                 neighbor_cells->earfcn, neighbor_cells->phys_cell_id,
+                 neighbor_cells->rsrp - 140, (neighbor_cells->rsrq - 39) / 2);
+         ++neighbor_cells;
+      }
+   } else if (cells_info->gci_cells_count) {
+      struct lte_lc_cell *gci_cells = cells_info->gci_cells;
+      for (int index = 0; index < cells_info->gci_cells_count; ++index) {
+         LOG_INF("[%s%d]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB",
+                 current_cell == gci_cells->id ? "*" : "", index,
+                 gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
+                 gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
+                 gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
+         ++gci_cells;
+      }
+   }
+}
+
 static void lte_handler(const struct lte_lc_evt *const evt)
 {
    static uint8_t phase = 0;
@@ -707,32 +745,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          }
          break;
       case LTE_LC_EVT_NEIGHBOR_CELL_MEAS:
-         LOG_INF("LTE neighbor cell measurements %d/%d", evt->cells_info.ncells_count, evt->cells_info.gci_cells_count);
-         if (evt->cells_info.current_cell.id != LTE_LC_CELL_EUTRAN_ID_INVALID) {
-            const struct lte_lc_cell *gci_cells = &(evt->cells_info.current_cell);
-            LOG_INF("[*]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB",
-                    gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
-                    gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
-                    gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
-         }
-         if (evt->cells_info.ncells_count) {
-            const struct lte_lc_ncell *neighbor_cells = evt->cells_info.neighbor_cells;
-            for (int index = 0; index < evt->cells_info.ncells_count; ++index) {
-               LOG_INF("[%d]: earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", index,
-                       neighbor_cells->earfcn, neighbor_cells->phys_cell_id,
-                       neighbor_cells->rsrp - 140, (neighbor_cells->rsrq - 39) / 2);
-               ++neighbor_cells;
-            }
-         } else if (evt->cells_info.gci_cells_count) {
-            struct lte_lc_cell *gci_cells = evt->cells_info.gci_cells;
-            for (int index = 0; index < evt->cells_info.gci_cells_count; ++index) {
-               LOG_INF("[%d]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", index,
-                       gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
-                       gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
-                       gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
-               ++gci_cells;
-            }
-         }
+         lte_neighbor_cell_meas(&evt->cells_info);
          break;
       default:
          break;
