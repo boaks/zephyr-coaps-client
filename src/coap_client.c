@@ -291,15 +291,6 @@ static int coap_client_add_uri_query_param_opt(struct coap_packet *request, cons
 }
 #endif
 
-union lte_params {
-   struct lte_lc_psm_cfg psm;
-   struct lte_lc_edrx_cfg edrx;
-   struct lte_network_info network_info;
-   struct lte_network_statistic network_statistic;
-   struct lte_ce_info ce_info;
-   enum lte_network_rai rai_info;
-};
-
 int coap_client_prepare_modem_info(char *buf, size_t len)
 {
    int64_t reboot_times[REBOOT_INFOS];
@@ -450,16 +441,20 @@ int coap_client_prepare_sim_info(char *buf, size_t len)
    return index;
 }
 
+union lte_params {
+   struct lte_lc_psm_cfg psm;
+   struct lte_lc_edrx_cfg edrx;
+   struct lte_network_info network_info;
+   enum lte_network_rai rai_info;
+};
+
 int coap_client_prepare_net_info(char *buf, size_t len)
 {
    int start = 0;
    int index = 0;
    int time = 0;
-#if defined(CONFIG_COAP_SEND_NETWORK_INFO) || defined(CONFIG_COAP_SEND_STATISTIC_INFO)
    union lte_params params;
-#endif
 
-#ifdef CONFIG_COAP_SEND_NETWORK_INFO
    memset(&params, 0, sizeof(params));
    if (!modem_get_network_info(&params.network_info)) {
       index += snprintf(buf, len, "Network: %s",
@@ -553,17 +548,25 @@ int coap_client_prepare_net_info(char *buf, size_t len)
       }
       dtls_info("%s", buf + start);
    }
-#endif /* CONFIG_COAP_SEND_NETWORK_INFO */
 
-#ifdef CONFIG_COAP_SEND_STATISTIC_INFO
+   return index;
+}
+
+union lte_stats {
+   struct lte_network_statistic network_statistic;
+   struct lte_ce_info ce_info;
+};
+
+int coap_client_prepare_net_stats(char *buf, size_t len)
+{
+   int start = 0;
+   int index = 0;
+   union lte_stats params;
+
    memset(&params, 0, sizeof(params));
    if (modem_get_coverage_enhancement_info(&params.ce_info) >= 0) {
       if (params.ce_info.ce_supported) {
-         if (index) {
-            buf[index++] = '\n';
-         }
-         start = index;
-         index += snprintf(buf + index, len - index, "!CE: down: %u, up: %u",
+         index = snprintf(buf, len, "!CE: down: %u, up: %u",
                            params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
          if (params.ce_info.rsrp < INVALID_SIGNAL_VALUE) {
             index += snprintf(buf + index, len - index, ", RSRP: %d dBm",
@@ -602,7 +605,7 @@ int coap_client_prepare_net_info(char *buf, size_t len)
                         params.network_statistic.connected_time, params.network_statistic.asleep_time);
       dtls_info("%s", buf + start);
    }
-#endif /* CONFIG_COAP_SEND_STATISTIC_INFO */
+
    return index;
 }
 
@@ -835,14 +838,23 @@ int coap_client_prepare_post(void)
    }
 #endif /* CONFIG_COAP_SEND_SIM_INFO */
 
-#if defined(CONFIG_COAP_SEND_NETWORK_INFO) || defined(CONFIG_COAP_SEND_STATISTIC_INFO)
+#if defined(CONFIG_COAP_SEND_NETWORK_INFO)
    buf[index] = '\n';
    start = index + 1;
    err = coap_client_prepare_net_info(buf + start, sizeof(buf) - start);
    if (err > 0) {
       index = start + err;
    }
-#endif
+#endif /* CONFIG_COAP_SEND_NETWORK_INFO */
+
+#if defined(CONFIG_COAP_SEND_STATISTIC_INFO)
+   buf[index] = '\n';
+   start = index + 1;
+   err = coap_client_prepare_net_stats(buf + start, sizeof(buf) - start);
+   if (err > 0) {
+      index = start + err;
+   }
+#endif /* CONFIG_COAP_SEND_STATISTIC_INFO */
 
 #ifdef CONFIG_LOCATION_ENABLE
    buf[index] = '\n';
@@ -851,7 +863,7 @@ int coap_client_prepare_post(void)
    if (err > 0) {
       index = start + err;
    }
-#endif
+#endif /* CONFIG_LOCATION_ENABLE */
 
    buf[index] = '\n';
    start = index + 1;

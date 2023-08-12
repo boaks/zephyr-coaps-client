@@ -599,6 +599,7 @@ static int at_cmd_send()
       return RESULT(res);
    } else if (!stricmp(at_cmd_buf, "net")) {
       res = coap_client_prepare_net_info(at_cmd_buf, sizeof(at_cmd_buf));
+      res = coap_client_prepare_net_stats(at_cmd_buf, sizeof(at_cmd_buf));
       return RESULT(res);
    } else if (!stricmp(at_cmd_buf, "eval")) {
       strcpy(at_cmd_buf, "AT%CONEVAL");

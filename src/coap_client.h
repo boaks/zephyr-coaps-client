@@ -44,6 +44,8 @@ int coap_client_prepare_sim_info(char *buf, size_t len);
 
 int coap_client_prepare_net_info(char* buf, size_t len);
 
+int coap_client_prepare_net_stats(char* buf, size_t len);
+
 int coap_client_prepare_env_info(char *buf, size_t len);
 
 int coap_client_prepare_post(void);
