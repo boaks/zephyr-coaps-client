@@ -35,8 +35,8 @@
 #include "io_job_queue.h"
 #include "modem.h"
 #include "modem_cmd.h"
-#include "modem_sim.h"
 #include "modem_desc.h"
+#include "modem_sim.h"
 #include "parse.h"
 #include "ui.h"
 
@@ -292,12 +292,12 @@ static void uart_log_process(const struct log_backend *const backend,
       k_mutex_unlock(&uart_tx_mutex);
 #endif
       if (level) {
-//         int state = atomic_get(&uart_at_state);
+         //         int state = atomic_get(&uart_at_state);
          int cycles = sys_clock_hw_cycles_per_sec();
          log_timestamp_t seconds = (msg->log.hdr.timestamp / cycles) % 100;
          log_timestamp_t milliseconds = (msg->log.hdr.timestamp * 1000 / cycles) % 1000;
-//         cbprintf(uart_tx_out_func, NULL, "%c %d %02d.%03d: ",
-//                  level, state, seconds, milliseconds);
+         //         cbprintf(uart_tx_out_func, NULL, "%c %d %02d.%03d: ",
+         //                  level, state, seconds, milliseconds);
          cbprintf(uart_tx_out_func, NULL, "%c %02d.%03d: ",
                   level, seconds, milliseconds);
       }
@@ -343,21 +343,27 @@ AT_MONITOR(uart_monitor, ANY, uart_monitor_handler);
 
 static const char *IGNORE_NOTIFY[] = {"%NCELLMEAS:", "%XMODEMSLEEP:", NULL};
 
-static bool uart_monitor_ignore_notify(const char *notif)
+static int uart_monitor_ignore_notify(const char *notif)
 {
-   const char **ignore = IGNORE_NOTIFY;
-   while (*ignore) {
-      if (strstart(notif, *ignore, false)) {
-         return true;
+   int index = 0;
+   while (IGNORE_NOTIFY[index]) {
+      if (strstart(notif, IGNORE_NOTIFY[index], false)) {
+         return index;
       }
-      ++ignore;
+      ++index;
    }
-   return false;
+   return -1;
 }
 
 static void uart_monitor_handler(const char *notif)
 {
-   if (!appl_reboots() && !uart_monitor_ignore_notify(notif)) {
+   int index;
+
+   if (appl_reboots()) {
+      return;
+   }
+   index = uart_monitor_ignore_notify(notif);
+   if (index < 0) {
       int len;
       printk("%s", notif);
       len = strstart(notif, "+CEREG:", false);
@@ -458,9 +464,97 @@ static void at_cmd_result(int res)
    uart_tx_pause(false);
 }
 
+static void at_coneval_result(const char *result)
+{
+   unsigned int status = 0;
+   unsigned int rrc = 0;
+   unsigned int quality = 0;
+   int rsrp = 0;
+   int rsrq = 0;
+   int snr = 0;
+   int err = sscanf(result, "%u,%u,%u,%d,%d,%d,",
+                    &status, &rrc, &quality, &rsrp, &rsrq, &snr);
+   if (err == 1) {
+      const char *desc = NULL;
+      lte_network_info_t info;
+
+      switch (status) {
+         case 1:
+            memset(&info, 0, sizeof(info));
+            if (!modem_get_network_info(&info) && info.cell != LTE_LC_CELL_EUTRAN_ID_INVALID) {
+               LOG_INF("> eval failed: cell %d/0x%08x not available!", info.cell, info.cell);
+               return;
+            } else {
+               desc = "cell not available";
+            }
+            break;
+         case 2:
+            desc = "UICC missing (SIM card)";
+            break;
+         case 3:
+            desc = "only barred cells available";
+            break;
+         case 4:
+            desc = "modem busy";
+            break;
+         case 5:
+            desc = "evaluation aborted";
+            break;
+         case 6:
+            desc = "not registered";
+            break;
+         case 7:
+            desc = "unspecific failure";
+            break;
+      }
+      if (desc) {
+         LOG_INF("> eval failed: %s", desc);
+      } else {
+         LOG_INF("> eval failed: %d", status);
+      }
+   } else if (err == 6) {
+      const char *desc = NULL;
+      switch (quality) {
+         case 5:
+            desc = "bad";
+            break;
+         case 6:
+            desc = "poor";
+            break;
+         case 7:
+            desc = "normal";
+            break;
+         case 8:
+            desc = "good";
+            break;
+         case 9:
+            desc = "excellent";
+            break;
+      }
+      rsrp -= 140;
+      rsrq = (rsrq - 39) / 2;
+      snr -= 24;
+      if (desc) {
+         LOG_INF("> eval: quality %s, rsrp %d dBm, rsrq %d dB, snr %d dB",
+                 desc, rsrp, rsrq, snr);
+      } else {
+         LOG_INF("> eval: quality %d, rsrp %d dBm, rsrq %d dB, snr %d dB",
+                 quality, rsrp, rsrq, snr);
+      }
+   } else {
+      LOG_INF("> eval parse %d", err);
+   }
+}
+
 static void at_cmd_response_fn(struct k_work *work)
 {
+   int index = strstart(at_cmd_buf, "%CONEVAL: ", true);
+
    printk("%s", at_cmd_buf);
+   if (index > 0) {
+      at_coneval_result(&at_cmd_buf[index]);
+   }
+
    if (strend(at_cmd_buf, "OK", false)) {
       at_cmd_result(1);
    } else if (strend(at_cmd_buf, "ERROR", false)) {
@@ -506,72 +600,73 @@ static int at_cmd_send()
    } else if (!stricmp(at_cmd_buf, "net")) {
       res = coap_client_prepare_net_info(at_cmd_buf, sizeof(at_cmd_buf));
       return RESULT(res);
-   }
-
-   i = strstart(at_cmd_buf, "cfg", true);
-   if (i > 0) {
-      uart_tx_pause(false);
-      res = modem_cmd_config(&at_cmd_buf[i]);
-      if (res == 1) {
-         LOG_INF(">> (new cfg) send");
-         dtls_cmd_trigger(true, 3);
-         res = 0;
+   } else if (!stricmp(at_cmd_buf, "eval")) {
+      strcpy(at_cmd_buf, "AT%CONEVAL");
+   } else {
+      i = strstart(at_cmd_buf, "cfg", true);
+      if (i > 0) {
+         uart_tx_pause(false);
+         res = modem_cmd_config(&at_cmd_buf[i]);
+         if (res == 1) {
+            LOG_INF(">> (new cfg) send");
+            dtls_cmd_trigger(true, 3);
+            res = 0;
+         }
+         return RESULT(res);
       }
-      return RESULT(res);
-   }
 
-   i = strstart(at_cmd_buf, "con", true);
-   if (i > 0) {
-      uart_tx_pause(false);
-      res = modem_cmd_connect(&at_cmd_buf[i]);
-      if (res == 1) {
-         LOG_INF(">> (new con) send");
-         dtls_cmd_trigger(true, 3);
-         res = 0;
+      i = strstart(at_cmd_buf, "con", true);
+      if (i > 0) {
+         uart_tx_pause(false);
+         res = modem_cmd_connect(&at_cmd_buf[i]);
+         if (res == 1) {
+            LOG_INF(">> (new con) send");
+            dtls_cmd_trigger(true, 3);
+            res = 0;
+         }
+         return RESULT(res);
       }
-      return RESULT(res);
-   }
 
-   i = strstart(at_cmd_buf, "edrx", true);
-   if (i > 0) {
-      uart_tx_pause(false);
-      res = modem_cmd_edrx(&at_cmd_buf[i]);
-      return RESULT(res);
-   }
+      i = strstart(at_cmd_buf, "edrx", true);
+      if (i > 0) {
+         uart_tx_pause(false);
+         res = modem_cmd_edrx(&at_cmd_buf[i]);
+         return RESULT(res);
+      }
 
-   i = strstart(at_cmd_buf, "psm", true);
-   if (i > 0) {
-      uart_tx_pause(false);
-      res = modem_cmd_psm(&at_cmd_buf[i]);
-      return RESULT(res);
-   }
+      i = strstart(at_cmd_buf, "psm", true);
+      if (i > 0) {
+         uart_tx_pause(false);
+         res = modem_cmd_psm(&at_cmd_buf[i]);
+         return RESULT(res);
+      }
 
-   i = strstart(at_cmd_buf, "rai", true);
-   if (i > 0) {
-      uart_tx_pause(false);
-      res = modem_cmd_rai(&at_cmd_buf[i]);
-      return RESULT(res);
-   }
+      i = strstart(at_cmd_buf, "rai", true);
+      if (i > 0) {
+         uart_tx_pause(false);
+         res = modem_cmd_rai(&at_cmd_buf[i]);
+         return RESULT(res);
+      }
 
 #ifdef CONFIG_SMS
-   i = strstart(at_cmd_buf, "sms", true);
-   if (i > 0) {
-      uart_tx_pause(false);
-      res = modem_cmd_sms(&at_cmd_buf[i]);
-      return RESULT(res);
-   }
+      i = strstart(at_cmd_buf, "sms", true);
+      if (i > 0) {
+         uart_tx_pause(false);
+         res = modem_cmd_sms(&at_cmd_buf[i]);
+         return RESULT(res);
+      }
 #endif
 
-   i = strstart(at_cmd_buf, "scan", true);
-   if (i == 0) {
-      i = strstart(at_cmd_buf, "AT%NCELLMEAS", true);
+      i = strstart(at_cmd_buf, "scan", true);
+      if (i == 0) {
+         i = strstart(at_cmd_buf, "AT%NCELLMEAS", true);
+      }
+      if (i > 0) {
+         uart_tx_pause(false);
+         res = modem_cmd_scan(&at_cmd_buf[i]);
+         return RESULT(res);
+      }
    }
-   if (i > 0) {
-      uart_tx_pause(false);
-      res = modem_cmd_scan(&at_cmd_buf[i]);
-      return RESULT(res);
-   }
-
    if (!strstart(at_cmd_buf, "AT", true)) {
       LOG_INF("ignore > %s", at_cmd_buf);
       return -1;
@@ -608,6 +703,7 @@ static int at_cmd()
       LOG_INF("  dev    : read device info.");
       LOG_INF("  edrx   : configure eDRX.(*?)");
       LOG_INF("  env    : read environment sensor.");
+      LOG_INF("  eval   : evaluate connection.(*)");
       LOG_INF("  net    : read network info.(*)");
       LOG_INF("  on     : switch modem on.(*)");
       LOG_INF("  off    : switch modem off.(*)");

@@ -60,7 +60,7 @@ Install the App and connect the `Thingy:91`.
 
 ## Usage
 
-The most [nRF9160 AT-commands](https://infocenter.nordicsemi.com/pdf/nrf9160_at_commands_v2.3.pdf) are supported. Additionally some shortcuts and extra functions are available. Type `help` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg):
+The most [nRF9160 AT-commands](https://infocenter.nordicsemi.com/pdf/nrf9160_at_commands_v2.3.pdf) are supported. Additionally some shortcuts and extra functions are available as custom commands. For simple usage, these custom commands uses simple characters and digits, instead of control characters as '+', '%' or '='. Type `help` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg):
 
 {#help}
 ![help](./serial_bluetooth_terminal_help.jpg)
