@@ -138,8 +138,8 @@ uint32_t appl_reset_cause(int *flags)
       }
       if (reset_cause & RESET_SOFTWARE) {
          uint16_t reboot_code = 0;
-         appl_storage_read_int_items(REBOOT_CODE_ID, 0, NULL, &reboot_code, 1);
-         if (reboot_code == ERROR_CODE_TOO_MANY_FAILURES) {
+         int rc = appl_storage_read_int_items(REBOOT_CODE_ID, 0, NULL, &reboot_code, 1);         
+         if (!rc && reboot_code == ERROR_CODE_TOO_MANY_FAILURES) {
             LOG_INF("Reboot 1.");
             if (flags) {
                *flags |= FLAG_REBOOT_1;

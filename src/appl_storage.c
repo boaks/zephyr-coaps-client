@@ -255,12 +255,13 @@ static void appl_storage_init_headers(struct storage_setup *config)
    appl_storage_write_memory(config->headers_offset, config->header, sizeof(config->header));
 }
 
-static void appl_storage_init_offset(struct storage_setup *config)
+static int appl_storage_init_offset(struct storage_setup *config)
 {
+   int rc = 0;
    uint8_t data[MAX_ITEM_SIZE];
 
    k_mutex_lock(&storage_mutex, K_FOREVER);
-   if (!appl_storage_read_memory(config->headers_offset, data, sizeof(config->header))) {
+   if (!(rc = appl_storage_read_memory(config->headers_offset, data, sizeof(config->header)))) {
       if (memcmp(data, config->header, sizeof(config->header)) != 0) {
          LOG_INF("Storage: format %s 0x%lx.", config->desc, config->headers_offset);
          LOG_HEXDUMP_DBG(data, sizeof(config->header), "Storage: header read");
@@ -271,14 +272,14 @@ static void appl_storage_init_offset(struct storage_setup *config)
          LOG_INF("Storage: format %s ready.", config->desc);
       } else {
          for (int addr = appl_storage_start_offset(config); addr < config->end_offset; addr += sizeof(data)) {
-            if (!appl_storage_read_memory(addr, data, sizeof(data))) {
+            if (!(rc = appl_storage_read_memory(addr, data, sizeof(data)))) {
                for (int index = 0;
                     index < sizeof(data) && (addr + index) < config->end_offset;
                     index += config->item_size) {
                   if (only_ff(&data[index], TIME_SIZE)) {
                      config->current_offset = addr + index;
                      k_mutex_unlock(&storage_mutex);
-                     return;
+                     return rc;
                   }
                }
             }
@@ -286,6 +287,7 @@ static void appl_storage_init_offset(struct storage_setup *config)
       }
    }
    k_mutex_unlock(&storage_mutex);
+   return rc;
 }
 
 static int appl_storage_init(void)
@@ -339,8 +341,8 @@ static int appl_storage_init(void)
 #endif
       storage_init_state = STORAGE_INITIALIZED;
       index = 0;
-      while (index < storage_config_count) {
-         appl_storage_init_offset(&storage_setups[index++]);
+      while (index < storage_config_count && !rc)  {
+         rc = appl_storage_init_offset(&storage_setups[index++]);
       }
       if (rc) {
          goto init_error;
