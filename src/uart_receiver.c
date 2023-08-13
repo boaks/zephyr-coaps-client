@@ -943,7 +943,7 @@ static int uart_receiver_init(void)
                       K_THREAD_STACK_SIZEOF(uart_stack),
                       CONFIG_UART_THREAD_PRIO, NULL);
 
-   uart_reschedule_rx_enable(K_MSEC(CONFIG_UART_RX_CHECK_INTERVAL_MS));
+   uart_reschedule_rx_enable(K_MSEC(100));
 
    return err;
 }
