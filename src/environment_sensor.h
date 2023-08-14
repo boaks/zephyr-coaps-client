@@ -53,6 +53,14 @@ int environment_get_temperature_history(double *values, uint8_t size);
 
 void environment_add_temperature_history(double value, bool force);
 
+int environment_get_humidity_history(double *values, uint8_t size);
+
+void environment_add_humidity_history(double value, bool force);
+
+int environment_get_pressure_history(double *values, uint8_t size);
+
+void environment_add_pressure_history(double value, bool force);
+
 int environment_get_iaq_history(uint16_t *values, uint8_t size);
 
 void environment_add_iaq_history(uint16_t value, bool force);
@@ -67,6 +75,10 @@ void environment_init_history(void);
 
 #define environment_get_temperature_history(X, S) -1
 #define environment_add_temperature_history(X, S)
+#define environment_get_humidity_history(X, S) -1
+#define environment_add_humidity_history(X, S)
+#define environment_get_pressure_history(X, S) -1
+#define environment_add_pressure_history(X, S)
 #define environment_get_iaq_history(X, S) -1
 #define environment_add_iaq_history(X, S)
 #define environment_init_history()

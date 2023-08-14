@@ -247,13 +247,6 @@ int coap_client_parse_data(uint8_t *data, size_t len)
    return PARSE_RESPONSE;
 }
 
-#ifdef CONFIG_ENVIRONMENT_SENSOR
-#if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
-static double s_temperatures[CONFIG_ENVIRONMENT_HISTORY_SIZE];
-static uint16_t s_iaqs[CONFIG_ENVIRONMENT_HISTORY_SIZE];
-#endif
-#endif
-
 static int coap_client_add_uri_query(struct coap_packet *request, const char *query)
 {
    if (query && strlen(query) > 0) {
@@ -291,7 +284,9 @@ static int coap_client_add_uri_query_param_opt(struct coap_packet *request, cons
 }
 #endif
 
-int coap_client_prepare_modem_info(char *buf, size_t len)
+#define COAP_FLAG_MINIMAL 1
+
+int coap_client_prepare_modem_info(char *buf, size_t len, int flags)
 {
    int64_t reboot_times[REBOOT_INFOS];
    uint16_t reboot_codes[REBOOT_INFOS];
@@ -335,12 +330,14 @@ int coap_client_prepare_modem_info(char *buf, size_t len)
    buf[index++] = '\n';
    start = index;
 
-   memset(&modem_info, 0, sizeof(modem_info));
-   if (!modem_get_modem_info(&modem_info)) {
-      index += snprintf(buf + index, len - index, "HW: %s, MFW: %s, IMEI: %s", modem_info.version, modem_info.firmware, modem_info.imei);
-      dtls_info("%s", buf + start);
-      buf[index++] = '\n';
-      start = index;
+   if (!(flags & COAP_FLAG_MINIMAL)) {
+      memset(&modem_info, 0, sizeof(modem_info));
+      if (!modem_get_modem_info(&modem_info)) {
+         index += snprintf(buf + index, len - index, "HW: %s, MFW: %s, IMEI: %s", modem_info.version, modem_info.firmware, modem_info.imei);
+         dtls_info("%s", buf + start);
+         buf[index++] = '\n';
+         start = index;
+      }
    }
 
    power_manager_status(&battery_level, &battery_voltage, &battery_status, &battery_forecast);
@@ -403,7 +400,7 @@ int coap_client_prepare_modem_info(char *buf, size_t len)
    return index - 1;
 }
 
-int coap_client_prepare_sim_info(char *buf, size_t len)
+int coap_client_prepare_sim_info(char *buf, size_t len, int flags)
 {
    struct lte_sim_info sim_info;
    int start = 0;
@@ -448,7 +445,7 @@ union lte_params {
    enum lte_network_rai rai_info;
 };
 
-int coap_client_prepare_net_info(char *buf, size_t len)
+int coap_client_prepare_net_info(char *buf, size_t len, int flags)
 {
    int start = 0;
    int index = 0;
@@ -557,7 +554,7 @@ union lte_stats {
    struct lte_ce_info ce_info;
 };
 
-int coap_client_prepare_net_stats(char *buf, size_t len)
+int coap_client_prepare_net_stats(char *buf, size_t len, int flags)
 {
    int start = 0;
    int index = 0;
@@ -567,7 +564,7 @@ int coap_client_prepare_net_stats(char *buf, size_t len)
    if (modem_get_coverage_enhancement_info(&params.ce_info) >= 0) {
       if (params.ce_info.ce_supported) {
          index = snprintf(buf, len, "!CE: down: %u, up: %u",
-                           params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
+                          params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
          if (params.ce_info.rsrp < INVALID_SIGNAL_VALUE) {
             index += snprintf(buf + index, len - index, ", RSRP: %d dBm",
                               params.ce_info.rsrp);
@@ -594,95 +591,133 @@ int coap_client_prepare_net_stats(char *buf, size_t len)
                         params.network_statistic.transmitted, params.network_statistic.received,
                         params.network_statistic.max_packet_size, params.network_statistic.average_packet_size);
       dtls_info("%s", buf + start);
-      start = index + 1;
-      index += snprintf(buf + index, len - index, "\nCell updates %u, Network searchs %u (%u s), PSM delays %u (%u s), Restarts %u",
-                        params.network_statistic.cell_updates, params.network_statistic.searchs, params.network_statistic.search_time,
-                        params.network_statistic.psm_delays, params.network_statistic.psm_delay_time, params.network_statistic.restarts);
-      dtls_info("%s", buf + start);
-      start = index + 1;
-      index += snprintf(buf + index, len - index, "\nWakeups %u, %u s, connected %u s, asleep %u s",
-                        params.network_statistic.wakeups, params.network_statistic.wakeup_time,
-                        params.network_statistic.connected_time, params.network_statistic.asleep_time);
-      dtls_info("%s", buf + start);
+      if (!(flags & COAP_FLAG_MINIMAL)) {
+         start = index + 1;
+         index += snprintf(buf + index, len - index, "\nCell updates %u, Network searchs %u (%u s), PSM delays %u (%u s), Restarts %u",
+                           params.network_statistic.cell_updates, params.network_statistic.searchs, params.network_statistic.search_time,
+                           params.network_statistic.psm_delays, params.network_statistic.psm_delay_time, params.network_statistic.restarts);
+         dtls_info("%s", buf + start);
+         start = index + 1;
+         index += snprintf(buf + index, len - index, "\nWakeups %u, %u s, connected %u s, asleep %u s",
+                           params.network_statistic.wakeups, params.network_statistic.wakeup_time,
+                           params.network_statistic.connected_time, params.network_statistic.asleep_time);
+         dtls_info("%s", buf + start);
+      }
    }
 
    return index;
 }
 
-int coap_client_prepare_env_info(char *buf, size_t len)
+#if defined(CONFIG_ENVIRONMENT_SENSOR)
+static int coap_client_prepare_env_history(const double *values, size_t size, int prec, char *buf, size_t len)
+{
+   int index = 0;
+   int history_index = 0;
+   for (; history_index < size; ++history_index) {
+      index += snprintf(buf + index, len - index, "%.*f,", prec, values[history_index]);
+   }
+   --index;
+   return index;
+}
+#endif
+
+int coap_client_prepare_env_info(char *buf, size_t len, int flags)
 {
    int index = 0;
    int res = 0;
 
 #ifdef CONFIG_ENVIRONMENT_SENSOR
-   double value = 0.0;
-   const char *p = "";
    int start = 0;
    int32_t int_value = 0;
    uint8_t byte_value = 0;
 
 #if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
-   res = environment_get_temperature_history(s_temperatures, CONFIG_ENVIRONMENT_HISTORY_SIZE);
+   double values[CONFIG_ENVIRONMENT_HISTORY_SIZE];
+   uint16_t iaqs[CONFIG_ENVIRONMENT_HISTORY_SIZE];
+#else
+   double values[1];
+#endif
+
+#if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
+   res = environment_get_temperature_history(values, CONFIG_ENVIRONMENT_HISTORY_SIZE);
+#endif
+   if (res <= 0 && environment_get_temperature(&values[0]) == 0) {
+      res = 1;
+   }
    if (res > 0) {
-      int history_index;
       buf[index++] = '!';
-      for (history_index = 0; history_index < res; ++history_index) {
-         index += snprintf(buf + index, len - index, "%.2f,", s_temperatures[history_index]);
-      }
-      --index;
+      index += coap_client_prepare_env_history(values, res, 2, buf + index, len - index);
       index += snprintf(buf + index, len - index, " C");
       dtls_info("%s", buf);
    }
-#endif
-   if (!res && environment_get_temperature(&value) == 0) {
-      index += snprintf(buf, len, "!%.2f C", value);
-      dtls_info("%s", buf);
-      p = "!";
-   }
-   if (environment_get_humidity(&value) == 0) {
-      if (index) {
-         buf[index++] = '\n';
-      }
-      start = index;
-      index += snprintf(buf + index, len - index, "%s%.2f %%H", p, value);
-      dtls_info("%s", buf + start);
-   }
-   if (environment_get_pressure(&value) == 0) {
-      if (index) {
-         buf[index++] = '\n';
-      }
-      start = index;
-      index += snprintf(buf + index, len - index, "%s%.0f hPa", p, value);
-      dtls_info("%s", buf + start);
-   }
+
 #if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
-   res = environment_get_iaq_history(s_iaqs, CONFIG_ENVIRONMENT_HISTORY_SIZE);
+   res = environment_get_humidity_history(values, CONFIG_ENVIRONMENT_HISTORY_SIZE);
+#else
+   res = 0;
+#endif
+   if (res <= 0 && environment_get_humidity(&values[0]) == 0) {
+      res = 1;
+   }
+   if (res > 0) {
+      if (index) {
+         buf[index++] = '\n';
+      }
+      start = index;
+      buf[index++] = '!';
+      index += coap_client_prepare_env_history(values, res, 2, buf + index, len - index);
+      index += snprintf(buf + index, len - index, " %%H");
+      dtls_info("%s", buf + start);
+   }
+
+#if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
+   res = environment_get_pressure_history(values, CONFIG_ENVIRONMENT_HISTORY_SIZE);
+#else
+   res = 0;
+#endif
+   if (res <= 0 && environment_get_pressure(&values[0]) == 0) {
+      res = 1;
+   }
+   if (res > 0) {
+      if (index) {
+         buf[index++] = '\n';
+      }
+      start = index;
+      buf[index++] = '!';
+      index += coap_client_prepare_env_history(values, res, 0, buf + index, len - index);
+      index += snprintf(buf + index, len - index, " hPa");
+      dtls_info("%s", buf + start);
+   }
+
+#if (CONFIG_ENVIRONMENT_HISTORY_SIZE > 0)
+   res = environment_get_iaq_history(iaqs, CONFIG_ENVIRONMENT_HISTORY_SIZE);
    if (res > 0) {
       int history_index;
-      const char *desc = environment_get_iaq_description(IAQ_VALUE(s_iaqs[0]));
+      const char *desc = environment_get_iaq_description(IAQ_VALUE(iaqs[0]));
       if (index) {
          buf[index++] = '\n';
       }
       start = index;
       buf[index++] = '!';
       for (history_index = 0; history_index < int_value; ++history_index) {
-         index += snprintf(buf + index, len - index, "%d;%d,", IAQ_VALUE(s_iaqs[history_index]), IAQ_ACCURANCY(s_iaqs[history_index]));
+         index += snprintf(buf + index, len - index, "%d;%d,", IAQ_VALUE(iaqs[history_index]), IAQ_ACCURANCY(iaqs[history_index]));
       }
       --index;
       index += snprintf(buf + index, len - index, " Q (%s)", desc);
       dtls_info("%s", buf + start);
    }
 #endif
-   if (!res && environment_get_iaq(&int_value, &byte_value) == 0) {
+   if (res <= 0 && environment_get_iaq(&int_value, &byte_value) == 0) {
       const char *desc = environment_get_iaq_description(int_value);
       if (index) {
          buf[index++] = '\n';
       }
       start = index;
-      index += snprintf(buf + index, len - index, "%s%d;%d Q (%s)", p, int_value, byte_value, desc);
+      index += snprintf(buf + index, len - index, "!%d;%d Q (%s)", int_value, byte_value, desc);
       dtls_info("%s", buf + start);
    }
 #else  /* CONFIG_ENVIRONMENT_SENSOR */
+
    buf[index++] = '!';
    res = modem_at_cmd(buf + index, len - index, "%XTEMP: ", "AT%XTEMP?");
    if (res > 0) {
@@ -699,7 +734,7 @@ int coap_client_prepare_env_info(char *buf, size_t len)
    return index;
 }
 
-int coap_client_prepare_location_info(char *buf, size_t len)
+int coap_client_prepare_location_info(char *buf, size_t len, int flags)
 {
    int index = 0;
 
@@ -795,9 +830,15 @@ int coap_client_prepare_location_info(char *buf, size_t len)
    return index;
 }
 
+#ifdef CONFIG_COAP_SEND_MINIMAL
+#define COAP_FLAGS COAP_FLAG_MINIMAL
+#else
+#define COAP_FLAGS 0
+#endif
+
 int coap_client_prepare_post(void)
 {
-   char buf[800];
+   char buf[1000];
    int err;
    int index = 0;
    int start = 0;
@@ -813,7 +854,7 @@ int coap_client_prepare_post(void)
    coap_message_len = 0;
 
 #ifdef CONFIG_COAP_SEND_MODEM_INFO
-   err = coap_client_prepare_modem_info(buf + start, sizeof(buf) - start);
+   err = coap_client_prepare_modem_info(buf, sizeof(buf), COAP_FLAGS);
    if (err > 0) {
       index = start + err;
    }
@@ -832,7 +873,7 @@ int coap_client_prepare_post(void)
 #ifdef CONFIG_COAP_SEND_SIM_INFO
    buf[index] = '\n';
    start = index + 1;
-   err = coap_client_prepare_sim_info(buf + start, sizeof(buf) - start);
+   err = coap_client_prepare_sim_info(buf + start, sizeof(buf) - start, COAP_FLAGS);
    if (err > 0) {
       index = start + err;
    }
@@ -841,7 +882,7 @@ int coap_client_prepare_post(void)
 #if defined(CONFIG_COAP_SEND_NETWORK_INFO)
    buf[index] = '\n';
    start = index + 1;
-   err = coap_client_prepare_net_info(buf + start, sizeof(buf) - start);
+   err = coap_client_prepare_net_info(buf + start, sizeof(buf) - start, COAP_FLAGS);
    if (err > 0) {
       index = start + err;
    }
@@ -850,7 +891,7 @@ int coap_client_prepare_post(void)
 #if defined(CONFIG_COAP_SEND_STATISTIC_INFO)
    buf[index] = '\n';
    start = index + 1;
-   err = coap_client_prepare_net_stats(buf + start, sizeof(buf) - start);
+   err = coap_client_prepare_net_stats(buf + start, sizeof(buf) - start, COAP_FLAGS);
    if (err > 0) {
       index = start + err;
    }
@@ -859,7 +900,7 @@ int coap_client_prepare_post(void)
 #ifdef CONFIG_LOCATION_ENABLE
    buf[index] = '\n';
    start = index + 1;
-   err = coap_client_prepare_location_info(buf + start, sizeof(buf) - start);
+   err = coap_client_prepare_location_info(buf + start, sizeof(buf) - start, COAP_FLAGS);
    if (err > 0) {
       index = start + err;
    }
@@ -867,7 +908,7 @@ int coap_client_prepare_post(void)
 
    buf[index] = '\n';
    start = index + 1;
-   err = coap_client_prepare_env_info(buf + start, sizeof(buf) - start);
+   err = coap_client_prepare_env_info(buf + start, sizeof(buf) - start, COAP_FLAGS);
    if (err > 0) {
       index = start + err;
    }

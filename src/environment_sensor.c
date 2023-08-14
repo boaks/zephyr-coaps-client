@@ -120,6 +120,8 @@ static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_a
    k_mutex_unlock(&environment_mutex);
 
    environment_add_temperature_history(temperature, false);
+   environment_add_humidity_history(humidity, false);
+   environment_add_pressure_history(p, false);
    iaq_qual = IAQ_VALUE((int)iaq) | IAQ_ACCURANCY_HIST(iaq_accuracy);
    environment_add_iaq_history(iaq_qual, false);
 

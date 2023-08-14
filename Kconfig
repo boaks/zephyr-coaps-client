@@ -85,6 +85,10 @@ config COAP_SEND_STATISTIC_INFO
 	bool "Include statistic infos in message."
 	default y
 
+config COAP_SEND_MINIMAL
+	bool "Reduce infos in message."
+	default n
+
 config COAP_NO_RESPONSE_ENABLE
 	bool "Use CoAP NO_RESPONSE option for one-way message"
 	default n

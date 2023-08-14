@@ -16,7 +16,7 @@
 
 #include "dtls.h"
 
-#define CLIENT_VERSION "v0.7.106"
+#define CLIENT_VERSION "v0.7.107"
 
 #define FLAG_TLS 1
 #define FLAG_KEEP_CONNECTION 2
@@ -38,15 +38,15 @@ typedef enum { PARSE_IGN = 0,
 
 int coap_client_parse_data(uint8_t *data, size_t len);
 
-int coap_client_prepare_modem_info(char *buf, size_t len);
+int coap_client_prepare_modem_info(char *buf, size_t len, int flags);
 
-int coap_client_prepare_sim_info(char *buf, size_t len);
+int coap_client_prepare_sim_info(char *buf, size_t len, int flags);
 
-int coap_client_prepare_net_info(char* buf, size_t len);
+int coap_client_prepare_net_info(char* buf, size_t len, int flags);
 
-int coap_client_prepare_net_stats(char* buf, size_t len);
+int coap_client_prepare_net_stats(char* buf, size_t len, int flags);
 
-int coap_client_prepare_env_info(char *buf, size_t len);
+int coap_client_prepare_env_info(char *buf, size_t len, int flags);
 
 int coap_client_prepare_post(void);
 

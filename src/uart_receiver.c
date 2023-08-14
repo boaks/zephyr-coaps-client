@@ -598,8 +598,8 @@ static int at_cmd_send()
       res = modem_read_network_info(NULL, true);
       return RESULT(res);
    } else if (!stricmp(at_cmd_buf, "net")) {
-      res = coap_client_prepare_net_info(at_cmd_buf, sizeof(at_cmd_buf));
-      res = coap_client_prepare_net_stats(at_cmd_buf, sizeof(at_cmd_buf));
+      res = coap_client_prepare_net_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
+      res = coap_client_prepare_net_stats(at_cmd_buf, sizeof(at_cmd_buf), 0);
       return RESULT(res);
    } else if (!stricmp(at_cmd_buf, "eval")) {
       strcpy(at_cmd_buf, "AT%CONEVAL");
@@ -691,10 +691,10 @@ static int at_cmd()
       dtls_cmd_trigger(true, 3);
       return 0;
    } else if (!stricmp(at_cmd_buf, "env")) {
-      res = coap_client_prepare_env_info(at_cmd_buf, sizeof(at_cmd_buf));
+      res = coap_client_prepare_env_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
       return RESULT(res);
    } else if (!stricmp(at_cmd_buf, "dev")) {
-      res = coap_client_prepare_modem_info(at_cmd_buf, sizeof(at_cmd_buf));
+      res = coap_client_prepare_modem_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
       return RESULT(res);
    } else if (!stricmp(at_cmd_buf, "help")) {
       LOG_INF("> help:");

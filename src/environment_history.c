@@ -23,15 +23,74 @@
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
+#define SENSOR_HISTORY(T) sensor_history_##T
+#define SENSOR_HISTORY_DEF(T, S) \
+   typedef struct {              \
+      int64_t next_time;         \
+      uint8_t size;              \
+      T history[S];              \
+   } SENSOR_HISTORY(T)
+
 static K_MUTEX_DEFINE(environment_history_mutex);
-static int64_t s_temperature_next = 0;
-static uint8_t s_temperature_size = 0;
-static double s_temperature_history[CONFIG_ENVIRONMENT_HISTORY_SIZE];
+
+SENSOR_HISTORY_DEF(double, CONFIG_ENVIRONMENT_HISTORY_SIZE);
+
+static SENSOR_HISTORY(double) s_temperature_history;
+static SENSOR_HISTORY(double) s_humidity_history;
+static SENSOR_HISTORY(double) s_pressure_history;
 
 #ifdef CONFIG_BME680_BSEC
-static int64_t s_iaq_next = 0;
-static uint8_t s_iaq_size = 0;
-static uint16_t s_iaq_history[CONFIG_ENVIRONMENT_HISTORY_SIZE];
+
+SENSOR_HISTORY_DEF(uint16_t, CONFIG_ENVIRONMENT_HISTORY_SIZE);
+
+static SENSOR_HISTORY(uint16_t) s_iaq_history;
+
+static void environment_init_uint16_history(SENSOR_HISTORY(uint16_t) * history)
+{
+   uint8_t index;
+   k_mutex_lock(&environment_history_mutex, K_FOREVER);
+   history->size = 0;
+   history->next_time = 0;
+   for (index = 0; index < CONFIG_ENVIRONMENT_HISTORY_SIZE; ++index) {
+      history->history[index] = 0.0;
+   }
+   k_mutex_unlock(&environment_history_mutex);
+}
+
+static int environment_get_uint16_history(SENSOR_HISTORY(uint16_t) * history, uint16_t *values, uint8_t size)
+{
+   uint8_t index;
+
+   k_mutex_lock(&environment_history_mutex, K_FOREVER);
+   if (history->size < size) {
+      size = history->size;
+   }
+   for (index = 0; index < size; ++index) {
+      values[index] = history->history[index];
+   }
+   k_mutex_unlock(&environment_history_mutex);
+
+   return size;
+}
+
+static void environment_add_uint16_history(SENSOR_HISTORY(uint16_t) * history, uint16_t value, bool force)
+{
+   uint8_t index;
+   int64_t now = k_uptime_get();
+
+   k_mutex_lock(&environment_history_mutex, K_FOREVER);
+   if (force || (now - history->next_time) >= 0) {
+      if (history->size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
+         ++history->size;
+      }
+      for (index = history->size - 1; index > 0; --index) {
+         history->history[index] = history->history[index - 1];
+      }
+      history->history[0] = value;
+      history->next_time = now + CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S * MSEC_PER_SEC;
+   }
+   k_mutex_unlock(&environment_history_mutex);
+}
 #endif
 
 #ifndef NO_ENVIRONMENT_HISTORY_WORKER
@@ -41,68 +100,107 @@ static K_WORK_DELAYABLE_DEFINE(environment_history_work, environment_history_wor
 
 static void environment_history_work_fn(struct k_work *work)
 {
-   double temperature = 0.0;
+   double value = 0.0;
 
    work_schedule_for_io_queue(&environment_history_work, K_SECONDS(CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S));
    environment_sensor_fetch(true);
-   if (environment_get_temperature(&temperature) == 0) {
-      environment_add_temperature_history(temperature, true);
+   if (environment_get_temperature(&value) == 0) {
+      environment_add_temperature_history(value, true);
+   }
+   if (environment_get_humidity(&value) == 0) {
+      environment_add_humidity_history(value, true);
+   }
+   if (environment_get_pressure(&value) == 0) {
+      environment_add_pressure_history(value, true);
    }
 }
 #endif
 
-int environment_get_temperature_history(double *values, uint8_t size)
+static void environment_init_double_history(SENSOR_HISTORY(double) * history)
+{
+   uint8_t index;
+   k_mutex_lock(&environment_history_mutex, K_FOREVER);
+   history->size = 0;
+   history->next_time = 0;
+   for (index = 0; index < CONFIG_ENVIRONMENT_HISTORY_SIZE; ++index) {
+      history->history[index] = 0.0;
+   }
+   k_mutex_unlock(&environment_history_mutex);
+}
+
+static int environment_get_double_history(SENSOR_HISTORY(double) * history, double *values, uint8_t size)
 {
    uint8_t index;
 
    k_mutex_lock(&environment_history_mutex, K_FOREVER);
-   if (s_temperature_size < size) {
-      size = s_temperature_size;
+   if (history->size < size) {
+      size = history->size;
    }
    for (index = 0; index < size; ++index) {
-      values[index] = s_temperature_history[index];
+      values[index] = history->history[index];
    }
    k_mutex_unlock(&environment_history_mutex);
 
    return size;
 }
 
-void environment_add_temperature_history(double value, bool force)
+static void environment_add_double_history(SENSOR_HISTORY(double) * history, double value, bool force)
 {
    uint8_t index;
    int64_t now = k_uptime_get();
 
    k_mutex_lock(&environment_history_mutex, K_FOREVER);
-   if (force || (now - s_temperature_next) >= 0) {
-      if (s_temperature_size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
-         ++s_temperature_size;
+   if (force || (now - history->next_time) >= 0) {
+      if (history->size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
+         ++history->size;
       }
-      for (index = s_temperature_size - 1; index > 0; --index) {
-         s_temperature_history[index] = s_temperature_history[index - 1];
+      for (index = history->size - 1; index > 0; --index) {
+         history->history[index] = history->history[index - 1];
       }
-      s_temperature_history[0] = value;
-      s_temperature_next = now + CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S * MSEC_PER_SEC;
+      history->history[0] = value;
+      history->next_time = now + CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S * MSEC_PER_SEC;
    }
    k_mutex_unlock(&environment_history_mutex);
 }
 
+int environment_get_temperature_history(double *values, uint8_t size)
+{
+   return environment_get_double_history(&s_temperature_history, values, size);
+}
+
+void environment_add_temperature_history(double value, bool force)
+{
+   environment_add_double_history(&s_temperature_history, value, force);
+}
+
+int environment_get_humidity_history(double *values, uint8_t size)
+{
+   return environment_get_double_history(&s_humidity_history, values, size);
+}
+
+void environment_add_humidity_history(double value, bool force)
+{
+   environment_add_double_history(&s_humidity_history, value, force);
+}
+
+int environment_get_pressure_history(double *values, uint8_t size)
+{
+   return environment_get_double_history(&s_pressure_history, values, size);
+}
+
+void environment_add_pressure_history(double value, bool force)
+{
+   environment_add_double_history(&s_pressure_history, value, force);
+}
+
 void environment_init_history(void)
 {
-   uint8_t index;
-   k_mutex_lock(&environment_history_mutex, K_FOREVER);
-   s_temperature_size = 0;
-   s_temperature_next = 0;
-   for (index = 0; index < CONFIG_ENVIRONMENT_HISTORY_SIZE; ++index) {
-      s_temperature_history[index] = 0.0;
-   }
+   environment_init_double_history(&s_temperature_history);
+   environment_init_double_history(&s_humidity_history);
+   environment_init_double_history(&s_pressure_history);
 #ifdef CONFIG_BME680_BSEC
-   s_iaq_size = 0;
-   s_iaq_next = 0;
-   for (index = 0; index < CONFIG_ENVIRONMENT_HISTORY_SIZE; ++index) {
-      s_iaq_history[index] = 0;
-   }
+   environment_init_uint16_history(&s_iaq_history);
 #endif
-   k_mutex_unlock(&environment_history_mutex);
 #ifndef NO_ENVIRONMENT_HISTORY_WORKER
    work_schedule_for_io_queue(&environment_history_work, K_SECONDS(2));
 #endif
@@ -111,18 +209,7 @@ void environment_init_history(void)
 int environment_get_iaq_history(uint16_t *values, uint8_t size)
 {
 #ifdef CONFIG_BME680_BSEC
-   uint8_t index;
-
-   k_mutex_lock(&environment_history_mutex, K_FOREVER);
-   if (s_iaq_size < size) {
-      size = s_iaq_size;
-   }
-   for (index = 0; index < size; ++index) {
-      values[index] = s_iaq_history[index];
-   }
-   k_mutex_unlock(&environment_history_mutex);
-
-   return size;
+   return environment_get_uint16_history(&s_iaq_history, values, size);
 #else
    (void)values;
    (void)size;
@@ -133,21 +220,7 @@ int environment_get_iaq_history(uint16_t *values, uint8_t size)
 void environment_add_iaq_history(uint16_t value, bool force)
 {
 #ifdef CONFIG_BME680_BSEC
-   uint8_t index;
-   int64_t now = k_uptime_get();
-
-   k_mutex_lock(&environment_history_mutex, K_FOREVER);
-   if (force || (now - s_iaq_next) >= 0) {
-      if (s_iaq_size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
-         ++s_iaq_size;
-      }
-      for (index = s_iaq_size - 1; index > 0; --index) {
-         s_iaq_history[index] = s_iaq_history[index - 1];
-      }
-      s_iaq_history[0] = value;
-      s_iaq_next = now + CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S * MSEC_PER_SEC;
-   }
-   k_mutex_unlock(&environment_history_mutex);
+   environment_add_uint16_history(&s_iaq_history, value, force);
 #else
    (void)value;
    (void)force;
