@@ -128,7 +128,7 @@ I 60.865: Wakeups 1, 1 s, connected 11 s, asleep 0 s
 OK
 ```
 
-Each line may starts with a level ('E'rror, 'W'arning, 'I'nfo, or 'D'ebug), which is sometimes usefull for development. Then a relative time follows with seconds and milliseconds, e.g. "60.856".
+Each line may starts with a level ('E'rror, 'W'arning, 'I'nfo, or 'D'ebug), which is sometimes usefull for development. If the lines shows a 'b'usy, then the mode is currently executing a command and will reject further commands. After that level a relative time follows with seconds and milliseconds, e.g. "60.856".
 
 That is followed by text, which explains itself a lot. E.g. CAT-M1, roaming, PLMN and so on. 
 

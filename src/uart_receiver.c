@@ -292,12 +292,13 @@ static void uart_log_process(const struct log_backend *const backend,
       k_mutex_unlock(&uart_tx_mutex);
 #endif
       if (level) {
-         //         int state = atomic_get(&uart_at_state);
          int cycles = sys_clock_hw_cycles_per_sec();
          log_timestamp_t seconds = (msg->log.hdr.timestamp / cycles) % 100;
          log_timestamp_t milliseconds = (msg->log.hdr.timestamp * 1000 / cycles) % 1000;
-         //         cbprintf(uart_tx_out_func, NULL, "%c %d %02d.%03d: ",
-         //                  level, state, seconds, milliseconds);
+         if (atomic_test_bit(&uart_at_state, UART_AT_CMD_PENDING) ||
+             atomic_test_bit(&uart_at_state, UART_AT_CMD_EXECUTING)) {
+            level = 'b';            
+         }
          cbprintf(uart_tx_out_func, NULL, "%c %02d.%03d: ",
                   level, seconds, milliseconds);
       }
