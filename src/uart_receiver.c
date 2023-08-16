@@ -585,7 +585,7 @@ static int at_cmd_send()
    int i = 0;
 
    if (!stricmp(at_cmd_buf, "reset")) {
-      strcpy(at_cmd_buf, "AT%%XFACTORYRESET=0");
+      strcpy(at_cmd_buf, "AT%XFACTORYRESET=0");
    } else if (!stricmp(at_cmd_buf, "off")) {
       strcpy(at_cmd_buf, "AT+CFUN=0");
    } else if (!stricmp(at_cmd_buf, "on")) {
