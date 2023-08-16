@@ -257,15 +257,6 @@ bool modem_set_preference(enum preference_mode mode)
                case LTE_M_PREFERENCE:
                   lte_new_preference = LTE_LC_SYSTEM_MODE_LTEM;
                   break;
-               case ADJUST_PREFERENCE:
-                  k_mutex_lock(&lte_mutex, K_FOREVER);
-                  if (network_info.mode == LTE_LC_LTE_MODE_LTEM) {
-                     lte_new_preference = LTE_LC_SYSTEM_MODE_LTEM;
-                  } else if (network_info.mode == LTE_LC_LTE_MODE_NBIOT) {
-                     lte_new_preference = LTE_LC_SYSTEM_MODE_NBIOT;
-                  }
-                  k_mutex_unlock(&lte_mutex);
-                  break;
             }
             if (lte_new_preference != lte_preference) {
                LOG_INF("%s LTE mode preference to %s", op, sys_mode);
@@ -288,9 +279,10 @@ bool modem_set_preference(enum preference_mode mode)
             lte_system_mode_preference = true;
             return true;
          }
+      } else {
+         lte_system_mode_preference = false;
       }
    }
-   lte_system_mode_preference = false;
    return false;
 }
 
@@ -1320,14 +1312,25 @@ int modem_start(const k_timeout_t timeout, bool save)
 #else
          if (save && time > CONFIG_MODEM_SAVE_CONFIG_THRESHOLD * MSEC_PER_SEC) {
 #endif
+            enum preference_mode current_mode = RESET_PREFERENCE;
+
             LOG_INF("Modem saving ...");
-            lte_lc_power_off();
-            if (lte_system_mode_preference) {
-               modem_set_preference(ADJUST_PREFERENCE);
-            }
+
             k_mutex_lock(&lte_mutex, K_FOREVER);
+            if (lte_system_mode_preference) {
+               if (network_info.mode == LTE_LC_LTE_MODE_LTEM) {
+                  current_mode = LTE_M_PREFERENCE;
+               } else if (network_info.mode == LTE_LC_LTE_MODE_NBIOT) {
+                  current_mode = NBIOT_PREFERENCE;
+               }
+            }
             --lte_searchs;
             k_mutex_unlock(&lte_mutex);
+
+            lte_lc_power_off();
+            if (current_mode != RESET_PREFERENCE) {
+               modem_set_preference(current_mode);
+            }
             lte_lc_normal();
             LOG_INF("Modem saved.");
             err = modem_wait_ready(timeout);
