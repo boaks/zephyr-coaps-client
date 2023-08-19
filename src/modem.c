@@ -572,6 +572,16 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
    lte_registration_set(registered);
 }
 
+static inline int lte_lc_ncell_quality(const struct lte_lc_ncell *ncell)
+{
+   return ncell->rsrp + (ncell->rsrq / 2);
+}
+
+static inline int lte_lc_cell_quality(const struct lte_lc_cell *gci_cell)
+{
+   return gci_cell->rsrp + (gci_cell->rsrq / 2);
+}
+
 static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
 {
    int current_cell;
@@ -591,21 +601,50 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
    }
    if (cells_info->ncells_count) {
       const struct lte_lc_ncell *neighbor_cells = cells_info->neighbor_cells;
+      const struct lte_lc_ncell *neighbor_cells_sorted[cells_info->ncells_count];
       for (int index = 0; index < cells_info->ncells_count; ++index) {
-         LOG_INF("[%d]: earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", index,
-                 neighbor_cells->earfcn, neighbor_cells->phys_cell_id,
+         int quality = lte_lc_ncell_quality(neighbor_cells);
+         neighbor_cells_sorted[index] = neighbor_cells;
+         for (int index2 = index; index2 > 0; --index2) {
+            if (quality <= lte_lc_ncell_quality(neighbor_cells_sorted[index2 - 1])) {
+               break;
+            }
+            neighbor_cells_sorted[index2] = neighbor_cells_sorted[index2 - 1];
+            neighbor_cells_sorted[index2 - 1] = neighbor_cells;
+         }
+         ++neighbor_cells;
+      }
+      int w = cells_info->ncells_count > 9 ? 2 : 1;
+      for (int index = 0; index < cells_info->ncells_count; ++index) {
+         neighbor_cells = neighbor_cells_sorted[index];
+         LOG_INF("[%*d]: earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", w,
+                 index, neighbor_cells->earfcn, neighbor_cells->phys_cell_id,
                  neighbor_cells->rsrp - 140, (neighbor_cells->rsrq - 39) / 2);
          ++neighbor_cells;
       }
    } else if (cells_info->gci_cells_count) {
-      struct lte_lc_cell *gci_cells = cells_info->gci_cells;
+      const struct lte_lc_cell *gci_cells = cells_info->gci_cells;
+      const struct lte_lc_cell *gci_cells_sorted[cells_info->gci_cells_count];
+      int w = cells_info->gci_cells_count > 9 ? 2 : 1;
       for (int index = 0; index < cells_info->gci_cells_count; ++index) {
-         LOG_INF("[%s%d]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB",
-                 current_cell == gci_cells->id ? "*" : "", index,
+         int quality = lte_lc_cell_quality(gci_cells);
+         gci_cells_sorted[index] = gci_cells;
+         for (int index2 = index; index2 > 0; --index2) {
+            if (quality <= lte_lc_cell_quality(gci_cells_sorted[index2 - 1])) {
+               break;
+            }
+            gci_cells_sorted[index2] = gci_cells_sorted[index2 - 1];
+            gci_cells_sorted[index2 - 1] = gci_cells;
+         }
+         ++gci_cells;
+      }
+      for (int index = 0; index < cells_info->gci_cells_count; ++index) {
+         gci_cells = gci_cells_sorted[index];
+         LOG_INF("[%c%*d]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB",
+                 current_cell == gci_cells->id ? '*' : ' ', w, index,
                  gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
                  gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
                  gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
-         ++gci_cells;
       }
    }
 }
