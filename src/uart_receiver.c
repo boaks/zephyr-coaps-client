@@ -11,6 +11,7 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +23,7 @@
 #include <zephyr/logging/log_backend.h>
 #include <zephyr/logging/log_backend_std.h>
 #include <zephyr/logging/log_core.h>
+#include <zephyr/logging/log_ctrl.h>
 #include <zephyr/logging/log_output.h>
 #include <zephyr/logging/log_output_dict.h>
 #include <zephyr/pm/device.h>
@@ -31,6 +33,10 @@
 #include <modem_at.h>
 
 #include "appl_diagnose.h"
+#ifdef CONFIG_UART_UPDATE
+#include "appl_update.h"
+#include "appl_update_xmodem.h"
+#endif
 #include "coap_client.h"
 #include "io_job_queue.h"
 #include "modem.h"
@@ -72,8 +78,23 @@ static uint8_t uart_rx_buf[2][CONFIG_UART_BUFFER_LEN];
 #define UART_RX_ENABLED 0
 #define UART_AT_CMD_EXECUTING 1
 #define UART_AT_CMD_PENDING 2
+#define UART_UPDATE 3
 
 static atomic_t uart_at_state = ATOMIC_INIT(0);
+
+#ifdef CONFIG_UART_UPDATE
+
+static void uart_xmodem_process_fn(struct k_work *work);
+static void uart_xmodem_start_fn(struct k_work *work);
+
+static atomic_t xmodem_retries = ATOMIC_INIT(0);
+
+static K_WORK_DELAYABLE_DEFINE(uart_xmodem_start_work, uart_xmodem_start_fn);
+static K_WORK_DELAYABLE_DEFINE(uart_xmodem_nak_work, uart_xmodem_process_fn);
+static K_WORK_DELAYABLE_DEFINE(uart_xmodem_timeout_work, uart_xmodem_process_fn);
+static K_WORK_DEFINE(uart_xmodem_write_work, uart_xmodem_process_fn);
+static K_WORK_DEFINE(uart_xmodem_ready_work, uart_xmodem_process_fn);
+#endif
 
 static K_WORK_DELAYABLE_DEFINE(uart_enable_rx_work, uart_enable_rx_fn);
 static K_WORK_DELAYABLE_DEFINE(uart_end_pause_tx_work, uart_pause_tx_fn);
@@ -163,6 +184,7 @@ static int line_length(const uint8_t *data, size_t length)
 static K_MUTEX_DEFINE(uart_tx_mutex);
 static K_CONDVAR_DEFINE(uart_tx_condvar);
 static bool uart_tx_in_pause = false;
+static bool uart_tx_in_off = false;
 #endif
 
 static K_SEM_DEFINE(uart_tx_sem, 0, 1);
@@ -187,6 +209,17 @@ static void uart_tx_pause(bool pause)
          k_condvar_broadcast(&uart_tx_condvar);
       }
    }
+   k_mutex_unlock(&uart_tx_mutex);
+#endif
+}
+
+static void uart_tx_off(bool off)
+{
+#ifdef CONFIG_LOG_MODE_IMMEDIATE
+   ARG_UNUSED(off);
+#else
+   k_mutex_lock(&uart_tx_mutex, K_FOREVER);
+   uart_tx_in_off = off;
    k_mutex_unlock(&uart_tx_mutex);
 #endif
 }
@@ -284,20 +317,29 @@ static void uart_log_process(const struct log_backend *const backend,
    uint8_t *package = log_msg_get_package(&msg->log, &plen);
    if (plen) {
       char level = level_tab[msg->log.hdr.desc.level];
-#ifndef CONFIG_LOG_MODE_IMMEDIATE
+      bool off;
+
       k_mutex_lock(&uart_tx_mutex, K_FOREVER);
-      if (uart_tx_in_pause) {
+      off = uart_tx_in_off;
+#ifndef CONFIG_LOG_MODE_IMMEDIATE
+      if (!off && uart_tx_in_pause) {
          k_condvar_wait(&uart_tx_condvar, &uart_tx_mutex, K_FOREVER);
       }
-      k_mutex_unlock(&uart_tx_mutex);
 #endif
+      k_mutex_unlock(&uart_tx_mutex);
+      if (off) {
+         // silently drop during XMODEM
+         return;
+      }
       if (level) {
          int cycles = sys_clock_hw_cycles_per_sec();
          log_timestamp_t seconds = (msg->log.hdr.timestamp / cycles) % 100;
          log_timestamp_t milliseconds = (msg->log.hdr.timestamp * 1000 / cycles) % 1000;
-         if (atomic_test_bit(&uart_at_state, UART_AT_CMD_PENDING) ||
-             atomic_test_bit(&uart_at_state, UART_AT_CMD_EXECUTING)) {
-            level = 'b';            
+         if (atomic_test_bit(&uart_at_state, UART_UPDATE)) {
+            level = 'u';
+         } else if (atomic_test_bit(&uart_at_state, UART_AT_CMD_PENDING) ||
+                    atomic_test_bit(&uart_at_state, UART_AT_CMD_EXECUTING)) {
+            level = 'b';
          }
          cbprintf(uart_tx_out_func, NULL, "%c %02d.%03d: ",
                   level, seconds, milliseconds);
@@ -385,12 +427,15 @@ static void uart_monitor_handler(const char *notif)
 #else
 static inline void uart_tx_pause(bool pause)
 {
+   ARG_UNUSED(pause);
    // empty
 }
+
 static inline void uart_tx_ready(void)
 {
    // empty
 }
+
 #endif /* CONFIG_LOG_BACKEND_UART_RECEIVER */
 
 static void uart_pause_tx_fn(struct k_work *work)
@@ -560,8 +605,9 @@ static void at_cmd_response_fn(struct k_work *work)
       at_cmd_result(1);
    } else if (strend(at_cmd_buf, "ERROR", false)) {
       at_cmd_result(1);
+   } else {
+      at_cmd_result(-1);
    }
-   at_cmd_result(-1);
    atomic_clear_bit(&uart_at_state, UART_AT_CMD_PENDING);
 }
 
@@ -607,6 +653,7 @@ static int at_cmd_send()
    } else {
       i = strstart(at_cmd_buf, "cfg", true);
       if (i > 0) {
+         // blocking AT cmd
          uart_tx_pause(false);
          res = modem_cmd_config(&at_cmd_buf[i]);
          if (res == 1) {
@@ -619,6 +666,7 @@ static int at_cmd_send()
 
       i = strstart(at_cmd_buf, "con", true);
       if (i > 0) {
+         // blocking AT cmd
          uart_tx_pause(false);
          res = modem_cmd_connect(&at_cmd_buf[i]);
          if (res == 1) {
@@ -631,21 +679,18 @@ static int at_cmd_send()
 
       i = strstart(at_cmd_buf, "edrx", true);
       if (i > 0) {
-         uart_tx_pause(false);
          res = modem_cmd_edrx(&at_cmd_buf[i]);
          return RESULT(res);
       }
 
       i = strstart(at_cmd_buf, "psm", true);
       if (i > 0) {
-         uart_tx_pause(false);
          res = modem_cmd_psm(&at_cmd_buf[i]);
          return RESULT(res);
       }
 
       i = strstart(at_cmd_buf, "rai", true);
       if (i > 0) {
-         uart_tx_pause(false);
          res = modem_cmd_rai(&at_cmd_buf[i]);
          return RESULT(res);
       }
@@ -653,7 +698,6 @@ static int at_cmd_send()
 #ifdef CONFIG_SMS
       i = strstart(at_cmd_buf, "sms", true);
       if (i > 0) {
-         uart_tx_pause(false);
          res = modem_cmd_sms(&at_cmd_buf[i]);
          return RESULT(res);
       }
@@ -664,7 +708,6 @@ static int at_cmd_send()
          i = strstart(at_cmd_buf, "AT%NCELLMEAS", true);
       }
       if (i > 0) {
-         uart_tx_pause(false);
          res = modem_cmd_scan(&at_cmd_buf[i]);
          return RESULT(res);
       }
@@ -684,8 +727,12 @@ static int at_cmd()
    int i;
 
    if (!stricmp(at_cmd_buf, "reboot")) {
-      LOG_INF(">> device reboot ...");
-      appl_reboot(ERROR_CODE_CMD, K_MSEC(2000));
+      if (appl_reboots()) {
+         LOG_INF(">> device is already rebooting!");
+      } else {
+         LOG_INF(">> device reboot ...");
+         appl_reboot(ERROR_CODE_CMD, K_MSEC(2000));
+      }
       return 0;
    } else if (!stricmp(at_cmd_buf, "send")) {
       LOG_INF(">> send");
@@ -697,6 +744,15 @@ static int at_cmd()
    } else if (!stricmp(at_cmd_buf, "dev")) {
       res = coap_client_prepare_modem_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
       return RESULT(res);
+#ifdef CONFIG_UART_UPDATE
+   } else if (!stricmp(at_cmd_buf, "update")) {
+      res = appl_update_start();
+      if (!res) {
+         atomic_set(&xmodem_retries, 0);
+         k_work_reschedule_for_queue(&uart_work_q, &uart_xmodem_start_work, K_MSEC(1000));
+      }
+      return RESULT(res);
+#endif
    } else if (!stricmp(at_cmd_buf, "help")) {
       LOG_INF("> help:");
       LOG_INF("  at???  : modem at-cmd.(*)");
@@ -720,6 +776,9 @@ static int at_cmd()
       LOG_INF("  sms    : send SMS.(*?)");
 #endif
       LOG_INF("  state  : read modem state.(*)");
+#ifdef CONFIG_UART_UPDATE
+      LOG_INF("  update : start application firmware update. Requires XMODEM.");
+#endif
       LOG_INF("  *      : AT-cmd is used, maybe busy.");
       LOG_INF("  ?      : help <cmd> available.");
       return 0;
@@ -749,7 +808,6 @@ static int at_cmd()
          return 0;
       }
    }
-
    if (atomic_test_and_set_bit(&uart_at_state, UART_AT_CMD_PENDING)) {
       LOG_INF("Modem pending ...");
       return 1;
@@ -764,8 +822,10 @@ static int at_cmd()
 static void at_cmd_send_fn(struct k_work *work)
 {
    ARG_UNUSED(work);
-   int res = at_cmd();
-   at_cmd_result(res);
+   if (!atomic_test_bit(&uart_at_state, UART_UPDATE)) {
+      int res = at_cmd();
+      at_cmd_result(res);
+   }
 }
 
 static bool uart_receiver_handler(uint8_t character)
@@ -819,7 +879,7 @@ static bool uart_receiver_handler(uint8_t character)
 
    /* Detect AT command buffer overflow, leaving space for null */
    if (at_cmd_len > sizeof(at_cmd_buf) - 2) {
-      LOG_ERR("Buffer overflow, dropping '%c'\n", character);
+      LOG_ERR("Buffer overflow, dropping '%c'", character);
       return false;
    }
 
@@ -833,12 +893,144 @@ static bool uart_receiver_handler(uint8_t character)
    return false;
 }
 
+#ifdef CONFIG_UART_UPDATE
+
+static void uart_xmodem_start_fn(struct k_work *work)
+{
+   ARG_UNUSED(work);
+   int res = 0;
+
+   int retry = atomic_inc(&xmodem_retries);
+
+   if (retry == 0) {
+      atomic_set_bit(&uart_at_state, UART_UPDATE);
+      LOG_INF("Please start xmodem, update begins in about 10s!");
+      k_sleep(K_MSEC(500));
+      uart_tx_off(true);
+      res = appl_update_erase();
+      if (res) {
+         appl_update_cancel();
+         atomic_clear_bit(&uart_at_state, UART_UPDATE);
+         uart_tx_off(false);
+         LOG_INF("Failed erase update area! %d", res);
+         return;
+      }
+      ui_led_op(LED_COLOR_ALL, LED_BLINK);
+   }
+
+   if (retry < 3) {
+      // CRC
+      appl_update_xmodem_start(at_cmd_buf, sizeof(at_cmd_buf), true);
+      uart_poll_out(uart_dev, XMODEM_CRC);
+      k_work_reschedule_for_queue(&uart_work_q, &uart_xmodem_start_work, K_MSEC(2000));
+   } else if (retry < 6) {
+      // CHECKSUM
+      appl_update_xmodem_start(at_cmd_buf, sizeof(at_cmd_buf), false);
+      uart_poll_out(uart_dev, XMODEM_NAK);
+      k_work_reschedule_for_queue(&uart_work_q, &uart_xmodem_start_work, K_MSEC(2000));
+   } else {
+      appl_update_cancel();
+      atomic_clear_bit(&uart_at_state, UART_UPDATE);
+      uart_tx_off(false);
+      LOG_INF("Failed to start transfer!");
+   }
+}
+
+static void uart_xmodem_process_fn(struct k_work *work)
+{
+   int rc;
+
+   if (&uart_xmodem_write_work == work) {
+      rc = appl_update_xmodem_write_block();
+      atomic_clear_bit(&uart_at_state, UART_AT_CMD_EXECUTING);
+      if (rc < 0) {
+         atomic_inc(&xmodem_retries);
+         uart_poll_out(uart_dev, XMODEM_NAK);
+      } else {
+         atomic_set(&xmodem_retries, 0);
+         k_work_cancel_delayable(&uart_xmodem_start_work);
+         k_work_reschedule_for_queue(&uart_work_q, &uart_xmodem_timeout_work, K_SECONDS(15));
+         uart_poll_out(uart_dev, XMODEM_ACK);
+      }
+   } else if (&uart_xmodem_timeout_work.work == work) {
+      appl_update_cancel();
+      atomic_clear_bit(&uart_at_state, UART_UPDATE);
+      atomic_clear_bit(&uart_at_state, UART_AT_CMD_EXECUTING);
+      uart_poll_out(uart_dev, XMODEM_NAK);
+      uart_tx_off(false);
+      LOG_INF("Transfer timeout.");
+   } else if (&uart_xmodem_nak_work.work == work) {
+      appl_update_xmodem_retry();
+      atomic_clear_bit(&uart_at_state, UART_AT_CMD_EXECUTING);
+      atomic_inc(&xmodem_retries);
+      uart_poll_out(uart_dev, XMODEM_NAK);
+   } else {
+      k_work_cancel_delayable(&uart_xmodem_timeout_work);
+      rc = appl_update_finish();
+      atomic_clear_bit(&uart_at_state, UART_UPDATE);
+      atomic_clear_bit(&uart_at_state, UART_AT_CMD_EXECUTING);
+      uart_poll_out(uart_dev, XMODEM_ACK);
+      uart_tx_off(false);
+      if (!rc) {
+         rc = appl_update_dump_pending_image();
+      }
+      if (!rc) {
+         rc = appl_update_request_upgrade();
+      }
+      if (rc) {
+         LOG_INF("Transfer failed. %d", rc);
+      } else {
+         LOG_INF("Transfer succeeded.");
+         LOG_INF("Reboot device to apply update.");
+      }
+   }
+}
+
+static bool uart_xmodem_handler(const char *buffer, size_t len)
+{
+   int rc = appl_update_xmodem_append(buffer, len);
+
+   switch (rc) {
+      case XMODEM_NOT_OK:
+         if (!atomic_test_and_set_bit(&uart_at_state, UART_AT_CMD_EXECUTING)) {
+            k_work_reschedule_for_queue(&uart_work_q, &uart_xmodem_nak_work, K_MSEC(2000));
+         }
+         break;
+      case XMODEM_BLOCK_READY:
+         if (!atomic_test_and_set_bit(&uart_at_state, UART_AT_CMD_EXECUTING)) {
+            k_work_submit_to_queue(&at_cmd_work_q, &uart_xmodem_write_work);
+         }
+         break;
+      case XMODEM_READY:
+         if (!atomic_test_and_set_bit(&uart_at_state, UART_AT_CMD_EXECUTING)) {
+            k_work_submit_to_queue(&at_cmd_work_q, &uart_xmodem_ready_work);
+         }
+         break;
+   }
+   return false;
+}
+#endif
+
 static void uart_receiver_loop(const char *buffer, size_t len)
 {
    // interrupt context!
-   //   LOG_INF("UART rx %u bytes", len);
+#if 0   
+   if (len == 1 && isprint(*buffer)) {
+      LOG_INF("UART rx '%c'", *buffer);
+   } else if (len == 1 && *buffer == '\n') {
+      LOG_INF("UART rx '\\n'");
+   } else if (len == 1 && *buffer == '\r') {
+      LOG_INF("UART rx '\\r'");
+   } else {
+      LOG_INF("UART rx %u bytes", len);
+   }
+#endif
    if (atomic_test_bit(&uart_at_state, UART_AT_CMD_EXECUTING)) {
-      LOG_INF("Modem busy ...");
+      LOG_INF("Cmd busy ...");
+   } else if (atomic_test_bit(&uart_at_state, UART_UPDATE)) {
+#ifdef CONFIG_UART_UPDATE
+      uart_xmodem_handler(buffer, len);
+#endif
    } else {
       work_submit_to_io_queue(&uart_start_pause_tx_work);
       for (int index = 0; index < len; ++index) {

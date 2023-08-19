@@ -4,24 +4,23 @@
 
 ** !!! Under Construction !!! **
 
-# Cellular Explorer
+# Cellular Explorer 
 
-The 
-| [Nordic Semiconductor, Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) | ![Thingy:91](./thingy91.jpg) |
+| | |
 | :- | - |
-
-comes with an Bluetooth Low Energy interface, that allows to connect the `Thingy:91` to a smartphone and send locally commands to the `Thingy:91`. That helps to analyze network situations even without valid cellular connectivity of your SIM card.
+| The [Nordic Semiconductor, Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) comes with an Bluetooth Low Energy interface, that allows to connect the `Thingy:91` to a smartphone and send locally commands to the `Thingy:91`. That helps to analyze network situations even without valid cellular connectivity of your SIM card. | ![Thingy:91](./thingy91.jpg) |
 
 In order to enable this function, the [at-cmd-prj.conf](../at-cmd-prj.conf) must be used to build the app.
 
 Other devices without Bluetooth Low Energy interface may also be used via a USB serial. The
 
-| [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/) | ![nRF9160-feather-v5](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
+| | |
 | :- | - |
+| The [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/) comes with a USB-C plug and if the smartphone is also equipped with USB-C, a simple USB-C to USB-C wire will do it. | ![nRF9160-feather-v5](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
 
-comes with a USB-C plug and if the smartphone is also equipped with USB-C, a simple USB-C to USB-C wire will do it. Not that comfortable as  Bluetooth Low Energy, but it works.
+For a mobile usage in the wild, not that comfortable as Bluetooth Low Energy, but it works.
 
-For some more sophisticated tests, e.g. adapting some lists on the SIM card, it may be easier to use a PC via a USB serial and open a terminal on that PC.
+For some more sophisticated tests, e.g. adapting some lists on the SIM card, it may be easier to use a PC via a USB serial as well.
 
 ## Enable Bluetooth Low Energy
 
@@ -50,13 +49,18 @@ Enable BLE by changing the `BLE_ENABLED=0` to `BLE_ENABLED=1`. Also consider to 
 
 In order to communication with the `Thingy:91` via Bluetooth Low Energy you need a App which supports the `Nordic BLE UART` service.
 
+{#android}
 For Android the "Serial Bluetooth Terminal 1.43" from [Kai Morich](http://www.kai-morich.de/android) works very well.
 
 For iOS the "Bluefruit Connect" works.
 
-If you want to use the USB serial, the "Serial USB Terminal 1.43" from [Kai Morich](http://www.kai-morich.de/android) works also very well.
+If you want to use the USB serial, the "Serial USB Terminal 1.43" from [Kai Morich](http://www.kai-morich.de/android) works also very well for Android.
 
 Install the App and connect the `Thingy:91`.
+
+## PC Software
+ 
+If you want to use a PC to communicate with the device via the USB serial interface, you will need a serial terminal to do so. For Microsoft Windows [Tera Term](https://ttssh2.osdn.jp/index.html.en) works well, for Linux [gtkterm](https://github.com/Jeija/gtkterm) is a good choice.
 
 ## Usage
 
@@ -216,5 +220,41 @@ psm normal
 ```
 
 Switches the back to the application specific PSM parameters.
+
+### Firmware update Command
+
+To update the application firmware, you classically have two options:
+
+- using a [Segger j-link](https://www.segger.com/products/debug-probes/j-link/)
+- using the [McuBoot via USB serial](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/device_guides/working_with_nrf/nrf91/thingy91_gsg.html#programming-firmware)
+
+The downside of both options is, that you need to open the cover. For the `McuBoot via USB serial` you also need to start the device on the bootloader mode pressing and holding `SW3` during switching on the power with `SW1`.
+
+To simplify that process, that `Cellular Explorer` comes with an `update` command.
+
+In order to use it, you need:
+
+- the application binary (the `app_update.bin` in the `zephyr` folder. The file is next to the `app_signed.hex`, which is used for the `Nordic nRF Connect for Desktop / Programmer`).
+- a serial terminal with XMODEM or XMODEM 1k support.
+
+For Android both [Serial Terminal 1.43](#android) from [Kai Morich](http://www.kai-morich.de/android) are supporting XMODEM and may be used to update the firmware. That even works over Bluetooth Low Energy.
+
+For Microsoft Windows [Tera Term](https://ttssh2.osdn.jp/index.html.en) supports XMODEM, for Linux [gtkterm](https://github.com/Jeija/gtkterm) and the unix `sx` shell command will do it.
+
+The update is started using the `update` command.
+
+![start update](./serial_bluetooth_terminal_update_start.jpg)
+
+This starts to erase the second flash slot to prepare that for the new application firmware. This takes about 10s and gives the time to start the `XMODEM` file transfer on the smartphone or PC.
+
+For [Serial Terminal 1.43](#android) select the menu on the upper left, next to the trash can ![three dots](./serial_bluetooth_terminal_menu.jpg). The file dialog appears.
+
+![start xmodem](./serial_bluetooth_terminal_update_xmodem.jpg)
+
+Select `Xmodem 1k` as protocol and the `app_update.bin` as file. Press `OK` and the file upload will start, when the 10 seconds are over.
+
+![update ready](./serial_bluetooth_terminal_update_ready.jpg)
+
+During the upload the [Serial Terminal 1.43](#android) shows some `^F` indicating the progress. Finally, when all succeeds, you will see the message "Reboot device to apply update". Enter "reboot" will reboot the device and on start it will take a couple of seconds more to copy and activate the new application firmware.
 
 ** !!! Under Construction !!! **

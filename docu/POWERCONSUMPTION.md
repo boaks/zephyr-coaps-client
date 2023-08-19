@@ -76,6 +76,8 @@ More details about PSM and other power saving functions can be found in:
 
 [Nordic Semiconductor - Power optimization](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/2.3.0/nrf/app_dev/optimizing/power.html)
 
+[Nordic Semiconductor - Maximizing battery lifetime in cellular IoT](https://devzone.nordicsemi.com/nordic/nordic-blog/b/blog/posts/maximizing-battery-lifetime-in-cellular-iot-an-analysis-of-edrx-psm-and-as-rai)
+
 [In Compliance - Power Savings for Cellular IoT Devices](https://incompliancemag.com/article/power-savings-for-cellular-iot-devices/)
 
 ## Summary:

@@ -23,6 +23,9 @@
 #include "appl_storage.h"
 #include "appl_storage_config.h"
 #include "appl_time.h"
+#ifdef CONFIG_UART_UPDATE
+#include "appl_update.h"
+#endif
 #include "coap_client.h"
 #include "dtls.h"
 #include "dtls_credentials.h"
@@ -512,7 +515,12 @@ static void dtls_coap_success(dtls_app_data_t *app)
    // reset failures on success
    current_failures = 0;
    handled_failures = 0;
-   initial_success = true;
+   if (!initial_success) {
+      initial_success = true;
+#ifdef CONFIG_UART_UPDATE
+      appl_update_image_verified();
+#endif
+   }
    dtls_coap_next(app);
 }
 

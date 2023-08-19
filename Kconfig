@@ -14,6 +14,10 @@
 
 config APPL_VERSION 
 	string "Application version, format 0.0.0+0."
+	depends on !BOOTLOADER_MCUBOOT
+	help
+		If McuBoot is not used, the application version
+		is provided by this value. 
 
 menu "CoAP tinyDTLS Settings"
 
@@ -289,6 +293,16 @@ menu "Extra Functions"
 config UART_RECEIVER
     bool "Use UART receiver for cmd and at-cmd."
 	default n
+
+config UART_UPDATE
+    bool "Support firmware update via UART cmd."
+	default y
+	select BOOTLOADER_MCUBOOT
+	select FLASH
+	select FLASH_MAP
+	select STREAM_FLASH
+	select IMG_MANAGER
+	depends on UART_RECEIVER
 
 config USE_IO_JOB_QUEUE
 	bool "Use i/o job queue"

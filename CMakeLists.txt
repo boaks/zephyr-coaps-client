@@ -24,10 +24,10 @@ target_sources(app PRIVATE
 	src/power_manager.c
 	src/io_job_queue.c
 	src/ui.c
+	src/appl_diagnose.c
 	src/appl_storage.c
 	src/appl_storage_config.c
 	src/appl_time.c
-	src/appl_diagnose.c
 	src/modem.c
 	src/modem_desc.c
 	src/modem_sim.c
@@ -39,6 +39,9 @@ target_sources(app PRIVATE
 	)
 
 target_sources_ifdef(CONFIG_UART_RECEIVER app PRIVATE src/uart_receiver.c)
+
+target_sources_ifdef(CONFIG_UART_UPDATE app PRIVATE src/appl_update_xmodem.c)
+target_sources_ifdef(CONFIG_UART_UPDATE app PRIVATE src/appl_update.c)
 
 target_sources_ifdef(CONFIG_LOCATION_ENABLE app PRIVATE src/location.c)
 
