@@ -324,7 +324,7 @@ int coap_client_prepare_modem_info(char *buf, size_t len, int flags)
    }
 
    index += snprintf(buf + index, len - index, ", Thingy:91 %s (%s), 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
-                     CLIENT_VERSION, NCS_VERSION_STRING, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
+                     appl_get_version(), NCS_VERSION_STRING, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
    dtls_info("%s", buf + start);
 
    buf[index++] = '\n';

@@ -11,6 +11,10 @@
 # SPDX-License-Identifier: EPL-2.0
 #
 
+
+config APPL_VERSION 
+	string "Application version, format 0.0.0+0."
+
 menu "CoAP tinyDTLS Settings"
 
 config COAP_SERVER_HOSTNAME

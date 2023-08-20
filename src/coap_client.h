@@ -16,8 +16,6 @@
 
 #include "dtls.h"
 
-#define CLIENT_VERSION "v0.7.107"
-
 #define FLAG_TLS 1
 #define FLAG_KEEP_CONNECTION 2
 #define FLAG_REBOOT_1 4

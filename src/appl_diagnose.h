@@ -31,6 +31,8 @@
 
 #define WATCHDOG_TIMEOUT_S (60 * 5)
 
+const char* appl_get_version(void);
+
 void watchdog_feed(void);
 
 void appl_reboot(int error, const k_timeout_t delay);

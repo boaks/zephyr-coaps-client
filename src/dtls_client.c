@@ -1423,7 +1423,7 @@ int main(void)
    session_t dst;
 
    memset(&app_data, 0, sizeof(app_data));
-   LOG_INF("CoAP/DTLS 1.2 CID sample " CLIENT_VERSION " has started");
+   LOG_INF("CoAP/DTLS 1.2 CID sample %s has started", appl_get_version());
    appl_reset_cause(&flags);
 
    dtls_set_log_level(DTLS_LOG_INFO);

@@ -48,6 +48,13 @@ static int wdt_channel_id = -1;
 
 static volatile uint32_t reset_cause = 0;
 
+static char appl_version[16] = {'v', 0};
+
+const char *appl_get_version(void)
+{
+   return appl_version;
+}
+
 void watchdog_feed(void)
 {
    if (wdt && wdt_channel_id >= 0) {
@@ -138,7 +145,7 @@ uint32_t appl_reset_cause(int *flags)
       }
       if (reset_cause & RESET_SOFTWARE) {
          uint16_t reboot_code = 0;
-         int rc = appl_storage_read_int_items(REBOOT_CODE_ID, 0, NULL, &reboot_code, 1);         
+         int rc = appl_storage_read_int_items(REBOOT_CODE_ID, 0, NULL, &reboot_code, 1);
          if (!rc && reboot_code == ERROR_CODE_TOO_MANY_FAILURES) {
             LOG_INF("Reboot 1.");
             if (flags) {
@@ -243,6 +250,11 @@ static int appl_watchdog_init(void)
 
 static int appl_diagnose_init(void)
 {
+#ifdef CONFIG_MCUBOOT_IMAGE_VERSION
+   const char *mcu_appl_version = CONFIG_MCUBOOT_IMAGE_VERSION;
+#else
+   const char *mcu_appl_version = CONFIG_APPL_VERSION;
+#endif
    appl_watchdog_init();
 
    k_thread_create(&appl_diagnose_thread,
@@ -250,6 +262,16 @@ static int appl_diagnose_init(void)
                    CONFIG_DIAGNOSE_STACK_SIZE,
                    appl_reboot_fn, NULL, NULL, NULL,
                    K_HIGHEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
+
+   memset(appl_version, 0, sizeof(appl_version));
+   appl_version[0] = 'v';
+   for (int i = 0; i < sizeof(appl_version) - 2; ++i) {
+      char c = mcu_appl_version[i];
+      if (c == 0 /* || c == '+' */) {
+         break;
+      }
+      appl_version[i + 1] = c;
+   }
 
    return 0;
 }
