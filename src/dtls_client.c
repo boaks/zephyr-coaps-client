@@ -97,7 +97,7 @@ typedef struct dtls_app_data_t {
 static atomic_t general_states = ATOMIC_INIT(0);
 
 static atomic_t lte_connections = ATOMIC_INIT(0);
-static atomic_t ready_time = ATOMIC_INIT(0);
+static atomic_t not_ready_time = ATOMIC_INIT(0);
 static atomic_t connected_time = ATOMIC_INIT(0);
 static long connect_time = 0;
 static long response_time = 0;
@@ -543,7 +543,7 @@ static void dtls_coap_failure(dtls_app_data_t *app, const char *cause)
    dtls_info("%dms/%dms: failure, %s", time1, time2, cause);
    transmissions[COAP_MAX_RETRANSMISSION + 1]++;
    if (initial_success) {
-      current_failures++;
+      ++current_failures;
       dtls_info("current failures %d.", current_failures);
    }
    dtls_coap_next(app);
@@ -868,15 +868,14 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
       }
    } else if (type == LTE_STATE_READY) {
       if (previous != active) {
-         atomic_set(&ready_time, now);
-      }
-      if (active) {
-         if (previous != active) {
+         if (active) {
+            atomic_set(&not_ready_time, 0);
             trigger_search = READY_SEARCH;
             k_sem_give(&dtls_trigger_search);
+         } else {
+            atomic_set(&not_ready_time, now == 0 ? -1 : now);
+            atomic_clear_bit(&general_states, LTE_CONNECTED);
          }
-      } else {
-         atomic_clear_bit(&general_states, LTE_CONNECTED);
       }
    } else if (type == LTE_STATE_CONNECTED) {
       if (!app_data.dtls_pending) {
@@ -930,18 +929,34 @@ static int dtls_network_searching(const k_timeout_t timeout)
 {
    union lte_info info;
    bool off = false;
-   int64_t now = k_uptime_get();
-   int64_t swap_time = now;
-   atomic_val_t last_ready_time = atomic_get(&ready_time);
+   const int64_t start_time = k_uptime_get();
    int64_t timeout_ms = k_ticks_to_ms_floor64(timeout.ticks);
+   long last_not_ready_time = atomic_get(&not_ready_time);
    int trigger = MANUAL_SEARCH;
    int swap_state = 1;
 
-   while ((now - last_ready_time) < timeout_ms) {
-      atomic_val_t time = atomic_get(&ready_time);
-      if (time != last_ready_time) {
-         last_ready_time = time;
+   while (true) {
+      int64_t now = k_uptime_get();
+      long time = atomic_get(&not_ready_time);
+      if (time != last_not_ready_time) {
+         last_not_ready_time = time;
          trigger = READY_SEARCH;
+      }
+      if (time == 0) {
+         // not_ready_time unavailable
+         time = (long)now - start_time;
+      } else {
+         time = (long)now - time;
+      }
+      if (time > timeout_ms) {
+         modem_read_network_info(&info.net_info, false);
+         if (info.net_info.registered == LTE_NETWORK_STATE_ON) {
+            dtls_info("Network found");
+            return false;
+         } else {
+            dtls_info("Network not found (%ld s)", time / MSEC_PER_SEC);
+            return true;
+         }
       }
       if (trigger != NO_SEARCH) {
          trigger = NO_SEARCH;
@@ -964,8 +979,9 @@ static int dtls_network_searching(const k_timeout_t timeout)
 
       if (!off) {
          if (modem_get_sim_info(&info.sim_info)) {
+            // multi sim with preference => swap
             int timeout_s = info.sim_info.imsi_interval * (1 << swap_state);
-            int time_s = (now - swap_time) / MSEC_PER_SEC;
+            int time_s = (now - start_time) / MSEC_PER_SEC;
             dtls_info("Multi IMSI interval %d s, swap timeout %d, last %d s.",
                       info.sim_info.imsi_interval, timeout_s, time_s);
             if (time_s > timeout_s) {
@@ -980,7 +996,7 @@ static int dtls_network_searching(const k_timeout_t timeout)
                timeout_s = MAX_MULTI_IMSI_SEARCH_TIME_S;
             }
             dtls_info("Multi IMSI, interval %d s.", info.sim_info.imsi_interval);
-            if ((now - last_ready_time) > (MSEC_PER_SEC * timeout_s)) {
+            if (((long)now - last_not_ready_time) > (MSEC_PER_SEC * timeout_s)) {
                dtls_info("Multi IMSI, offline");
                watchdog_feed();
                modem_set_offline();
@@ -1003,9 +1019,8 @@ static int dtls_network_searching(const k_timeout_t timeout)
             }
          }
       }
-      now = k_uptime_get();
    }
-
+   // network not found
    return true;
 }
 
@@ -1093,6 +1108,7 @@ static int dtls_loop(session_t *dst, int flags)
       if (!atomic_test_bit(&general_states, LTE_READY) || app_data.fd < 0) {
          if (dtls_network_searching(K_HOURS(4))) {
             ++current_failures;
+            dtls_info("no registration, failures %d.", current_failures);
             reopen_cause = "modem not registered, failure.";
          } else {
             reopen_cause = "modem registered";
