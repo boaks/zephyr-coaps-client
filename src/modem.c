@@ -453,6 +453,7 @@ static void lte_registration_set(bool registered)
    k_mutex_lock(&lte_mutex, K_FOREVER);
    if (network_info.registered != (registered ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF)) {
       network_info.registered = registered ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
+      rai_time = -1;
       lte_connection_status();
    }
    k_mutex_unlock(&lte_mutex);
@@ -472,7 +473,10 @@ static void lte_connection_status_set(bool connect)
 static void lte_network_mode_set(enum lte_lc_lte_mode mode)
 {
    k_mutex_lock(&lte_mutex, K_FOREVER);
-   network_info.mode = mode;
+   if (network_info.mode != mode) {
+      network_info.mode = mode;
+      rai_time = -1;
+   }
    k_mutex_unlock(&lte_mutex);
 }
 
@@ -1427,26 +1431,24 @@ int modem_get_psm_status(struct lte_lc_psm_cfg *psm)
 
 int modem_get_rai_status(enum lte_network_rai *rai)
 {
-   int res = 0;
    enum lte_network_rai state = LTE_NETWORK_RAI_UNKNOWN;
+   int res = 0;
+   int time = -1;
 
    k_mutex_lock(&lte_mutex, K_FOREVER);
-   if (psm_status.active_time < 0) {
-      // don't display RAI for inactive PSM
-      res = -ENODATA;
-   } else {
-      int time = rai_time;
-      if (time < 0) {
-         res = -ENODATA;
-      } else if (time < CP_RAI_MAX_DELAY) {
-         state = LTE_NETWORK_CP_RAI;
-      } else if (time < AS_RAI_MAX_DELAY) {
-         state = LTE_NETWORK_AS_RAI;
-      } else {
-         state = LTE_NETWORK_NO_RAI;
-      }
+   if (psm_status.active_time >= 0) {
+      time = rai_time;
    }
    k_mutex_unlock(&lte_mutex);
+   if (time < 0) {
+      res = -ENODATA;
+   } else if (time < CP_RAI_MAX_DELAY) {
+      state = LTE_NETWORK_CP_RAI;
+   } else if (time < AS_RAI_MAX_DELAY) {
+      state = LTE_NETWORK_AS_RAI;
+   } else {
+      state = LTE_NETWORK_NO_RAI;
+   }
    if (rai) {
       *rai = state;
    }
