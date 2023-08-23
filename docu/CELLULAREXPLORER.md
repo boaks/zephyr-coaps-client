@@ -43,7 +43,7 @@ BLE_ENABLED=1
 BLE_NAME=Thingy:91-2 UART
 ```
 
-Enable BLE by changing the `BLE_ENABLED=0` to `BLE_ENABLED=1`. Also consider to change the `BLE_NAME=Thingy:91 UART` to a rather unique name. Save your changes.
+Enable BLE by changing the `BLE_ENABLED=0` to `BLE_ENABLED=1`. Also consider to change the `BLE_NAME=Thingy:91 UART` to a rather unique name. Save your changes. When done, unmount the "local USB drive" and disconnect the USB cable.
 
 ## Smartphone App
 
@@ -236,6 +236,7 @@ In order to use it, you need:
 
 - the application binary (the `app_update.bin` in the `zephyr` folder. The file is next to the `app_signed.hex`, which is used for the `Nordic nRF Connect for Desktop / Programmer`).
 - a serial terminal with XMODEM or XMODEM 1k support.
+- If a `Thingy:91` is used, please update the nRF52840 to version `thingy91_nrf52_connectivity_bridge_2023-03-02_8f26142b.hex` or newer. Some older version show some instability which may break the file transfer. Caused by that, the transfers stucks and breaks the transmission from the `Thingy:91` to your smartphone. You will even not see further messages from the `Thingy:91` and a power on restart gets required. The `thingy91_nrf52_connectivity_bridge` is part of the `Precompiled application and modem firmware` package and can be downloaded from [Nordic-Thingy-91/Download](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91/Download#infotabs).
 
 For Android both [Serial Terminal 1.43](#android) from [Kai Morich](http://www.kai-morich.de/android) are supporting XMODEM and may be used to update the firmware. That even works over Bluetooth Low Energy.
 
@@ -247,13 +248,15 @@ The update is started using the `update` command.
 
 This starts to erase the second flash slot to prepare that for the new application firmware. This takes about 10s and gives the time to start the `XMODEM` file transfer on the smartphone or PC.
 
-For [Serial Terminal 1.43](#android) select the menu on the upper left, next to the trash can ![three dots](./serial_bluetooth_terminal_menu.jpg). The file dialog appears.
+For [Serial Terminal 1.43](#android) select the menu on the upper left, next to the trash can ![three dots](./serial_bluetooth_terminal_menu.jpg) and then the "Upload File" submenu. The file dialog appears.
 
 ![start xmodem](./serial_bluetooth_terminal_update_xmodem.jpg)
 
 Select `Xmodem 1k` as protocol and the `app_update.bin` as file. Press `OK` and the file upload will start, when the 10 seconds are over.
 
 ![update ready](./serial_bluetooth_terminal_update_ready.jpg)
+
+Sometimes the 10 seconds are too short to select the file. Then just open the file dialog via the menu and "Upload File" submenu. Select the file at rest and chose the `Xmodem 1k` as protocol. Press `OK` and then `CANCEL` in the "Upload File" field, which appears at the top below the tools-line. That will set this values as default and the next time the file dialog is shown you may just press `OK`.   
 
 During the upload the [Serial Terminal 1.43](#android) shows some `^F` indicating the progress. Finally, when all succeeds, you will see the message "Reboot device to apply update". Enter "reboot" will reboot the device and on start it will take a couple of seconds more to copy and activate the new application firmware.
 
