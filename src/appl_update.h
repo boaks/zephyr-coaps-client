@@ -17,6 +17,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+int appl_update_cmd(const char *config);
+void appl_update_cmd_help(void);
+
 int appl_update_start(void);
 size_t appl_update_written(void);
 int appl_update_erase(void);

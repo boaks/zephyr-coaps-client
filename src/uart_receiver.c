@@ -777,7 +777,7 @@ static int at_cmd()
 #endif
       LOG_INF("  state  : read modem state.(*)");
 #ifdef CONFIG_UART_UPDATE
-      LOG_INF("  update : start application firmware update. Requires XMODEM.");
+      LOG_INF("  update : start application firmware update. Requires XMODEM.(?)");
 #endif
       LOG_INF("  *      : AT-cmd is used, maybe busy.");
       LOG_INF("  ?      : help <cmd> available.");
@@ -801,12 +801,23 @@ static int at_cmd()
          } else if (!stricmp(&at_cmd_buf[i], "sms")) {
             modem_cmd_sms_help();
 #endif
+#ifdef CONFIG_UART_UPDATE
+         } else if (!stricmp(&at_cmd_buf[i], "update")) {
+            appl_update_cmd_help();
+#endif
          } else {
             LOG_INF("> help %s:", &at_cmd_buf[i]);
             LOG_INF("  no details available.");
          }
          return 0;
       }
+#ifdef CONFIG_UART_UPDATE
+      i = strstart(at_cmd_buf, "update ", true);
+      if (i > 0) {
+         res = appl_update_cmd(&at_cmd_buf[i]);
+         return RESULT(res);
+      }
+#endif
    }
    if (atomic_test_and_set_bit(&uart_at_state, UART_AT_CMD_PENDING)) {
       LOG_INF("Modem pending ...");
