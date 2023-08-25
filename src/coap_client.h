@@ -22,9 +22,17 @@
 #define FLAG_REBOOT 8
 #define FLAG_RESET 16
 
-#define COAP_MAX_RETRANSMISSION 3
+#define COAP_SEND_FLAG_MINIMAL 1
+
+#ifdef CONFIG_COAP_SEND_MINIMAL
+#define COAP_SEND_FLAGS COAP_SEND_FLAG_MINIMAL
+#else
+#define COAP_SEND_FLAGS 0
+#endif
 
 #define REBOOT_INFOS 4
+
+#define COAP_MAX_RETRANSMISSION 3
 
 extern unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
 
@@ -46,7 +54,7 @@ int coap_client_prepare_net_stats(char* buf, size_t len, int flags);
 
 int coap_client_prepare_env_info(char *buf, size_t len, int flags);
 
-int coap_client_prepare_post(void);
+int coap_client_prepare_post(char *buf, size_t len, int flags);
 
 int coap_client_message(const uint8_t** buffer);
 

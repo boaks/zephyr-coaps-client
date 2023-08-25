@@ -144,6 +144,37 @@ static void coap_client_decode_read_response(const struct coap_option *option)
    dtls_info("CoAP read response code %d.%02d", (code >> 5) & 7, code & 0x1f);
 }
 
+static int coap_client_decode_content_format(const struct coap_option *option)
+{
+   const char *desc = NULL;
+   int format = coap_option_value_to_int(option);
+   switch (format) {
+      case COAP_CONTENT_FORMAT_TEXT_PLAIN:
+         desc = "text/plain";
+         break;
+      case COAP_CONTENT_FORMAT_APP_XML:
+         desc = "appl/xml";
+         break;
+      case COAP_CONTENT_FORMAT_APP_OCTET_STREAM:
+         desc = "appl/octetstream";
+         break;
+      case COAP_CONTENT_FORMAT_APP_JSON:
+         desc = "appl/json";
+         break;
+      case COAP_CONTENT_FORMAT_APP_CBOR:
+         desc = "appl/cbor";
+         break;
+      default:
+         dtls_info("CoAP content format %d", format);
+   }
+   if (desc) {
+      dtls_info("CoAP content format %s (%d)", desc, format);
+   } else {
+      dtls_info("CoAP content format %d", format);
+   }
+   return format;
+}
+
 static void coap_client_decode_payload(const uint8_t *payload, uint16_t len)
 {
 }
@@ -152,7 +183,7 @@ int coap_client_parse_data(uint8_t *data, size_t len)
 {
    int err;
    struct coap_packet reply;
-   struct coap_option custom_option;
+   struct coap_option message_option;
    const uint8_t *payload;
    uint16_t mid;
    uint16_t payload_len;
@@ -201,17 +232,21 @@ int coap_client_parse_data(uint8_t *data, size_t len)
 
    coap_message_len = 0;
 
-   err = coap_find_options(&reply, CUSTOM_COAP_OPTION_TIME, &custom_option, 1);
+   err = coap_find_options(&reply, CUSTOM_COAP_OPTION_TIME, &message_option, 1);
    if (err == 1) {
-      coap_client_decode_time(&custom_option);
+      coap_client_decode_time(&message_option);
    }
-   err = coap_find_options(&reply, CUSTOM_COAP_OPTION_READ_ETAG, &custom_option, 1);
+   err = coap_find_options(&reply, CUSTOM_COAP_OPTION_READ_ETAG, &message_option, 1);
    if (err == 1) {
-      coap_client_decode_read_etag(&custom_option);
+      coap_client_decode_read_etag(&message_option);
    }
-   err = coap_find_options(&reply, CUSTOM_COAP_OPTION_READ_RESPONSE_CODE, &custom_option, 1);
+   err = coap_find_options(&reply, CUSTOM_COAP_OPTION_READ_RESPONSE_CODE, &message_option, 1);
    if (err == 1) {
-      coap_client_decode_read_response(&custom_option);
+      coap_client_decode_read_response(&message_option);
+   }
+   err = coap_find_options(&reply, COAP_OPTION_CONTENT_FORMAT, &message_option, 1);
+   if (err == 1) {
+      coap_client_decode_content_format(&message_option);
    }
 
    payload = coap_packet_get_payload(&reply, &payload_len);
@@ -284,8 +319,6 @@ static int coap_client_add_uri_query_param_opt(struct coap_packet *request, cons
 }
 #endif
 
-#define COAP_FLAG_MINIMAL 1
-
 int coap_client_prepare_modem_info(char *buf, size_t len, int flags)
 {
    int64_t reboot_times[REBOOT_INFOS];
@@ -330,7 +363,7 @@ int coap_client_prepare_modem_info(char *buf, size_t len, int flags)
    buf[index++] = '\n';
    start = index;
 
-   if (!(flags & COAP_FLAG_MINIMAL)) {
+   if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
       memset(&modem_info, 0, sizeof(modem_info));
       if (!modem_get_modem_info(&modem_info)) {
          index += snprintf(buf + index, len - index, "HW: %s, MFW: %s, IMEI: %s", modem_info.version, modem_info.firmware, modem_info.imei);
@@ -591,7 +624,7 @@ int coap_client_prepare_net_stats(char *buf, size_t len, int flags)
                         params.network_statistic.transmitted, params.network_statistic.received,
                         params.network_statistic.max_packet_size, params.network_statistic.average_packet_size);
       dtls_info("%s", buf + start);
-      if (!(flags & COAP_FLAG_MINIMAL)) {
+      if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
          start = index + 1;
          index += snprintf(buf + index, len - index, "\nCell updates %u, Network searchs %u (%u s), PSM delays %u (%u s), Restarts %u",
                            params.network_statistic.cell_updates, params.network_statistic.searchs, params.network_statistic.search_time,
@@ -830,15 +863,8 @@ int coap_client_prepare_location_info(char *buf, size_t len, int flags)
    return index;
 }
 
-#ifdef CONFIG_COAP_SEND_MINIMAL
-#define COAP_FLAGS COAP_FLAG_MINIMAL
-#else
-#define COAP_FLAGS 0
-#endif
-
-int coap_client_prepare_post(void)
+int coap_client_prepare_post(char *buf, size_t len, int flags)
 {
-   char buf[1000];
    int err;
    int index = 0;
    int start = 0;
@@ -854,14 +880,14 @@ int coap_client_prepare_post(void)
    coap_message_len = 0;
 
 #ifdef CONFIG_COAP_SEND_MODEM_INFO
-   err = coap_client_prepare_modem_info(buf, sizeof(buf), COAP_FLAGS);
+   err = coap_client_prepare_modem_info(buf, len, flags);
    if (err > 0) {
       index = start + err;
    }
 #endif
 
    start = index + 1;
-   index += snprintf(buf + index, sizeof(buf) - index, "\nRestart: ");
+   index += snprintf(buf + index, len - index, "\nRestart: ");
    err = appl_reset_cause_description(buf + index, sizeof(buf) - index);
    if (err > 0) {
       dtls_info("%s", buf + start);
@@ -873,7 +899,7 @@ int coap_client_prepare_post(void)
 #ifdef CONFIG_COAP_SEND_SIM_INFO
    buf[index] = '\n';
    start = index + 1;
-   err = coap_client_prepare_sim_info(buf + start, sizeof(buf) - start, COAP_FLAGS);
+   err = coap_client_prepare_sim_info(buf + start, len - start, flags);
    if (err > 0) {
       index = start + err;
    }
@@ -882,7 +908,7 @@ int coap_client_prepare_post(void)
 #if defined(CONFIG_COAP_SEND_NETWORK_INFO)
    buf[index] = '\n';
    start = index + 1;
-   err = coap_client_prepare_net_info(buf + start, sizeof(buf) - start, COAP_FLAGS);
+   err = coap_client_prepare_net_info(buf + start, len - start, flags);
    if (err > 0) {
       index = start + err;
    }
@@ -891,7 +917,7 @@ int coap_client_prepare_post(void)
 #if defined(CONFIG_COAP_SEND_STATISTIC_INFO)
    buf[index] = '\n';
    start = index + 1;
-   err = coap_client_prepare_net_stats(buf + start, sizeof(buf) - start, COAP_FLAGS);
+   err = coap_client_prepare_net_stats(buf + start, len - start, flags);
    if (err > 0) {
       index = start + err;
    }
@@ -900,7 +926,7 @@ int coap_client_prepare_post(void)
 #ifdef CONFIG_LOCATION_ENABLE
    buf[index] = '\n';
    start = index + 1;
-   err = coap_client_prepare_location_info(buf + start, sizeof(buf) - start, COAP_FLAGS);
+   err = coap_client_prepare_location_info(buf + start, len - start, flags);
    if (err > 0) {
       index = start + err;
    }
@@ -908,7 +934,7 @@ int coap_client_prepare_post(void)
 
    buf[index] = '\n';
    start = index + 1;
-   err = coap_client_prepare_env_info(buf + start, sizeof(buf) - start, COAP_FLAGS);
+   err = coap_client_prepare_env_info(buf + start, len - start, flags);
    if (err > 0) {
       index = start + err;
    }
@@ -1047,7 +1073,7 @@ int coap_client_prepare_post(void)
       return err;
    }
 
-   err = coap_packet_append_payload(&request, buf, strlen(buf));
+   err = coap_packet_append_payload(&request, buf, index);
    if (err < 0) {
       dtls_warn("Failed to encode CoAP payload, %d", err);
       return err;

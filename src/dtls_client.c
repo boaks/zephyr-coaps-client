@@ -1213,7 +1213,7 @@ static int dtls_loop(session_t *dst, int flags)
                }
                loops = 0;
                app_data.retransmission = 0;
-               if (coap_client_prepare_post() < 0) {
+               if (coap_client_prepare_post(receive_buffer, sizeof(receive_buffer), COAP_SEND_FLAGS) < 0) {
                   dtls_coap_failure(&app_data, "prepare post");
                } else if (app_data.dtls_pending) {
                   dtls_peer_t *peer = dtls_get_peer(dtls_context, dst);
