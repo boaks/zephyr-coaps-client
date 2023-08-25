@@ -41,9 +41,9 @@ LOG_MODULE_REGISTER(MODEM, CONFIG_MODEM_LOG_LEVEL);
 
 #define MULTI_IMSI_MINIMUM_TIMEOUT_MS (300 * MSEC_PER_SEC)
 
-#define LED_CONNECTED LED_NONE
-#define LED_READY LED_LTE_3
-#define LED_SEARCH LED_LTE_2
+#define LED_READY LED_LTE_2
+#define LED_CONNECTED LED_LTE_3
+#define LED_SEARCH LED_NONE
 
 static K_MUTEX_DEFINE(lte_mutex);
 static K_CONDVAR_DEFINE(lte_condvar);
@@ -423,8 +423,8 @@ static void lte_connection_status(void)
       lte_ready = ready;
       lte_signal_ready = false;
       ui_led_op(LED_READY, ready ? LED_SET : LED_CLEAR);
-      ui_led_op(LED_SEARCH, LED_CLEAR);
       if (ready) {
+         ui_led_op(LED_SEARCH, LED_CLEAR);
          work_submit_to_io_queue(&modem_read_network_info_work);
          work_submit_to_io_queue(&modem_ready_callback_work);
          work_reschedule_for_io_queue(&modem_ready_work, K_MSEC(1000));
@@ -439,7 +439,6 @@ static void lte_connection_status(void)
          LOG_INF("Modem not ready. con=%d/reg=%d",
                  network_info.rrc_active, network_info.registered);
 #endif
-         lte_signal_ready = false;
       }
    }
    if (!lte_connected && connected) {
