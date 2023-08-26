@@ -879,66 +879,69 @@ int coap_client_prepare_post(char *buf, size_t len, int flags)
 
    coap_message_len = 0;
 
+   if (len && buf[0] == 0) {
 #ifdef CONFIG_COAP_SEND_MODEM_INFO
-   err = coap_client_prepare_modem_info(buf, len, flags);
-   if (err > 0) {
-      index = start + err;
-   }
+      err = coap_client_prepare_modem_info(buf, len, flags);
+      if (err > 0) {
+         index = start + err;
+      }
 #endif
 
-   start = index + 1;
-   index += snprintf(buf + index, len - index, "\nRestart: ");
-   err = appl_reset_cause_description(buf + index, sizeof(buf) - index);
-   if (err > 0) {
-      dtls_info("%s", buf + start);
-      index += err;
-   } else {
-      index = start - 1;
-   }
+      start = index + 1;
+      index += snprintf(buf + index, len - index, "\nRestart: ");
+      err = appl_reset_cause_description(buf + index, sizeof(buf) - index);
+      if (err > 0) {
+         dtls_info("%s", buf + start);
+         index += err;
+      } else {
+         index = start - 1;
+      }
 
 #ifdef CONFIG_COAP_SEND_SIM_INFO
-   buf[index] = '\n';
-   start = index + 1;
-   err = coap_client_prepare_sim_info(buf + start, len - start, flags);
-   if (err > 0) {
-      index = start + err;
-   }
+      buf[index] = '\n';
+      start = index + 1;
+      err = coap_client_prepare_sim_info(buf + start, len - start, flags);
+      if (err > 0) {
+         index = start + err;
+      }
 #endif /* CONFIG_COAP_SEND_SIM_INFO */
 
 #if defined(CONFIG_COAP_SEND_NETWORK_INFO)
-   buf[index] = '\n';
-   start = index + 1;
-   err = coap_client_prepare_net_info(buf + start, len - start, flags);
-   if (err > 0) {
-      index = start + err;
-   }
+      buf[index] = '\n';
+      start = index + 1;
+      err = coap_client_prepare_net_info(buf + start, len - start, flags);
+      if (err > 0) {
+         index = start + err;
+      }
 #endif /* CONFIG_COAP_SEND_NETWORK_INFO */
 
 #if defined(CONFIG_COAP_SEND_STATISTIC_INFO)
-   buf[index] = '\n';
-   start = index + 1;
-   err = coap_client_prepare_net_stats(buf + start, len - start, flags);
-   if (err > 0) {
-      index = start + err;
-   }
+      buf[index] = '\n';
+      start = index + 1;
+      err = coap_client_prepare_net_stats(buf + start, len - start, flags);
+      if (err > 0) {
+         index = start + err;
+      }
 #endif /* CONFIG_COAP_SEND_STATISTIC_INFO */
 
 #ifdef CONFIG_LOCATION_ENABLE
-   buf[index] = '\n';
-   start = index + 1;
-   err = coap_client_prepare_location_info(buf + start, len - start, flags);
-   if (err > 0) {
-      index = start + err;
-   }
+      buf[index] = '\n';
+      start = index + 1;
+      err = coap_client_prepare_location_info(buf + start, len - start, flags);
+      if (err > 0) {
+         index = start + err;
+      }
 #endif /* CONFIG_LOCATION_ENABLE */
 
-   buf[index] = '\n';
-   start = index + 1;
-   err = coap_client_prepare_env_info(buf + start, len - start, flags);
-   if (err > 0) {
-      index = start + err;
+      buf[index] = '\n';
+      start = index + 1;
+      err = coap_client_prepare_env_info(buf + start, len - start, flags);
+      if (err > 0) {
+         index = start + err;
+      }
+   } else {
+      index = len;
    }
-
    coap_current_token++;
    coap_current_mid = coap_next_id();
 

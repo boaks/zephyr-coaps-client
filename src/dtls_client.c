@@ -28,6 +28,7 @@
 #endif
 #include "coap_client.h"
 #include "dtls.h"
+#include "dtls_client.h"
 #include "dtls_credentials.h"
 #include "dtls_debug.h"
 #include "global.h"
@@ -119,8 +120,9 @@ static bool lte_power_on_off = false;
 static volatile bool moved = false;
 #endif
 
-#define MAX_READ_BUF 1600
-static uint8_t receive_buffer[MAX_READ_BUF];
+#define MAX_APPL_BUF 1600
+static uint8_t appl_buffer[MAX_APPL_BUF];
+static volatile size_t appl_buffer_len = MAX_APPL_BUF;
 
 #define RTT_SLOTS 9
 #define RTT_INTERVAL (2 * MSEC_PER_SEC)
@@ -386,11 +388,18 @@ static void dtls_manual_trigger(int duration)
    }
 }
 
-void dtls_cmd_trigger(bool led, int mode)
+void dtls_cmd_trigger(bool led, int mode, const uint8_t *data, size_t len)
 {
    bool ready = atomic_test_bit(&general_states, LTE_READY);
    if (mode & 1) {
       if (dtls_no_pending_request()) {
+         if (data && len) {
+            if (len > sizeof(appl_buffer)) {
+               len = sizeof(appl_buffer);
+            }
+            memmove(appl_buffer, data, len);
+            appl_buffer_len = len;
+         }
          ui_enable(led);
          dtls_trigger();
          if (!ready && !(mode & 2)) {
@@ -461,6 +470,8 @@ static void dtls_coap_next(dtls_app_data_t *app)
       dtls_info("%s", buf);
    }
    app->request_state = WAIT_SUSPEND;
+   memset(appl_buffer, 0, sizeof(appl_buffer));
+   appl_buffer_len = MAX_APPL_BUF;
    k_sem_reset(&dtls_trigger_msg);
 }
 
@@ -715,14 +726,14 @@ recvfrom_peer(dtls_app_data_t *app, dtls_context_t *ctx)
 
    memset(&session, 0, sizeof(session_t));
    session.size = sizeof(session.addr);
-   result = recvfrom(app->fd, receive_buffer, MAX_READ_BUF, 0,
+   result = recvfrom(app->fd, appl_buffer, MAX_APPL_BUF, 0,
                      &session.addr.sa, &session.size);
    if (result < 0) {
       dtls_warn("recv_from_peer failed: errno %d (%s)", result, strerror(errno));
       return result;
    } else {
       dtls_dsrv_log_addr(DTLS_LOG_DEBUG, "peer", &session);
-      dtls_debug_dump("bytes from peer", receive_buffer, result);
+      dtls_debug_dump("bytes from peer", appl_buffer, result);
       modem_set_transmission_time();
    }
    dtls_info("received_from_peer %d bytes", result);
@@ -730,9 +741,9 @@ recvfrom_peer(dtls_app_data_t *app, dtls_context_t *ctx)
       if (app->dtls_pending) {
          app->retransmission = 0;
       }
-      return dtls_handle_message(ctx, &session, receive_buffer, result);
+      return dtls_handle_message(ctx, &session, appl_buffer, result);
    } else {
-      return read_from_peer(app, &session, receive_buffer, result);
+      return read_from_peer(app, &session, appl_buffer, result);
    }
 }
 
@@ -1213,7 +1224,7 @@ static int dtls_loop(session_t *dst, int flags)
                }
                loops = 0;
                app_data.retransmission = 0;
-               if (coap_client_prepare_post(receive_buffer, sizeof(receive_buffer), COAP_SEND_FLAGS) < 0) {
+               if (coap_client_prepare_post(appl_buffer, appl_buffer_len, COAP_SEND_FLAGS) < 0) {
                   dtls_coap_failure(&app_data, "prepare post");
                } else if (app_data.dtls_pending) {
                   dtls_peer_t *peer = dtls_get_peer(dtls_context, dst);
@@ -1447,6 +1458,7 @@ int main(void)
    session_t dst;
 
    memset(&app_data, 0, sizeof(app_data));
+   memset(appl_buffer, 0, sizeof(appl_buffer));
    LOG_INF("CoAP/DTLS 1.2 CID sample %s has started", appl_get_version());
    appl_reset_cause(&flags);
 

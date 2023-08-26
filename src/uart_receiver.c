@@ -38,6 +38,7 @@
 #include "appl_update_xmodem.h"
 #endif
 #include "coap_client.h"
+#include "dtls_client.h"
 #include "io_job_queue.h"
 #include "modem.h"
 #include "modem_cmd.h"
@@ -66,8 +67,6 @@ static void uart_pause_tx_fn(struct k_work *work);
 static int uart_init(void);
 static void at_cmd_send_fn(struct k_work *work);
 static void at_cmd_response_fn(struct k_work *work);
-
-void dtls_cmd_trigger(bool led, int mode);
 
 static const struct device *const uart_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
 
@@ -658,7 +657,7 @@ static int at_cmd_send()
          res = modem_cmd_config(&at_cmd_buf[i]);
          if (res == 1) {
             LOG_INF(">> (new cfg) send");
-            dtls_cmd_trigger(true, 3);
+            dtls_cmd_trigger(true, 3, NULL, 0);
             res = 0;
          }
          return RESULT(res);
@@ -671,7 +670,7 @@ static int at_cmd_send()
          res = modem_cmd_connect(&at_cmd_buf[i]);
          if (res == 1) {
             LOG_INF(">> (new con) send");
-            dtls_cmd_trigger(true, 3);
+            dtls_cmd_trigger(true, 3, NULL, 0);
             res = 0;
          }
          return RESULT(res);
@@ -736,7 +735,7 @@ static int at_cmd()
       return 0;
    } else if (!stricmp(at_cmd_buf, "send")) {
       LOG_INF(">> send");
-      dtls_cmd_trigger(true, 3);
+      dtls_cmd_trigger(true, 3, NULL, 0);
       return 0;
    } else if (!stricmp(at_cmd_buf, "env")) {
       res = coap_client_prepare_env_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
@@ -811,6 +810,14 @@ static int at_cmd()
          }
          return 0;
       }
+
+      i = strstart(at_cmd_buf, "send ", true);
+      if (i > 0) {
+         LOG_INF(">> send %s", &at_cmd_buf[i]);
+         dtls_cmd_trigger(true, 3, &at_cmd_buf[i], strlen(&at_cmd_buf[i]));
+         return 0;
+      }
+
 #ifdef CONFIG_UART_UPDATE
       i = strstart(at_cmd_buf, "update ", true);
       if (i > 0) {
