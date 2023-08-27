@@ -34,9 +34,17 @@ const char *parse_next_text(const char *value, char sep, char* result, size_t le
 
 const char *parse_next_qtext(const char *value, char sep, char* result, size_t len);
 
-int strstart(const char *value, const char *head, bool ignoreCase);
+int strstart(const char *value, const char *head, bool ignore_case);
 
-int strend(const char *value, const char *tail, bool ignoreCase);
+int strend(const char *value, const char *tail, bool ignore_case);
+
+int strstartsep(const char *value, const char *head, bool ignore_case, const char *separators);
+
+int strstartsep(const char *value, const char *head, bool ignore_case, const char *separators);
+
+int strsepend(const char *value, const char *tail, bool ignore_case, const char *separators);
+
+const char *strichr(const char *value1, int value2);
 
 int stricmp(const char *value1, const char *value2);
 

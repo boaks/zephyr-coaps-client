@@ -733,10 +733,6 @@ static int at_cmd()
          appl_reboot(ERROR_CODE_CMD, K_MSEC(2000));
       }
       return 0;
-   } else if (!stricmp(at_cmd_buf, "send")) {
-      LOG_INF(">> send");
-      dtls_cmd_trigger(true, 3, NULL, 0);
-      return 0;
    } else if (!stricmp(at_cmd_buf, "env")) {
       res = coap_client_prepare_env_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
       return RESULT(res);
@@ -811,7 +807,7 @@ static int at_cmd()
          return 0;
       }
 
-      i = strstart(at_cmd_buf, "send ", true);
+      i = strstartsep(at_cmd_buf, "send", true, " ");
       if (i > 0) {
          LOG_INF(">> send %s", &at_cmd_buf[i]);
          dtls_cmd_trigger(true, 3, &at_cmd_buf[i], strlen(&at_cmd_buf[i]));
@@ -821,6 +817,8 @@ static int at_cmd()
 #ifdef CONFIG_UART_UPDATE
       i = strstart(at_cmd_buf, "update ", true);
       if (i > 0) {
+         // erase may block
+         uart_tx_pause(false);
          res = appl_update_cmd(&at_cmd_buf[i]);
          return RESULT(res);
       }
