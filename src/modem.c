@@ -147,15 +147,19 @@ static void modem_read_sim_work_fn(struct k_work *work)
 
 static K_WORK_DEFINE(modem_read_sim_work, modem_read_sim_work_fn);
 
-static void modem_read_info_work_fn(struct k_work *work);
-
-static K_WORK_DEFINE(modem_read_network_info_work, modem_read_info_work_fn);
-
 static void modem_read_info_work_fn(struct k_work *work)
 {
    modem_read_network_info(NULL, false);
+}
+
+static K_WORK_DEFINE(modem_read_network_info_work, modem_read_info_work_fn);
+
+static void modem_read_coverage_enhancement_info_work_fn(struct k_work *work)
+{
    modem_read_coverage_enhancement_info(NULL);
 }
+
+static K_WORK_DEFINE(modem_read_coverage_enhancement_info_work, modem_read_coverage_enhancement_info_work_fn);
 
 static void modem_state_change_callback_work_fn(struct k_work *work);
 
@@ -443,6 +447,7 @@ static void lte_connection_status(void)
    }
    if (!lte_connected && connected) {
       lte_connected = connected;
+      work_submit_to_io_queue(&modem_read_coverage_enhancement_info_work);
       work_submit_to_io_queue(&modem_connected_callback_work);
    }
 }
@@ -944,6 +949,7 @@ static void modem_cancel_all_job(void)
 {
    k_work_cancel(&modem_read_sim_work);
    k_work_cancel(&modem_read_network_info_work);
+   k_work_cancel(&modem_read_coverage_enhancement_info_work);
    k_work_cancel(&modem_registered_callback_work);
    k_work_cancel(&modem_unregistered_callback_work);
    k_work_cancel(&modem_ready_callback_work);
@@ -1812,6 +1818,7 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
 int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
 {
    int err;
+   int err2;
    char buf[64];
    struct lte_ce_info temp;
 
@@ -1839,8 +1846,22 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
          if (temp.cinr == 127) {
             temp.cinr = INVALID_SIGNAL_VALUE;
          }
+         err2 = modem_at_cmd(buf, sizeof(buf), "%XSNRSQ: ", "AT%XSNRSQ?");
+         if (err2 > 0) {
+            LOG_INF("XSNRSQ: %s", buf);
+            err2 = sscanf(buf, " %hd", &temp.snr);
+            if (err2 == 1) {
+               if (temp.snr == 127) {
+                  temp.snr = INVALID_SIGNAL_VALUE;
+               } else {
+                  temp.snr -= 24;
+               }
+            }
+         }
          k_mutex_lock(&lte_mutex, K_FOREVER);
-         temp.snr = ce_info.snr;
+         if (err2 <= 0) {
+            temp.snr = ce_info.snr;
+         }
          ce_info = temp;
          k_mutex_unlock(&lte_mutex);
          if (info) {
