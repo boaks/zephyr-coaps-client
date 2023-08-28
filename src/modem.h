@@ -163,6 +163,8 @@ int modem_get_release_time(void);
 
 void modem_set_transmission_time(void);
 
+void modem_set_scan_time(void);
+
 int modem_read_network_info(struct lte_network_info* info, bool callbacks);
 
 int modem_read_statistic(struct lte_network_statistic* statistic);

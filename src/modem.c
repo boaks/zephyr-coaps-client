@@ -87,6 +87,7 @@ static struct lte_ce_info ce_info;
 
 static int64_t transmission_time = 0;
 static int64_t network_search_time = 0;
+static int64_t scan_time = 0;
 
 #define CP_RAI_MAX_DELAY 500
 #define AS_RAI_MAX_DELAY 3000
@@ -590,8 +591,14 @@ static inline int lte_lc_cell_quality(const struct lte_lc_cell *gci_cell)
    return gci_cell->rsrp + (gci_cell->rsrq / 2);
 }
 
+#define MIN_QUALITY_DELTA 15
+
 static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
 {
+   static unsigned int scans = 0;
+   static unsigned int hits = 0;
+   static int64_t all_scan_time = 0;
+
    int current_cell;
 
    LOG_INF("LTE neighbor cell measurements %d/%d", cells_info->ncells_count, cells_info->gci_cells_count);
@@ -631,11 +638,23 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
          ++neighbor_cells;
       }
    } else if (cells_info->gci_cells_count) {
+      int quality;
       const struct lte_lc_cell *gci_cells = cells_info->gci_cells;
       const struct lte_lc_cell *gci_cells_sorted[cells_info->gci_cells_count];
       int w = cells_info->gci_cells_count > 9 ? 2 : 1;
+      int64_t now = k_uptime_get();
+
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      if (scan_time) {
+         now -= scan_time;
+         scan_time = 0;
+      } else {
+         now = 0;
+      }
+      k_mutex_unlock(&lte_mutex);
+
       for (int index = 0; index < cells_info->gci_cells_count; ++index) {
-         int quality = lte_lc_cell_quality(gci_cells);
+         quality = lte_lc_cell_quality(gci_cells);
          gci_cells_sorted[index] = gci_cells;
          for (int index2 = index; index2 > 0; --index2) {
             if (quality <= lte_lc_cell_quality(gci_cells_sorted[index2 - 1])) {
@@ -646,14 +665,27 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
          }
          ++gci_cells;
       }
+      ++scans;
+      quality = lte_lc_cell_quality(gci_cells_sorted[0]);
       for (int index = 0; index < cells_info->gci_cells_count; ++index) {
          gci_cells = gci_cells_sorted[index];
+         if (current_cell == gci_cells->id) {
+            if ((quality - lte_lc_cell_quality(gci_cells)) > MIN_QUALITY_DELTA) {
+               ++hits;
+            }
+         }
          LOG_INF("[%c%*d]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB",
                  current_cell == gci_cells->id ? '*' : ' ', w, index,
                  gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
                  gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
                  gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
       }
+      if (now) {
+         all_scan_time += now;
+      }
+      LOG_INF("Scans %u, improves %u, %lu s, overall %lu s", scans, hits,
+              (unsigned long)MSEC_TO_SEC(now),
+              (unsigned long)MSEC_TO_SEC(all_scan_time));
    }
 }
 
@@ -1528,6 +1560,14 @@ void modem_set_transmission_time(void)
    k_mutex_unlock(&lte_mutex);
 }
 
+void modem_set_scan_time(void)
+{
+   int64_t now = k_uptime_get();
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   scan_time = now;
+   k_mutex_unlock(&lte_mutex);
+}
+
 int parse_psm(const char *active_time_str, const char *tau_ext_str,
               const char *tau_legacy_str, struct lte_lc_psm_cfg *psm_cfg);
 
@@ -2229,6 +2269,10 @@ int modem_get_release_time(void)
 }
 
 void modem_set_transmission_time(void)
+{
+}
+
+void modem_set_scan_time(void)
 {
 }
 

@@ -343,6 +343,7 @@ int modem_cmd_scan(const char *config)
    } else {
       LOG_INF(">AT%%NCELLMEAS=%d,%d", params.search_type - 1, params.gci_count);
    }
+   modem_set_scan_time();
    return lte_lc_neighbor_cell_measurement(&params);
 }
 
