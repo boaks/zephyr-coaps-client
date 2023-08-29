@@ -1088,6 +1088,9 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       }
 
 #ifndef CONFIG_LTE_LOCK_BANDS
+      // 1,2,3,4,5,8,12,13,17,19,20,25,26,28,66
+      // 20,8,3
+      // AT%XBANDLOCK=1,"10000000000010000100"
       err = modem_at_cmd(buf, sizeof(buf), "%XBANDLOCK: ", "AT%XBANDLOCK?");
       if (err > 0) {
          LOG_INF("band-lock: %s", buf);
