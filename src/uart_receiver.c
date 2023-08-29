@@ -78,6 +78,7 @@ static uint8_t uart_rx_buf[2][CONFIG_UART_BUFFER_LEN];
 #define UART_AT_CMD_EXECUTING 1
 #define UART_AT_CMD_PENDING 2
 #define UART_UPDATE 3
+#define UART_UPDATE_START 4
 
 static atomic_t uart_at_state = ATOMIC_INIT(0);
 
@@ -90,6 +91,7 @@ static atomic_t xmodem_retries = ATOMIC_INIT(0);
 
 static K_WORK_DELAYABLE_DEFINE(uart_xmodem_start_work, uart_xmodem_start_fn);
 static K_WORK_DELAYABLE_DEFINE(uart_xmodem_nak_work, uart_xmodem_process_fn);
+static K_WORK_DELAYABLE_DEFINE(uart_xmodem_ack_work, uart_xmodem_process_fn);
 static K_WORK_DELAYABLE_DEFINE(uart_xmodem_timeout_work, uart_xmodem_process_fn);
 static K_WORK_DEFINE(uart_xmodem_write_work, uart_xmodem_process_fn);
 static K_WORK_DEFINE(uart_xmodem_ready_work, uart_xmodem_process_fn);
@@ -743,8 +745,9 @@ static int at_cmd()
    } else if (!stricmp(at_cmd_buf, "update")) {
       res = appl_update_start();
       if (!res) {
+         atomic_set_bit(&uart_at_state, UART_UPDATE);
          atomic_set(&xmodem_retries, 0);
-         k_work_reschedule_for_queue(&uart_work_q, &uart_xmodem_start_work, K_MSEC(1000));
+         res = work_reschedule_for_cmd_queue(&uart_xmodem_start_work, K_MSEC(500));
       }
       return RESULT(res);
 #endif
@@ -919,7 +922,7 @@ static void uart_xmodem_start_fn(struct k_work *work)
    int retry = atomic_inc(&xmodem_retries);
 
    if (retry == 0) {
-      atomic_set_bit(&uart_at_state, UART_UPDATE);
+      atomic_set_bit(&uart_at_state, UART_UPDATE_START);
       LOG_INF("Please start xmodem, update begins in about 10s!");
       k_sleep(K_MSEC(500));
       uart_tx_off(true);
@@ -938,12 +941,12 @@ static void uart_xmodem_start_fn(struct k_work *work)
       // CRC
       appl_update_xmodem_start(at_cmd_buf, sizeof(at_cmd_buf), true);
       uart_poll_out(uart_dev, XMODEM_CRC);
-      k_work_reschedule_for_queue(&uart_work_q, &uart_xmodem_start_work, K_MSEC(2000));
+      work_reschedule_for_cmd_queue(&uart_xmodem_start_work, K_MSEC(2000));
    } else if (retry < 6) {
       // CHECKSUM
       appl_update_xmodem_start(at_cmd_buf, sizeof(at_cmd_buf), false);
       uart_poll_out(uart_dev, XMODEM_NAK);
-      k_work_reschedule_for_queue(&uart_work_q, &uart_xmodem_start_work, K_MSEC(2000));
+      work_reschedule_for_cmd_queue(&uart_xmodem_start_work, K_MSEC(2000));
    } else {
       appl_update_cancel();
       atomic_clear_bit(&uart_at_state, UART_UPDATE);
@@ -954,37 +957,47 @@ static void uart_xmodem_start_fn(struct k_work *work)
 
 static void uart_xmodem_process_fn(struct k_work *work)
 {
-   int rc;
+   bool start = atomic_test_bit(&uart_at_state, UART_UPDATE_START);
+   bool retry = false;
+   bool cancel = false;
+   int rc = 9;
 
    if (&uart_xmodem_write_work == work) {
+      k_work_cancel_delayable(&uart_xmodem_nak_work);
       rc = appl_update_xmodem_write_block();
-      atomic_clear_bit(&uart_at_state, UART_AT_CMD_EXECUTING);
       if (rc < 0) {
-         atomic_inc(&xmodem_retries);
-         uart_poll_out(uart_dev, XMODEM_NAK);
+         retry = true;
+      } else if (rc == XMODEM_DUPLICATE) {
+         if (!start) {
+            // small delay, maybe the next block is already in flight
+            work_reschedule_for_cmd_queue(&uart_xmodem_ack_work, K_MSEC(500));
+         }
+         return;
       } else {
+         if (start && atomic_test_and_clear_bit(&uart_at_state, UART_UPDATE_START)) {
+            k_work_cancel_delayable(&uart_xmodem_start_work);
+         }
          atomic_set(&xmodem_retries, 0);
-         k_work_cancel_delayable(&uart_xmodem_start_work);
-         k_work_reschedule_for_queue(&uart_work_q, &uart_xmodem_timeout_work, K_SECONDS(15));
+         k_work_cancel_delayable(&uart_xmodem_ack_work);
+         work_reschedule_for_cmd_queue(&uart_xmodem_timeout_work, K_SECONDS(15));
          uart_poll_out(uart_dev, XMODEM_ACK);
+         return;
       }
-   } else if (&uart_xmodem_timeout_work.work == work) {
-      appl_update_cancel();
-      atomic_clear_bit(&uart_at_state, UART_UPDATE);
-      atomic_clear_bit(&uart_at_state, UART_AT_CMD_EXECUTING);
-      uart_poll_out(uart_dev, XMODEM_NAK);
-      uart_tx_off(false);
-      LOG_INF("Transfer timeout.");
    } else if (&uart_xmodem_nak_work.work == work) {
+      retry = true;
       appl_update_xmodem_retry();
-      atomic_clear_bit(&uart_at_state, UART_AT_CMD_EXECUTING);
-      atomic_inc(&xmodem_retries);
-      uart_poll_out(uart_dev, XMODEM_NAK);
+   } else if (&uart_xmodem_timeout_work.work == work) {
+      cancel = true;
+      LOG_INF("Transfer timeout.");
+   } else if (&uart_xmodem_ack_work.work == work) {
+      uart_poll_out(uart_dev, XMODEM_ACK);
+      return;
    } else {
+      k_work_cancel_delayable(&uart_xmodem_nak_work);
+      k_work_cancel_delayable(&uart_xmodem_ack_work);
       k_work_cancel_delayable(&uart_xmodem_timeout_work);
       rc = appl_update_finish();
       atomic_clear_bit(&uart_at_state, UART_UPDATE);
-      atomic_clear_bit(&uart_at_state, UART_AT_CMD_EXECUTING);
       uart_poll_out(uart_dev, XMODEM_ACK);
       uart_tx_off(false);
       if (!rc) {
@@ -999,6 +1012,24 @@ static void uart_xmodem_process_fn(struct k_work *work)
          LOG_INF("Transfer succeeded.");
          LOG_INF("Reboot device to apply update.");
       }
+      return;
+   }
+   if (start) {
+      return;
+   }
+   if (retry) {
+      if (atomic_inc(&xmodem_retries) < 10) {
+         uart_poll_out(uart_dev, XMODEM_NAK);
+      } else {
+         cancel = true;
+         LOG_INF("Transfer failed by multiple errors.");
+      }
+   }
+   if (cancel) {
+      appl_update_cancel();
+      atomic_clear_bit(&uart_at_state, UART_UPDATE);
+      uart_poll_out(uart_dev, XMODEM_NAK);
+      uart_tx_off(false);
    }
 }
 
@@ -1008,19 +1039,13 @@ static bool uart_xmodem_handler(const char *buffer, size_t len)
 
    switch (rc) {
       case XMODEM_NOT_OK:
-         if (!atomic_test_and_set_bit(&uart_at_state, UART_AT_CMD_EXECUTING)) {
-            k_work_reschedule_for_queue(&uart_work_q, &uart_xmodem_nak_work, K_MSEC(2000));
-         }
+         work_reschedule_for_cmd_queue(&uart_xmodem_nak_work, K_MSEC(2000));
          break;
       case XMODEM_BLOCK_READY:
-         if (!atomic_test_and_set_bit(&uart_at_state, UART_AT_CMD_EXECUTING)) {
-            k_work_submit_to_queue(&at_cmd_work_q, &uart_xmodem_write_work);
-         }
+         work_submit_to_cmd_queue(&uart_xmodem_write_work);
          break;
       case XMODEM_READY:
-         if (!atomic_test_and_set_bit(&uart_at_state, UART_AT_CMD_EXECUTING)) {
-            k_work_submit_to_queue(&at_cmd_work_q, &uart_xmodem_ready_work);
-         }
+         work_submit_to_cmd_queue(&uart_xmodem_ready_work);
          break;
    }
    return false;

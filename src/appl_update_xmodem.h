@@ -28,7 +28,8 @@ enum xmodem_state {
    XMODEM_NONE,
    XMODEM_NOT_OK,
    XMODEM_BLOCK_READY,
-   XMODEM_READY
+   XMODEM_READY,
+   XMODEM_DUPLICATE,
 };
 
 int appl_update_xmodem_start(uint8_t *buffer, size_t size, bool crc);

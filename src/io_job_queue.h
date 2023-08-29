@@ -24,4 +24,12 @@ int work_reschedule_for_io_queue(struct k_work_delayable *dwork,
 
 int work_submit_to_io_queue(struct k_work *work);
 
+int work_schedule_for_cmd_queue(struct k_work_delayable *dwork,
+                               k_timeout_t delay);
+
+int work_reschedule_for_cmd_queue(struct k_work_delayable *dwork,
+                                 k_timeout_t delay);
+
+int work_submit_to_cmd_queue(struct k_work *work);
+
 #endif /* IO_JOB_QUEUE_H */

@@ -27,12 +27,14 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 static volatile bool xmodem_crc = false;
 static volatile size_t xmodem_len = 0;
+static volatile uint8_t xmodem_block = 0;
 static size_t xmodem_buffer_size = 0;
 static uint8_t *xmodem_buffer = NULL;
 
 int appl_update_xmodem_start(uint8_t *buffer, size_t size, bool crc)
 {
    xmodem_len = 0;
+   xmodem_block = 1;
    xmodem_buffer = buffer;
    xmodem_buffer_size = size;
    xmodem_crc = crc;
@@ -93,6 +95,7 @@ static bool appl_update_xmodem_crc(const uint8_t *data, int block_len)
 int appl_update_xmodem_write_block(void)
 {
    uint8_t s = xmodem_buffer[XMODEM_TYPE];
+   uint8_t b = xmodem_buffer[XMODEM_BLOCK];
    int rc = -EINVAL;
    int crc_len = xmodem_crc ? 2 : 1;
    int block_len;
@@ -117,7 +120,6 @@ int appl_update_xmodem_write_block(void)
    } else {
       int sum = 0;
       const uint8_t *cur = &xmodem_buffer[XMODEM_HEADER_LEN];
-      uint8_t b = xmodem_buffer[XMODEM_BLOCK];
 
       for (int i = 0; i < block_len; ++i) {
          sum += *cur++;
@@ -130,7 +132,18 @@ int appl_update_xmodem_write_block(void)
       }
    }
 
-   rc = appl_update_write(&xmodem_buffer[XMODEM_HEADER_LEN], block_len);
+   if (xmodem_block == b) {
+      rc = appl_update_write(&xmodem_buffer[XMODEM_HEADER_LEN], block_len);
+      ++xmodem_block;
+   } else {
+      ++b;
+      if (xmodem_block == b) {
+         // b already processed, next block expected
+         rc = XMODEM_DUPLICATE;
+      } else {
+         return -EBADMSG;
+      }
+   }
    xmodem_len = 0;
    return rc;
 }
