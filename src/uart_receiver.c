@@ -491,8 +491,14 @@ static void at_cmd_result(int res)
             case -EINVAL:
                desc = " (invalid parameter)";
                break;
+            case -ESHUTDOWN:
+               desc = " (in shutdown)";
+               break;
             case -EINPROGRESS:
                desc = " (in progress)";
+               break;
+            case -ENOTSUP:
+               desc = " (not supported)";
                break;
             default:
                desc = "";
@@ -652,7 +658,7 @@ static int at_cmd_send()
    } else if (!stricmp(at_cmd_buf, "eval")) {
       strcpy(at_cmd_buf, "AT%CONEVAL");
    } else {
-      i = strstart(at_cmd_buf, "cfg", true);
+      i = strstartsep(at_cmd_buf, "cfg", true, " ");
       if (i > 0) {
          // blocking AT cmd
          uart_tx_pause(false);
@@ -665,7 +671,7 @@ static int at_cmd_send()
          return RESULT(res);
       }
 
-      i = strstart(at_cmd_buf, "con", true);
+      i = strstart(at_cmd_buf, "con ", true);
       if (i > 0) {
          // blocking AT cmd
          uart_tx_pause(false);
@@ -678,33 +684,33 @@ static int at_cmd_send()
          return RESULT(res);
       }
 
-      i = strstart(at_cmd_buf, "edrx", true);
+      i = strstart(at_cmd_buf, "edrx ", true);
       if (i > 0) {
          res = modem_cmd_edrx(&at_cmd_buf[i]);
          return RESULT(res);
       }
 
-      i = strstart(at_cmd_buf, "psm", true);
+      i = strstart(at_cmd_buf, "psm ", true);
       if (i > 0) {
          res = modem_cmd_psm(&at_cmd_buf[i]);
          return RESULT(res);
       }
 
-      i = strstart(at_cmd_buf, "rai", true);
+      i = strstart(at_cmd_buf, "rai ", true);
       if (i > 0) {
          res = modem_cmd_rai(&at_cmd_buf[i]);
          return RESULT(res);
       }
 
 #ifdef CONFIG_SMS
-      i = strstart(at_cmd_buf, "sms", true);
+      i = strstart(at_cmd_buf, "sms ", true);
       if (i > 0) {
          res = modem_cmd_sms(&at_cmd_buf[i]);
          return RESULT(res);
       }
 #endif
 
-      i = strstart(at_cmd_buf, "scan", true);
+      i = strstartsep(at_cmd_buf, "scan", true, " ");
       if (i == 0) {
          i = strstart(at_cmd_buf, "AT%NCELLMEAS", true);
       }
@@ -951,7 +957,7 @@ static void uart_xmodem_start_fn(struct k_work *work)
       appl_update_cancel();
       atomic_clear_bit(&uart_at_state, UART_UPDATE);
       uart_tx_off(false);
-      LOG_INF("Failed to start transfer!");
+      LOG_INF("Failed to start XMODEM transfer!");
    }
 }
 
@@ -988,7 +994,7 @@ static void uart_xmodem_process_fn(struct k_work *work)
       appl_update_xmodem_retry();
    } else if (&uart_xmodem_timeout_work.work == work) {
       cancel = true;
-      LOG_INF("Transfer timeout.");
+      LOG_INF("XMODEM transfer timeout.");
    } else if (&uart_xmodem_ack_work.work == work) {
       uart_poll_out(uart_dev, XMODEM_ACK);
       return;
@@ -1007,10 +1013,10 @@ static void uart_xmodem_process_fn(struct k_work *work)
          rc = appl_update_request_upgrade();
       }
       if (rc) {
-         LOG_INF("Transfer failed. %d", rc);
+         LOG_INF("XMODEM transfer failed. %d", rc);
       } else {
-         LOG_INF("Transfer succeeded.");
-         LOG_INF("Reboot device to apply update.");
+         LOG_INF("XMODEM transfer succeeded.");
+         LOG_INF("Reboot required to apply update.");
       }
       return;
    }
@@ -1022,7 +1028,7 @@ static void uart_xmodem_process_fn(struct k_work *work)
          uart_poll_out(uart_dev, XMODEM_NAK);
       } else {
          cancel = true;
-         LOG_INF("Transfer failed by multiple errors.");
+         LOG_INF("XMODEM transfer failed by multiple errors.");
       }
    }
    if (cancel) {

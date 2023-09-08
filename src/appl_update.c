@@ -12,12 +12,14 @@
  */
 
 #include <errno.h>
+#include <stdio.h>
 #include <zephyr/dfu/flash_img.h>
 #include <zephyr/dfu/mcuboot.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/storage/flash_map.h>
 
+#include "appl_diagnose.h"
 #include "appl_update.h"
 #include "parse.h"
 
@@ -72,7 +74,7 @@ static int appl_update_swap_type(bool info)
    return swap_type;
 }
 
-static int appl_update_dump_header(bool warn)
+static int appl_update_dump_header(bool warn, char *buf, size_t len)
 {
    struct mcuboot_img_header header;
    int rc;
@@ -88,21 +90,29 @@ static int appl_update_dump_header(bool warn)
 
    if (header.mcuboot_version == 1) {
       struct mcuboot_img_sem_ver *sem_ver = &header.h.v1.sem_ver;
-      if (dfu_context.flash_area) {
-         LOG_INF("Update %d bytes, %d.%d.%d-%d ongoing.",
-                 header.h.v1.image_size, sem_ver->major, sem_ver->minor,
-                 sem_ver->revision, sem_ver->build_num);
-      } else if (dfu_time > -1) {
-         LOG_INF("Update %d bytes, %d.%d.%d-%d ready after %d s.",
-                 header.h.v1.image_size, sem_ver->major, sem_ver->minor,
-                 sem_ver->revision, sem_ver->build_num, (int)(dfu_time / MSEC_PER_SEC));
+      if (buf && len) {
+         memset(buf, 0, len);
+         snprintf(buf, len, "%d.%d.%d+%d", sem_ver->major, sem_ver->minor,
+                  sem_ver->revision, sem_ver->build_num);
       } else {
-         LOG_INF("Update %d bytes, %d.%d.%d-%d ready.",
-                 header.h.v1.image_size, sem_ver->major, sem_ver->minor,
-                 sem_ver->revision, sem_ver->build_num);
+         if (dfu_context.flash_area) {
+            LOG_INF("Update %d bytes, %d.%d.%d+%d ongoing.",
+                    header.h.v1.image_size, sem_ver->major, sem_ver->minor,
+                    sem_ver->revision, sem_ver->build_num);
+         } else if (dfu_time > -1) {
+            LOG_INF("Update %d bytes, %d.%d.%d+%d ready after %d s.",
+                    header.h.v1.image_size, sem_ver->major, sem_ver->minor,
+                    sem_ver->revision, sem_ver->build_num, (int)(dfu_time / MSEC_PER_SEC));
+         } else {
+            LOG_INF("Update %d bytes, %d.%d.%d+%d ready.",
+                    header.h.v1.image_size, sem_ver->major, sem_ver->minor,
+                    sem_ver->revision, sem_ver->build_num);
+         }
       }
    } else {
-      LOG_WRN("Update failed, unknown mcuboot version %u", header.mcuboot_version);
+      if (warn) {
+         LOG_WRN("Update failed, unknown mcuboot version %u", header.mcuboot_version);
+      }
       return -EINVAL;
    }
 
@@ -116,13 +126,14 @@ int appl_update_cmd(const char *config)
    const char *cur = config;
    char value[7];
 
-   memset(value, 0, sizeof(value));
-   while (*cur == ' ') {
-      ++cur;
+   if (appl_reboots()) {
+      return -ESHUTDOWN;
    }
+
+   memset(value, 0, sizeof(value));
    cur = parse_next_text(cur, ' ', value, sizeof(value));
 
-   if (stricmp("info", value) && stricmp("erase", value) && stricmp("revert", value)) {
+   if (stricmp("info", value) && stricmp("erase", value) && stricmp("revert", value) && stricmp("reboot", value)) {
       LOG_INF("update '%s' not supported!", config);
       return -EINVAL;
    }
@@ -141,14 +152,37 @@ int appl_update_cmd(const char *config)
          LOG_INF("Update %u bytes written.", written);
       }
       memset(&dfu_context, 0, sizeof(dfu_context));
-      rc = appl_update_dump_header(false);
-      if (!rc) {
+      rc = appl_update_dump_header(false, NULL, 0);
+      if (rc < 0) {
+         LOG_INF("No update available.");
+         rc = 0;
+      } else {
          appl_update_swap_type(true);
       }
    } else if (!stricmp("erase", value)) {
+      LOG_INF("Erase update.");
+      k_sleep(K_MSEC(500));
       rc = boot_erase_img_bank((uint8_t)dfu_flash_area_id);
    } else if (!stricmp("revert", value)) {
       rc = boot_request_upgrade(BOOT_UPGRADE_TEST);
+   } else if (!stricmp("reboot", value)) {
+      memset(&dfu_context, 0, sizeof(dfu_context));
+      rc = appl_update_dump_header(false, NULL, 0);
+      if (rc < 0) {
+         LOG_INF("No update transfered.");
+         rc = 0;
+      } else {
+         int swap_type = mcuboot_swap_type();
+         if (BOOT_SWAP_TYPE_TEST == swap_type || BOOT_SWAP_TYPE_PERM == swap_type) {
+            LOG_INF("Reboot to apply update.");
+            appl_reboot(ERROR_CODE_UPDATE, K_MSEC(2000));
+         } else if (BOOT_SWAP_TYPE_REVERT == swap_type) {
+            LOG_INF("Reboot to revert update.");
+            appl_reboot(ERROR_CODE_UPDATE, K_MSEC(2000));
+         } else {
+            LOG_INF("No update pending.");
+         }
+      }
    }
 
    if (close) {
@@ -165,12 +199,20 @@ void appl_update_cmd_help(void)
    LOG_INF("  update info   : display current update info.");
    LOG_INF("  update erase  : erase current update.");
    LOG_INF("  update revert : revert last update.");
+   LOG_INF("  update reboot : reboot to apply update.");
+}
+
+bool appl_update_pending(void)
+{
+   return dfu_flash_area_id >= 0;
 }
 
 int appl_update_start(void)
 {
    int rc = -EINVAL;
-
+   if (appl_reboots()) {
+      return -ESHUTDOWN;
+   }
    if (dfu_context.flash_area) {
       return -EINPROGRESS;
    }
@@ -183,6 +225,9 @@ int appl_update_start(void)
 
 size_t appl_update_written(void)
 {
+   if (appl_reboots()) {
+      return -ESHUTDOWN;
+   }
    if (dfu_context.flash_area) {
       return flash_img_bytes_written(&dfu_context);
    } else {
@@ -192,6 +237,9 @@ size_t appl_update_written(void)
 
 int appl_update_erase(void)
 {
+   if (appl_reboots()) {
+      return -ESHUTDOWN;
+   }
    if (dfu_flash_area_id >= 0) {
       return boot_erase_img_bank((uint8_t)dfu_flash_area_id);
       dfu_time = -1;
@@ -201,18 +249,27 @@ int appl_update_erase(void)
 
 int appl_update_write(const uint8_t *data, size_t len)
 {
+   if (appl_reboots()) {
+      return -ESHUTDOWN;
+   }
    return flash_img_buffered_write(&dfu_context, data, len, false);
 }
 
 int appl_update_finish(void)
 {
-   size_t written = flash_img_bytes_written(&dfu_context);
-   int rc = flash_img_buffered_write(&dfu_context, NULL, 0, true);
+   size_t written = 0;
+   int rc = 0;
+
+   if (appl_reboots()) {
+      return -ESHUTDOWN;
+   }
+
+   written = flash_img_bytes_written(&dfu_context);
+   rc = flash_img_buffered_write(&dfu_context, NULL, 0, true);
    if (!rc) {
       if (dfu_time > -1) {
          dfu_time = k_uptime_get() - dfu_time;
          LOG_INF("Transfered %u bytes in %d s.", written, (int)(dfu_time / MSEC_PER_SEC));
-         dfu_time = -1;
       } else {
          LOG_INF("Transfered %u bytes.", written);
       }
@@ -222,7 +279,11 @@ int appl_update_finish(void)
 
 int appl_update_cancel(void)
 {
-   int rc = flash_img_buffered_write(&dfu_context, NULL, 0, true);
+   int rc = 0;
+   if (appl_reboots()) {
+      return -ESHUTDOWN;
+   }
+   rc = flash_img_buffered_write(&dfu_context, NULL, 0, true);
    if (!rc) {
       if (dfu_time > -1) {
          dfu_time = k_uptime_get() - dfu_time;
@@ -236,17 +297,35 @@ int appl_update_cancel(void)
    return rc;
 }
 
-int appl_update_dump_pending_image(void)
+int appl_update_get_pending_version(char *buf, size_t len)
 {
+   if (appl_reboots()) {
+      return -ESHUTDOWN;
+   }
    if (dfu_flash_area_id < 0) {
       return -EINVAL;
    }
-   return appl_update_dump_header(true);
+   return appl_update_dump_header(false, buf, len);
+}
+
+int appl_update_dump_pending_image(void)
+{
+   if (appl_reboots()) {
+      return -ESHUTDOWN;
+   }
+   if (dfu_flash_area_id < 0) {
+      return -EINVAL;
+   }
+   return appl_update_dump_header(true, NULL, 0);
 }
 
 int appl_update_request_upgrade(void)
 {
-   int rc = boot_request_upgrade(BOOT_UPGRADE_TEST);
+   int rc = 0;
+   if (appl_reboots()) {
+      return -ESHUTDOWN;
+   }
+   rc = boot_request_upgrade(BOOT_UPGRADE_TEST);
    if (!rc) {
       appl_update_swap_type(false);
    }
@@ -255,6 +334,9 @@ int appl_update_request_upgrade(void)
 
 int appl_update_image_verified(void)
 {
+   if (appl_reboots()) {
+      return -ESHUTDOWN;
+   }
    if (boot_is_img_confirmed()) {
       return 1;
    } else {

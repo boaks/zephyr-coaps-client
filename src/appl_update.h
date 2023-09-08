@@ -20,6 +20,7 @@
 int appl_update_cmd(const char *config);
 void appl_update_cmd_help(void);
 
+bool appl_update_pending(void);
 int appl_update_start(void);
 size_t appl_update_written(void);
 int appl_update_erase(void);
@@ -27,6 +28,7 @@ int appl_update_write(const uint8_t *data, size_t len);
 int appl_update_finish(void);
 int appl_update_cancel(void);
 
+int appl_update_get_pending_version(char *buf, size_t len);
 int appl_update_dump_pending_image(void);
 int appl_update_request_upgrade(void);
 int appl_update_image_verified(void);
