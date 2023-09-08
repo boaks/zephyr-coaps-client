@@ -42,183 +42,197 @@ static bool modem_is_plmn(const char *value)
    return !value[len] && 5 <= len && len <= 6;
 }
 
+static int previous_mode = -1;
+
+static int modem_off(void)
+{
+   enum lte_lc_func_mode mode;
+   int rc = lte_lc_func_mode_get(&mode);
+   previous_mode = -1;
+   if (!rc) {
+      rc = mode;
+      previous_mode = mode;
+      if (mode != LTE_LC_FUNC_MODE_POWER_OFF) {
+         lte_lc_func_mode_set(LTE_LC_FUNC_MODE_POWER_OFF);
+      }
+   }
+   return rc;
+}
+
+static int modem_restore(void)
+{
+   int rc = 0;
+   if (-1 < previous_mode && previous_mode != LTE_LC_FUNC_MODE_POWER_OFF) {
+      rc = lte_lc_func_mode_set(previous_mode);
+   }
+   previous_mode = -1;
+   return rc;
+}
+
 #define CFG_NB_IOT "nb"
 #define CFG_LTE_M "m1"
 
 int modem_cmd_config(const char *config)
 {
-   enum lte_lc_func_mode func_mode;
-   int err = lte_lc_func_mode_get(&func_mode);
+   int err;
+   char buf[32];
+   char value1[7];
+   char value2[3];
+   char value3[3];
+   const char *cur = config;
 
-   if (!err) {
-      char buf[32];
-      char value1[7];
-      char value2[3];
-      char value3[3];
-      const char *cur = config;
+   memset(value1, 0, sizeof(value1));
+   memset(value2, 0, sizeof(value2));
+   memset(value3, 0, sizeof(value3));
 
-      memset(value1, 0, sizeof(value1));
-      memset(value2, 0, sizeof(value2));
-      memset(value3, 0, sizeof(value3));
-      while (*cur == ' ') {
-         ++cur;
-      }
-      cur = parse_next_text(cur, ' ', value1, sizeof(value1));
-      cur = parse_next_text(cur, ' ', value2, sizeof(value2));
-      cur = parse_next_text(cur, ' ', value3, sizeof(value3));
-      if (!value1[0]) {
-         char mode = 0;
-         char type = 0;
-         char net_mode = 0;
-         char plmn[16];
-         const char *desc = "\?\?\?";
-         enum lte_lc_system_mode lte_mode = LTE_LC_SYSTEM_MODE_NONE;
-         enum lte_lc_system_mode_preference lte_preference = CONFIG_LTE_MODE_PREFERENCE;
+   cur = parse_next_text(cur, ' ', value1, sizeof(value1));
+   cur = parse_next_text(cur, ' ', value2, sizeof(value2));
+   cur = parse_next_text(cur, ' ', value3, sizeof(value3));
+   if (!value1[0]) {
+      char mode = 0;
+      char type = 0;
+      char net_mode = 0;
+      char plmn[16];
+      const char *desc = "\?\?\?";
+      enum lte_lc_system_mode lte_mode = LTE_LC_SYSTEM_MODE_NONE;
+      enum lte_lc_system_mode_preference lte_preference = CONFIG_LTE_MODE_PREFERENCE;
 
-         lte_lc_system_mode_get(&lte_mode, &lte_preference);
-         memset(plmn, 0, sizeof(plmn));
-         err = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS?");
-         if (err > 0) {
-            err = sscanf(buf, " %c,%c,%15[^,],%c",
-                         &mode, &type, plmn, &net_mode);
-            strtrunc(plmn, '"');
-         }
-         if (mode == '0') {
-            desc = "auto";
-         } else if (mode == '1') {
-            desc = plmn;
-         }
-         LOG_INF("cfg %s %s", desc, modem_get_system_mode_cfg(lte_mode, lte_preference));
-         desc = "none";
-         if (net_mode == '7') {
-            desc = "m1";
-         } else if (net_mode == '9') {
-            desc = "nb";
-         }
-         LOG_INF("currently %s %s", plmn, desc);
-         return 0;
+      lte_lc_system_mode_get(&lte_mode, &lte_preference);
+      memset(plmn, 0, sizeof(plmn));
+      err = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS?");
+      if (err > 0) {
+         err = sscanf(buf, " %c,%c,%15[^,],%c",
+                      &mode, &type, plmn, &net_mode);
+         strtrunc(plmn, '"');
       }
-      if (!stricmp("init", value1)) {
-         if (value2[0]) {
-            LOG_INF("cfg %s", config);
-            LOG_INF("No arguments %s are supported for 'init'", value2);
-            return -EINVAL;
-         }
-         LOG_INF(">> cfg init");
-         if (func_mode != LTE_LC_FUNC_MODE_POWER_OFF) {
-            lte_lc_func_mode_set(LTE_LC_FUNC_MODE_POWER_OFF);
-         }
-         modem_reinit();
-         if (func_mode != LTE_LC_FUNC_MODE_POWER_OFF) {
-            lte_lc_func_mode_set(func_mode);
-         }
-         LOG_INF(">> cfg init ready");
-         return 1;
+      if (mode == '0') {
+         desc = "auto";
+      } else if (mode == '1') {
+         desc = plmn;
       }
-      if (stricmp("auto", value1) && !modem_is_plmn(value1)) {
-         LOG_INF("cfg %s", config);
-         LOG_INF("plmn '%s' not supported! Either 'auto' or numerical plmn.", value1);
-         return -EINVAL;
+      LOG_INF("cfg %s %s", desc, modem_get_system_mode_cfg(lte_mode, lte_preference));
+      desc = "none";
+      if (net_mode == '7') {
+         desc = "m1";
+      } else if (net_mode == '9') {
+         desc = "nb";
       }
-      if (value2[0] && stricmp(CFG_NB_IOT, value2) && stricmp(CFG_LTE_M, value2)) {
-         LOG_INF("cfg %s", config);
-         LOG_INF("mode '%s' not supported!", value2);
-         return -EINVAL;
-      }
-      if (value3[0] && stricmp(CFG_NB_IOT, value3) && stricmp(CFG_LTE_M, value3)) {
-         LOG_INF("cfg %s", config);
-         LOG_INF("mode '%s' not supported!", value3);
-         return -EINVAL;
-      }
-      LOG_INF(">> cfg %s %s %s", value1, value2, value3);
+      LOG_INF("currently %s %s", plmn, desc);
+      return 0;
+   }
+   if (!stricmp("init", value1)) {
       if (value2[0]) {
-         enum lte_lc_system_mode lte_mode = LTE_LC_SYSTEM_MODE_NONE;
-         enum lte_lc_system_mode_preference lte_preference = CONFIG_LTE_MODE_PREFERENCE;
-         enum lte_lc_system_mode lte_mode_new;
-         enum lte_lc_system_mode_preference lte_preference_new;
-         bool gps;
-         lte_lc_system_mode_get(&lte_mode, &lte_preference);
-         lte_mode_new = lte_mode;
-         lte_preference_new = lte_preference;
-         gps = lte_mode == LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS ||
-               lte_mode == LTE_LC_SYSTEM_MODE_LTEM_GPS ||
-               lte_mode == LTE_LC_SYSTEM_MODE_NBIOT_GPS;
-         if (!stricmp(CFG_NB_IOT, value2)) {
-            if (!stricmp(CFG_LTE_M, value3)) {
-               if (gps) {
-                  lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS;
-               } else {
-                  lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM_NBIOT;
-               }
-               lte_preference_new = LTE_LC_SYSTEM_MODE_PREFER_NBIOT;
+         LOG_INF("cfg %s", config);
+         LOG_INF("No arguments %s are supported for 'init'", value2);
+         return -EINVAL;
+      }
+      LOG_INF(">> cfg init");
+      modem_off();
+      modem_reinit();
+      modem_restore();
+      LOG_INF(">> cfg init ready");
+      return 1;
+   }
+   if (stricmp("auto", value1) && !modem_is_plmn(value1)) {
+      LOG_INF("cfg %s", config);
+      LOG_INF("plmn '%s' not supported! Either 'auto' or numerical plmn.", value1);
+      return -EINVAL;
+   }
+   if (value2[0] && stricmp(CFG_NB_IOT, value2) && stricmp(CFG_LTE_M, value2)) {
+      LOG_INF("cfg %s", config);
+      LOG_INF("mode '%s' not supported!", value2);
+      return -EINVAL;
+   }
+   if (value3[0] && stricmp(CFG_NB_IOT, value3) && stricmp(CFG_LTE_M, value3)) {
+      LOG_INF("cfg %s", config);
+      LOG_INF("mode '%s' not supported!", value3);
+      return -EINVAL;
+   }
+   LOG_INF(">> cfg %s %s %s", value1, value2, value3);
+   if (value2[0]) {
+      enum lte_lc_system_mode lte_mode = LTE_LC_SYSTEM_MODE_NONE;
+      enum lte_lc_system_mode_preference lte_preference = CONFIG_LTE_MODE_PREFERENCE;
+      enum lte_lc_system_mode lte_mode_new;
+      enum lte_lc_system_mode_preference lte_preference_new;
+      bool gps;
+      lte_lc_system_mode_get(&lte_mode, &lte_preference);
+      lte_mode_new = lte_mode;
+      lte_preference_new = lte_preference;
+      gps = lte_mode == LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS ||
+            lte_mode == LTE_LC_SYSTEM_MODE_LTEM_GPS ||
+            lte_mode == LTE_LC_SYSTEM_MODE_NBIOT_GPS;
+      if (!stricmp(CFG_NB_IOT, value2)) {
+         if (!stricmp(CFG_LTE_M, value3)) {
+            if (gps) {
+               lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS;
             } else {
-               if (gps) {
-                  lte_mode_new = LTE_LC_SYSTEM_MODE_NBIOT_GPS;
-               } else {
-                  lte_mode_new = LTE_LC_SYSTEM_MODE_NBIOT;
-               }
-               lte_preference_new = LTE_LC_SYSTEM_MODE_PREFER_AUTO;
+               lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM_NBIOT;
             }
-         } else if (!stricmp(CFG_LTE_M, value2)) {
-            if (!stricmp(CFG_NB_IOT, value3)) {
-               if (gps) {
-                  lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS;
-               } else {
-                  lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM_NBIOT;
-               }
-               lte_preference_new = LTE_LC_SYSTEM_MODE_PREFER_LTEM;
-            } else {
-               if (gps) {
-                  lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM_GPS;
-               } else {
-                  lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM;
-               }
-               lte_preference_new = LTE_LC_SYSTEM_MODE_PREFER_AUTO;
-            }
-         }
-         if (lte_mode != lte_mode_new || lte_preference != lte_preference_new) {
-            if (func_mode != LTE_LC_FUNC_MODE_POWER_OFF) {
-               lte_lc_func_mode_set(LTE_LC_FUNC_MODE_POWER_OFF);
-            }
-            err = lte_lc_system_mode_set(lte_mode_new, lte_preference_new);
-            modem_set_preference(RESET_PREFERENCE);
-            if (func_mode != LTE_LC_FUNC_MODE_POWER_OFF) {
-               lte_lc_func_mode_set(func_mode);
-            }
-            if (!err) {
-               LOG_INF("Switched to %s", modem_get_system_mode_cfg(lte_mode_new, lte_preference_new));
-            } else {
-               LOG_INF("Switching LTE mode to %s failed!", modem_get_system_mode_cfg(lte_mode_new, lte_preference_new));
-               return err < 0 ? err : -EINVAL;
-            }
+            lte_preference_new = LTE_LC_SYSTEM_MODE_PREFER_NBIOT;
          } else {
-            LOG_INF("Keep %s", modem_get_system_mode_cfg(lte_mode_new, lte_preference_new));
+            if (gps) {
+               lte_mode_new = LTE_LC_SYSTEM_MODE_NBIOT_GPS;
+            } else {
+               lte_mode_new = LTE_LC_SYSTEM_MODE_NBIOT;
+            }
+            lte_preference_new = LTE_LC_SYSTEM_MODE_PREFER_AUTO;
+         }
+      } else if (!stricmp(CFG_LTE_M, value2)) {
+         if (!stricmp(CFG_NB_IOT, value3)) {
+            if (gps) {
+               lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS;
+            } else {
+               lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM_NBIOT;
+            }
+            lte_preference_new = LTE_LC_SYSTEM_MODE_PREFER_LTEM;
+         } else {
+            if (gps) {
+               lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM_GPS;
+            } else {
+               lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM;
+            }
+            lte_preference_new = LTE_LC_SYSTEM_MODE_PREFER_AUTO;
          }
       }
-      if (!stricmp("auto", value1)) {
-         err = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS=0");
-         if (err >= 0) {
-            modem_lock_plmn(false);
+      if (lte_mode != lte_mode_new || lte_preference != lte_preference_new) {
+         modem_off();
+         err = lte_lc_system_mode_set(lte_mode_new, lte_preference_new);
+         modem_set_preference(RESET_PREFERENCE);
+         modem_restore();
+         if (!err) {
+            LOG_INF("Switched to %s", modem_get_system_mode_cfg(lte_mode_new, lte_preference_new));
+         } else {
+            LOG_INF("Switching LTE mode to %s failed!", modem_get_system_mode_cfg(lte_mode_new, lte_preference_new));
+            return err < 0 ? err : -EINVAL;
          }
       } else {
-         err = modem_at_cmdf(buf, sizeof(buf), "+COPS: ", "AT+COPS=1,2,\"%s\"", value1);
-         if (err >= 0) {
-            modem_lock_plmn(true);
-         }
-      }
-      if (err < 0) {
-         LOG_WRN("AT+COPS failed, err %d", err);
-      } else {
-         err = 1;
-      }
-      if (value3[0]) {
-         LOG_INF(">> cfg %s %s %s ready", value1, value2, value3);
-      } else if (value2[0]) {
-         LOG_INF(">> cfg %s %s ready", value1, value2);
-      } else {
-         LOG_INF(">> cfg %s ready", value1);
+         LOG_INF("Keep %s", modem_get_system_mode_cfg(lte_mode_new, lte_preference_new));
       }
    }
+   if (!stricmp("auto", value1)) {
+      err = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS=0");
+      if (err >= 0) {
+         modem_lock_plmn(false);
+      }
+   } else {
+      err = modem_at_cmdf(buf, sizeof(buf), "+COPS: ", "AT+COPS=1,2,\"%s\"", value1);
+      if (err >= 0) {
+         modem_lock_plmn(true);
+      }
+   }
+   if (err < 0) {
+      LOG_WRN("AT+COPS failed, err %d", err);
+   } else {
+      err = 1;
+   }
+   if (value3[0]) {
+      LOG_INF(">> cfg %s %s %s ready", value1, value2, value3);
+   } else if (value2[0]) {
+      LOG_INF(">> cfg %s %s ready", value1, value2);
+   } else {
+      LOG_INF(">> cfg %s ready", value1);
+   }
+
    return err;
 }
 
@@ -244,9 +258,6 @@ int modem_cmd_connect(const char *config)
 
    memset(value1, 0, sizeof(value1));
    memset(value2, 0, sizeof(value2));
-   while (*cur == ' ') {
-      ++cur;
-   }
    cur = parse_next_text(cur, ' ', value1, sizeof(value1));
    cur = parse_next_text(cur, ' ', value2, sizeof(value2));
    if (stricmp("auto", value1) == 0) {
@@ -370,9 +381,6 @@ int modem_cmd_sms(const char *config)
    const char *cur = config;
 
    memset(destination, 0, sizeof(destination));
-   while (*cur == ' ') {
-      ++cur;
-   }
    cur = parse_next_text(cur, ' ', destination, sizeof(destination));
    modem_set_psm(120);
    if (destination[0]) {
@@ -482,9 +490,6 @@ int modem_cmd_psm(const char *config)
       const char *cur = config;
 
       memset(value, 0, sizeof(value));
-      while (*cur == ' ') {
-         ++cur;
-      }
       cur = parse_next_text(cur, ' ', value, sizeof(value));
       if (!stricmp("normal", value)) {
          modem_lock_psm(false);
@@ -510,9 +515,6 @@ int modem_cmd_rai(const char *config)
    const char *cur = config;
 
    memset(value, 0, sizeof(value));
-   while (*cur == ' ') {
-      ++cur;
-   }
    cur = parse_next_text(cur, ' ', value, sizeof(value));
    if (!stricmp("on", value)) {
       modem_lock_rai(false);
@@ -534,8 +536,8 @@ void modem_cmd_rai_help(void)
 
 int modem_cmd_edrx(const char *config)
 {
-   int edrx_time = 0;
-   int err = sscanf(config, "%d", &edrx_time);
+   unsigned int edrx_time = 0;
+   int err = sscanf(config, "%u", &edrx_time);
    if (err == 1) {
       return modem_set_edrx(edrx_time);
    } else {
@@ -543,9 +545,6 @@ int modem_cmd_edrx(const char *config)
       const char *cur = config;
 
       memset(value, 0, sizeof(value));
-      while (*cur == ' ') {
-         ++cur;
-      }
       cur = parse_next_text(cur, ' ', value, sizeof(value));
       if (!stricmp("off", value)) {
          return modem_set_edrx(0);
@@ -563,12 +562,174 @@ void modem_cmd_edrx_help(void)
    LOG_INF("  edrx off         : disable eDRX.");
 }
 
+static int modem_cmd_print_bands(const char *bands)
+{
+   int band;
+   int pos = 0;
+   int end = strlen(bands);
+   char line[128];
+
+   for (band = 1; band < end; ++band) {
+      if (bands[end - band] == '1') {
+         pos += snprintf(&line[pos], sizeof(line) - pos, "%d ", band);
+      }
+   }
+   if (end > 0) {
+      LOG_INF("BANDLOCK: %s", line);
+   } else {
+      LOG_INF("BANDLOCK: not used");
+   }
+   return pos;
+}
+
+int modem_cmd_band(const char *config)
+{
+   int err;
+   char buf[128];
+   char value[4];
+   const char *cur = config;
+
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+   if (!value[0]) {
+      // show bands
+      err = modem_at_cmd(buf, sizeof(buf), "%XBANDLOCK: ", "AT%XBANDLOCK?");
+      if (err > 0) {
+         LOG_DBG("BANDLOCK: %s", buf);
+         parse_next_qtext(buf, '"', buf, sizeof(buf));
+         if (!modem_cmd_print_bands(buf)) {
+            err = modem_at_cmd(buf, sizeof(buf), "%XCBAND: ", "AT%XCBAND=?");
+            if (err > 0) {
+               strtrunc2(buf, '(', ')');
+               LOG_INF("Supported BANDs: %s", buf);
+            }
+         }
+      }
+   } else if (!stricmp(value, "all")) {
+      modem_off();
+      err = modem_at_cmd(buf, sizeof(buf), "%XBANDLOCK: ", "AT%XBANDLOCK=0");
+      if (err > 0) {
+         LOG_INF("BANDLOCK: %s", buf);
+      }
+      modem_restore();
+   } else {
+      char bands[] = "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+      long band;
+      while (parse_next_long(value, 10, &band) > value) {
+         if (band > 0) {
+            bands[sizeof(bands) - band - 1] = '1';
+         }
+         cur = parse_next_text(cur, ' ', value, sizeof(value));
+      }
+      modem_off();
+      err = modem_at_cmdf(buf, sizeof(buf), "%XBANDLOCK: ", "AT%%XBANDLOCK=1,\"%s\"", bands);
+      if (err >= 0) {
+         LOG_INF("BANDLOCK: %s", buf);
+      }
+      modem_restore();
+   }
+   return 0;
+}
+
+void modem_cmd_band_help(void)
+{
+   LOG_INF("> help band:");
+   LOG_INF("  band               : show current bands.");
+   LOG_INF("  band all           : activate all bands.");
+   LOG_INF("  band <b1> <b2> ... : activate bands <b1> <b2> ... .");
+}
+
+int modem_cmd_reduced_mobility(const char *config)
+{
+   unsigned int mode = 0;
+   int err = sscanf(config, "%u", &mode);
+   if (err == 1) {
+      if (mode > 2) {
+         LOG_INF("Mode %u is out of scope [0..2].", mode);
+         err = -EINVAL;
+      } else {
+         err = modem_set_reduced_mobility(mode);
+      }
+   } else if (err == EOF) {
+      err = modem_get_reduced_mobility();
+      switch (err) {
+         case 0:
+         case 2:
+            LOG_INF("Reduced mobility disabled.");
+            break;
+         case 1:
+            LOG_INF("Nordic specific reduced mobility.");
+            break;
+         default:
+            break;
+      }
+   }
+   return err;
+}
+
+void modem_cmd_reduced_mobility_help(void)
+{
+   LOG_INF("> help remo:");
+   LOG_INF("  remo   : show current reduced mobility mode.");
+   LOG_INF("  remo 0 : no reduced mobility.");
+   LOG_INF("  remo 1 : reduced mobility (nordic).");
+   LOG_INF("  remo 2 : no reduced mobility.");
+}
+
+int modem_cmd_power_level(const char *config)
+{
+   unsigned int level = 0;
+   int err = sscanf(config, "%d", &level);
+   if (err == 1) {
+      if (level > 4) {
+         LOG_INF("Level %u is out of scope [0..4].", level);
+         err = -EINVAL;
+      } else {
+         err = modem_set_power_level(level);
+      }
+   } else if (err == EOF) {
+      err = modem_get_power_level();
+      switch (err) {
+         case 0:
+            LOG_INF("Ultra-low power.");
+            break;
+         case 1:
+            LOG_INF("Low power.");
+            break;
+         case 2:
+            LOG_INF("Normal.");
+            break;
+         case 3:
+            LOG_INF("Performance.");
+            break;
+         case 4:
+            LOG_INF("High performance.");
+            break;
+         default:
+            break;
+      }
+   }
+
+   return err;
+}
+
+void modem_cmd_power_level_help(void)
+{
+   LOG_INF("> help power:");
+   LOG_INF("  power     : show current power level.");
+   LOG_INF("  power <l> : set power level. Values 0 to 4.");
+   LOG_INF("        0   : Ultra-low power");
+   LOG_INF("        1   : Low power");
+   LOG_INF("        2   : Normal");
+   LOG_INF("        3   : Performance");
+   LOG_INF("        4   : High performance");
+}
+
 #else
 
 int modem_config(const char *config)
 {
    (void)config;
-   return 0;
+   return -ENOTSUP;
 }
 
 void modem_cmd_config_help(void)
@@ -579,7 +740,7 @@ void modem_cmd_config_help(void)
 int modem_cmd_connect(const char *config)
 {
    (void)config;
-   return 0;
+   return -ENOTSUP;
 }
 
 void modem_cmd_connect_help(void)
@@ -590,7 +751,7 @@ void modem_cmd_connect_help(void)
 int modem_cmd_scan(const char *config)
 {
    (void)config;
-   return 0;
+   return -ENOTSUP;
 }
 
 void modem_cmd_scan_help(void)
@@ -601,7 +762,7 @@ void modem_cmd_scan_help(void)
 int modem_cmd_sms(const char *config)
 {
    (void)config;
-   return 0;
+   return -ENOTSUP;
 }
 
 void modem_cmd_sms_help(void)
@@ -612,7 +773,7 @@ void modem_cmd_sms_help(void)
 int modem_cmd_psm(const char *config)
 {
    (void)config;
-   return 0;
+   return -ENOTSUP;
 }
 
 void modem_cmd_psm_help(void)
@@ -623,12 +784,45 @@ void modem_cmd_psm_help(void)
 int modem_cmd_edrx(const char *config)
 {
    (void)config;
-   return 0;
+   return -ENOTSUP;
 }
 
 void modem_cmd_edrx_help(void)
 {
    LOG_WRN("> 'edrx' not supported!");
+}
+
+int modem_cmd_band(const char *config)
+{
+   (void)config;
+   return -ENOTSUP;
+}
+
+void modem_cmd_band_help(void)
+{
+   LOG_WRN("> 'remo' not supported!");
+}
+
+int modem_cmd_reduced_mobility(const char *config)
+{
+   (void)config;
+   return -ENOTSUP;
+}
+
+void modem_cmd_reduced_mobility_help(void)
+{
+   LOG_WRN("> 'remo' not supported!");
+}
+
+int modem_cmd_power_level(const char *config)
+{
+   (void)config;
+   return -ENOTSUP;
+}
+
+void modem_cmd_power_level_help(void)
+{
+   LOG_WRN("> 'power' not supported!");
 }
 
 #endif

@@ -702,6 +702,26 @@ static int at_cmd_send()
          return RESULT(res);
       }
 
+      i = strstartsep(at_cmd_buf, "band", true, " ");
+      if (i > 0) {
+         // blocking AT cmd
+         uart_tx_pause(false);
+         res = modem_cmd_band(&at_cmd_buf[i]);
+         return RESULT(res);
+      }
+
+      i = strstartsep(at_cmd_buf, "remo", true, " ");
+      if (i > 0) {
+         res = modem_cmd_reduced_mobility(&at_cmd_buf[i]);
+         return RESULT(res);
+      }
+
+      i = strstartsep(at_cmd_buf, "power", true, " ");
+      if (i > 0) {
+         res = modem_cmd_power_level(&at_cmd_buf[i]);
+         return RESULT(res);
+      }
+
 #ifdef CONFIG_SMS
       i = strstart(at_cmd_buf, "sms ", true);
       if (i > 0) {
@@ -760,6 +780,7 @@ static int at_cmd()
    } else if (!stricmp(at_cmd_buf, "help")) {
       LOG_INF("> help:");
       LOG_INF("  at???  : modem at-cmd.(*)");
+      LOG_INF("  band   : configure bands.(*?)");
       LOG_INF("  cfg    : configure modem.(*?)");
       LOG_INF("  con    : connect modem.(*?)");
       LOG_INF("  dev    : read device info.");
@@ -769,10 +790,12 @@ static int at_cmd()
       LOG_INF("  net    : read network info.(*)");
       LOG_INF("  on     : switch modem on.(*)");
       LOG_INF("  off    : switch modem off.(*)");
+      LOG_INF("  power  : configure power level.(*?)");
       LOG_INF("  psm    : configure PSM.(*?)");
       LOG_INF("  reset  : modem factory reset.(*)");
       LOG_INF("  reboot : reboot device.");
       LOG_INF("  rai    : configure RAI.(*?)");
+      LOG_INF("  remo   : reduced mobility.(*?)");
       LOG_INF("  scan   : network scan.(*?)");
       LOG_INF("  send   : send message.");
       LOG_INF("  sim    : read SIM-card info.(*)");
@@ -789,16 +812,22 @@ static int at_cmd()
    } else {
       i = strstart(at_cmd_buf, "help ", true);
       if (i > 0) {
-         if (!stricmp(&at_cmd_buf[i], "cfg")) {
+         if (!stricmp(&at_cmd_buf[i], "band")) {
+            modem_cmd_band_help();
+         } else if (!stricmp(&at_cmd_buf[i], "cfg")) {
             modem_cmd_config_help();
          } else if (!stricmp(&at_cmd_buf[i], "con")) {
             modem_cmd_connect_help();
          } else if (!stricmp(&at_cmd_buf[i], "edrx")) {
             modem_cmd_edrx_help();
+         } else if (!stricmp(&at_cmd_buf[i], "power")) {
+            modem_cmd_power_level_help();
          } else if (!stricmp(&at_cmd_buf[i], "psm")) {
             modem_cmd_psm_help();
          } else if (!stricmp(&at_cmd_buf[i], "rai")) {
             modem_cmd_rai_help();
+         } else if (!stricmp(&at_cmd_buf[i], "remo")) {
+            modem_cmd_reduced_mobility_help();
          } else if (!stricmp(&at_cmd_buf[i], "scan")) {
             modem_cmd_scan_help();
 #ifdef CONFIG_SMS

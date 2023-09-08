@@ -231,14 +231,19 @@ int stricmp(const char *value1, const char *value2)
 
 int strtrunc(char *value, char quote)
 {
+   return strtrunc2(value, quote, quote);
+}
+
+int strtrunc2(char *value, char quote1, char quote2)
+{
    int index = 0;
-   if (value[0] == quote) {
+   if (value[0] == quote1) {
       int index = strlen(value);
-      if (value[index - 1] == quote) {
+      if (value[index - 1] == quote2) {
          index -= 2;
          memmove(value, value + 1, index);
+         value[index] = 0;
       }
-      value[index] = 0;
    }
    return index;
 }

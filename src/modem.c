@@ -1242,6 +1242,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       if (err > 0) {
          LOG_INF("PERIODICSEARCHCONF: %s", buf);
       }
+      // UICC suspend, deactivate, 5s
       err = modem_at_cmd(buf, sizeof(buf), NULL, "AT+SSRDA=1,1,5");
       if (err >= 0) {
          LOG_INF("SSRDA: OK");
@@ -1912,6 +1913,66 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
          }
       } else {
          LOG_ERR("CEINFO: %s => %d", buf, err);
+      }
+   }
+   return err;
+}
+
+int modem_set_reduced_mobility(int mode)
+{
+   int err = -EINVAL;
+   if (0 <= mode && mode <= 2) {
+      char buf[32];
+      err = modem_at_cmdf(buf, sizeof(buf), NULL, "AT%%REDMOB=%d", mode);
+      if (err >= 0) {
+         modem_get_reduced_mobility();
+      }
+   }
+   return err;
+}
+
+int modem_get_reduced_mobility(void)
+{
+   char buf[32];
+   unsigned int mode = 0;
+   int err = modem_at_cmd(buf, sizeof(buf), "%REDMOB: ", "AT%REDMOB?");
+   if (err >= 0) {
+      LOG_INF("REDMOB: %s", buf);
+      err = sscanf(buf, "%u", &mode);
+      if (err == 1) {
+         err = mode;
+      } else {
+         err = -EINVAL;
+      }
+   }
+   return err;
+}
+
+int modem_set_power_level(int level)
+{
+   int err = -EINVAL;
+   if (0 <= level && level <= 4) {
+      char buf[32];
+      err = modem_at_cmdf(buf, sizeof(buf), NULL, "AT%%XDATAPRFL=%d", level);
+      if (err >= 0) {
+         modem_get_power_level();
+      }
+   }
+   return err;
+}
+
+int modem_get_power_level(void)
+{
+   char buf[32];
+   unsigned int level = 0;
+   int err = modem_at_cmd(buf, sizeof(buf), "%XDATAPRFL: ", "AT%XDATAPRFL?");
+   if (err >= 0) {
+      LOG_INF("XDATAPRFL: %s", buf);
+      err = sscanf(buf, "%u", &level);
+      if (err == 1) {
+         err = level;
+      } else {
+         err = -EINVAL;
       }
    }
    return err;

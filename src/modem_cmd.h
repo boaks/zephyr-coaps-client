@@ -38,4 +38,13 @@ void modem_cmd_rai_help(void);
 int modem_cmd_edrx(const char *config);
 void modem_cmd_edrx_help(void);
 
+int modem_cmd_band(const char *config);
+void modem_cmd_band_help(void);
+
+int modem_cmd_reduced_mobility(const char *config);
+void modem_cmd_reduced_mobility_help(void);
+
+int modem_cmd_power_level(const char *config);
+void modem_cmd_power_level_help(void);
+
 #endif /* MODEM_CMD_H */

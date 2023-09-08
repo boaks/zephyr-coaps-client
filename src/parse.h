@@ -40,8 +40,6 @@ int strend(const char *value, const char *tail, bool ignore_case);
 
 int strstartsep(const char *value, const char *head, bool ignore_case, const char *separators);
 
-int strstartsep(const char *value, const char *head, bool ignore_case, const char *separators);
-
 int strsepend(const char *value, const char *tail, bool ignore_case, const char *separators);
 
 const char *strichr(const char *value1, int value2);
@@ -49,5 +47,7 @@ const char *strichr(const char *value1, int value2);
 int stricmp(const char *value1, const char *value2);
 
 int strtrunc(char *value, char quote);
+
+int strtrunc2(char *value, char quote1, char quote2);
 
 #endif /* PARSE_H */
