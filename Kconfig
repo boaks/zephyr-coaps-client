@@ -19,6 +19,14 @@ config APPL_VERSION
 		If McuBoot is not used, the application version
 		is provided by this value. 
 
+config APPL_MODEL 
+	string "Application model."
+	default "dk" if BOARD_NRF9160DK_NRF9160_NS
+	default "ty" if BOARD_THINGY91_NRF9160_NS
+	default "fh" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
+	help
+		Select firmware for model. 
+
 menu "CoAP tinyDTLS Settings"
 
 config COAP_SERVER_HOSTNAME
@@ -303,6 +311,19 @@ config UART_UPDATE
 	select STREAM_FLASH
 	select IMG_MANAGER
 	depends on UART_RECEIVER
+
+config COAP_UPDATE
+    bool "Enabel CoAP firmware updates."
+	default n
+	select BOOTLOADER_MCUBOOT
+	select FLASH
+	select FLASH_MAP
+	select STREAM_FLASH
+	select IMG_MANAGER
+
+config UPDATE
+	bool
+	default y if COAP_UPDATE || UART_UPDATE
 
 config USE_IO_JOB_QUEUE
 	bool "Use i/o job queue"

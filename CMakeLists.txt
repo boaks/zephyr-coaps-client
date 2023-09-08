@@ -41,8 +41,13 @@ target_sources(app PRIVATE
 
 target_sources_ifdef(CONFIG_UART_RECEIVER app PRIVATE src/uart_receiver.c)
 
+target_sources_ifdef(CONFIG_UPDATE app PRIVATE src/appl_update.c)
+
 target_sources_ifdef(CONFIG_UART_UPDATE app PRIVATE src/appl_update_xmodem.c)
-target_sources_ifdef(CONFIG_UART_UPDATE app PRIVATE src/appl_update.c)
+
+target_sources_ifdef(CONFIG_COAP_UPDATE app PRIVATE src/appl_update_coap.c)
+
+
 
 target_sources_ifdef(CONFIG_LOCATION_ENABLE app PRIVATE src/location.c)
 

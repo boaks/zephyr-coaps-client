@@ -39,6 +39,10 @@
 #include "location.h"
 #endif
 
+#ifdef CONFIG_COAP_UPDATE
+#include "appl_update_coap.h"
+#endif
+
 #define APP_COAP_LOG_PAYLOAD_SIZE 128
 
 #define COAP_OPTION_NO_RESPONSE 0x102
@@ -149,6 +153,9 @@ static void coap_appl_client_decode_text_payload(char *payload)
             dtls_info("cmd %s", val);
          } else if (!stricmp(cur, "fw")) {
             dtls_info("fw %s", val);
+#ifdef CONFIG_COAP_UPDATE
+            appl_update_coap_cmd(val);
+#endif
          }
       }
    }
@@ -317,6 +324,14 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
          buf[index++] = '\n';
          start = index;
       }
+#ifdef CONFIG_COAP_UPDATE
+      index += appl_update_coap_status(buf + index, len - index);
+      if (index > start) {
+         dtls_info("%s", buf + start);
+         buf[index++] = '\n';
+         start = index;
+      }
+#endif
    }
 
    power_manager_status(&battery_level, &battery_voltage, &battery_status, &battery_forecast);

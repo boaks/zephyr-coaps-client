@@ -23,8 +23,11 @@
 #include "appl_storage.h"
 #include "appl_storage_config.h"
 #include "appl_time.h"
-#ifdef CONFIG_UART_UPDATE
+#ifdef CONFIG_UPDATE
 #include "appl_update.h"
+#endif
+#ifdef CONFIG_COAP_UPDATE
+#include "appl_update_coap.h"
 #endif
 #include "coap_appl_client.h"
 #include "coap_client.h"
@@ -82,6 +85,8 @@ typedef struct dtls_app_data_t {
    int fd;
    bool dtls_pending;
    bool no_response;
+   bool no_rai;
+   bool download;
    uint8_t retransmission;
    request_state_t request_state;
    uint16_t timeout;
@@ -358,7 +363,7 @@ static int check_socket(dtls_app_data_t *app)
 static inline bool dtls_no_pending_request(void)
 {
    request_state_t state = app_data.request_state;
-   return (state == NONE) || (state == WAIT_SUSPEND);
+   return app_data.download || (state == NONE) || (state == WAIT_SUSPEND);
 }
 
 static void dtls_trigger(void)
@@ -481,7 +486,14 @@ static void dtls_coap_next(dtls_app_data_t *app)
    app->request_state = WAIT_SUSPEND;
    memset(appl_buffer, 0, sizeof(appl_buffer));
    appl_buffer_len = MAX_APPL_BUF;
-   k_sem_reset(&dtls_trigger_msg);
+   if (!app->download) {
+      k_sem_reset(&dtls_trigger_msg);
+#ifdef CONFIG_COAP_UPDATE
+      if (appl_update_coap_reboot()) {
+         appl_update_cmd("reboot");
+      }
+#endif
+   }
 }
 
 static void dtls_coap_success(dtls_app_data_t *app)
@@ -537,10 +549,17 @@ static void dtls_coap_success(dtls_app_data_t *app)
    handled_failures = 0;
    if (!initial_success) {
       initial_success = true;
-#ifdef CONFIG_UART_UPDATE
+#ifdef CONFIG_UPDATE
       appl_update_image_verified();
 #endif
    }
+#ifdef CONFIG_COAP_UPDATE
+   if (app->download) {
+      if (!appl_update_coap_pending()) {
+         dtls_trigger();
+      }
+   }
+#endif
    dtls_coap_next(app);
 }
 
@@ -566,6 +585,12 @@ static void dtls_coap_failure(dtls_app_data_t *app, const char *cause)
       ++current_failures;
       dtls_info("current failures %d.", current_failures);
    }
+#ifdef CONFIG_COAP_UPDATE
+   if (app->download) {
+      appl_update_coap_cancel();
+      dtls_trigger();
+   }
+#endif
    dtls_coap_next(app);
 }
 
@@ -573,13 +598,23 @@ static int
 read_from_peer(dtls_app_data_t *app, session_t *session, uint8 *data, size_t len)
 {
    (void)session;
+   int err = PARSE_NONE;
 
-   int err = coap_appl_client_parse_data(data, len);
+#ifdef CONFIG_COAP_UPDATE
+   if (app->download) {
+      err = appl_update_coap_parse_data(data, len);
+   }
+#endif
+   if (err == PARSE_NONE) {
+      err = coap_appl_client_parse_data(data, len);
+   }
    if (err < 0) {
       return err;
    }
 
    switch (err) {
+      case PARSE_NONE:
+         break;
       case PARSE_IGN:
          break;
       case PARSE_RST:
@@ -620,7 +655,7 @@ dtls_read_from_peer(dtls_context_t *ctx, session_t *session, uint8 *data, size_t
 static void prepare_socket(dtls_app_data_t *app)
 {
    atomic_clear_bit(&general_states, LTE_CONNECTED_SEND);
-   if (!app->dtls_pending && !lte_power_on_off) {
+   if (!app->dtls_pending && !app->no_rai && !lte_power_on_off) {
       modem_set_rai_mode(app->no_response ? RAI_LAST : RAI_ONE_RESPONSE, app->fd);
    } else {
       modem_set_rai_mode(RAI_OFF, app->fd);
@@ -766,7 +801,14 @@ sendto_peer(dtls_app_data_t *app, session_t *dst, struct dtls_context_t *ctx)
    if (app->request_state == SEND_ACK) {
       coap_message_len = coap_client_message(&coap_message_buf);
    } else {
-      coap_message_len = coap_appl_client_message(&coap_message_buf);
+#ifdef CONFIG_COAP_UPDATE
+      if (app->download) {
+         coap_message_len = appl_update_coap_message(&coap_message_buf);
+      }
+#endif
+      if (!coap_message_len) {
+         coap_message_len = coap_appl_client_message(&coap_message_buf);
+      }
    }
    if (!coap_message_len) {
       dtls_warn("send empty UDP message.");
@@ -1202,6 +1244,51 @@ static int dtls_loop(session_t *dst, int flags)
       udp_poll.events = POLLIN;
       udp_poll.revents = 0;
 
+#ifdef CONFIG_COAP_UPDATE
+      if (app_data.request_state == WAIT_SUSPEND ||
+          app_data.request_state == NONE) {
+
+         app_data.download = false;
+         app_data.no_rai = false;
+         if (appl_update_coap_pending()) {
+            if (!appl_update_coap_pending_next() &&
+                !dtls_trigger_pending()) {
+               dtls_info("wait for download ...");
+               while (appl_update_coap_pending() &&
+                      !appl_update_coap_pending_next() &&
+                      !dtls_trigger_pending()) {
+                  k_sleep(K_MSEC(1000));
+               }
+            }
+            if (appl_update_coap_pending()) {
+               app_data.no_rai = true;
+               if (!dtls_trigger_pending()) {
+                  loops = 0;
+                  app_data.download = true;
+                  app_data.request_state = SEND;
+                  app_data.retransmission = 0;
+                  appl_update_coap_next();
+                  if (app_data.dtls_pending) {
+                     dtls_peer_t *peer = dtls_get_peer(dtls_context, dst);
+                     if (peer) {
+                        dtls_reset_peer(dtls_context, peer);
+                     }
+                     ui_led_op(LED_COLOR_GREEN, LED_SET);
+                     dtls_start_connect(dtls_context, dst);
+                     send_request = true;
+                  } else {
+                     dtls_info("next download request");
+                     sendto_peer(&app_data, dst, dtls_context);
+                  }
+                  continue;
+               }
+            } else {
+               dtls_info("download canceled");
+            }
+         }
+      }
+#endif
+
       if (app_data.request_state != NONE) {
          result = poll(&udp_poll, 1, 1000);
       } else {
@@ -1362,7 +1449,8 @@ static int dtls_loop(session_t *dst, int flags)
                app_data.retransmission = 0;
                sendto_peer(&app_data, dst, dtls_context);
             }
-            if ((app_data.request_state == NONE || app_data.request_state == WAIT_SUSPEND) && !lte_power_on_off) {
+            if (!lte_power_on_off && !app_data.no_rai &&
+                (app_data.request_state == NONE || app_data.request_state == WAIT_SUSPEND)) {
                modem_set_rai_mode(RAI_NOW, app_data.fd);
             }
             if (app_data.request_state == NONE &&
