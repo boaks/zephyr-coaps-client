@@ -16,12 +16,6 @@
 
 #include "dtls.h"
 
-#define FLAG_TLS 1
-#define FLAG_KEEP_CONNECTION 2
-#define FLAG_REBOOT_1 4
-#define FLAG_REBOOT 8
-#define FLAG_RESET 16
-
 #define COAP_SEND_FLAG_MINIMAL 1
 
 #ifdef CONFIG_COAP_SEND_MINIMAL

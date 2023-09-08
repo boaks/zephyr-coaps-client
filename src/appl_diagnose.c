@@ -22,7 +22,6 @@
 #include "appl_diagnose.h"
 #include "appl_storage.h"
 #include "appl_storage_config.h"
-#include "coap_client.h"
 #include "ui.h"
 
 #define MSEC_PER_HOUR (MSEC_PER_SEC * 60 * 60)
@@ -124,6 +123,8 @@ const char *appl_get_reboot_desciption(int error)
          return "reboot cmd";
       case ERROR_CODE_MANUAL_TRIGGERED:
          return "reboot triggered";
+      case ERROR_CODE_UPDATE:
+         return "update";
    }
    return "\?\?\?";
 }
