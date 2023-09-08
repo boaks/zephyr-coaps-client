@@ -36,6 +36,7 @@ target_sources(app PRIVATE
 	src/dtls_client.c
 	src/dtls_credentials.c
 	src/coap_client.c
+	src/coap_appl_client.c
 	)
 
 target_sources_ifdef(CONFIG_UART_RECEIVER app PRIVATE src/uart_receiver.c)

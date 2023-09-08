@@ -37,7 +37,7 @@
 #include "appl_update.h"
 #include "appl_update_xmodem.h"
 #endif
-#include "coap_client.h"
+#include "coap_appl_client.h"
 #include "dtls_client.h"
 #include "io_job_queue.h"
 #include "modem.h"
@@ -652,8 +652,8 @@ static int at_cmd_send()
       res = modem_read_network_info(NULL, true);
       return RESULT(res);
    } else if (!stricmp(at_cmd_buf, "net")) {
-      res = coap_client_prepare_net_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
-      res = coap_client_prepare_net_stats(at_cmd_buf, sizeof(at_cmd_buf), 0);
+      res = coap_appl_client_prepare_net_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
+      res = coap_appl_client_prepare_net_stats(at_cmd_buf, sizeof(at_cmd_buf), 0);
       return RESULT(res);
    } else if (!stricmp(at_cmd_buf, "eval")) {
       strcpy(at_cmd_buf, "AT%CONEVAL");
@@ -762,10 +762,10 @@ static int at_cmd()
       }
       return 0;
    } else if (!stricmp(at_cmd_buf, "env")) {
-      res = coap_client_prepare_env_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
+      res = coap_appl_client_prepare_env_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
       return RESULT(res);
    } else if (!stricmp(at_cmd_buf, "dev")) {
-      res = coap_client_prepare_modem_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
+      res = coap_appl_client_prepare_modem_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
       return RESULT(res);
 #ifdef CONFIG_UART_UPDATE
    } else if (!stricmp(at_cmd_buf, "update")) {

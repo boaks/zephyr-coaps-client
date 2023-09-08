@@ -14,44 +14,37 @@
 #ifndef COAP_CLIENT_H
 #define COAP_CLIENT_H
 
+#include <zephyr/net/coap.h>
+
 #include "dtls.h"
 
-#define COAP_SEND_FLAG_MINIMAL 1
-
-#ifdef CONFIG_COAP_SEND_MINIMAL
-#define COAP_SEND_FLAGS COAP_SEND_FLAG_MINIMAL
-#else
-#define COAP_SEND_FLAGS 0
-#endif
-
-#define REBOOT_INFOS 4
-
-#define COAP_MAX_RETRANSMISSION 3
-
-extern unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
-
-typedef enum { PARSE_IGN = 0,
+typedef enum { PARSE_NONE = 0,
+               PARSE_IGN,
                PARSE_RST,
                PARSE_ACK,
                PARSE_RESPONSE,
                PARSE_CON_RESPONSE } parse_result_t;
 
-int coap_client_parse_data(uint8_t *data, size_t len);
+#define COAP_CONTEXT(N, S)    \
+   struct n ## _coap_context {      \
+      uint32_t token;         \
+      uint16_t mid;           \
+      uint16_t message_len;   \
+      uint8_t message_buf[S]; \
+   } N = {0,0,0}
 
-int coap_client_prepare_modem_info(char *buf, size_t len, int flags);
+int coap_client_decode_content_format(const struct coap_option *option);
 
-int coap_client_prepare_sim_info(char *buf, size_t len, int flags);
+int coap_client_decode_etag(const struct coap_option *option, uint8_t *etag);
 
-int coap_client_prepare_net_info(char* buf, size_t len, int flags);
+int coap_client_match(const struct coap_packet *reply, uint16_t mid, uint32_t token);
 
-int coap_client_prepare_net_stats(char* buf, size_t len, int flags);
+int coap_client_prepare_ack(const struct coap_packet *reply);
 
-int coap_client_prepare_env_info(char *buf, size_t len, int flags);
+int coap_client_message(const uint8_t **buffer);
 
-int coap_client_prepare_post(char *buf, size_t len, int flags);
+long coap_client_next_token(void);
 
-int coap_client_message(const uint8_t** buffer);
-
-int coap_client_init(const char *id);
+int coap_client_init(void);
 
 #endif /* COAP_CLIENT_H */

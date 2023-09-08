@@ -17,6 +17,10 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#define COAP_MAX_RETRANSMISSION 3
+
+extern unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
+
 void dtls_cmd_trigger(bool led, int mode, const uint8_t* data, size_t len);
 
 #endif /* DTLS_CLIENT_H */

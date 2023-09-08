@@ -26,6 +26,7 @@
 #ifdef CONFIG_UART_UPDATE
 #include "appl_update.h"
 #endif
+#include "coap_appl_client.h"
 #include "coap_client.h"
 #include "dtls.h"
 #include "dtls_client.h"
@@ -80,6 +81,7 @@ typedef struct dtls_app_data_t {
    session_t *destination;
    int fd;
    bool dtls_pending;
+   bool no_response;
    uint8_t retransmission;
    request_state_t request_state;
    uint16_t timeout;
@@ -127,6 +129,8 @@ static volatile size_t appl_buffer_len = MAX_APPL_BUF;
 #define RTT_SLOTS 9
 #define RTT_INTERVAL (2 * MSEC_PER_SEC)
 static unsigned int rtts[RTT_SLOTS + 2] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20};
+
+unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
 
 static K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
 static K_SEM_DEFINE(dtls_trigger_search, 0, 1);
@@ -363,10 +367,15 @@ static void dtls_trigger(void)
       return;
    }
    if (dtls_no_pending_request()) {
-      // read battery status
+      // read battery status before modem wakes up
       power_manager_status(NULL, NULL, NULL, NULL);
       k_sem_give(&dtls_trigger_msg);
    }
+}
+
+static bool dtls_trigger_pending(void)
+{
+   return k_sem_count_get(&dtls_trigger_msg) ? true : false;
 }
 
 static void dtls_manual_trigger(int duration)
@@ -565,7 +574,7 @@ read_from_peer(dtls_app_data_t *app, session_t *session, uint8 *data, size_t len
 {
    (void)session;
 
-   int err = coap_client_parse_data(data, len);
+   int err = coap_appl_client_parse_data(data, len);
    if (err < 0) {
       return err;
    }
@@ -612,11 +621,7 @@ static void prepare_socket(dtls_app_data_t *app)
 {
    atomic_clear_bit(&general_states, LTE_CONNECTED_SEND);
    if (!app->dtls_pending && !lte_power_on_off) {
-#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
-      modem_set_rai_mode(RAI_LAST, app->fd);
-#else
-      modem_set_rai_mode(RAI_ONE_RESPONSE, app->fd);
-#endif
+      modem_set_rai_mode(app->no_response ? RAI_LAST : RAI_ONE_RESPONSE, app->fd);
    } else {
       modem_set_rai_mode(RAI_OFF, app->fd);
    }
@@ -757,9 +762,16 @@ sendto_peer(dtls_app_data_t *app, session_t *dst, struct dtls_context_t *ctx)
    if (app->request_state == NONE) {
       app->request_state = SEND;
    }
-   coap_message_len = coap_client_message(&coap_message_buf);
+
+   if (app->request_state == SEND_ACK) {
+      coap_message_len = coap_client_message(&coap_message_buf);
+   } else {
+      coap_message_len = coap_appl_client_message(&coap_message_buf);
+   }
    if (!coap_message_len) {
       dtls_warn("send empty UDP message.");
+   } else {
+      dtls_info("send %d bytes.", coap_message_len);
    }
    if (ctx && coap_message_len) {
       result = dtls_write(ctx, dst, (uint8_t *)coap_message_buf, coap_message_len);
@@ -785,11 +797,9 @@ sendto_peer(dtls_app_data_t *app, session_t *dst, struct dtls_context_t *ctx)
       if (atomic_test_bit(&general_states, LTE_CONNECTED)) {
          ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
          app->request_state = RECEIVE;
-#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
-         if (!app->dtls_pending) {
+         if (!app->dtls_pending && app->no_response) {
             dtls_coap_success(app);
          }
-#endif
       }
    }
    return result;
@@ -1042,6 +1052,7 @@ static int dtls_loop(session_t *dst, int flags)
    const char *reopen_cause = NULL;
    int result;
    int loops = 0;
+   int coap_send_flags;
    long time;
    bool send_request = false;
    bool restarting_modem = false;
@@ -1060,7 +1071,9 @@ static int dtls_loop(session_t *dst, int flags)
    }
    app_data.destination = dst;
    app_data.fd = -1;
-
+#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
+   app_data.no_response = true;
+#endif
    if (flags & FLAG_TLS) {
       dtls_init();
       dtls_context = dtls_new_context(&app_data);
@@ -1224,7 +1237,8 @@ static int dtls_loop(session_t *dst, int flags)
                }
                loops = 0;
                app_data.retransmission = 0;
-               if (coap_client_prepare_post(appl_buffer, appl_buffer_len, COAP_SEND_FLAGS) < 0) {
+               coap_send_flags = COAP_SEND_FLAGS | (app_data.no_response ? COAP_SEND_FLAG_NO_RESPONSE : 0);
+               if (coap_appl_client_prepare_post(appl_buffer, appl_buffer_len, coap_send_flags) < 0) {
                   dtls_coap_failure(&app_data, "prepare post");
                } else if (app_data.dtls_pending) {
                   dtls_peer_t *peer = dtls_get_peer(dtls_context, dst);
@@ -1264,11 +1278,9 @@ static int dtls_loop(session_t *dst, int flags)
                             time);
                }
                app_data.request_state = RECEIVE;
-#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
-               if (!app_data.dtls_pending) {
+               if (!app_data.dtls_pending && app_data.no_response) {
                   dtls_coap_success(&app_data);
                }
-#endif
             } else if (loops > 60) {
                dtls_log_state();
                dtls_info("%s send timeout %d s", type, loops);
@@ -1325,7 +1337,7 @@ static int dtls_loop(session_t *dst, int flags)
                // modem enters sleep, no more data
                app_data.request_state = NONE;
                dtls_info("%s suspend after %d s", type, loops);
-            } else if (k_sem_count_get(&dtls_trigger_msg)) {
+            } else if (dtls_trigger_pending()) {
                // send button pressed
                app_data.request_state = NONE;
                dtls_info("%s next trigger after %d s", type, loops);
@@ -1557,7 +1569,8 @@ int main(void)
 
    modem_get_imei(imei, sizeof(imei));
    dtls_credentials_init_psk(imei);
-   coap_client_init(dtls_credentials_get_psk_identity());
+   coap_client_init();
+   coap_appl_client_init(dtls_credentials_get_psk_identity());
 
    memset(&dst, 0, sizeof(session_t));
    init_destination(protocol, &dst);
