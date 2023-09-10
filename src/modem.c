@@ -157,7 +157,14 @@ static K_WORK_DEFINE(modem_read_network_info_work, modem_read_info_work_fn);
 
 static void modem_read_coverage_enhancement_info_work_fn(struct k_work *work)
 {
+   bool rate_limit;
    modem_read_coverage_enhancement_info(NULL);
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   rate_limit = network_info.rate_limit;
+   k_mutex_unlock(&lte_mutex);
+   if (rate_limit) {
+      modem_read_rate_limit_time(NULL);
+   }
 }
 
 static K_WORK_DEFINE(modem_read_coverage_enhancement_info_work, modem_read_coverage_enhancement_info_work_fn);
@@ -1805,6 +1812,21 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
       }
    }
 
+   result = modem_at_cmd(buf, sizeof(buf), "%APNRATECTRL: ", "AT%APNRATECTRL=1");
+   if (result > 0) {
+      // %APNRATECTRL: 1,0,256,86400
+      LOG_INF("APNRATECTRL CFG: %s", buf);
+      sscanf(buf, "%*u,%*u,%hu,%u", &temp.rate_limit, &temp.rate_limit_period);
+      if (temp.rate_limit) {
+         result = modem_at_cmd(buf, sizeof(buf), "%APNRATECTRL: ", "AT%APNRATECTRL=0,0");
+         if (result > 0) {
+            // %APNRATECTRL: 0,0,0[,time]
+            LOG_INF("APNRATECTRL STATUS: %s", buf);
+            sscanf(buf, "%*u,%*u,%*u,%u", &temp.rate_limit_time);
+         }
+      }
+   }
+
    k_mutex_lock(&lte_mutex, K_FOREVER);
    if (network_info.cell != temp.cell || network_info.tac != temp.tac) {
       lte_cell_updates++;
@@ -1918,6 +1940,28 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
       }
    }
    return err;
+}
+
+int modem_read_rate_limit_time(uint32_t *time)
+{
+   char buf[32];
+   int result = modem_at_cmd(buf, sizeof(buf), "%APNRATECTRL: ", "AT%APNRATECTRL=0,0");
+   if (result > 0) {
+      uint32_t rate_limit_time = 0;
+      // %APNRATECTRL: 0,0,0[,time]
+      LOG_INF("APNRATECTRL STATUS: %s", buf);
+      result = sscanf(buf, "%*u,%*u,%*u,%u", &rate_limit_time);
+      if (EOF == result) {
+         result = 0;
+      }
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      network_info.rate_limit_time = rate_limit_time;
+      k_mutex_unlock(&lte_mutex);
+      if (time) {
+         *time = rate_limit_time;
+      }
+   }
+   return result;
 }
 
 int modem_set_reduced_mobility(int mode)

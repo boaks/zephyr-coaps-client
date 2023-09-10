@@ -471,7 +471,17 @@ int coap_appl_client_prepare_net_info(char *buf, size_t len, int flags)
          buf[index++] = '\n';
       }
       start = index;
-      index += snprintf(buf + index, len - index, "PDN: %s,%s", params.network_info.apn, params.network_info.local_ip);
+      index += snprintf(buf + index, len - index, "PDN: %s,%s",
+                        params.network_info.apn, params.network_info.local_ip);
+      if (params.network_info.rate_limit) {
+         if (params.network_info.rate_limit_time) {
+            index += snprintf(buf + index, len - index, ",rate-limit %u exceeded,%u s left",
+                              params.network_info.rate_limit, params.network_info.rate_limit_time);
+         } else {
+            index += snprintf(buf + index, len - index, ",rate-limit %u,%u s",
+                              params.network_info.rate_limit, params.network_info.rate_limit_period);
+         }
+      }
       dtls_info("%s", buf + start);
    }
 

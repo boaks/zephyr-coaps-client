@@ -101,6 +101,8 @@ typedef struct dtls_app_data_t {
 #define LTE_SOCKET_ERROR 5
 #define PM_PREVENT_SUSPEND 6
 #define PM_SUSPENDED 7
+#define APN_RATE_LIMIT 8
+#define APN_RATE_LIMIT_RESTART 9
 
 static atomic_t general_states = ATOMIC_INIT(0);
 
@@ -560,6 +562,8 @@ static void dtls_coap_success(dtls_app_data_t *app)
       }
    }
 #endif
+   atomic_clear_bit(&general_states, APN_RATE_LIMIT);
+   atomic_clear_bit(&general_states, APN_RATE_LIMIT_RESTART);
    dtls_coap_next(app);
 }
 
@@ -678,6 +682,15 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
    result = sendto(app->fd, data, len, MSG_DONTWAIT, &session->addr.sa, session->size);
    if (result < 0) {
       dtls_warn("%ssend_to_peer failed: %d, errno %d (%s)", tag, result, errno, strerror(errno));
+      if (EAGAIN == errno || ECANCELED == errno) {
+         uint32_t time = 0;
+         int err = modem_read_rate_limit_time(&time);
+         if (err > 0) {
+            dtls_warn("%ssend_to_peer failed: rate limit, %u s", tag, time);
+         }
+         atomic_set_bit(&general_states, APN_RATE_LIMIT);
+         result = 0;
+      }
       return result;
    }
    connected = atomic_test_bit(&general_states, LTE_CONNECTED);
@@ -1181,6 +1194,37 @@ static int dtls_loop(session_t *dst, int flags)
          }
       }
 
+      if (atomic_test_bit(&general_states, APN_RATE_LIMIT)) {
+         if (atomic_test_and_set_bit(&general_states, APN_RATE_LIMIT_RESTART)) {
+            uint32_t time = 0;
+            int err = modem_read_rate_limit_time(&time);
+            if (err < 0) {
+               dtls_info("Modem read rate limit failed, %d", err);
+            } else {
+               if (!time) {
+                  atomic_clear_bit(&general_states, APN_RATE_LIMIT);
+               }
+               if (time > 60) {
+                  time = 60;
+               } else if (time < 10) {
+                  time = 10;
+               }
+               dtls_info("Modem rate limit exceeded, wait %u s.", time);
+               k_sem_reset(&dtls_trigger_msg);
+               if (k_sem_take(&dtls_trigger_msg, K_SECONDS(time)) == 0) {
+                  k_sem_give(&dtls_trigger_msg);
+               } else {
+                  continue;
+               }
+            }
+         } else {
+            atomic_clear_bit(&general_states, APN_RATE_LIMIT);
+            restart_modem();
+            reopen_cause = "rate limit";
+            dtls_trigger();
+         }
+      }
+
       if (current_failures > handled_failures) {
          handled_failures = current_failures;
          dtls_info("handle failure %d.", current_failures);
@@ -1254,10 +1298,17 @@ static int dtls_loop(session_t *dst, int flags)
             if (!appl_update_coap_pending_next() &&
                 !dtls_trigger_pending()) {
                dtls_info("wait for download ...");
+               loops = 0;
                while (appl_update_coap_pending() &&
                       !appl_update_coap_pending_next() &&
                       !dtls_trigger_pending()) {
                   k_sleep(K_MSEC(1000));
+                  ++loops;
+                  if (loops > 30) {
+                     dtls_info("wait for download timeout!");
+                     appl_update_coap_cancel();
+                     break;
+                  }
                }
             }
             if (appl_update_coap_pending()) {

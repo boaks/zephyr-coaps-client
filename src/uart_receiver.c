@@ -657,6 +657,13 @@ static int at_cmd_send()
       return RESULT(res);
    } else if (!stricmp(at_cmd_buf, "eval")) {
       strcpy(at_cmd_buf, "AT%CONEVAL");
+   } else if (!stricmp(at_cmd_buf, "limit")) {
+      uint32_t time = 0;
+      res = modem_read_rate_limit_time(&time);
+      if (time) {
+         LOG_INF(">> rate limit exceeded, %u s", time);
+      }
+      return RESULT(res);
    } else {
       i = strstartsep(at_cmd_buf, "cfg", true, " ");
       if (i > 0) {
@@ -787,6 +794,7 @@ static int at_cmd()
       LOG_INF("  edrx   : configure eDRX.(*?)");
       LOG_INF("  env    : read environment sensor.");
       LOG_INF("  eval   : evaluate connection.(*)");
+      LOG_INF("  limit  : read apn rate limit.(*)");
       LOG_INF("  net    : read network info.(*)");
       LOG_INF("  on     : switch modem on.(*)");
       LOG_INF("  off    : switch modem off.(*)");

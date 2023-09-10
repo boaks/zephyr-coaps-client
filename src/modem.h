@@ -62,6 +62,9 @@ typedef struct lte_network_info {
    uint16_t rrc_active:2;
    uint16_t sleeping:2;
    uint16_t plmn_lock:2;
+   uint16_t rate_limit;
+   uint32_t rate_limit_period;
+   uint32_t rate_limit_time;
    enum lte_lc_nw_reg_status status;
    enum lte_lc_lte_mode mode;
    uint8_t band;
@@ -170,6 +173,8 @@ int modem_read_network_info(struct lte_network_info* info, bool callbacks);
 int modem_read_statistic(struct lte_network_statistic* statistic);
 
 int modem_read_coverage_enhancement_info(struct lte_ce_info* info);
+
+int modem_read_rate_limit_time(uint32_t* time);
 
 int modem_set_reduced_mobility(int mode);
 
