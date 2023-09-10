@@ -138,7 +138,7 @@ int modem_cmd_config(const char *config)
       LOG_INF("plmn '%s' not supported! Either 'auto' or numerical plmn.", value1);
       return -EINVAL;
    }
-   if (value2[0] && stricmp(CFG_NB_IOT, value2) && stricmp(CFG_LTE_M, value2)) {
+   if (value2[0] && stricmp(CFG_NB_IOT, value2) && stricmp(CFG_LTE_M, value2) && stricmp("auto", value2)) {
       LOG_INF("cfg %s", config);
       LOG_INF("mode '%s' not supported!", value2);
       return -EINVAL;
@@ -146,6 +146,11 @@ int modem_cmd_config(const char *config)
    if (value3[0] && stricmp(CFG_NB_IOT, value3) && stricmp(CFG_LTE_M, value3)) {
       LOG_INF("cfg %s", config);
       LOG_INF("mode '%s' not supported!", value3);
+      return -EINVAL;
+   }
+   if (!stricmp("auto", value2) && value3[0]) {
+      LOG_INF("cfg %s", config);
+      LOG_INF("second mode '%s' not supported with 'auto'!", value3);
       return -EINVAL;
    }
    LOG_INF(">> cfg %s %s %s", value1, value2, value3);
@@ -161,7 +166,14 @@ int modem_cmd_config(const char *config)
       gps = lte_mode == LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS ||
             lte_mode == LTE_LC_SYSTEM_MODE_LTEM_GPS ||
             lte_mode == LTE_LC_SYSTEM_MODE_NBIOT_GPS;
-      if (!stricmp(CFG_NB_IOT, value2)) {
+      if (!stricmp("auto", value2)) {
+         if (gps) {
+            lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS;
+         } else {
+            lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM_NBIOT;
+         }
+         lte_preference_new = LTE_LC_SYSTEM_MODE_PREFER_AUTO;
+      } else if (!stricmp(CFG_NB_IOT, value2)) {
          if (!stricmp(CFG_LTE_M, value3)) {
             if (gps) {
                lte_mode_new = LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS;
