@@ -25,7 +25,15 @@
 #include "appl_time.h"
 
 
-#if defined(CONFIG_FLASH) || defined(CONFIG_EEPROM)
+#if defined(CONFIG_EEPROM) && (DT_NODE_HAS_STATUS(DT_ALIAS(appl_storage_eeprom), okay))
+#define STORAGE_DEV_EEPROM
+#define DT_STORAGE_DEV DT_ALIAS(appl_storage_eeprom)
+#elif defined(CONFIG_FLASH) && (DT_NODE_HAS_STATUS(DT_ALIAS(appl_storage_flash), okay))
+#define STORAGE_DEV_FLASH
+#define DT_STORAGE_DEV DT_ALIAS(appl_storage_flash)
+#endif
+
+#if defined(STORAGE_DEV_FLASH) || defined(STORAGE_DEV_EEPROM)
 
 LOG_MODULE_REGISTER(STORAGE, CONFIG_STORAGE_LOG_LEVEL);
 
@@ -58,79 +66,17 @@ static size_t storage_size;
 static size_t storage_setups_count;
 static struct storage_setup storage_setups[3];
 
+static const struct device *storage_dev = DEVICE_DT_GET_OR_NULL(DT_STORAGE_DEV);
+
 static inline off_t appl_storage_start_offset(const struct storage_setup *config)
 {
    return config->headers_offset + config->item_size;
 }
 
-#if defined(CONFIG_FLASH)
-
-#define DT_STORAGE_DEV DT_ALIAS(appl_storage_flash)
-
-static const struct device *storage_dev = DEVICE_DT_GET_OR_NULL(DT_STORAGE_DEV);
-
-int appl_storage_read_memory(off_t mem_addr, uint8_t *data, size_t num_bytes)
-{
-   if (storage_init_state != STORAGE_INITIALIZE_ERROR) {
-      int rc = flash_read(storage_dev, mem_addr, data, num_bytes);
-      if (rc) {
-         LOG_DBG("Storage: reading %d@0x%lx failed, %d", num_bytes, mem_addr, rc);
-      } else {
-         LOG_DBG("Storage: read %d@0x%lx ", num_bytes, mem_addr);
-      }
-      return rc;
-   } else {
-      return -ENOTSUP;
-   }
-}
-
-int appl_storage_write_memory(off_t mem_addr, const uint8_t *data, size_t num_bytes)
-{
-   if (storage_init_state != STORAGE_INITIALIZE_ERROR) {
-      int rc = flash_write(storage_dev, mem_addr, data, num_bytes);
-      if (rc) {
-         LOG_DBG("Storage: writing %d@0x%lx failed, %d", num_bytes, mem_addr, rc);
-         k_sleep(K_MSEC(1000));
-      } else {
-         LOG_DBG("Storage: written %d@0x%lx ", num_bytes, mem_addr);
-      }
-      return rc;
-   } else {
-      return -ENOTSUP;
-   }
-}
-
-int appl_storage_erase_memory(off_t mem_addr, size_t num_bytes)
-{
-   if (storage_init_state != STORAGE_INITIALIZE_ERROR) {
-      int rc = flash_erase(storage_dev, mem_addr, num_bytes);
-      if (rc) {
-         LOG_DBG("Storage: erasing %d@0x%lx failed, %d", num_bytes, mem_addr, rc);
-      } else {
-         LOG_DBG("Storage: erased %d@0x%lx ", num_bytes, mem_addr);
-      }
-      return rc;
-   } else {
-      return -ENOTSUP;
-   }
-}
-
-static int appl_storage_get_page_info_by_offs(off_t mem_addr, struct flash_pages_info *info)
-{
-   if (storage_init_state != STORAGE_INITIALIZE_ERROR) {
-      return flash_get_page_info_by_offs(storage_dev, mem_addr, info);
-   } else {
-      return -ENOTSUP;
-   }
-}
-
-#elif defined(CONFIG_EEPROM)
-
-#define DT_STORAGE_DEV DT_ALIAS(appl_storage_eeprom)
+#if defined(STORAGE_DEV_EEPROM)
 
 static const uint16_t storage_page_size = DT_PROP(DT_STORAGE_DEV, pagesize);
 static const uint16_t storage_write_timeout = DT_PROP(DT_STORAGE_DEV, timeout);
-static const struct device *storage_dev = DEVICE_DT_GET_OR_NULL(DT_STORAGE_DEV);
 
 int appl_storage_read_memory(off_t mem_addr, uint8_t *data, size_t num_bytes)
 {
@@ -238,6 +184,62 @@ static int appl_storage_get_page_info_by_offs(off_t mem_addr, struct flash_pages
    }
 }
 
+#elif defined(STORAGE_DEV_FLASH)
+
+int appl_storage_read_memory(off_t mem_addr, uint8_t *data, size_t num_bytes)
+{
+   if (storage_init_state != STORAGE_INITIALIZE_ERROR) {
+      int rc = flash_read(storage_dev, mem_addr, data, num_bytes);
+      if (rc) {
+         LOG_DBG("Storage: reading %d@0x%lx failed, %d", num_bytes, mem_addr, rc);
+      } else {
+         LOG_DBG("Storage: read %d@0x%lx ", num_bytes, mem_addr);
+      }
+      return rc;
+   } else {
+      return -ENOTSUP;
+   }
+}
+
+int appl_storage_write_memory(off_t mem_addr, const uint8_t *data, size_t num_bytes)
+{
+   if (storage_init_state != STORAGE_INITIALIZE_ERROR) {
+      int rc = flash_write(storage_dev, mem_addr, data, num_bytes);
+      if (rc) {
+         LOG_DBG("Storage: writing %d@0x%lx failed, %d", num_bytes, mem_addr, rc);
+         k_sleep(K_MSEC(1000));
+      } else {
+         LOG_DBG("Storage: written %d@0x%lx ", num_bytes, mem_addr);
+      }
+      return rc;
+   } else {
+      return -ENOTSUP;
+   }
+}
+
+int appl_storage_erase_memory(off_t mem_addr, size_t num_bytes)
+{
+   if (storage_init_state != STORAGE_INITIALIZE_ERROR) {
+      int rc = flash_erase(storage_dev, mem_addr, num_bytes);
+      if (rc) {
+         LOG_DBG("Storage: erasing %d@0x%lx failed, %d", num_bytes, mem_addr, rc);
+      } else {
+         LOG_DBG("Storage: erased %d@0x%lx ", num_bytes, mem_addr);
+      }
+      return rc;
+   } else {
+      return -ENOTSUP;
+   }
+}
+
+static int appl_storage_get_page_info_by_offs(off_t mem_addr, struct flash_pages_info *info)
+{
+   if (storage_init_state != STORAGE_INITIALIZE_ERROR) {
+      return flash_get_page_info_by_offs(storage_dev, mem_addr, info);
+   } else {
+      return -ENOTSUP;
+   }
+}
 #endif
 
 static bool only_ff(const uint8_t *data, size_t len)
@@ -303,7 +305,11 @@ static int appl_storage_init(void)
 
       LOG_INF("Storage init");
       if (storage_dev == NULL) {
-         LOG_WRN("Storage: could not get I2C/SPI driver");
+#if defined(STORAGE_DEV_FLASH)
+         LOG_WRN("Storage: could not get SPI flash driver");
+#else
+         LOG_WRN("Storage: could not get I2C eeprom driver");
+#endif
          goto init_error;
       }
 
@@ -334,14 +340,14 @@ static int appl_storage_init(void)
       if (rc) {
          goto init_error;
       }
-#if defined(CONFIG_FLASH)
+#if defined(STORAGE_DEV_FLASH)
       storage_size = flash_get_page_count(storage_dev) * info.size;
 #else
       storage_size = DT_PROP(DT_STORAGE_DEV, size);
 #endif
       storage_init_state = STORAGE_INITIALIZED;
       index = 0;
-      while (index < storage_config_count && !rc)  {
+      while (index < storage_config_count && !rc) {
          rc = appl_storage_init_offset(&storage_setups[index++]);
       }
       if (rc) {
@@ -389,7 +395,7 @@ static int appl_storage_write_item(struct storage_setup *config, int64_t time, c
    }
    if (!rc) {
       if (data[config->item_size] != 0xff) {
-#ifdef CONFIG_FLASH
+#ifdef STORAGE_DEV_FLASH
          struct flash_pages_info info;
          rc = appl_storage_get_page_info_by_offs(next, &info);
          rc = rc || appl_storage_erase_memory(info.start_offset, info.size);
@@ -547,7 +553,7 @@ int appl_storage_read_bytes_item(size_t id, size_t index, int64_t *time, uint8_t
    return rc;
 }
 
-#else /* CONFIG_FLASH */
+#else /* defined(STORAGE_DEV_FLASH) || defined(STORAGE_DEV_EEPROM) */
 
 int appl_storage_read_memory(off_t mem_addr, uint8_t *data, size_t num_bytes)
 {
@@ -601,4 +607,4 @@ int appl_storage_read_bytes_item(size_t id, size_t index, int64_t *time, uint8_t
    return -ENOTSUP;
 }
 
-#endif /* CONFIG_FLASH || CONFIG_EEPROM */
+#endif /* defined(STORAGE_DEV_FLASH) || defined(STORAGE_DEV_EEPROM) */
