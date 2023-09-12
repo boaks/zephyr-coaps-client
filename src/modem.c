@@ -1231,6 +1231,8 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       if (err > 0) {
          LOG_INF("DATAPRFL: %s", buf);
       }
+      // no-loop, return to 1, default band opt, 
+      // pause search for 300, 600, 1200, 3600, 7200 seconds
       err = modem_at_cmd(buf, sizeof(buf), NULL,
                          "AT%PERIODICSEARCHCONF=0,0,1,1,"
                          "\"1,300,600,1200,3600,7200\"");
