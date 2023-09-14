@@ -159,6 +159,8 @@ bool appl_update_coap_reboot(void)
 int appl_update_coap_status(uint8_t *buf, size_t len)
 {
    int index = 0;
+   int64_t time = appl_update_time();
+
    k_mutex_lock(&appl_update_coap_mutex, K_FOREVER);
    if (coap_download) {
       index = snprintf(buf, len, "Downloading %s", coap_resource_path);
@@ -169,10 +171,14 @@ int appl_update_coap_status(uint8_t *buf, size_t len)
    } else if (coap_download_ready) {
       index = snprintf(buf, len, "Downloaded %s", coap_resource_path);
       if (coap_apply_update) {
-         index += snprintf(buf + index, len - index, " reboot.");
+         index += snprintf(buf + index, len - index, " reboot");
       }
    } else if (coap_download_canceled) {
-      index = snprintf(buf, len, "Canceled %s", coap_resource_path);
+      index = snprintf(buf, len, "Update Canceled %s", coap_resource_path);
+   }
+   if (index && time > -1) {
+      index += snprintf(buf + index, len - index, ", %d s",
+                        (int)(time / MSEC_PER_SEC));
    }
    k_mutex_unlock(&appl_update_coap_mutex);
 

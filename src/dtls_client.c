@@ -87,6 +87,7 @@ typedef struct dtls_app_data_t {
    bool no_response;
    bool no_rai;
    bool download;
+   uint16_t download_progress;
    uint8_t retransmission;
    request_state_t request_state;
    uint16_t timeout;
@@ -278,7 +279,7 @@ static int get_socket_error(dtls_app_data_t *app)
    return error;
 }
 
-static bool restart_modem(void)
+static bool restart_modem(bool power_off)
 {
    watchdog_feed();
    check_reboot();
@@ -288,7 +289,11 @@ static bool restart_modem(void)
    dtls_power_management();
    ui_led_op(LED_COLOR_BLUE, LED_BLINKING);
    ui_led_op(LED_COLOR_RED, LED_BLINKING);
-   modem_set_lte_offline();
+   if (power_off) {
+      modem_power_off();
+   } else {
+      modem_set_lte_offline();
+   }
    dtls_info("> modem offline");
    k_sleep(K_MSEC(2000));
    ui_led_op(LED_COLOR_ALL, LED_CLEAR);
@@ -1185,8 +1190,9 @@ static int dtls_loop(session_t *dst, int flags)
       }
 
       if (!atomic_test_bit(&general_states, LTE_READY) || app_data.fd < 0) {
-         if (dtls_network_searching(K_HOURS(4))) {
+         if (dtls_network_searching(K_HOURS(1))) {
             ++current_failures;
+            restarting_modem = true;
             dtls_info("no registration, failures %d.", current_failures);
             reopen_cause = "modem not registered, failure.";
          } else {
@@ -1219,9 +1225,8 @@ static int dtls_loop(session_t *dst, int flags)
             }
          } else {
             atomic_clear_bit(&general_states, APN_RATE_LIMIT);
-            restart_modem();
+            restarting_modem = true;
             reopen_cause = "rate limit";
-            dtls_trigger();
          }
       }
 
@@ -1249,8 +1254,10 @@ static int dtls_loop(session_t *dst, int flags)
       if (restarting_modem) {
          dtls_info("Trigger restart modem.");
          restarting_modem = false;
-         if (restart_modem()) {
-            reopen_cause = "restart modem";
+         if (restart_modem(false)) {
+            if (!reopen_cause) {
+               reopen_cause = "restart modem";
+            }
             dtls_trigger();
          }
       }
@@ -1314,8 +1321,11 @@ static int dtls_loop(session_t *dst, int flags)
             if (appl_update_coap_pending()) {
                app_data.no_rai = true;
                if (!dtls_trigger_pending()) {
+                  app_data.download = app_data.download_progress % 32;
+                  ++app_data.download_progress;
+               }
+               if (app_data.download) {
                   loops = 0;
-                  app_data.download = true;
                   app_data.request_state = SEND;
                   app_data.retransmission = 0;
                   appl_update_coap_next();
@@ -1332,6 +1342,8 @@ static int dtls_loop(session_t *dst, int flags)
                      sendto_peer(&app_data, dst, dtls_context);
                   }
                   continue;
+               } else {
+                  dtls_trigger();
                }
             } else {
                dtls_info("download canceled");

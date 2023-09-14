@@ -297,6 +297,15 @@ int appl_update_cancel(void)
    return rc;
 }
 
+int64_t appl_update_time(void)
+{
+   if (dfu_context.flash_area && dfu_time > -1) {
+      return k_uptime_get() - dfu_time;
+   } else {
+      return dfu_time;
+   }
+}
+
 int appl_update_get_pending_version(char *buf, size_t len)
 {
    if (appl_reboots()) {
