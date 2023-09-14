@@ -730,7 +730,7 @@ static int at_cmd_send()
       }
 #endif
 
-      i = strstartsep(at_cmd_buf, "scan", true, " ");
+      i = strstart(at_cmd_buf, "scan", true);
       if (i == 0) {
          i = strstart(at_cmd_buf, "AT%NCELLMEAS", true);
       }
