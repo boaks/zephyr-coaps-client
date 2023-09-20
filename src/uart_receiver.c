@@ -642,6 +642,8 @@ static int at_cmd_send()
       strcpy(at_cmd_buf, "AT%XFACTORYRESET=0");
    } else if (!stricmp(at_cmd_buf, "off")) {
       strcpy(at_cmd_buf, "AT+CFUN=0");
+   } else if (!stricmp(at_cmd_buf, "offline")) {
+      strcpy(at_cmd_buf, "AT+CFUN=4");
    } else if (!stricmp(at_cmd_buf, "on")) {
       res = modem_set_normal();
       return RESULT(res);
@@ -786,36 +788,37 @@ static int at_cmd()
 #endif
    } else if (!stricmp(at_cmd_buf, "help")) {
       LOG_INF("> help:");
-      LOG_INF("  at???  : modem at-cmd.(*)");
-      LOG_INF("  band   : configure bands.(*?)");
-      LOG_INF("  cfg    : configure modem.(*?)");
-      LOG_INF("  con    : connect modem.(*?)");
-      LOG_INF("  dev    : read device info.");
-      LOG_INF("  edrx   : configure eDRX.(*?)");
-      LOG_INF("  env    : read environment sensor.");
-      LOG_INF("  eval   : evaluate connection.(*)");
-      LOG_INF("  limit  : read apn rate limit.(*)");
-      LOG_INF("  net    : read network info.(*)");
-      LOG_INF("  on     : switch modem on.(*)");
-      LOG_INF("  off    : switch modem off.(*)");
-      LOG_INF("  power  : configure power level.(*?)");
-      LOG_INF("  psm    : configure PSM.(*?)");
-      LOG_INF("  reset  : modem factory reset.(*)");
-      LOG_INF("  reboot : reboot device.");
-      LOG_INF("  rai    : configure RAI.(*?)");
-      LOG_INF("  remo   : reduced mobility.(*?)");
-      LOG_INF("  scan   : network scan.(*?)");
-      LOG_INF("  send   : send message.");
-      LOG_INF("  sim    : read SIM-card info.(*)");
+      LOG_INF("  at???   : modem at-cmd.(*)");
+      LOG_INF("  band    : configure bands.(*?)");
+      LOG_INF("  cfg     : configure modem.(*?)");
+      LOG_INF("  con     : connect modem.(*?)");
+      LOG_INF("  dev     : read device info.");
+      LOG_INF("  edrx    : configure eDRX.(*?)");
+      LOG_INF("  env     : read environment sensor.");
+      LOG_INF("  eval    : evaluate connection.(*)");
+      LOG_INF("  limit   : read apn rate limit.(*)");
+      LOG_INF("  net     : read network info.(*)");
+      LOG_INF("  on      : switch modem on.(*)");
+      LOG_INF("  off     : switch modem off.(*)");
+      LOG_INF("  offline : switch modem offline.(*)");
+      LOG_INF("  power   : configure power level.(*?)");
+      LOG_INF("  psm     : configure PSM.(*?)");
+      LOG_INF("  reset   : modem factory reset.(*)");
+      LOG_INF("  reboot  : reboot device.");
+      LOG_INF("  rai     : configure RAI.(*?)");
+      LOG_INF("  remo    : reduced mobility.(*?)");
+      LOG_INF("  scan    : network scan.(*?)");
+      LOG_INF("  send    : send message.");
+      LOG_INF("  sim     : read SIM-card info.(*)");
 #ifdef CONFIG_SMS
-      LOG_INF("  sms    : send SMS.(*?)");
+      LOG_INF("  sms     : send SMS.(*?)");
 #endif
-      LOG_INF("  state  : read modem state.(*)");
+      LOG_INF("  state   : read modem state.(*)");
 #ifdef CONFIG_UART_UPDATE
-      LOG_INF("  update : start application firmware update. Requires XMODEM.(?)");
+      LOG_INF("  update  : start application firmware update. Requires XMODEM.(?)");
 #endif
-      LOG_INF("  *      : AT-cmd is used, maybe busy.");
-      LOG_INF("  ?      : help <cmd> available.");
+      LOG_INF("  *       : AT-cmd is used, maybe busy.");
+      LOG_INF("  ?       : help <cmd> available.");
       return 0;
    } else {
       i = strstart(at_cmd_buf, "help ", true);
