@@ -17,6 +17,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define UPDATE_CMD_OK 0
+#define UPDATE_CMD_DOWNLOAD 1
+#define UPDATE_CMD_UPDATE 2
+
 int appl_update_cmd(const char *config);
 void appl_update_cmd_help(void);
 

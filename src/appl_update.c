@@ -124,7 +124,7 @@ int appl_update_cmd(const char *config)
    int rc = 0;
    bool close = false;
    const char *cur = config;
-   char value[7];
+   char value[9];
 
    if (appl_reboots()) {
       return -ESHUTDOWN;
@@ -132,6 +132,12 @@ int appl_update_cmd(const char *config)
 
    memset(value, 0, sizeof(value));
    cur = parse_next_text(cur, ' ', value, sizeof(value));
+
+   if (!value[0]) {
+      return UPDATE_CMD_UPDATE;
+   } else if (!stricmp("download", value)) {
+      return UPDATE_CMD_DOWNLOAD;
+   }
 
    if (stricmp("info", value) && stricmp("erase", value) && stricmp("revert", value) && stricmp("reboot", value)) {
       LOG_INF("update '%s' not supported!", config);
@@ -141,7 +147,7 @@ int appl_update_cmd(const char *config)
    if (!dfu_context.flash_area) {
       close = true;
       rc = appl_update_init_context();
-      if (rc) {
+      if (rc < 0) {
          return rc;
       }
    }
@@ -155,10 +161,10 @@ int appl_update_cmd(const char *config)
       rc = appl_update_dump_header(false, NULL, 0);
       if (rc < 0) {
          LOG_INF("No update available.");
-         rc = 0;
       } else {
          appl_update_swap_type(true);
       }
+      rc = UPDATE_CMD_OK;
    } else if (!stricmp("erase", value)) {
       LOG_INF("Erase update.");
       k_sleep(K_MSEC(500));
@@ -170,7 +176,7 @@ int appl_update_cmd(const char *config)
       rc = appl_update_dump_header(false, NULL, 0);
       if (rc < 0) {
          LOG_INF("No update transfered.");
-         rc = 0;
+         rc = UPDATE_CMD_OK;
       } else {
          int swap_type = mcuboot_swap_type();
          if (BOOT_SWAP_TYPE_TEST == swap_type || BOOT_SWAP_TYPE_PERM == swap_type) {
@@ -195,11 +201,12 @@ int appl_update_cmd(const char *config)
 void appl_update_cmd_help(void)
 {
    LOG_INF("> help update:");
-   LOG_INF("  update        : start update.");
-   LOG_INF("  update info   : display current update info.");
-   LOG_INF("  update erase  : erase current update.");
-   LOG_INF("  update revert : revert last update.");
-   LOG_INF("  update reboot : reboot to apply update.");
+   LOG_INF("  update          : start update download and reboot to apply it.");
+   LOG_INF("  update download : start update download.");
+   LOG_INF("  update info     : display current update info.");
+   LOG_INF("  update erase    : erase current update.");
+   LOG_INF("  update revert   : revert last update.");
+   LOG_INF("  update reboot   : reboot to apply update.");
 }
 
 bool appl_update_pending(void)

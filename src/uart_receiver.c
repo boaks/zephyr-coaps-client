@@ -79,6 +79,7 @@ static uint8_t uart_rx_buf[2][CONFIG_UART_BUFFER_LEN];
 #define UART_AT_CMD_PENDING 2
 #define UART_UPDATE 3
 #define UART_UPDATE_START 4
+#define UART_UPDATE_APPLY 5
 
 static atomic_t uart_at_state = ATOMIC_INIT(0);
 
@@ -776,16 +777,6 @@ static int at_cmd()
    } else if (!stricmp(at_cmd_buf, "dev")) {
       res = coap_appl_client_prepare_modem_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
       return RESULT(res);
-#ifdef CONFIG_UART_UPDATE
-   } else if (!stricmp(at_cmd_buf, "update")) {
-      res = appl_update_start();
-      if (!res) {
-         atomic_set_bit(&uart_at_state, UART_UPDATE);
-         atomic_set(&xmodem_retries, 0);
-         res = work_reschedule_for_cmd_queue(&uart_xmodem_start_work, K_MSEC(500));
-      }
-      return RESULT(res);
-#endif
    } else if (!stricmp(at_cmd_buf, "help")) {
       LOG_INF("> help:");
       LOG_INF("  at???   : modem at-cmd.(*)");
@@ -864,11 +855,25 @@ static int at_cmd()
       }
 
 #ifdef CONFIG_UART_UPDATE
-      i = strstart(at_cmd_buf, "update ", true);
+      i = strstartsep(at_cmd_buf, "update", true, " ");
       if (i > 0) {
          // erase may block
          uart_tx_pause(false);
          res = appl_update_cmd(&at_cmd_buf[i]);
+         if (res > 0) {
+            // download
+            i = res;
+            res = appl_update_start();
+            if (!res) {
+               atomic_set_bit(&uart_at_state, UART_UPDATE);
+               if (i == 2) {
+                  // apply
+                  atomic_set_bit(&uart_at_state, UART_UPDATE_APPLY);
+               }
+               atomic_set(&xmodem_retries, 0);
+               res = work_reschedule_for_cmd_queue(&uart_xmodem_start_work, K_MSEC(500));
+            }
+         }
          return RESULT(res);
       }
 #endif
@@ -976,6 +981,8 @@ static void uart_xmodem_start_fn(struct k_work *work)
       if (res) {
          appl_update_cancel();
          atomic_clear_bit(&uart_at_state, UART_UPDATE);
+         atomic_clear_bit(&uart_at_state, UART_UPDATE_START);
+         atomic_clear_bit(&uart_at_state, UART_UPDATE_APPLY);
          uart_tx_off(false);
          LOG_INF("Failed erase update area! %d", res);
          return;
@@ -996,6 +1003,8 @@ static void uart_xmodem_start_fn(struct k_work *work)
    } else {
       appl_update_cancel();
       atomic_clear_bit(&uart_at_state, UART_UPDATE);
+      atomic_clear_bit(&uart_at_state, UART_UPDATE_START);
+      atomic_clear_bit(&uart_at_state, UART_UPDATE_APPLY);
       uart_tx_off(false);
       LOG_INF("Failed to start XMODEM transfer!");
    }
@@ -1044,6 +1053,7 @@ static void uart_xmodem_process_fn(struct k_work *work)
       k_work_cancel_delayable(&uart_xmodem_timeout_work);
       rc = appl_update_finish();
       atomic_clear_bit(&uart_at_state, UART_UPDATE);
+      atomic_clear_bit(&uart_at_state, UART_UPDATE_START);
       uart_poll_out(uart_dev, XMODEM_ACK);
       uart_tx_off(false);
       if (!rc) {
@@ -1056,7 +1066,11 @@ static void uart_xmodem_process_fn(struct k_work *work)
          LOG_INF("XMODEM transfer failed. %d", rc);
       } else {
          LOG_INF("XMODEM transfer succeeded.");
-         LOG_INF("Reboot required to apply update.");
+         if (atomic_test_and_clear_bit(&uart_at_state, UART_UPDATE_APPLY)) {
+            appl_update_cmd("reboot");
+         } else {
+            LOG_INF("Reboot required to apply update.");
+         }
       }
       return;
    }
@@ -1074,6 +1088,8 @@ static void uart_xmodem_process_fn(struct k_work *work)
    if (cancel) {
       appl_update_cancel();
       atomic_clear_bit(&uart_at_state, UART_UPDATE);
+      atomic_clear_bit(&uart_at_state, UART_UPDATE_START);
+      atomic_clear_bit(&uart_at_state, UART_UPDATE_APPLY);
       uart_poll_out(uart_dev, XMODEM_NAK);
       uart_tx_off(false);
    }
