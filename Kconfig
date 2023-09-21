@@ -65,10 +65,6 @@ config DTLS_PSK_SECRET
 	   Don't use this on production or other security
 	   relevant use-cases. 
 
-config COAP_SERVER_TRUST_CERTIFICATE
-	string "CoAP server's trusted certificate."
-	default "../cert/Californium.pem"
-
 config DTLS_ALWAYS_HANDSHAKE
 	bool "Use a DTLS handshake for request."
 	default n
@@ -76,6 +72,13 @@ config DTLS_ALWAYS_HANDSHAKE
 	   Enable to use a DTLS handshake for each request.
 	   Using DTLS 1.2 Connection ID obsoletes such
 	   frequent handshakes.
+
+config COAP_WAIT_ON_POWERMANAGER
+	bool "Enable CoAP to wait for power-manager before sending"
+	default n
+	help
+	   On startup, the power manager takes up to 30s to get the first 
+	   battery values. Delay exchanging application message until that.
 
 config COAP_SEND_INTERVAL
 	int "CoAP send interval in seconds. 0 disable"
@@ -147,13 +150,6 @@ config COAP_QUERY_WRITE_SUBRESOURCE_ENABLE
 config COAP_QUERY_WRITE_SUBRESOURCE
 	string "Use CoAP query - write sub-resource"
 	depends on COAP_QUERY_WRITE_SUBRESOURCE_ENABLE
-
-config COAP_WAIT_ON_POWERMANAGER
-	bool "Enable CoAP to wait for power-manager before sending"
-	default n
-	help
-	   On startup, the power manager takes up to 30s to get the first 
-	   battery values. Delay exchanging application message until that.
 
 endmenu
 

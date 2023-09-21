@@ -4,7 +4,7 @@
 
 ## Reliable - Efficient - Encrypted
 
-Version 0.6.0 - May 2023
+Version 0.7.0 - September 2023
 
 This [zephyr](https://www.zephyrproject.org/) client demonstrates to use coaps ([CoAP](https://tools.ietf.org/html/rfc7252) over [DTLS 1.2](https://tools.ietf.org/html/rfc6347)) with the [Eclipse/TinyDtls Library](https://github.com/eclipse/tinydtls). In combination with [Eclipse/Californium](https://github.com/eclipse/californium) as Cloud-Server, it enables a device to use [DTLS 1.2 Connection ID](https://tools.ietf.org/html/rfc9146), which obsolete the commonly used frequently DTLS handshakes and eliminates that expensive overhead.
 Reducing the messages exchange mostly down to two ip-messages (one request, one response), it enables your device for
@@ -14,19 +14,19 @@ Reducing the messages exchange mostly down to two ip-messages (one request, one 
 - end-to-end encrypted
 
 communication for messages up to a few hundred bytes.
-In combination with LTE-M/NB-IoT, CoAP / DTLS CID enables to build mobile applications with 
+In combination with LTE-M/NB-IoT, CoAP / DTLS 1.2 CID enables to build mobile applications with 
 
 - zero-install and 
 - high cost-efficiency.
 
-The demo client itself is in development stage. In "good and normal weather", the `Thingy:91` flies from battery for 7 months. In "storm" it may require to be switched off and on again. That should be very rare exceptions.
+The demo client itself is in development stage. In "good and normal weather", the `Thingy:91` flies from battery for 7 months. In "storm" it may require to be switched off and on again in very rare exceptions.
 
-The demo client is intended as groundwork for your own ideas. "Out-of-the-box" this application is useful to easily check, if mobile IoT works at the locations and environment you want to use it. The demo reports also some details about the mobile network. 
+The demo client is intended as groundwork for your own ideas. "Out-of-the-box" this application is useful to easily check, if mobile IoT works at the locations and environment you want to use it. The demo reports also some details about the mobile networks functions. 
 To build products and applications on this protocol stack requires to implement a production client and to adapt the coap-server for your function. The demo targets therefore people, which are already common with [zephyr](https://www.zephyrproject.org/), or, even better, common with the development for the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) itself.
-Without that knowledge it will be time consuming to make benefit out of this demo.
+Without that knowledge it will be more time consuming to make benefit out of this demo.
 
 **Note:**
-The demo client is considered to use CoAP/DTLS CID. Without server-side support for DTLS CID, it will not work proper. Please ensure, that your server supports that.
+The demo client is considered to use CoAP/DTLS 1.2 CID. Without server-side support for DTLS 1.2 CID, it will not work proper. Please ensure, that your server supports that.
 
 ## Supported Devices
 
@@ -38,11 +38,9 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160) based devic
 | [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/)<br>Requires additional batteries, antennas, and closures to work in the "wild". The design of the feather allows to easily add custom sensors. | ![nRF9160-feather-v5](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
 | [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. The design allows to easily add custom sensors. | ![nRF9160-DK](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK.png) |
 
-The demo works with [ncs-2.3.0](https://github.com/nrfconnect/sdk-nrf/tree/v2.3.0).
+The demo works with [ncs-2.4.2](https://github.com/nrfconnect/sdk-nrf/tree/v2.4.2).
 
-To benefit from the newer modem features, please consider to use the modem firmware [1.3.4](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.4.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
-
-(The current development (`main` branch) uses [ncs-2.4.1](https://github.com/nrfconnect/sdk-nrf/tree/v2.4.1) and the modem firmware [1.3.5](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.5.zip).)
+To benefit from the newer modem features, please consider to use the modem firmware [1.3.5](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.5.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
 Maybe other modems and devices gets supported over the time as well. For some of the nRF9160 based devices porting should not be too hard.
 
@@ -145,7 +143,7 @@ west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git zephyr-c
 ```
 
 from a toolchain-manager-installation, fails with an error message, that a workspace already exists.
-In order to add just this coaps-demo-app and the tinydtls module library to a workspace, open the workspace (for ncs the "ncs" installation folder and change to "v2.3.0" folder there). Here you find a ".west" folder, that contains the west-configuration for the workspace. Rename that ".west" folder into ".west.org" in order to replace that west-configuration by the one from this example. Now execute 
+In order to add just this coaps-demo-app and the tinydtls module library to a workspace, open the workspace (for ncs the "ncs" installation folder and change to "v2.4.2" folder there). Here you find a ".west" folder, that contains the west-configuration for the workspace. Rename that ".west" folder into ".west.org" in order to replace that west-configuration by the one from this example. Now execute 
 
 ```sh
 west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git
@@ -244,9 +242,9 @@ As mentioned at the introduction, the demo is intended as groundwork for your ow
 
 See also [Roadmap](./docu/ROADMAP.md) for the plan of the next months.
 
-If you want to consider the power consumption in your idea, please see [Power Consumption](./docu/POWERCONSUMPTION.md)
+If you want to consider the power consumption in your idea, please see [Power Consumption](./docu/POWERCONSUMPTION.md) and if you want to make own [measurements](./docu/MEASUREMENTS.md) may be helpful. 
 
-Sometimes it is interesting, which networks are available at some locations. [Thingy:91 - Cellular Explorer](./docu/CELLULAREXPLORER.md) may help here.
+Sometimes it is interesting, which mobile networks are available at some locations. [Thingy:91 - Cellular Explorer](./docu/CELLULAREXPLORER.md) helps here. It comes also with support for a firmware update using XMODEM and some additional function in order to test the features of the mobile network.
 
 ### Updating to a Newer Versions
 

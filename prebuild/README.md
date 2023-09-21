@@ -2,7 +2,7 @@
 
 # Zephyr - Coaps Demo Client with Eclipse/TinyDtls
 
-## Prebuild binaries v0.6.0
+## Prebuild binaries v0.7.0
 
 This folder contains 5 prebuild binaries intended to be used to get a first impression of CoAP / DTLS 1.2 CID. The compiled in destination server is californium.eclipseprojects.io. To gather more experience, please build and modify this example on your own.
 

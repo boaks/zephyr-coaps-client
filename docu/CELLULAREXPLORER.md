@@ -9,20 +9,14 @@
 | | |
 | :- | - |
 | The [Nordic Semiconductor, Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) comes with an Bluetooth Low Energy interface, that allows to connect the `Thingy:91` to a smartphone and send locally commands to the `Thingy:91`. That helps to analyze network situations even without valid cellular connectivity of your SIM card. | ![Thingy:91](./thingy91.jpg) |
+| The [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/) comes with a USB-C plug and if the smartphone is also equipped with USB-C, a simple USB-C to USB-C wire will do it. | ![nRF9160-feather-v5](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
+
+In the wild, the Bluetooth Low Energy interface is really very comfortable. If your device has only USB, that works also well, but is less comfortable.
+For some more sophisticated tests, e.g. adapting some lists on the SIM card, it may be easier to use a PC via a USB serial as well.
 
 In order to enable this function, the [at-cmd-prj.conf](../at-cmd-prj.conf) must be used to build the app.
 
-Other devices without Bluetooth Low Energy interface may also be used via a USB serial. The
-
-| | |
-| :- | - |
-| The [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/) comes with a USB-C plug and if the smartphone is also equipped with USB-C, a simple USB-C to USB-C wire will do it. | ![nRF9160-feather-v5](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
-
-For a mobile usage in the wild, not that comfortable as Bluetooth Low Energy, but it works.
-
-For some more sophisticated tests, e.g. adapting some lists on the SIM card, it may be easier to use a PC via a USB serial as well.
-
-## Enable Bluetooth Low Energy
+## Enable Bluetooth Low Energy on a Thingy:91
 
 If you connect the `Thingy:91` via USB to your PC, a "local USB drive" pops up.
 
@@ -66,7 +60,6 @@ If you want to use a PC to communicate with the device via the USB serial interf
 
 The most [nRF9160 AT-commands](https://infocenter.nordicsemi.com/pdf/nrf9160_at_commands_v2.3.pdf) are supported. Additionally some shortcuts and extra functions are available as custom commands. For simple usage, these custom commands uses simple characters and digits, instead of control characters as '+', '%' or '='. Type `help` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg):
 
-{#help}
 ![help](./serial_bluetooth_terminal_help.jpg)
 
 (The screenshot shows only the list of commands in August 2023, the current list may contain more commands.)
@@ -81,7 +74,7 @@ Hopefully in the most areas the device should be able to connect to the network 
 
 If that doesn't work or if you want to see, which cellular networks are available at your location, then type `scan` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg)
 
-The displayed list of networks will vary. As default, `scan` measure the currently already known channels. If you want to search for new channels, provide additional parameters. For such cases, a command comes also with a specific help. Type `help scan` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg) (see [screenshot above](#help)). 
+The displayed list of networks will vary. As default, `scan` measure the currently already known channels. If you want to search for new channels, provide additional parameters. For such cases, a command comes also with a specific help. Type `help scan` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg) (see [screenshot above](#usage)). 
 
 To perform a scan with searching for new channels, use `scan 5 <n>` where `n` is the maximum expected number of networks. It will take a while. The provided parameters will become the new default. if you decide to use `scan 5 6`, the next execution of `scan` will also use these parameters.
 
@@ -136,7 +129,7 @@ Each line may starts with a level ('E'rror, 'W'arning, 'I'nfo, or 'D'ebug), whic
 
 That is followed by text, which explains itself a lot. E.g. CAT-M1, roaming, PLMN and so on. 
 
-For energy saving thre function are available for cellular devices:
+For energy saving three function are available for cellular devices:
 
 | Mode | Description | |
 | - | :- | :- |
@@ -234,7 +227,7 @@ To simplify that process, that `Cellular Explorer` comes with an `update` comman
 
 In order to use it, you need:
 
-- the application binary (the `app_update.bin` in the `zephyr` folder. The file is next to the `app_signed.hex`, which is used for the `Nordic nRF Connect for Desktop / Programmer`).
+- the application binary (the `app_update.bin` in the `<build>/zephyr` folder. The file is next to the `app_signed.hex`, which is used for the `Nordic nRF Connect for Desktop / Programmer`).
 - a serial terminal with XMODEM or XMODEM 1k support.
 - If a `Thingy:91` is used, please update the nRF52840 to version `thingy91_nrf52_connectivity_bridge_2023-03-02_8f26142b.hex` or newer. Some older version show some instability which may break the file transfer. Caused by that, the transfers stucks and breaks the transmission from the `Thingy:91` to your smartphone. You will even not see further messages from the `Thingy:91` and a power on restart gets required. The `thingy91_nrf52_connectivity_bridge` is part of the `Precompiled application and modem firmware` package and can be downloaded from [Nordic-Thingy-91/Download](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91/Download#infotabs).
 
@@ -256,8 +249,8 @@ Select `Xmodem 1k` as protocol and the `app_update.bin` as file. Press `OK` and 
 
 ![update ready](./serial_bluetooth_terminal_update_ready.jpg)
 
-Sometimes the 10 seconds are too short to select the file. Then just open the file dialog via the menu and "Upload File" submenu. Select the file at rest and chose the `Xmodem 1k` as protocol. Press `OK` and then `CANCEL` in the "Upload File" field, which appears at the top below the tools-line. That will set this values as default and the next time the file dialog is shown you may just press `OK`.   
+Sometimes the 10 seconds are too short to select the file. Then just open the file dialog via the menu and "Upload File" submenu. Select the file at rest and choose the `Xmodem 1k` as protocol. Press `OK` and then `CANCEL` in the "Upload File" field, which appears at the top below the tools-line. That will set this values as default and the next time the file dialog is shown you may just press `OK`.   
 
-During the upload the [Serial Terminal 1.43](#android) shows some `^F` indicating the progress. Finally, when all succeeds, you will see the message "Reboot device to apply update". Enter "reboot" will reboot the device and on start it will take a couple of seconds more to copy and activate the new application firmware.
+During the upload the [Serial Terminal 1.43](#android) shows some `^F` indicating the progress. Finally, when all succeeds, the device reboots to apply the update. The reboot will take a while copying the firmware from the download slot to the active slot and the old firmware to that download slot. After that the device continues to start the new application firmware. To prevent the device from being bricked, the device verifies the application firmware with the first successful data exchange. If the device reboots again before that, the old firmware is actived again. For that, don't apply a firmware update with low network coverage.
 
 ** !!! Under Construction !!! **
