@@ -1002,7 +1002,7 @@ static void modem_cancel_all_job(void)
 
 static void modem_init_rai(void)
 {
-#ifdef CONFIG_UDP_RAI_ENABLE
+#ifdef CONFIG_CP_RAI_ON
    int err = modem_at_cmd(NULL, 0, NULL, "AT%XRAI=0");
    if (err < 0) {
       LOG_WRN("Failed to disable control plane RAI, err %d", err);
@@ -1073,7 +1073,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       if (lte_initial_mode != LTE_LC_SYSTEM_MODE_NONE && !lte_force_lte_m && !lte_force_nb_iot) {
          lte_lc_system_mode_set(lte_initial_mode, CONFIG_LTE_MODE_PREFERENCE);
       }
-#ifdef CONFIG_UDP_AS_RAI_ENABLE
+#ifdef CONFIG_AS_RAI_ON
       err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%REL14FEAT=0,1,0,0,0");
       if (err > 0) {
          LOG_INF("rel14feat AS RAI: %s", buf);
@@ -1163,12 +1163,12 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       if (err < 0) {
          LOG_WRN("Failed to disable control plane RAI, err %d", err);
       } else {
-#ifdef CONFIG_UDP_RAI_ENABLE
+#ifdef CONFIG_CP_RAI_ON
          LOG_INF("Control plane RAI initial disabled");
 #endif
       }
 
-#ifdef CONFIG_UDP_AS_RAI_ENABLE
+#ifdef CONFIG_AS_RAI_ON
       /** Release Assistance Indication  */
       err = modem_at_cmd(buf, sizeof(buf), "%RAI: ", "AT%RAI=1");
       if (err < 0) {
@@ -1176,19 +1176,16 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       } else {
          LOG_INF("Access stratum RAI enabled");
       }
-#else
+#else /* CONFIG_AS_RAI_ON */
       /** Release Assistance Indication  */
       err = modem_at_cmd(buf, sizeof(buf), "%RAI: ", "AT%RAI=0");
       if (err < 0) {
          LOG_WRN("Failed to disable access stratum RAI, err %d", err);
-      } else {
-#ifndef CONFIG_UDP_RAI_ENABLE
-         LOG_INF("Access stratum RAI disabed");
-#endif
       }
-#ifndef CONFIG_UDP_RAI_ENABLE
-      LOG_INF("No AS nor CP RAI mode configured!");
-#endif
+#endif /* CONFIG_AS_RAI_ON */
+
+#ifdef CONFIG_RAI_OFF
+      LOG_INF("No AS- nor CP-RAI mode configured!");
 #endif
 
 #ifdef CONFIG_UDP_EDRX_ENABLE
@@ -2082,7 +2079,7 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
    if (err) {
       return 0;
    }
-#ifdef CONFIG_UDP_RAI_ENABLE
+#ifdef CONFIG_CP_RAI_ON
    if (rai_current_mode != mode) {
       int rai = -1;
       const char *desc = "";
@@ -2107,7 +2104,7 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
          }
       }
    }
-#elif defined(CONFIG_UDP_AS_RAI_ENABLE)
+#elif defined(CONFIG_AS_RAI_ON)
    /** Access stratum Release Assistance Indication  */
    int option = -1;
    const char *desc = "";

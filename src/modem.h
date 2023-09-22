@@ -127,9 +127,8 @@ enum preference_mode {
    LTE_M_PREFERENCE,
 };
 
-#ifdef CONFIG_UDP_AS_RAI_ENABLE
+#ifdef CONFIG_AS_RAI_ON
 #define CONFIG_UDP_USE_CONNECT 1
-#undef CONFIG_UDP_RAI_ENABLE
 #endif
 
 typedef void (*lte_state_change_callback_handler_t)(enum lte_state_type type, bool active);

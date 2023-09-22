@@ -201,14 +201,26 @@ config UDP_PSM_ENABLE
 	depends on !UDP_POWER_ON_OFF_ENABLE
 	default y
 
-config UDP_AS_RAI_ENABLE
-	bool "Enable LTE AS Release Assistance Indication"
-	default y
+choice RAI_MODE
+	prompt "RAI mode"
+	default AS_RAI_ON
+	help
+	  Configure RAI mode
 
-config UDP_RAI_ENABLE
-	bool "Enable LTE CP Release Assistance Indication (NB-IoT Rel. 13 only!)"
-	depends on !UDP_AS_RAI_ENABLE
-	default n
+config RAI_OFF
+	bool "Disable RAI"
+
+config AS_RAI_ON
+	bool "Enable AS-RAI (Rel. 14)"
+	help
+	  Use AS-RAI. Requires Rel. 14. If not available, CP-RAI is implicitly used.
+
+config CP_RAI_ON
+	bool "Enable CP-RAI (Rel. 13, NB-IoT only!)"
+	help
+	  Use CP-RAI. Requires Rel. 13, only supported for NB-IoT.
+
+endchoice # RAI_MODE
 
 config UDP_PSM_CONNECT_RAT
 	int "PSM RAT on connect"
