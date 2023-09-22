@@ -153,6 +153,10 @@ bool appl_update_coap_reboot(void)
    reboot = coap_download_ready && coap_apply_update;
    k_mutex_unlock(&appl_update_coap_mutex);
 
+   if (reboot) {
+      appl_update_reboot();
+   }
+
    return reboot;
 }
 

@@ -496,9 +496,7 @@ static void dtls_coap_next(dtls_app_data_t *app)
    if (!app->download) {
       k_sem_reset(&dtls_trigger_msg);
 #ifdef CONFIG_COAP_UPDATE
-      if (appl_update_coap_reboot()) {
-         appl_update_cmd("reboot");
-      }
+      appl_update_coap_reboot();
 #endif
    }
 }

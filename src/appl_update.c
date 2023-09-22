@@ -178,16 +178,7 @@ int appl_update_cmd(const char *config)
          LOG_INF("No update transfered.");
          rc = UPDATE_CMD_OK;
       } else {
-         int swap_type = mcuboot_swap_type();
-         if (BOOT_SWAP_TYPE_TEST == swap_type || BOOT_SWAP_TYPE_PERM == swap_type) {
-            LOG_INF("Reboot to apply update.");
-            appl_reboot(ERROR_CODE_UPDATE, K_MSEC(2000));
-         } else if (BOOT_SWAP_TYPE_REVERT == swap_type) {
-            LOG_INF("Reboot to revert update.");
-            appl_reboot(ERROR_CODE_UPDATE, K_MSEC(2000));
-         } else {
-            LOG_INF("No update pending.");
-         }
+         appl_update_reboot();
       }
    }
 
@@ -302,6 +293,23 @@ int appl_update_cancel(void)
       dfu_flash_area_id = -1;
    }
    return rc;
+}
+
+int appl_update_reboot(void)
+{
+   int swap_type = mcuboot_swap_type();
+   if (BOOT_SWAP_TYPE_TEST == swap_type || BOOT_SWAP_TYPE_PERM == swap_type) {
+      LOG_INF("Rebooting to apply update.");
+      appl_reboot(ERROR_CODE_UPDATE, K_MSEC(2000));
+      return 0;
+   } else if (BOOT_SWAP_TYPE_REVERT == swap_type) {
+      LOG_INF("Rebooting to revert update.");
+      appl_reboot(ERROR_CODE_UPDATE, K_MSEC(2000));
+      return 0;
+   } else {
+      LOG_INF("No update pending.");
+      return -EINVAL;
+   }
 }
 
 int64_t appl_update_time(void)

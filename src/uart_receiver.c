@@ -1067,7 +1067,7 @@ static void uart_xmodem_process_fn(struct k_work *work)
       } else {
          LOG_INF("XMODEM transfer succeeded.");
          if (atomic_test_and_clear_bit(&uart_at_state, UART_UPDATE_APPLY)) {
-            appl_update_cmd("reboot");
+            appl_update_reboot();
          } else {
             LOG_INF("Reboot required to apply update.");
          }

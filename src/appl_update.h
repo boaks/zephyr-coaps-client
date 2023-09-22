@@ -31,6 +31,7 @@ int appl_update_erase(void);
 int appl_update_write(const uint8_t *data, size_t len);
 int appl_update_finish(void);
 int appl_update_cancel(void);
+int appl_update_reboot(void);
 int64_t appl_update_time(void);
 
 int appl_update_get_pending_version(char *buf, size_t len);
