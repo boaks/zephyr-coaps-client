@@ -194,22 +194,26 @@ The demo client exchanges encrypted messages with the coap-server. These message
 Demo message:
 
 ```
-6:49 [m:ss], Thingy:91 v0.5.0, 0*1, 1*0, 2*0, 3*0, failures 0
-4168 mV 95% battery (low-power)
+4-02:00:11 [d-hh:mm:ss], Thingy:91 v0.7.0+0 (2.4.2), 0*97, 1*1, 2*0, 3*0, failures 0
+HW: B1A, MFW: 1.3.5, IMEI: ???????????????
+!4127 mV 93% (71 days left) battery
+Last code: 2023-09-17T11:32:29Z reboot cmd
 ICCID: ????????????????????, eDRX cycle: off, HPPLMN interval: 10 [h]
 IMSI: ???????????????
-!Network: CAT-M1,roaming,Band 3,#PLMN 26201,TAC 26553,Cell 30157574
-PDN: ???.???,???.??.??.???
-!PSM: TAU 86400 [s], Act 0 [s], Released: 12406 ms
-!CE: down: 8, up: 1, RSRP: -116 dBm, CINR: 8 dB, SNR: 9 dB
-Stat: tx 1 kB, rx 0 kB, max 597 B, avg 142 B
-Cell updates 2, Network searchs 1 (2 [s]), PSM delays 0 (0 [s]), Restarts 0
-!22.98,22.99,23.03,23.06,23.11,23.17,23.23,23.30,23.39,23.50,23.64,23.80 C
-55.13 %H
-1002.6 hPa
+Network: CAT-M1,roaming,Band 20,PLMN 26202,TAC 47490,Cell 52262913,EARFCN 6300
+PDN: ???.???,???.??.??.???,rate-limit 256,86400 s
+PSM: TAU 90000 [s], Act 0 [s], AS-RAI, Released: 1926 ms
+!CE: down: 1, up: 1, RSRP: -119 dBm, CINR: -1 dB, SNR: 0 dB
+Stat: tx 83 kB, rx 7 kB, max 862 B, avg 445 B
+Cell updates 24, Network searchs 2 (12 s), PSM delays 0 (0 s), Restarts 0
+Wakeups 98, 252 s, connected 317 s, asleep 54 s
+!34.74 C
+!48.00 %H
+!973 hPa
 ```
 
-It starts with the up-time in the first line, followed by the label "Thingy:91" and the client's version. The sent statistic. "`0*47`" := 47 exchanges without retransmission, "`1*0`" := no (0) exchanges with 1 retransmission finishs that first line. The current exchange is not included in this statistic. The second line contains the battery status and the third and fourth the information from the SIM-card. The fifth to ninth contains the network information. From the tenth line on, the value of the sensors are following.
+It starts with the up-time in the first line, followed by the label "Thingy:91" and the client's and NCS version. The sent statistic. "`0*97`" := 97 exchanges without retransmission, "`1*1`" := 1 exchange with 1 retransmission finishs that first line. The current exchange is not included in this statistic. The second line contains the harware version of the nRF9160 chip, the modem firmware version, and the IMEI.
+Followed by the line withs the battery status and the lines with information from the SIM-card. In some cases the network details are of interest and the next lines contains that. The last lines of technical informations before the sensor values contains several statistics, e.g. the amount of transfered data and modem restarts.
 
 The demo uses the "echo" resource of the plugtest-server, therefore the response contains just the same message.
 
