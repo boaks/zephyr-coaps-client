@@ -309,8 +309,8 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
       }
    }
 
-   index += snprintf(buf + index, len - index, ", Thingy:91 %s (%s), 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
-                     appl_get_version(), NCS_VERSION_STRING, transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
+   index += snprintf(buf + index, len - index, ", %s %s, 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
+                     CONFIG_APPL_MODEL_DESCRIPTION, appl_get_version(), transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
    dtls_info("%s", buf + start);
 
    buf[index++] = '\n';
@@ -319,7 +319,7 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
    if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
       memset(&modem_info, 0, sizeof(modem_info));
       if (!modem_get_modem_info(&modem_info)) {
-         index += snprintf(buf + index, len - index, "HW: %s, MFW: %s, IMEI: %s", modem_info.version, modem_info.firmware, modem_info.imei);
+         index += snprintf(buf + index, len - index, "NCS: %s, HW: %s, MFW: %s, IMEI: %s", NCS_VERSION_STRING, modem_info.version, modem_info.firmware, modem_info.imei);
          dtls_info("%s", buf + start);
          buf[index++] = '\n';
          start = index;

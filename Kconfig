@@ -19,14 +19,6 @@ config APPL_VERSION
 		If McuBoot is not used, the application version
 		is provided by this value. 
 
-config APPL_MODEL
-	string "Application model."
-	default "dk" if BOARD_NRF9160DK_NRF9160_NS
-	default "ty" if BOARD_THINGY91_NRF9160_NS
-	default "fh" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
-	help
-		Select firmware for model. 
-
 menu "CoAP tinyDTLS Settings"
 
 config COAP_SERVER_HOSTNAME
@@ -572,6 +564,26 @@ config ENVIRONMENT_HISTORY_INTERVAL_S
 	default 30
 
 endif
+
+# Application/HW Model
+
+config APPL_MODEL
+	string "Application model."
+	default "dk" if BOARD_NRF9160DK_NRF9160_NS
+	default "ty" if BOARD_THINGY91_NRF9160_NS
+	default "fe" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && BATTERY_TYPE_ENELOOP_2000_MAH
+	default "fh" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && !BATTERY_TYPE_ENELOOP_2000_MAH
+	help
+		Select firmware for model. 
+
+config APPL_MODEL_DESCRIPTION
+	string "Application model description."
+	default "nRF9160-DK" if BOARD_NRF9160DK_NRF9160_NS
+	default "Thingy:91" if BOARD_THINGY91_NRF9160_NS
+	default "nRF9160 feather/NiMH" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && BATTERY_TYPE_ENELOOP_2000_MAH
+	default "nRF9160 feather/LiPo" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && !BATTERY_TYPE_ENELOOP_2000_MAH
+	help
+		Select firmware for model. 
 
 # Logging
 
