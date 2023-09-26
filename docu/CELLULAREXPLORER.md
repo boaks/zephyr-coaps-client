@@ -241,7 +241,7 @@ The update is started using the `update` command.
 
 This starts to erase the second flash slot to prepare that for the new application firmware. This takes about 10s and gives the time to start the `XMODEM` file transfer on the smartphone or PC.
 
-For [Serial Terminal 1.43](#android) select the menu on the upper left, next to the trash can ![three dots](./serial_bluetooth_terminal_menu.jpg) and then the "Upload File" submenu. The file dialog appears.
+For [Serial Terminal 1.43](#android) select the menu on the upper left, next to the trash can (see red rectangle in the screenshoot below) and then the "Upload File" submenu. The file dialog appears.
 
 ![start xmodem](./serial_bluetooth_terminal_update_xmodem.jpg)
 
