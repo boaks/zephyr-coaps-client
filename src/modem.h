@@ -72,7 +72,7 @@ typedef struct lte_network_info {
    uint16_t tac;
    uint32_t cell;
    uint32_t earfcn;
-   char apn[16];
+   char apn[32];
    char local_ip[16];
 } lte_network_info_t;
 
