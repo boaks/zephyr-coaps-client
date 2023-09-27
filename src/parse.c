@@ -93,25 +93,28 @@ const char *parse_next_long_qtext(const char *value, char sep, int base, long *r
 
 const char *parse_next_text(const char *value, char sep, char *result, size_t len)
 {
+   if (result) {
+      if (len > 0) {
+         --len; // space for terminating 0
+      } else {
+         result = NULL;
+      }
+   }
    if (*value == sep) {
       ++value;
    }
-   while (*value && *value != sep && len > 0) {
-      if (result) {
+   while (*value && *value != sep) {
+      if (result && len) {
          *result++ = *value;
+         --len;
       }
       ++value;
-      --len;
    }
    if (*value && *value == sep) {
       ++value;
    }
    if (result) {
-      if (len > 0) {
-         *result = 0;
-      } else {
-         *(result - 1) = 0;
-      }
+      *result = 0;
    }
    return value;
 }
