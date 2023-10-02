@@ -78,7 +78,11 @@ static int battery_adc_setup(void)
    int rc = -ENOTSUP;
 
    if (!device_is_ready(battery_adc_config.adc)) {
-      LOG_ERR("ADC device is not ready %s", battery_adc_config.adc->name);
+      if (battery_adc_config.adc) {
+         LOG_ERR("ADC device is not ready %s", battery_adc_config.adc->name);
+      } else {
+         LOG_ERR("ADC device is not ready");
+      }
       return rc;
    }
 

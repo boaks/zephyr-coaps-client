@@ -75,7 +75,7 @@ int coap_client_decode_content_format(const struct coap_option *option)
          desc = "appl/cbor";
          break;
       default:
-         dtls_info("CoAP content format %d", format);
+         break;
    }
    if (desc) {
       dtls_info("CoAP content format %s (%d)", desc, format);

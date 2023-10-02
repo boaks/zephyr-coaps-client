@@ -99,7 +99,6 @@ static K_WORK_DEFINE(uart_xmodem_ready_work, uart_xmodem_process_fn);
 #endif
 
 static K_WORK_DELAYABLE_DEFINE(uart_enable_rx_work, uart_enable_rx_fn);
-static K_WORK_DELAYABLE_DEFINE(uart_end_pause_tx_work, uart_pause_tx_fn);
 static K_WORK_DEFINE(uart_start_pause_tx_work, uart_pause_tx_fn);
 static K_WORK_DEFINE(at_cmd_send_work, at_cmd_send_fn);
 static K_WORK_DEFINE(at_cmd_response_work, at_cmd_response_fn);
@@ -185,6 +184,7 @@ static int line_length(const uint8_t *data, size_t length)
 #ifndef CONFIG_LOG_MODE_IMMEDIATE
 static K_MUTEX_DEFINE(uart_tx_mutex);
 static K_CONDVAR_DEFINE(uart_tx_condvar);
+static K_WORK_DELAYABLE_DEFINE(uart_end_pause_tx_work, uart_pause_tx_fn);
 static bool uart_tx_in_pause = false;
 static bool uart_tx_in_off = false;
 #endif
@@ -438,6 +438,12 @@ static inline void uart_tx_ready(void)
    // empty
 }
 
+static void uart_tx_off(bool off)
+{
+   ARG_UNUSED(off);
+   // empty
+}
+
 #endif /* CONFIG_LOG_BACKEND_UART_RECEIVER */
 
 static void uart_pause_tx_fn(struct k_work *work)
@@ -484,7 +490,7 @@ static void at_cmd_result(int res)
       // noops
    } else {
       if (res < -1) {
-         const char *desc;
+         const char *desc = "";
          switch (res) {
             case -EFAULT:
                desc = " (off)";
@@ -502,7 +508,6 @@ static void at_cmd_result(int res)
                desc = " (not supported)";
                break;
             default:
-               desc = "";
                break;
          }
          LOG_INF("ERROR %d%s\n", -res, desc);
