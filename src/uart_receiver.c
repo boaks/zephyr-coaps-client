@@ -310,16 +310,72 @@ static int uart_tx_out_func(int c, void *ctx)
    return 0;
 }
 
+#define HEXDUMP_BYTES_IN_LINE 16
+#define HEXDUMP_BYTES_IN_BLOCK 8
+
+static void uart_log_spaces(size_t len)
+{
+   while (len--) {
+      uart_tx_out_func(' ', NULL);
+   }
+}
+
+static void uart_log_dump_hex_line(int prefix, int bytes, const uint8_t *data, size_t data_len)
+{
+   uart_log_spaces(prefix);
+
+   for (int i = 0; i < bytes; i++) {
+      if (i > 0 && !(i % HEXDUMP_BYTES_IN_BLOCK)) {
+         uart_tx_out_func(' ', NULL);
+      }
+
+      if (i < data_len) {
+         cbprintf(uart_tx_out_func, NULL, "%02x ", data[i]);
+      } else {
+         uart_log_spaces(3);
+      }
+   }
+
+   uart_tx_out_func('|', NULL);
+
+   for (int i = 0; i < data_len; i++) {
+      int c = data[i];
+
+      if (!isprint(c)) {
+         c = '.';
+      }
+      if (!(i % HEXDUMP_BYTES_IN_BLOCK)) {
+         uart_tx_out_func(' ', NULL);
+      }
+      uart_tx_out_func(c, NULL);
+   }
+   uart_tx_out_func('\n', NULL);
+}
+
+static void uart_log_dump_hex(int prefix, const uint8_t *data, size_t data_len)
+{
+   size_t bytes = data_len <= HEXDUMP_BYTES_IN_BLOCK ? HEXDUMP_BYTES_IN_BLOCK : HEXDUMP_BYTES_IN_LINE;
+   while (data_len) {
+      size_t length = MIN(data_len, HEXDUMP_BYTES_IN_LINE);
+      uart_log_dump_hex_line(prefix, bytes, data, length);
+      data += length;
+      data_len -= length;
+   }
+}
+
 static void uart_log_process(const struct log_backend *const backend,
                              union log_msg_generic *msg)
 {
    static char level_tab[] = {0, 'E', 'W', 'I', 'D'};
 
    size_t plen;
+   size_t dlen;
    uint8_t *package = log_msg_get_package(&msg->log, &plen);
-   if (plen) {
-      char level = level_tab[msg->log.hdr.desc.level];
+   uint8_t *data = log_msg_get_data(&msg->log, &dlen);
+   if (plen || dlen) {
+      int prefix = 0;
       bool off;
+      char level = level_tab[msg->log.hdr.desc.level];
 
       k_mutex_lock(&uart_tx_mutex, K_FOREVER);
       off = uart_tx_in_off;
@@ -343,11 +399,17 @@ static void uart_log_process(const struct log_backend *const backend,
                     atomic_test_bit(&uart_at_state, UART_AT_CMD_EXECUTING)) {
             level = 'b';
          }
-         cbprintf(uart_tx_out_func, NULL, "%c %02d.%03d: ",
-                  level, seconds, milliseconds);
+         prefix = cbprintf(uart_tx_out_func, NULL, "%c %02d.%03d: ",
+                           level, seconds, milliseconds);
       }
-      cbpprintf(uart_tx_out_func, NULL, package);
+      if (plen) {
+         cbpprintf(uart_tx_out_func, NULL, package);
+      }
       uart_tx_out_flush(false);
+      if (dlen) {
+         uart_log_dump_hex(prefix, data, dlen);
+         uart_tx_out_flush(false);
+      }
    }
 }
 
@@ -435,12 +497,6 @@ static inline void uart_tx_pause(bool pause)
 
 static inline void uart_tx_ready(void)
 {
-   // empty
-}
-
-static void uart_tx_off(bool off)
-{
-   ARG_UNUSED(off);
    // empty
 }
 

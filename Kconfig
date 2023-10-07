@@ -302,6 +302,16 @@ config UART_RECEIVER
     bool "Use UART receiver for cmd and at-cmd."
 	default n
 
+config LOG_BACKEND_UART_RECEIVER
+   bool "Use UART receiver as log backend."
+   depends on UART_RECEIVER
+   default y
+
+config LOG_BACKEND_UART_RECEIVER_AUTOSTART
+   bool
+   depends on LOG_BACKEND_UART_RECEIVER
+   default y
+
 config UART_UPDATE
     bool "Support firmware update via UART cmd."
 	default y
@@ -310,7 +320,7 @@ config UART_UPDATE
 	select FLASH_MAP
 	select STREAM_FLASH
 	select IMG_MANAGER
-	depends on UART_RECEIVER
+	depends on LOG_BACKEND_UART_RECEIVER
 
 config COAP_UPDATE
     bool "Enabel CoAP firmware updates."
@@ -586,16 +596,6 @@ config APPL_MODEL_DESCRIPTION
 		Select firmware for model. 
 
 # Logging
-
-config LOG_BACKEND_UART_RECEIVER
-   bool
-   depends on UART_RECEIVER
-   default y if UART_RECEIVER
-
-config LOG_BACKEND_UART_RECEIVER_AUTOSTART
-   bool
-   depends on LOG_BACKEND_UART_RECEIVER
-   default y if LOG_BACKEND_UART_RECEIVER
 
 module = COAP_CLIENT
 module-str = CoAP Client
