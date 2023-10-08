@@ -324,7 +324,7 @@ config UART_UPDATE
 
 config COAP_UPDATE
     bool "Enabel CoAP firmware updates."
-	default n
+	default y
 	select BOOTLOADER_MCUBOOT
 	select FLASH
 	select FLASH_MAP
