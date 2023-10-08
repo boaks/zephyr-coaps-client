@@ -251,7 +251,8 @@ int modem_cmd_config(const char *config)
 void modem_cmd_config_help(void)
 {
    LOG_INF("> help cfg:");
-   LOG_INF("  cfg         : reset configuration.");
+   LOG_INF("  cfg         : read configuration.");
+   LOG_INF("  cfg init    : reset configuration.");
    LOG_INF("  cfg <plmn> <modes>");
    LOG_INF("      <plmn>  : either auto or numerical plmn, e.g. 26202");
    LOG_INF("      <modes> : " CFG_NB_IOT ", " CFG_LTE_M ", " CFG_NB_IOT " " CFG_LTE_M ", " CFG_LTE_M " " CFG_NB_IOT ".");
@@ -272,6 +273,29 @@ int modem_cmd_connect(const char *config)
    memset(value2, 0, sizeof(value2));
    cur = parse_next_text(cur, ' ', value1, sizeof(value1));
    cur = parse_next_text(cur, ' ', value2, sizeof(value2));
+   if (!value1[0]) {
+      char mode = 0;
+      char type = 0;
+      char net_mode = 0;
+      char plmn[16];
+      char buf[32];
+      const char *desc = "none";
+
+      memset(plmn, 0, sizeof(plmn));
+      err = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS?");
+      if (err > 0) {
+         err = sscanf(buf, " %c,%c,%15[^,],%c",
+                      &mode, &type, plmn, &net_mode);
+         strtrunc(plmn, '"');
+      }
+      if (net_mode == '7') {
+         desc = "m1";
+      } else if (net_mode == '9') {
+         desc = "nb";
+      }
+      LOG_INF("con %s%s %s", mode == '0' ? "auto " : "", plmn, desc);
+      return 0;
+   }
    if (stricmp("auto", value1) == 0) {
       if (value2[0]) {
          LOG_INF("con auto %s", value2);
@@ -324,6 +348,7 @@ int modem_cmd_connect(const char *config)
 void modem_cmd_connect_help(void)
 {
    LOG_INF("> help con:");
+   LOG_INF("  con         : read connection information");
    LOG_INF("  con <plmn> [<mode>]");
    LOG_INF("      <plmn>  : numerical plmn, e.g. 26202");
    LOG_INF("      <mode>  : optional mode, " CFG_NB_IOT " or " CFG_LTE_M ".");

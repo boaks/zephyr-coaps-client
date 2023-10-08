@@ -70,6 +70,8 @@ static void at_cmd_response_fn(struct k_work *work);
 
 static const struct device *const uart_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
 
+static int64_t at_cmd_time = 0;
+
 static char at_cmd_buf[CONFIG_AT_CMD_MAX_LEN];
 static int uart_rx_buf_id = 0;
 static uint8_t uart_rx_buf[2][CONFIG_UART_BUFFER_LEN];
@@ -568,6 +570,7 @@ static void at_cmd_result(int res)
          }
          LOG_INF("ERROR %d%s\n", -res, desc);
       }
+
       if (finish) {
          if (res < 0) {
             printk("ERROR\n");
@@ -661,6 +664,18 @@ static void at_coneval_result(const char *result)
    }
 }
 
+static void at_cmd_finish(void)
+{
+   if (atomic_test_and_clear_bit(&uart_at_state, UART_AT_CMD_PENDING)) {
+      at_cmd_time = k_uptime_get() - at_cmd_time;
+      if (at_cmd_time > 5000) {
+         LOG_INF("%ld s", (long)((at_cmd_time + 500) / 1000));
+      } else if (at_cmd_time > 500) {
+         LOG_INF("%ld ms", (long)at_cmd_time);
+      }
+   }
+}
+
 static void at_cmd_response_fn(struct k_work *work)
 {
    int index = strstart(at_cmd_buf, "%CONEVAL: ", true);
@@ -677,7 +692,7 @@ static void at_cmd_response_fn(struct k_work *work)
    } else {
       at_cmd_result(-1);
    }
-   atomic_clear_bit(&uart_at_state, UART_AT_CMD_PENDING);
+   at_cmd_finish();
 }
 
 static void at_cmd_resp_callback(const char *at_response)
@@ -715,6 +730,8 @@ static int at_cmd_send()
    } else if (!stricmp(at_cmd_buf, "state")) {
       res = modem_read_network_info(NULL, true);
       return RESULT(res);
+   } else if (!stricmp(at_cmd_buf, "search")) {
+      strcpy(at_cmd_buf, "AT+COPS=?");
    } else if (!stricmp(at_cmd_buf, "net")) {
       res = coap_appl_client_prepare_net_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
       res = coap_appl_client_prepare_net_stats(at_cmd_buf, sizeof(at_cmd_buf), 0);
@@ -742,7 +759,7 @@ static int at_cmd_send()
          return RESULT(res);
       }
 
-      i = strstart(at_cmd_buf, "con ", true);
+      i = strstartsep(at_cmd_buf, "con", true, " ");
       if (i > 0) {
          // blocking AT cmd
          uart_tx_pause(false);
@@ -860,6 +877,7 @@ static int at_cmd()
       LOG_INF("  rai     : configure RAI.(*?)");
       LOG_INF("  remo    : reduced mobility.(*?)");
       LOG_INF("  scan    : network scan.(*?)");
+      LOG_INF("  search  : network search.(*)");
       LOG_INF("  send    : send message.");
       LOG_INF("  sim     : read SIM-card info.(*)");
 #ifdef CONFIG_SMS
@@ -943,9 +961,10 @@ static int at_cmd()
       LOG_INF("Modem pending ...");
       return 1;
    }
+   at_cmd_time = k_uptime_get();
    res = at_cmd_send();
    if (res < 1) {
-      atomic_clear_bit(&uart_at_state, UART_AT_CMD_PENDING);
+      at_cmd_finish();
    }
    return res;
 }

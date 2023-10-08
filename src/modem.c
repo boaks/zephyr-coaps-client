@@ -605,6 +605,8 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
    static unsigned int scans = 0;
    static unsigned int hits = 0;
    static int64_t all_scan_time = 0;
+   int64_t now = k_uptime_get();
+   int64_t all = 0;
 
    int current_cell;
 
@@ -612,6 +614,16 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
 
    k_mutex_lock(&lte_mutex, K_FOREVER);
    current_cell = network_info.cell;
+   if (scan_time) {
+      now -= scan_time;
+      scan_time = 0;
+      if (cells_info->ncells_count) {
+         all_scan_time += now;
+         all = all_scan_time;
+      }
+   } else {
+      now = 0;
+   }
    k_mutex_unlock(&lte_mutex);
 
    if (cells_info->current_cell.id != LTE_LC_CELL_EUTRAN_ID_INVALID) {
@@ -621,44 +633,11 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
               gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
               gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
    }
-   if (cells_info->ncells_count) {
-      const struct lte_lc_ncell *neighbor_cells = cells_info->neighbor_cells;
-      const struct lte_lc_ncell *neighbor_cells_sorted[cells_info->ncells_count];
-      for (int index = 0; index < cells_info->ncells_count; ++index) {
-         int quality = lte_lc_ncell_quality(neighbor_cells);
-         neighbor_cells_sorted[index] = neighbor_cells;
-         for (int index2 = index; index2 > 0; --index2) {
-            if (quality <= lte_lc_ncell_quality(neighbor_cells_sorted[index2 - 1])) {
-               break;
-            }
-            neighbor_cells_sorted[index2] = neighbor_cells_sorted[index2 - 1];
-            neighbor_cells_sorted[index2 - 1] = neighbor_cells;
-         }
-         ++neighbor_cells;
-      }
-      int w = cells_info->ncells_count > 9 ? 2 : 1;
-      for (int index = 0; index < cells_info->ncells_count; ++index) {
-         neighbor_cells = neighbor_cells_sorted[index];
-         LOG_INF("[%*d]: earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", w,
-                 index, neighbor_cells->earfcn, neighbor_cells->phys_cell_id,
-                 neighbor_cells->rsrp - 140, (neighbor_cells->rsrq - 39) / 2);
-         ++neighbor_cells;
-      }
-   } else if (cells_info->gci_cells_count) {
+   if (cells_info->gci_cells_count) {
       int quality;
       const struct lte_lc_cell *gci_cells = cells_info->gci_cells;
       const struct lte_lc_cell *gci_cells_sorted[cells_info->gci_cells_count];
       int w = cells_info->gci_cells_count > 9 ? 2 : 1;
-      int64_t now = k_uptime_get();
-
-      k_mutex_lock(&lte_mutex, K_FOREVER);
-      if (scan_time) {
-         now -= scan_time;
-         scan_time = 0;
-      } else {
-         now = 0;
-      }
-      k_mutex_unlock(&lte_mutex);
 
       for (int index = 0; index < cells_info->gci_cells_count; ++index) {
          quality = lte_lc_cell_quality(gci_cells);
@@ -688,11 +667,38 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
                  gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
       }
       if (now) {
-         all_scan_time += now;
+         LOG_INF("Scans %u, improves %u, %lu s, overall %lu s", scans, hits,
+                 (unsigned long)MSEC_TO_SEC(now),
+                 (unsigned long)MSEC_TO_SEC(all));
       }
-      LOG_INF("Scans %u, improves %u, %lu s, overall %lu s", scans, hits,
-              (unsigned long)MSEC_TO_SEC(now),
-              (unsigned long)MSEC_TO_SEC(all_scan_time));
+   } else {
+      if (cells_info->ncells_count) {
+         const struct lte_lc_ncell *neighbor_cells = cells_info->neighbor_cells;
+         const struct lte_lc_ncell *neighbor_cells_sorted[cells_info->ncells_count];
+         for (int index = 0; index < cells_info->ncells_count; ++index) {
+            int quality = lte_lc_ncell_quality(neighbor_cells);
+            neighbor_cells_sorted[index] = neighbor_cells;
+            for (int index2 = index; index2 > 0; --index2) {
+               if (quality <= lte_lc_ncell_quality(neighbor_cells_sorted[index2 - 1])) {
+                  break;
+               }
+               neighbor_cells_sorted[index2] = neighbor_cells_sorted[index2 - 1];
+               neighbor_cells_sorted[index2 - 1] = neighbor_cells;
+            }
+            ++neighbor_cells;
+         }
+         int w = cells_info->ncells_count > 9 ? 2 : 1;
+         for (int index = 0; index < cells_info->ncells_count; ++index) {
+            neighbor_cells = neighbor_cells_sorted[index];
+            LOG_INF("[%*d]: earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", w,
+                    index, neighbor_cells->earfcn, neighbor_cells->phys_cell_id,
+                    neighbor_cells->rsrp - 140, (neighbor_cells->rsrq - 39) / 2);
+            ++neighbor_cells;
+         }
+      }
+      if (now) {
+         LOG_INF("Scan %lu s", (unsigned long)MSEC_TO_SEC(now));
+      }
    }
 }
 
@@ -1176,7 +1182,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       } else {
          LOG_INF("Access stratum RAI enabled");
       }
-#else /* CONFIG_AS_RAI_ON */
+#else  /* CONFIG_AS_RAI_ON */
       /** Release Assistance Indication  */
       err = modem_at_cmd(buf, sizeof(buf), "%RAI: ", "AT%RAI=0");
       if (err < 0) {
@@ -1235,7 +1241,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       if (err > 0) {
          LOG_INF("DATAPRFL: %s", buf);
       }
-      // no-loop, return to 1, default band opt, 
+      // no-loop, return to 1, default band opt,
       // pause search for 300, 600, 1200, 3600, 7200 seconds
       err = modem_at_cmd(buf, sizeof(buf), NULL,
                          "AT%PERIODICSEARCHCONF=0,0,1,1,"
