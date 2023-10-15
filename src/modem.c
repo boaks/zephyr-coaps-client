@@ -298,8 +298,6 @@ bool modem_set_preference(enum preference_mode mode)
    return false;
 }
 
-#define NETWORK_STATUS (lte_ready ? 0 : -EINPROGRESS)
-
 static int lte_ready_wait(k_timeout_t timeout)
 {
    int status = -EINPROGRESS;

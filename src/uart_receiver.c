@@ -62,6 +62,8 @@ LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 
 #define CONFIG_UART_RX_INPUT_TIMEOUT_S 30
 
+#define CONFIG_UART_TX_OUTPUT_TIMEOUT_MS 1500
+
 static void uart_enable_rx_fn(struct k_work *work);
 static void uart_pause_tx_fn(struct k_work *work);
 static int uart_init(void);
@@ -79,9 +81,10 @@ static uint8_t uart_rx_buf[2][CONFIG_UART_BUFFER_LEN];
 #define UART_RX_ENABLED 0
 #define UART_AT_CMD_EXECUTING 1
 #define UART_AT_CMD_PENDING 2
-#define UART_UPDATE 3
-#define UART_UPDATE_START 4
-#define UART_UPDATE_APPLY 5
+#define UART_SUSPENDED 3
+#define UART_UPDATE 4
+#define UART_UPDATE_START 5
+#define UART_UPDATE_APPLY 6
 
 static atomic_t uart_at_state = ATOMIC_INIT(0);
 
@@ -235,21 +238,21 @@ static inline void uart_tx_ready(void)
 
 static int uart_tx_out(uint8_t *data, size_t length, bool panic)
 {
+   if (atomic_test_bit(&uart_at_state, UART_SUSPENDED)) {
+      return length;
+   }
    if (panic || length == 1) {
       for (size_t i = 0; i < length; i++) {
          uart_poll_out(uart_dev, data[i]);
       }
    } else {
-      int err;
 
       k_sem_reset(&uart_tx_sem);
 
-      err = uart_tx(uart_dev, data, length, SYS_FOREVER_US);
-      __ASSERT_NO_MSG(err == 0);
+      /* SYS_FOREVER_US disable timeout */
+      uart_tx(uart_dev, data, length, SYS_FOREVER_US);
 
-      err = k_sem_take(&uart_tx_sem, K_FOREVER);
-      __ASSERT_NO_MSG(err == 0);
-      (void)err;
+      k_sem_take(&uart_tx_sem, K_MSEC(CONFIG_UART_TX_OUTPUT_TIMEOUT_MS));
    }
    return length;
 }
@@ -365,52 +368,96 @@ static void uart_log_dump_hex(int prefix, const uint8_t *data, size_t data_len)
    }
 }
 
+static const char *uart_log_get_source_name(struct log_msg *msg)
+{
+   void *source = (void *)log_msg_get_source(msg);
+   if (source != NULL) {
+      uint8_t domain_id = log_msg_get_domain(msg);
+      int16_t source_id = IS_ENABLED(CONFIG_LOG_RUNTIME_FILTERING) ? log_dynamic_source_id(source) : log_const_source_id(source);
+      if (source_id >= 0) {
+         return log_source_name_get(domain_id, source_id);
+      }
+   }
+   return NULL;
+}
+
+static bool uart_log_filter(struct log_msg *msg)
+{
+   static int last_level = -1;
+   static const char *last_source = NULL;
+
+   const char *source_name = uart_log_get_source_name(msg);
+
+   if (last_level == msg->hdr.desc.level) {
+      if (source_name && strcmp("i2c_nrfx_twim", source_name) == 0) {
+         if (last_source && strcmp(last_source, source_name) == 0) {
+            return true;
+         }
+      }
+   }
+   last_level = msg->hdr.desc.level;
+   last_source = source_name;
+
+   return false;
+}
+
 static void uart_log_process(const struct log_backend *const backend,
                              union log_msg_generic *msg)
 {
-   static char level_tab[] = {0, 'E', 'W', 'I', 'D'};
+   if (atomic_test_bit(&uart_at_state, UART_SUSPENDED)) {
+      return;
+   }
 
-   size_t plen;
-   size_t dlen;
-   uint8_t *package = log_msg_get_package(&msg->log, &plen);
-   uint8_t *data = log_msg_get_data(&msg->log, &dlen);
-   if (plen || dlen) {
-      int prefix = 0;
-      bool off;
-      char level = level_tab[msg->log.hdr.desc.level];
+   {
+      static char level_tab[] = {0, 'E', 'W', 'I', 'D'};
 
-      k_mutex_lock(&uart_tx_mutex, K_FOREVER);
-      off = uart_tx_in_off;
-#ifndef CONFIG_LOG_MODE_IMMEDIATE
-      if (!off && uart_tx_in_pause) {
-         k_condvar_wait(&uart_tx_condvar, &uart_tx_mutex, K_FOREVER);
-      }
-#endif
-      k_mutex_unlock(&uart_tx_mutex);
-      if (off) {
-         // silently drop during XMODEM
-         return;
-      }
-      if (level) {
-         int cycles = sys_clock_hw_cycles_per_sec();
-         log_timestamp_t seconds = (msg->log.hdr.timestamp / cycles) % 100;
-         log_timestamp_t milliseconds = (msg->log.hdr.timestamp * 1000 / cycles) % 1000;
-         if (atomic_test_bit(&uart_at_state, UART_UPDATE)) {
-            level = 'u';
-         } else if (atomic_test_bit(&uart_at_state, UART_AT_CMD_PENDING) ||
-                    atomic_test_bit(&uart_at_state, UART_AT_CMD_EXECUTING)) {
-            level = 'b';
+      size_t plen;
+      size_t dlen;
+      uint8_t *package = log_msg_get_package(&msg->log, &plen);
+      uint8_t *data = log_msg_get_data(&msg->log, &dlen);
+
+      if (plen || dlen) {
+         int prefix = 0;
+         bool off;
+         char level = level_tab[msg->log.hdr.desc.level];
+
+         if (uart_log_filter(&msg->log)) {
+            return;
          }
-         prefix = cbprintf(uart_tx_out_func, NULL, "%c %02d.%03d: ",
-                           level, seconds, milliseconds);
-      }
-      if (plen) {
-         cbpprintf(uart_tx_out_func, NULL, package);
-      }
-      uart_tx_out_flush(false);
-      if (dlen) {
-         uart_log_dump_hex(prefix, data, dlen);
+
+         k_mutex_lock(&uart_tx_mutex, K_FOREVER);
+         off = uart_tx_in_off;
+#ifndef CONFIG_LOG_MODE_IMMEDIATE
+         if (!off && uart_tx_in_pause) {
+            k_condvar_wait(&uart_tx_condvar, &uart_tx_mutex, K_FOREVER);
+         }
+#endif
+         k_mutex_unlock(&uart_tx_mutex);
+         if (off) {
+            // silently drop during XMODEM
+            return;
+         }
+         if (level) {
+            int cycles = sys_clock_hw_cycles_per_sec();
+            log_timestamp_t seconds = (msg->log.hdr.timestamp / cycles) % 100;
+            log_timestamp_t milliseconds = (msg->log.hdr.timestamp * 1000 / cycles) % 1000;
+            if (atomic_test_bit(&uart_at_state, UART_UPDATE)) {
+               level = 'u';
+            } else if (atomic_test_bit(&uart_at_state, UART_AT_CMD_PENDING) ||
+                       atomic_test_bit(&uart_at_state, UART_AT_CMD_EXECUTING)) {
+               level = 'b';
+            }
+            prefix = cbprintf(uart_tx_out_func, NULL, "%c %02d.%03d : ",
+                              level, seconds, milliseconds);
+         }
+         if (plen) {
+            cbpprintf(uart_tx_out_func, NULL, package);
+         }
          uart_tx_out_flush(false);
+         if (dlen) {
+            uart_log_dump_hex(prefix, data, dlen);
+            uart_tx_out_flush(false);
+         }
       }
    }
 }
@@ -514,8 +561,14 @@ static void uart_enable_rx_fn(struct k_work *work)
    int err = uart_get_lines();
    if (err == 1) {
       pm_device_action_run(uart_dev, PM_DEVICE_ACTION_RESUME);
+      atomic_clear_bit(&uart_at_state, UART_SUSPENDED);
    } else if (err == 0) {
-      pm_device_action_run(uart_dev, PM_DEVICE_ACTION_SUSPEND);
+      if (k_uptime_get() > 2000 && k_sem_count_get(&uart_tx_sem) == 0) {
+         // early suspend seems to crash
+         atomic_set_bit(&uart_at_state, UART_SUSPENDED);
+         pm_device_action_run(uart_dev, PM_DEVICE_ACTION_SUSPEND);
+         uart_tx_ready();
+      }
    }
    if (err == 1 || err == -ENODATA) {
       err = uart_err_check(uart_dev);
@@ -1319,10 +1372,9 @@ static int uart_receiver_init(void)
                       K_THREAD_STACK_SIZEOF(uart_stack),
                       CONFIG_UART_THREAD_PRIO, NULL);
 
-   uart_reschedule_rx_enable(K_MSEC(100));
+   uart_reschedule_rx_enable(K_MSEC(CONFIG_UART_RX_CHECK_INTERVAL_MS));
 
    return err;
 }
 
-SYS_INIT(uart_receiver_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
-// SYS_INIT(uart_receiver_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+SYS_INIT(uart_receiver_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);

@@ -124,7 +124,7 @@ static K_WORK_DELAYABLE_DEFINE(led_blue_timer_work, ui_led_timer_expiry_fn);
 #endif
 
 static K_MUTEX_DEFINE(ui_mutex);
-static K_SEM_DEFINE(ui_input_trigger, 0, 1);
+static K_SEM_DEFINE(ui_input_trigger, 1, 1);
 static volatile int ui_input_duration = 0;
 
 static volatile bool ui_enabled = true;
@@ -167,7 +167,9 @@ static void ui_button_handle_fn(struct k_work *work)
                   ui_input_duration = 2;
                   last = now;
                   ui_enable(true);
-                  ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
+                  if (k_sem_count_get(&ui_input_trigger)) {
+                     ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
+                  }
                   if (button_callback != NULL) {
                      button_callback(0);
                      LOG_DBG("UI button callback %u", button_counter);
@@ -185,9 +187,11 @@ static void ui_button_handle_fn(struct k_work *work)
          last = now;
          ui_input_duration = 3;
          ui_enable(true);
-         ui_led_op(LED_COLOR_BLUE, LED_BLINK);
-         ui_led_op(LED_COLOR_GREEN, LED_BLINK);
-         ui_led_op(LED_COLOR_RED, LED_BLINK);
+         if (k_sem_count_get(&ui_input_trigger)) {
+            ui_led_op(LED_COLOR_BLUE, LED_BLINK);
+            ui_led_op(LED_COLOR_GREEN, LED_BLINK);
+            ui_led_op(LED_COLOR_RED, LED_BLINK);
+         }
          if (button_callback != NULL) {
             button_callback(1);
             LOG_DBG("UI button long callback %u", button_counter);
