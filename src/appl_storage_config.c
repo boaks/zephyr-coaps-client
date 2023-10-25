@@ -11,19 +11,31 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-#include "appl_storage.h"
+#include <zephyr/device.h>
+
 #include "appl_storage_config.h"
 
-#if defined(CONFIG_FLASH) || defined(CONFIG_EEPROM)
+#if defined(CONFIG_EEPROM) && (DT_NODE_HAS_STATUS(DT_ALIAS(appl_storage_eeprom), okay))
+#define STORAGE_FLASH_DEVICE false
+#define DT_STORAGE_DEV DT_ALIAS(appl_storage_eeprom)
+#elif defined(CONFIG_FLASH) && (DT_NODE_HAS_STATUS(DT_ALIAS(appl_storage_flash), okay))
+#define STORAGE_FLASH_DEVICE true
+#define DT_STORAGE_DEV DT_ALIAS(appl_storage_flash)
+#endif
 
 const struct storage_config storage_configs[] = {
-    {.desc = "boot-code",
+#ifdef DT_STORAGE_DEV
+    {
+     .storage_device = DEVICE_DT_GET_OR_NULL(DT_STORAGE_DEV),
+     .desc = "boot-code",
+     .is_flash_device = STORAGE_FLASH_DEVICE,
+     .id = REBOOT_CODE_ID,
      .magic = 0x01200340,
-     .version = 1,
+     .version = 2,
      .value_size = sizeof(uint16_t),
-     .pages = 4},
+     .pages = 4
+    }
+#endif     
 };
 
 const size_t storage_config_count = sizeof(storage_configs) / sizeof(struct storage_config);
-
-#endif /* CONFIG_FLASH || CONFIG_EEPROM */

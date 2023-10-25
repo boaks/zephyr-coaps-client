@@ -14,7 +14,24 @@
 #ifndef APPL_STORAGE_CONFIG_H
 #define APPL_STORAGE_CONFIG_H
 
-#define REBOOT_CODE_ID 0
+#include <sys/types.h>
 
+#define REBOOT_CODE_ID 1
+
+struct device;
+
+struct storage_config {
+    const struct device *storage_device;
+    const char* desc;
+    bool is_flash_device;
+    int id;
+    int magic;
+    int version;
+    size_t pages;
+    size_t value_size;
+};
+
+extern const struct storage_config storage_configs[];
+extern const size_t storage_config_count;
 
 #endif /* APPL_STORAGE_CONFIG_H */
