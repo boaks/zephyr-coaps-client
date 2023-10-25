@@ -50,6 +50,10 @@
 #include "accelerometer_sensor.h"
 #endif
 
+#ifdef CONFIG_NAU7802_SCALE
+#include "nau7802.h"
+#endif
+
 #include "environment_sensor.h"
 
 #define COAP_ACK_TIMEOUT 3
@@ -104,6 +108,7 @@ typedef struct dtls_app_data_t {
 #define PM_SUSPENDED 7
 #define APN_RATE_LIMIT 8
 #define APN_RATE_LIMIT_RESTART 9
+#define SETUP_MODE 10
 
 static atomic_t general_states = ATOMIC_INIT(0);
 
@@ -201,6 +206,7 @@ static void dtls_power_management(void)
       k_mutex_lock(&dtls_pm_mutex, K_FOREVER);
       suspend = atomic_test_bit(&general_states, LTE_SLEEPING) &&
                 !atomic_test_bit(&general_states, PM_PREVENT_SUSPEND) &&
+                !atomic_test_bit(&general_states, SETUP_MODE) &&
                 app_data.request_state == NONE;
       k_mutex_unlock(&dtls_pm_mutex);
    }
@@ -392,6 +398,10 @@ static bool dtls_trigger_pending(void)
 
 static void dtls_manual_trigger(int duration)
 {
+   if (atomic_test_bit(&general_states, SETUP_MODE)) {
+      return;
+   }
+
    if (!appl_ready) {
       trigger_duration = 0;
    } else {
@@ -997,6 +1007,58 @@ static void accelerometer_handler(const struct accelerometer_evt *const evt)
 }
 #endif
 
+#ifdef CONFIG_ADC_SCALE
+
+static bool dtls_setup_mode(void)
+{
+   bool restart = false;
+   bool request = false;
+   int select_mode = 1;
+   int trigger = 0;
+
+   atomic_set_bit(&general_states, SETUP_MODE);
+   dtls_power_management();
+   k_sleep(K_MSEC(500));
+   ui_led_op(LED_COLOR_ALL, LED_CLEAR);
+   while (select_mode < 10) {
+      if (select_mode & 1) {
+         ui_led_op(LED_COLOR_GREEN, LED_SET);
+      } else {
+         ui_led_op(LED_COLOR_BLUE, LED_SET);
+      }
+      dtls_info("Select mode.");
+      trigger = ui_input(K_MSEC(7000));
+      ui_led_op(LED_COLOR_ALL, LED_CLEAR);
+      if (trigger >= 0) {
+         break;
+      }
+      ++select_mode;
+      if (select_mode >= 10) {
+         break;
+      }
+      k_sleep(K_MSEC(300));
+   }
+   if (trigger == 1) {
+      // cancel setup
+      dtls_info("Cancel.");
+   } else if (select_mode & 1) {
+      // calibrate setup
+      request = scale_calibrate_setup();
+   } else {
+      // modem reset
+      dtls_info("Reset modem.");
+      restart = true;
+   }
+   k_sem_reset(&dtls_trigger_msg);
+   if (request) {
+      dtls_trigger();
+   }
+   atomic_clear_bit(&general_states, SETUP_MODE);
+
+   return restart;
+}
+#endif
+
 #define MAX_MULTI_IMSI_SEARCH_TIME_S (30 * 60)
 
 union lte_info {
@@ -1244,7 +1306,11 @@ static int dtls_loop(session_t *dst, int flags)
             restarting_modem = true;
          }
       }
-
+#ifdef CONFIG_ADC_SCALE
+      if (trigger_duration) {
+         trigger_duration = dtls_setup_mode();
+      }
+#endif
       if (trigger_duration) {
          restarting_modem = true;
       }

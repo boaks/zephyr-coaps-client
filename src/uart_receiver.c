@@ -908,6 +908,12 @@ static int at_cmd()
    } else if (!stricmp(at_cmd_buf, "dev")) {
       res = coap_appl_client_prepare_modem_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
       return RESULT(res);
+#ifdef CONFIG_ADC_SCALE
+   } else if (!stricmp(at_cmd_buf, "scale")) {
+      uart_tx_pause(false);
+      res = coap_appl_client_prepare_scale_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
+      return RESULT(res);
+#endif
    } else if (!stricmp(at_cmd_buf, "help")) {
       LOG_INF("> help:");
       LOG_INF("  at???   : modem at-cmd.(*)");
@@ -929,6 +935,9 @@ static int at_cmd()
       LOG_INF("  reboot  : reboot device.");
       LOG_INF("  rai     : configure RAI.(*?)");
       LOG_INF("  remo    : reduced mobility.(*?)");
+#ifdef CONFIG_ADC_SCALE
+      LOG_INF("  scale   : read scale info.");
+#endif
       LOG_INF("  scan    : network scan.(*?)");
       LOG_INF("  search  : network search.(*)");
       LOG_INF("  send    : send message.");

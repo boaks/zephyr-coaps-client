@@ -1,0 +1,53 @@
+#
+# Copyright (c) 2023 Achim Kraus CloudCoap.net
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Eclipse Public License 2.0 which is available at
+# http://www.eclipse.org/legal/epl-2.0
+#
+# SPDX-License-Identifier: EPL-2.0
+#
+
+description: |
+  Description for a scale based on I2C with ADC (NAU7802) and
+  calibration EEPROM.
+
+compatible: "nau7802-scale"
+
+include: i2c-device.yaml
+
+properties:
+  avref_mv:
+    type: int
+    required: true
+    description: Analog Voltage Reference in mV
+    enum:
+      - 2400
+      - 2700
+      - 3000
+      - 3300
+      - 3600
+      - 3900
+      - 4200
+      - 4500
+
+  gain:
+    type: int
+    required: true
+    description: Input GAIN
+    enum:
+      - 1
+      - 2
+      - 4
+      - 8
+      - 16
+      - 32
+      - 64
+      - 128
+
+  calibration_storage:
+    type: phandle
+    required: true

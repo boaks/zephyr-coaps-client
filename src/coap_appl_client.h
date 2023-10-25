@@ -41,6 +41,8 @@ int coap_appl_client_prepare_net_stats(char* buf, size_t len, int flags);
 
 int coap_appl_client_prepare_env_info(char *buf, size_t len, int flags);
 
+int coap_appl_client_prepare_scale_info(char *buf, size_t len, int flags);
+
 int coap_appl_client_prepare_post(char *buf, size_t len, int flags);
 
 int coap_appl_client_message(const uint8_t** buffer);

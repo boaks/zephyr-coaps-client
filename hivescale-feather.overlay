@@ -1,0 +1,129 @@
+/*
+ * Copyright (c) 2023 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http: //www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+
+/*
+ * Usage:
+ * 
+ * west build -d build_feather_nrf9160_ns -b circuitdojo_feather_nrf9160_ns --pristine -- \
+ *    -DOVERLAY_CONFIG="60min0-prj.conf;at-cmd-prj.conf;hivescale-prj.conf" \
+ *    -DDTC_OVERLAY_FILE="hivescale-feather.overlay" -DCONFIG_BATTERY_TYPE_ENELOOP_2000_MAH=y
+ */
+
+#include "boards/circuitdojo_feather_nrf9160_ns.overlay"
+
+
+&pinctrl {
+
+	i2c2_default: i2c2_default {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 1)>,
+					<NRF_PSEL(TWIM_SCL, 0, 2)>;
+		};
+	};
+
+	i2c2_sleep: i2c2_sleep {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 1)>,
+					<NRF_PSEL(TWIM_SCL, 0, 2)>;
+			low-power-enable;
+		};
+	};
+};
+
+&i2c1 {
+
+	eeprom_a: eeprom@50 {
+		/* AT24HC04B (4 kbit eeprom) */
+		/* 0x8000 config register not accessible! If required, set size to 64K */
+		compatible = "atmel,at24";
+		reg = <0x50>;
+		size = <512>;
+		pagesize = <16>;
+		address-width = <8>;
+		timeout = <5>;
+	};
+
+	scale_a: scale@2a {
+		compatible = "nau7802-scale";
+		reg = <0x2a>;
+		avref_mv = <2700>;
+		gain = <128>;
+		calibration_storage = <&eeprom_a>;
+	};
+
+};
+
+&i2c2 {
+	compatible = "nordic,nrf-twim";
+	status = "okay";
+	pinctrl-0 = <&i2c2_default>;
+	pinctrl-1 = <&i2c2_sleep>;
+	pinctrl-names = "default", "sleep";
+
+	eeprom_b: eeprom@50 {
+		/* AT24HC04B (4 kbit eeprom) */
+		/* 0x8000 config register not accessible! If required, set size to 64K */
+		compatible = "atmel,at24";
+		reg = <0x50>;
+		size = <512>;
+		pagesize = <16>;
+		address-width = <8>;
+		timeout = <5>;
+	};
+
+	scale_b: scale@2a {
+		compatible = "nau7802-scale";
+		reg = <0x2a>;
+		avref_mv = <2700>;
+		gain = <128>;
+		calibration_storage = <&eeprom_b>;
+	};
+
+};
+
+/    {
+
+	leds {
+
+		red_led_ext: led_1 {
+			gpios = <&gpio0 19 GPIO_ACTIVE_LOW>;
+		};
+		green_led_ext: led_2 {
+			gpios = <&gpio0 22 GPIO_ACTIVE_LOW>;
+		};
+		blue_led_ext: led_3 {
+			gpios = <&gpio0 21 GPIO_ACTIVE_LOW>;
+		};
+
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+		button1: button_1 {
+			gpios = <&gpio0 17 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+		};
+	};
+
+
+	aliases {
+		led0 = &red_led_ext;
+		led1 = &green_led_ext;
+		led2 = &blue_led_ext;
+
+		sw0 = &button1;
+
+		scale-a = &scale_a;
+		scale-b = &scale_b;
+	};
+
+};

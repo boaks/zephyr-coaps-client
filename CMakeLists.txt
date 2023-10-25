@@ -47,8 +47,6 @@ target_sources_ifdef(CONFIG_UART_UPDATE app PRIVATE src/appl_update_xmodem.c)
 
 target_sources_ifdef(CONFIG_COAP_UPDATE app PRIVATE src/appl_update_coap.c)
 
-
-
 target_sources_ifdef(CONFIG_LOCATION_ENABLE app PRIVATE src/location.c)
 
 target_sources_ifdef(CONFIG_MOTION_SENSOR app PRIVATE src/accelerometer_sensor.c)
@@ -58,6 +56,8 @@ target_sources_ifdef(CONFIG_ENVIRONMENT_SENSOR app PRIVATE src/environment_senso
 target_sources_ifdef(CONFIG_SHT21 app PRIVATE src/environment_sht21.c src/environment_history.c)
 
 target_sources_ifdef(CONFIG_BATTERY_ADC app PRIVATE src/battery_adc.c)
+
+target_sources_ifdef(CONFIG_NAU7802_SCALE app PRIVATE src/nau7802.c)
 
 if (CONFIG_BME680_BSEC)
         set(bsec_version "bsec_1-4-9-2_generic_release")

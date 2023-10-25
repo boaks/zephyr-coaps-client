@@ -18,6 +18,12 @@
 
 #define REBOOT_CODE_ID 1
 
+#if defined(CONFIG_NAU7802_SCALE)
+#define CALIBRATE_VALUE_SIZE 10
+#define CALIBRATION_A_ID 2
+#define CALIBRATION_B_ID 3
+#endif /* CONFIG_NAU7802_SCALE */
+
 struct device;
 
 struct storage_config {
