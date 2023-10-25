@@ -63,6 +63,10 @@ void watchdog_feed(void)
 
 static void appl_reboot_fn(void *p1, void *p2, void *p3)
 {
+   (void) p1;
+   (void) p2;
+   (void) p3;
+
    int error = 0;
    k_sem_take(&appl_diagnose_shutdown, K_FOREVER);
 
