@@ -40,7 +40,8 @@ typedef enum { LED_CLEAR,
 int ui_led_op(led_t led, led_op_t op);
 int ui_init(ui_callback_handler_t button_callback);
 int ui_config(void);
-int ui_enable(bool enable);
+void ui_enable(bool enable);
+void ui_callback(bool enable);
 int ui_input(k_timeout_t timeout);
 
 #endif /* UI_H */

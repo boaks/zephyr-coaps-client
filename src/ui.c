@@ -128,6 +128,7 @@ static K_SEM_DEFINE(ui_input_trigger, 1, 1);
 static volatile int ui_input_duration = 0;
 
 static volatile bool ui_enabled = true;
+static volatile bool ui_callbacks = true;
 
 struct ui_fifo {
    void *fifo_reserved;
@@ -167,12 +168,12 @@ static void ui_button_handle_fn(struct k_work *work)
                   ui_input_duration = 2;
                   last = now;
                   ui_enable(true);
-                  if (k_sem_count_get(&ui_input_trigger)) {
+                  if (ui_callbacks) {
                      ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
-                  }
-                  if (button_callback != NULL) {
-                     button_callback(0);
-                     LOG_DBG("UI button callback %u", button_counter);
+                     if (button_callback != NULL) {
+                        button_callback(0);
+                        LOG_DBG("UI button callback %u", button_counter);
+                     }
                   }
                   k_sem_give(&ui_input_trigger);
                } else {
@@ -187,14 +188,14 @@ static void ui_button_handle_fn(struct k_work *work)
          last = now;
          ui_input_duration = 3;
          ui_enable(true);
-         if (k_sem_count_get(&ui_input_trigger)) {
+         if (ui_callbacks) {
             ui_led_op(LED_COLOR_BLUE, LED_BLINK);
             ui_led_op(LED_COLOR_GREEN, LED_BLINK);
             ui_led_op(LED_COLOR_RED, LED_BLINK);
-         }
-         if (button_callback != NULL) {
-            button_callback(1);
-            LOG_DBG("UI button long callback %u", button_counter);
+            if (button_callback != NULL) {
+               button_callback(1);
+               LOG_DBG("UI button long callback %u", button_counter);
+            }
          }
          k_sem_give(&ui_input_trigger);
       }
@@ -495,10 +496,14 @@ int ui_config(void)
    return -1;
 }
 
-int ui_enable(bool enable)
+void ui_enable(bool enable)
 {
    ui_enabled = enable;
-   return 0;
+}
+
+void ui_callback(bool enable)
+{
+   ui_callbacks = enable;
 }
 
 int ui_input(k_timeout_t timeout)
