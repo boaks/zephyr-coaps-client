@@ -56,7 +56,7 @@ LOG_MODULE_REGISTER(SCALE, CONFIG_SCALE_LOG_LEVEL);
 #define NAU7802_NONE_ADC_VALUE 0xff800000
 
 #define NAU7802_MIN_PAUSE_CALIBRATION_MS 200
-#define NAU7802_MIN_PAUSE_SAMPLE_MS 50
+#define NAU7802_MIN_PAUSE_SAMPLE_MS 100
 
 static K_MUTEX_DEFINE(scale_mutex);
 
@@ -948,9 +948,10 @@ static int scale_init(void)
    for (int channel = 0; channel < MAX_ADC_CHANNELS; ++channel) {
       struct scale_config *scale_dev = &configs[channel];
       if (scale_dev) {
-         int rc;
+         int rc = scale_dev->gain;
          scale_dev->ok = true;
          scale_dev->gain = scale_gain_id(scale_dev->gain);
+         LOG_INF("ADC %s setup gain to %d/%d.", scale_dev->channel_name, rc, scale_dev->gain);
          rc = scale_init_channel(scale_dev);
          scale_suspend(scale_dev);
          if (rc) {

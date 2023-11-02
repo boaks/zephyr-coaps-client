@@ -842,53 +842,53 @@ int coap_appl_client_prepare_scale_info(char *buf, size_t len, int flags)
 {
    int index = 0;
 
-#ifdef CONFIG_ADC_SCALE
+#ifdef CONFIG_NAU7802_SCALE
    double scaleA = 0;
    double scaleB = 0;
    double temperatureA = 0;
    double temperatureB = 0;
    int64_t time = 0;
    int start = 0;
+   int res = 0;
    int err = 0;
 
-#ifdef CONFIG_NAU7802_SCALE
-   index += snprintf(buf, len, "Last calibration: ");
-   start = index;
-   err = appl_storage_read_bytes_item(CALIBRATION_A_ID, 0, &time, NULL, 0);
-   if (err > 0) {
-      index += snprintf(buf + index, len - index, "A ");
-      index += appl_format_time(time, buf + index, len - index);
-   }
-   err = appl_storage_read_bytes_item(CALIBRATION_B_ID, 0, &time, NULL, 0);
-   if (err > 0) {
-      if (index > start) {
-         index += snprintf(buf + index, len - index, ", ");
-      }
-      index += snprintf(buf + index, len - index, "B ");
-      index += appl_format_time(time, buf + index, len - index);
-   }
-   if (index == start) {
-      index = 0;
-      start = 0;
-   } else {
-      dtls_info("%s", buf);
-   }
-#endif
+   res = scale_sample(&scaleA, &scaleB, &temperatureA, &temperatureB);
+   if (0 < res) {
 
-   err = scale_sample(&scaleA, &scaleB, &temperatureA, &temperatureB);
-   if (0 < err) {
+      index += snprintf(buf, len, "Last calibration: ");
+      start = index;
+      err = appl_storage_read_bytes_item(CALIBRATION_A_ID, 0, &time, NULL, 0);
+      if (err > 0) {
+         index += snprintf(buf + index, len - index, "A ");
+         index += appl_format_time(time, buf + index, len - index);
+      }
+      err = appl_storage_read_bytes_item(CALIBRATION_B_ID, 0, &time, NULL, 0);
+      if (err > 0) {
+         if (index > start) {
+            index += snprintf(buf + index, len - index, ", ");
+         }
+         index += snprintf(buf + index, len - index, "B ");
+         index += appl_format_time(time, buf + index, len - index);
+      }
+      if (index == start) {
+         index = 0;
+         start = 0;
+      } else {
+         dtls_info("%s", buf);
+      }
+
       if (index) {
          start = index + 1;
          index += snprintf(buf + index, len - index, "\n");
       }
       index += snprintf(buf + index, len - index, "!");
-      if (err & 1) {
+      if (res & 1) {
          index += snprintf(buf + index, len - index, "CHA %.2f kg, %.1f°C", scaleA, temperatureA);
-         if (err & 2) {
+         if (res & 2) {
             index += snprintf(buf + index, len - index, ",");
          }
       }
-      if (err & 2) {
+      if (res & 2) {
          index += snprintf(buf + index, len - index, "CHB %.2f kg, %.1f°C", scaleB, temperatureB);
       }
       dtls_info("%s", buf + start);
