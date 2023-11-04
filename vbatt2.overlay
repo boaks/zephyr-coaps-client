@@ -1,0 +1,43 @@
+/*
+ * Copyright (c) 2023 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0 or Apache-2.0
+ */
+
+/*
+ * Usage: 
+ *
+ * west build -d build_feather_nrf9160_ns -b circuitdojo_feather_nrf9160_ns --pristine -- \
+ *    -DOVERLAY_CONFIG="60min0-prj.conf" -DDTC_OVERLAY_FILE="boards/circuitdojo_feather_nrf9160_ns.overlay;vbatt2.overlay" \
+ *    -DCONFIG_EXT_BATTERY_ADC=y
+ */
+
+/ {
+
+	leds {
+		button_led: led_1 {
+			gpios = <&gpio0 15 GPIO_ACTIVE_LOW>;
+		};
+
+	};
+
+	vbatt2 {
+		compatible = "voltage-divider";
+		io-channels = <&adc 1>; /* P0.14/J3.6 */
+		output-ohms = <100000>;
+		full-ohms = <(360000 + 100000 + 100000)>;
+		power-gpios = <&gpio0 13 GPIO_ACTIVE_LOW>;
+	};
+
+	aliases {
+		led1 = &button_led;
+		led2 = &blue_led;
+	};
+};

@@ -30,4 +30,12 @@ int battery_measure_enable(bool enable);
  */
 int battery_sample(uint16_t* voltage);
 
+/** Measure the battery 2 voltage.
+ *
+ * @param voltage the battery 2 voltage in millivolts
+ * 
+ * @return 0 on success, or a negative error code.
+ */
+int battery2_sample(uint16_t* voltage);
+
 #endif /* APPLICATION_BATTERY_H_ */

@@ -33,6 +33,10 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #define VBATT DT_PATH(vbatt)
 
+#if DT_NODE_EXISTS(DT_PATH(vbatt2))
+#define VBATT2 DT_PATH(vbatt2)
+#endif
+
 struct battery_adc_config {
    const char *name;
    struct adc_channel_cfg adc_cfg;
@@ -71,6 +75,13 @@ struct battery_adc_status {
 
 CREATE_VBATT_INSTANCE(VBATT, 0, SAMPLE_MIN_INTERVAL_MILLIS);
 static volatile struct battery_adc_status battery_status_VBATT = {false, 0, 0};
+
+#ifdef VBATT2
+#define SAMPLE_MIN_INTERVAL2_MILLIS 500
+CREATE_VBATT_INSTANCE(VBATT2, 1, SAMPLE_MIN_INTERVAL2_MILLIS);
+static volatile struct battery_adc_status battery_status_VBATT2 = {false, 0, 0};
+#endif
+
 
 static int16_t adc_raw_data = 0;
 
@@ -119,7 +130,13 @@ static int battery_adc_setup_inst(const struct battery_adc_config *cfg, volatile
 
 static int battery_adc_setup(void)
 {
-   return battery_adc_setup_inst(&battery_adc_config_VBATT, &battery_status_VBATT);
+   int rc = battery_adc_setup_inst(&battery_adc_config_VBATT, &battery_status_VBATT);
+#ifdef VBATT2
+   if (!rc) {
+      rc = battery_adc_setup_inst(&battery_adc_config_VBATT2, &battery_status_VBATT2);
+   }
+#endif
+   return rc;
 }
 
 SYS_INIT(battery_adc_setup, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
@@ -232,10 +249,22 @@ static int battery_sample_inst(const struct battery_adc_config *cfg,
 
 int battery_measure_enable(bool enable)
 {
+#ifdef VBATT2
+   battery_measure_enable_inst(&battery_adc_config_VBATT2, &battery_status_VBATT2, enable);
+#endif
    return battery_measure_enable_inst(&battery_adc_config_VBATT, &battery_status_VBATT, enable);
 }
 
 int battery_sample(uint16_t *voltage)
 {
    return battery_sample_inst(&battery_adc_config_VBATT, &battery_status_VBATT, voltage);
+}
+
+int battery2_sample(uint16_t *voltage)
+{
+#ifdef VBATT2
+   return battery_sample_inst(&battery_adc_config_VBATT2, &battery_status_VBATT2, voltage);
+#else
+   return -ENODEV;
+#endif
 }

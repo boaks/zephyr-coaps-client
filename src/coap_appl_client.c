@@ -47,6 +47,10 @@
 #include "nau7802.h"
 #endif
 
+#ifdef CONFIG_EXT_BATTERY_ADC
+#include "battery_adc.h"
+#endif
+
 #define APP_COAP_LOG_PAYLOAD_SIZE 128
 
 #define COAP_OPTION_NO_RESPONSE 0x102
@@ -376,6 +380,16 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
       buf[index++] = '\n';
       start = index;
    }
+
+#ifdef CONFIG_EXT_BATTERY_ADC
+   err = battery2_sample(&battery_voltage);
+   if (!err) {
+      index += snprintf(buf + index, len - index, "!Ext.Bat.: %u mV", battery_voltage);
+      dtls_info("%s", buf + start);
+      buf[index++] = '\n';
+      start = index;
+   }
+#endif
 
    memset(reboot_times, 0, sizeof(reboot_times));
    memset(reboot_codes, 0, sizeof(reboot_codes));
