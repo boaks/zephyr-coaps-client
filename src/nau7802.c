@@ -1229,43 +1229,43 @@ bool scale_calibrate_setup(void)
    int trigger = 0;
 
    LOG_INF("Start calibration.");
-   ui_callback(false);
+   ui_prio(true);
    select_mode = scale_calibrate(CALIBRATE_START);
    while (CALIBRATE_NONE < select_mode) {
       // waiting
       LOG_INF("Waiting for calibration %d.", select_mode);
       if (select_mode == CALIBRATE_ZERO) {
-         ui_led_op(LED_COLOR_GREEN, LED_BLINKING);
+         ui_led_op_prio(LED_COLOR_GREEN, LED_BLINKING);
       } else if (select_mode == CALIBRATE_CHA_10KG) {
-         ui_led_op(LED_COLOR_BLUE, LED_BLINKING);
+         ui_led_op_prio(LED_COLOR_BLUE, LED_BLINKING);
       } else if (select_mode == CALIBRATE_CHB_10KG) {
-         ui_led_op(LED_COLOR_GREEN, LED_BLINKING);
-         ui_led_op(LED_COLOR_BLUE, LED_BLINKING);
+         ui_led_op_prio(LED_COLOR_GREEN, LED_BLINKING);
+         ui_led_op_prio(LED_COLOR_BLUE, LED_BLINKING);
       }
       trigger = ui_input(K_SECONDS(60));
       if (trigger >= 0) {
-         ui_led_op(LED_COLOR_ALL, LED_CLEAR);
+         ui_led_op_prio(LED_COLOR_ALL, LED_CLEAR);
          if (trigger) {
             select_mode = CALIBRATE_DONE;
          }
          // calibrate
          if (select_mode == CALIBRATE_ZERO) {
             LOG_INF("Calibrate 0 offsets.");
-            ui_led_op(LED_COLOR_GREEN, LED_SET);
+            ui_led_op_prio(LED_COLOR_GREEN, LED_SET);
             select_mode = scale_calibrate(select_mode);
-            ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
+            ui_led_op_prio(LED_COLOR_GREEN, LED_CLEAR);
          } else if (select_mode == CALIBRATE_CHA_10KG) {
             LOG_INF("Calibrate CHA 10kg.");
-            ui_led_op(LED_COLOR_BLUE, LED_SET);
+            ui_led_op_prio(LED_COLOR_BLUE, LED_SET);
             select_mode = scale_calibrate(select_mode);
-            ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
+            ui_led_op_prio(LED_COLOR_BLUE, LED_CLEAR);
          } else if (select_mode == CALIBRATE_CHB_10KG) {
             LOG_INF("Calibrate CHB 10kg.");
-            ui_led_op(LED_COLOR_BLUE, LED_SET);
-            ui_led_op(LED_COLOR_GREEN, LED_SET);
+            ui_led_op_prio(LED_COLOR_BLUE, LED_SET);
+            ui_led_op_prio(LED_COLOR_GREEN, LED_SET);
             select_mode = scale_calibrate(select_mode);
-            ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
-            ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
+            ui_led_op_prio(LED_COLOR_BLUE, LED_CLEAR);
+            ui_led_op_prio(LED_COLOR_GREEN, LED_CLEAR);
          }
          if (select_mode == CALIBRATE_DONE) {
             LOG_INF("Calibration done.");
@@ -1283,8 +1283,8 @@ bool scale_calibrate_setup(void)
          break;
       }
    }
-   ui_led_op(LED_COLOR_ALL, LED_CLEAR);
-   ui_callback(true);
+   ui_led_op_prio(LED_COLOR_ALL, LED_CLEAR);
+   ui_prio(false);
 
    return request;
 }

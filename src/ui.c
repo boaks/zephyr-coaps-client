@@ -128,7 +128,7 @@ static K_SEM_DEFINE(ui_input_trigger, 1, 1);
 static volatile int ui_input_duration = 0;
 
 static volatile bool ui_enabled = true;
-static volatile bool ui_callbacks = true;
+static volatile bool ui_prio_mode = false;
 
 struct ui_fifo {
    void *fifo_reserved;
@@ -168,7 +168,7 @@ static void ui_button_handle_fn(struct k_work *work)
                   ui_input_duration = 2;
                   last = now;
                   ui_enable(true);
-                  if (ui_callbacks) {
+                  if (!ui_prio_mode) {
                      ui_led_op(LED_COLOR_BLUE, LED_TOGGLE);
                      if (button_callback != NULL) {
                         button_callback(0);
@@ -188,7 +188,7 @@ static void ui_button_handle_fn(struct k_work *work)
          last = now;
          ui_input_duration = 3;
          ui_enable(true);
-         if (ui_callbacks) {
+         if (!ui_prio_mode) {
             ui_led_op(LED_COLOR_BLUE, LED_BLINK);
             ui_led_op(LED_COLOR_GREEN, LED_BLINK);
             ui_led_op(LED_COLOR_RED, LED_BLINK);
@@ -353,6 +353,15 @@ static void ui_led_timer_expiry_fn(struct k_work *work)
 
 int ui_led_op(led_t led, led_op_t op)
 {
+   if (!ui_prio_mode) {
+      return ui_led_op_prio(led, op);
+   } else {
+      return -EACCES;
+   }
+}
+
+int ui_led_op_prio(led_t led, led_op_t op)
+{
    if (!ui_enabled) {
       return -EACCES;
    }
@@ -501,9 +510,9 @@ void ui_enable(bool enable)
    ui_enabled = enable;
 }
 
-void ui_callback(bool enable)
+void ui_prio(bool enable)
 {
-   ui_callbacks = enable;
+   ui_prio_mode = enable;
 }
 
 int ui_input(k_timeout_t timeout)
