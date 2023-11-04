@@ -24,8 +24,9 @@ int battery_measure_enable(bool enable);
 
 /** Measure the battery voltage.
  *
- * @return the battery voltage in millivolts, or a negative error
- * code.
+ * @param voltage the battery voltage in millivolts
+ * 
+ * @return 0 on success, or a negative error code.
  */
 int battery_sample(uint16_t* voltage);
 
