@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023Achim Kraus CloudCoap.net
+ * Copyright (c) 2023 Achim Kraus CloudCoap.net
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
