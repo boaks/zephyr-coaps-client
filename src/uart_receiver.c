@@ -32,19 +32,18 @@
 #include <modem/at_monitor.h>
 #include <modem_at.h>
 
-#include "appl_diagnose.h"
 #ifdef CONFIG_UART_UPDATE
 #include "appl_update.h"
 #include "appl_update_xmodem.h"
 #endif
-#include "coap_appl_client.h"
+
+#include "appl_diagnose.h"
 #include "dtls_client.h"
 #include "io_job_queue.h"
 #include "modem.h"
-#include "modem_cmd.h"
 #include "modem_desc.h"
-#include "modem_sim.h"
 #include "parse.h"
+#include "uart_cmd.h"
 #include "ui.h"
 
 LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
@@ -73,6 +72,7 @@ static void at_cmd_response_fn(struct k_work *work);
 static const struct device *const uart_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
 
 static int64_t at_cmd_time = 0;
+static size_t at_cmd_max_length = 0;
 
 static char at_cmd_buf[CONFIG_AT_CMD_MAX_LEN];
 static int uart_rx_buf_id = 0;
@@ -764,129 +764,102 @@ static void at_cmd_resp_callback(const char *at_response)
 #define RESULT(X) ((X < 0) ? (X) : 0)
 #define PENDING(X) ((X < 0) ? (X) : 1)
 
-static int at_cmd_send()
+static int at_cmd_reboot(const char *parameter)
+{
+   (void)parameter;
+   if (appl_reboots()) {
+      LOG_INF(">> device already reboots!");
+   } else {
+      LOG_INF(">> device reboot ...");
+      appl_reboot(ERROR_CODE_CMD, K_MSEC(2000));
+   }
+   return 0;
+}
+
+static int at_cmd_send(const char *parameter)
+{
+   LOG_INF(">> send %s", parameter);
+   dtls_cmd_trigger(true, 3, parameter, strlen(parameter));
+   return 0;
+}
+
+static void at_cmd_send_help(void)
+{
+   LOG_INF("> help send:");
+   LOG_INF("  send            : send application message.");
+   LOG_INF("  send <message>  : send provided message.");
+}
+
+UART_CMD(reboot, NULL, "reboot device.", at_cmd_reboot, NULL, 0);
+UART_CMD(send, NULL, "send message.", at_cmd_send, at_cmd_send_help, 0);
+
+static const struct uart_cmd_entry *at_cmd_get(const char *cmd)
+{
+   STRUCT_SECTION_FOREACH(uart_cmd_entry, e)
+   {
+      if (strstartsep(cmd, e->cmd, true, " ") > 0) {
+         return e;
+      } else if (e->at_cmd && e->at_cmd[0] && strstartsep(cmd, e->at_cmd, true, " =") > 0) {
+         return e;
+      }
+   }
+   return NULL;
+}
+
+static int at_cmd_help(const char *parameter)
+{
+   if (*parameter) {
+      const struct uart_cmd_entry *cmd = at_cmd_get(parameter);
+      const char *msg = cmd ? "no details available." : "cmd unknown.";
+      if (cmd && cmd->help && cmd->help_handler) {
+         cmd->help_handler();
+      } else {
+         LOG_INF("> help %s:", parameter);
+         LOG_INF("  %s", msg);
+      }
+   } else {
+      LOG_INF("> help:");
+      LOG_INF("  %-*s: generic modem at-cmd.(*)", at_cmd_max_length, "at\?\?\?");
+
+      STRUCT_SECTION_FOREACH(uart_cmd_entry, e)
+      {
+         if (e->help) {
+            const char *details = "";
+            if (e->at_cmd) {
+               if (e->help_handler) {
+                  details = "(*?)";
+               } else {
+                  details = "(*)";
+               }
+            } else if (e->help_handler) {
+               details = "(?)";
+            }
+            LOG_INF("  %-*s: %s%s", at_cmd_max_length, e->cmd, e->help, details);
+         }
+      }
+      LOG_INF("  %-*s: AT-cmd is used, maybe busy.", at_cmd_max_length, "*");
+      LOG_INF("  %-*s: help <cmd> available.", at_cmd_max_length, "?");
+   }
+   return 0;
+}
+
+static void at_cmd_help_help(void)
+{
+   /* empty by intention */
+}
+
+UART_CMD(help, NULL, NULL, at_cmd_help, at_cmd_help_help, 0);
+
+static int at_cmd_modem_send(const char *at_cmd)
 {
    int res = 0;
-   int i = 0;
-
-   if (!stricmp(at_cmd_buf, "reset")) {
-      strcpy(at_cmd_buf, "AT%XFACTORYRESET=0");
-   } else if (!stricmp(at_cmd_buf, "off")) {
-      strcpy(at_cmd_buf, "AT+CFUN=0");
-   } else if (!stricmp(at_cmd_buf, "offline")) {
-      strcpy(at_cmd_buf, "AT+CFUN=4");
-   } else if (!stricmp(at_cmd_buf, "on")) {
-      res = modem_set_normal();
-      return RESULT(res);
-   } else if (!stricmp(at_cmd_buf, "sim")) {
-      res = modem_sim_read_info(NULL, true);
-      return RESULT(res);
-   } else if (!stricmp(at_cmd_buf, "state")) {
-      res = modem_read_network_info(NULL, true);
-      return RESULT(res);
-   } else if (!stricmp(at_cmd_buf, "search")) {
-      strcpy(at_cmd_buf, "AT+COPS=?");
-   } else if (!stricmp(at_cmd_buf, "net")) {
-      res = coap_appl_client_prepare_net_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
-      res = coap_appl_client_prepare_net_stats(at_cmd_buf, sizeof(at_cmd_buf), 0);
-      return RESULT(res);
-   } else if (!stricmp(at_cmd_buf, "eval")) {
-      strcpy(at_cmd_buf, "AT%CONEVAL");
-   } else if (!stricmp(at_cmd_buf, "limit")) {
-      uint32_t time = 0;
-      res = modem_read_rate_limit_time(&time);
-      if (time) {
-         LOG_INF(">> rate limit exceeded, %u s", time);
-      }
-      return RESULT(res);
-   } else {
-      i = strstartsep(at_cmd_buf, "cfg", true, " ");
-      if (i > 0) {
-         // blocking AT cmd
-         uart_tx_pause(false);
-         res = modem_cmd_config(&at_cmd_buf[i]);
-         if (res == 1) {
-            LOG_INF(">> (new cfg) send");
-            dtls_cmd_trigger(true, 3, NULL, 0);
-            res = 0;
-         }
-         return RESULT(res);
-      }
-
-      i = strstartsep(at_cmd_buf, "con", true, " ");
-      if (i > 0) {
-         // blocking AT cmd
-         uart_tx_pause(false);
-         res = modem_cmd_connect(&at_cmd_buf[i]);
-         if (res == 1) {
-            LOG_INF(">> (new con) send");
-            dtls_cmd_trigger(true, 3, NULL, 0);
-            res = 0;
-         }
-         return RESULT(res);
-      }
-
-      i = strstart(at_cmd_buf, "edrx ", true);
-      if (i > 0) {
-         res = modem_cmd_edrx(&at_cmd_buf[i]);
-         return RESULT(res);
-      }
-
-      i = strstart(at_cmd_buf, "psm ", true);
-      if (i > 0) {
-         res = modem_cmd_psm(&at_cmd_buf[i]);
-         return RESULT(res);
-      }
-
-      i = strstart(at_cmd_buf, "rai ", true);
-      if (i > 0) {
-         res = modem_cmd_rai(&at_cmd_buf[i]);
-         return RESULT(res);
-      }
-
-      i = strstartsep(at_cmd_buf, "band", true, " ");
-      if (i > 0) {
-         // blocking AT cmd
-         uart_tx_pause(false);
-         res = modem_cmd_band(&at_cmd_buf[i]);
-         return RESULT(res);
-      }
-
-      i = strstartsep(at_cmd_buf, "remo", true, " ");
-      if (i > 0) {
-         res = modem_cmd_reduced_mobility(&at_cmd_buf[i]);
-         return RESULT(res);
-      }
-
-      i = strstartsep(at_cmd_buf, "power", true, " ");
-      if (i > 0) {
-         res = modem_cmd_power_level(&at_cmd_buf[i]);
-         return RESULT(res);
-      }
-
-#ifdef CONFIG_SMS
-      i = strstart(at_cmd_buf, "sms ", true);
-      if (i > 0) {
-         res = modem_cmd_sms(&at_cmd_buf[i]);
-         return RESULT(res);
-      }
-#endif
-
-      i = strstart(at_cmd_buf, "scan", true);
-      if (i == 0) {
-         i = strstart(at_cmd_buf, "AT%NCELLMEAS", true);
-      }
-      if (i > 0) {
-         res = modem_cmd_scan(&at_cmd_buf[i]);
-         return RESULT(res);
-      }
-   }
-   if (!strstart(at_cmd_buf, "AT", true)) {
-      LOG_INF("ignore > %s", at_cmd_buf);
+   if (!strstart(at_cmd, "AT", true)) {
+      LOG_INF("ignore > %s", at_cmd);
       return -1;
    }
-   LOG_INF(">%s", at_cmd_buf);
-   res = modem_at_cmd_async(at_cmd_resp_callback, NULL, at_cmd_buf);
+   LOG_INF(">%s", at_cmd);
+   at_cmd_time = k_uptime_get();
+   res = modem_at_cmd_async(at_cmd_resp_callback, NULL, at_cmd);
    return PENDING(res);
 }
 
@@ -894,138 +867,52 @@ static int at_cmd()
 {
    int res = 0;
    int i;
+   const struct uart_cmd_entry *cmd = at_cmd_get(at_cmd_buf);
 
-   if (!stricmp(at_cmd_buf, "reboot")) {
-      if (appl_reboots()) {
-         LOG_INF(">> device is already rebooting!");
-      } else {
-         LOG_INF(">> device reboot ...");
-         appl_reboot(ERROR_CODE_CMD, K_MSEC(2000));
+   if (cmd) {
+      i = strstartsep(at_cmd_buf, cmd->cmd, true, " ");
+      if (!i && cmd->at_cmd && cmd->at_cmd[0]) {
+         i = strstartsep(at_cmd_buf, cmd->at_cmd, true, " =");
       }
-      return 0;
-   } else if (!stricmp(at_cmd_buf, "env")) {
-      res = coap_appl_client_prepare_env_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
-      return RESULT(res);
-   } else if (!stricmp(at_cmd_buf, "dev")) {
-      res = coap_appl_client_prepare_modem_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
-      return RESULT(res);
-#ifdef CONFIG_ADC_SCALE
-   } else if (!stricmp(at_cmd_buf, "scale")) {
-      uart_tx_pause(false);
-      res = coap_appl_client_prepare_scale_info(at_cmd_buf, sizeof(at_cmd_buf), 0);
-      return RESULT(res);
-#endif
-   } else if (!stricmp(at_cmd_buf, "help")) {
-      LOG_INF("> help:");
-      LOG_INF("  at???   : modem at-cmd.(*)");
-      LOG_INF("  band    : configure bands.(*?)");
-      LOG_INF("  cfg     : configure modem.(*?)");
-      LOG_INF("  con     : connect modem.(*?)");
-      LOG_INF("  dev     : read device info.");
-      LOG_INF("  edrx    : configure eDRX.(*?)");
-      LOG_INF("  env     : read environment sensor.");
-      LOG_INF("  eval    : evaluate connection.(*)");
-      LOG_INF("  limit   : read apn rate limit.(*)");
-      LOG_INF("  net     : read network info.(*)");
-      LOG_INF("  on      : switch modem on.(*)");
-      LOG_INF("  off     : switch modem off.(*)");
-      LOG_INF("  offline : switch modem offline.(*)");
-      LOG_INF("  power   : configure power level.(*?)");
-      LOG_INF("  psm     : configure PSM.(*?)");
-      LOG_INF("  reset   : modem factory reset.(*)");
-      LOG_INF("  reboot  : reboot device.");
-      LOG_INF("  rai     : configure RAI.(*?)");
-      LOG_INF("  remo    : reduced mobility.(*?)");
-#ifdef CONFIG_ADC_SCALE
-      LOG_INF("  scale   : read scale info.");
-#endif
-      LOG_INF("  scan    : network scan.(*?)");
-      LOG_INF("  search  : network search.(*)");
-      LOG_INF("  send    : send message.");
-      LOG_INF("  sim     : read SIM-card info.(*)");
-#ifdef CONFIG_SMS
-      LOG_INF("  sms     : send SMS.(*?)");
-#endif
-      LOG_INF("  state   : read modem state.(*)");
-#ifdef CONFIG_UART_UPDATE
-      LOG_INF("  update  : start application firmware update. Requires XMODEM.(?)");
-#endif
-      LOG_INF("  *       : AT-cmd is used, maybe busy.");
-      LOG_INF("  ?       : help <cmd> available.");
-      return 0;
-   } else {
-      i = strstart(at_cmd_buf, "help ", true);
-      if (i > 0) {
-         if (!stricmp(&at_cmd_buf[i], "band")) {
-            modem_cmd_band_help();
-         } else if (!stricmp(&at_cmd_buf[i], "cfg")) {
-            modem_cmd_config_help();
-         } else if (!stricmp(&at_cmd_buf[i], "con")) {
-            modem_cmd_connect_help();
-         } else if (!stricmp(&at_cmd_buf[i], "edrx")) {
-            modem_cmd_edrx_help();
-         } else if (!stricmp(&at_cmd_buf[i], "power")) {
-            modem_cmd_power_level_help();
-         } else if (!stricmp(&at_cmd_buf[i], "psm")) {
-            modem_cmd_psm_help();
-         } else if (!stricmp(&at_cmd_buf[i], "rai")) {
-            modem_cmd_rai_help();
-         } else if (!stricmp(&at_cmd_buf[i], "remo")) {
-            modem_cmd_reduced_mobility_help();
-         } else if (!stricmp(&at_cmd_buf[i], "scan")) {
-            modem_cmd_scan_help();
-#ifdef CONFIG_SMS
-         } else if (!stricmp(&at_cmd_buf[i], "sms")) {
-            modem_cmd_sms_help();
-#endif
-#ifdef CONFIG_UART_UPDATE
-         } else if (!stricmp(&at_cmd_buf[i], "update")) {
-            appl_update_cmd_help();
-#endif
+      if (at_cmd_buf[i] && !cmd->help_handler) {
+         LOG_INF("%s doesn't support parameter '%s'!", cmd->cmd, &at_cmd_buf[i]);
+         return 1;
+      }
+      if (cmd->at_cmd) {
+         if (atomic_test_and_set_bit(&uart_at_state, UART_AT_CMD_PENDING)) {
+            LOG_INF("Modem pending ...");
+            return 1;
+         }
+         if (cmd->at_cmd[0] && !cmd->handler) {
+            res = at_cmd_modem_send(cmd->at_cmd);
          } else {
-            LOG_INF("> help %s:", &at_cmd_buf[i]);
-            LOG_INF("  no details available.");
-         }
-         return 0;
-      }
-
-      i = strstartsep(at_cmd_buf, "send", true, " ");
-      if (i > 0) {
-         LOG_INF(">> send %s", &at_cmd_buf[i]);
-         dtls_cmd_trigger(true, 3, &at_cmd_buf[i], strlen(&at_cmd_buf[i]));
-         return 0;
-      }
-
-#ifdef CONFIG_UART_UPDATE
-      i = strstartsep(at_cmd_buf, "update", true, " ");
-      if (i > 0) {
-         // erase may block
-         uart_tx_pause(false);
-         res = appl_update_cmd(&at_cmd_buf[i]);
-         if (res > 0) {
-            // download
-            i = res;
-            res = appl_update_start();
-            if (!res) {
-               atomic_set_bit(&uart_at_state, UART_UPDATE);
-               if (i == 2) {
-                  // apply
-                  atomic_set_bit(&uart_at_state, UART_UPDATE_APPLY);
-               }
-               atomic_set(&xmodem_retries, 0);
-               res = work_reschedule_for_cmd_queue(&uart_xmodem_start_work, K_MSEC(500));
+            at_cmd_time = k_uptime_get();
+            res = cmd->handler(&at_cmd_buf[i]);
+            if (res == 1 && cmd->send) {
+               LOG_INF(">> (new %s) send", cmd->cmd);
+               dtls_cmd_trigger(true, cmd->send, NULL, 0);
+               res = 0;
             }
+            res = RESULT(res);
          }
-         return RESULT(res);
+         if (res < 1) {
+            at_cmd_finish();
+         }
+      } else {
+         res = cmd->handler(&at_cmd_buf[i]);
+         res = RESULT(res);
       }
-#endif
+      if (res == -EINVAL && cmd->help_handler) {
+         cmd->help_handler();
+      }
+      return res;
    }
+
    if (atomic_test_and_set_bit(&uart_at_state, UART_AT_CMD_PENDING)) {
       LOG_INF("Modem pending ...");
       return 1;
    }
-   at_cmd_time = k_uptime_get();
-   res = at_cmd_send();
+   res = at_cmd_modem_send(at_cmd_buf);
    if (res < 1) {
       at_cmd_finish();
    }
@@ -1036,7 +923,9 @@ static void at_cmd_send_fn(struct k_work *work)
 {
    ARG_UNUSED(work);
    if (!atomic_test_bit(&uart_at_state, UART_UPDATE)) {
-      int res = at_cmd();
+      int res = 0;
+      uart_tx_pause(false);
+      res = at_cmd();
       at_cmd_result(res);
    }
 }
@@ -1255,6 +1144,30 @@ static bool uart_xmodem_handler(const char *buffer, size_t len)
    }
    return false;
 }
+
+static int at_cmd_update(const char *parameter)
+{
+   int res = appl_update_cmd(parameter);
+   if (res > 0) {
+      // download
+      int i = res;
+      res = appl_update_start();
+      if (!res) {
+         atomic_set_bit(&uart_at_state, UART_UPDATE);
+         if (i == 2) {
+            // apply
+            atomic_set_bit(&uart_at_state, UART_UPDATE_APPLY);
+         }
+         atomic_set(&xmodem_retries, 0);
+         res = work_reschedule_for_cmd_queue(&uart_xmodem_start_work, K_MSEC(500));
+      }
+   }
+
+   return 0;
+}
+
+UART_CMD(update, NULL, "start application firmware update. Requires XMODEM.", at_cmd_update, appl_update_cmd_help, 0);
+
 #endif
 
 static void uart_receiver_loop(const char *buffer, size_t len)
@@ -1369,6 +1282,14 @@ static int uart_init(void)
 static int uart_receiver_init(void)
 {
    int err;
+
+   STRUCT_SECTION_FOREACH(uart_cmd_entry, e)
+   {
+      if (e->cmd) {
+         at_cmd_max_length = MAX(at_cmd_max_length, strlen(e->cmd));
+      }
+   }
+   at_cmd_max_length++;
 
    err = uart_init();
 

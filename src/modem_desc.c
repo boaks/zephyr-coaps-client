@@ -169,6 +169,21 @@ const char *modem_get_network_mode_description(enum lte_lc_lte_mode mode)
    return "Unknown";
 }
 
+const char *modem_get_rai_description(enum lte_network_rai rai)
+{
+   switch (rai) {
+      case LTE_NETWORK_NO_RAI:
+         return "no RAI";
+      case LTE_NETWORK_CP_RAI:
+         return "CP-RAI";
+      case LTE_NETWORK_AS_RAI:
+         return "AS-RAI";
+      default:
+         break;
+   }
+   return "Unknown";
+}
+
 const char *modem_get_emm_cause_description(int cause)
 {
    switch (cause) {

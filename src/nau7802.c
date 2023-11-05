@@ -24,9 +24,12 @@
 
 #include "appl_storage.h"
 #include "appl_storage_config.h"
+#include "appl_time.h"
 #include "io_job_queue.h"
 #include "nau7802.h"
 #include "ui.h"
+
+#include "uart_cmd.h"
 
 LOG_MODULE_REGISTER(SCALE, CONFIG_SCALE_LOG_LEVEL);
 
@@ -1288,3 +1291,58 @@ bool scale_calibrate_setup(void)
 
    return request;
 }
+
+static int scale_cmd(const char *parameter)
+{
+   (void)parameter;
+
+   char buf[96];
+   double scaleA = 0;
+   double scaleB = 0;
+   double temperatureA = 0;
+   double temperatureB = 0;
+   int64_t time = 0;
+   int index = 0;
+   int res = 0;
+   int res2 = 0;
+   int err = 0;
+
+   res = scale_sample(&scaleA, &scaleB, &temperatureA, &temperatureB);
+   if (0 < res) {
+      index += snprintf(buf, sizeof(buf), "Last calibration: ");
+      err = appl_storage_read_bytes_item(CALIBRATION_A_ID, 0, &time, NULL, 0);
+      if (err > 0) {
+         res2 = 1;
+         index += snprintf(buf + index, sizeof(buf) - index, "A ");
+         index += appl_format_time(time, buf + index, sizeof(buf) - index);
+      }
+      err = appl_storage_read_bytes_item(CALIBRATION_B_ID, 0, &time, NULL, 0);
+      if (err > 0) {
+         if (res2) {
+            index += snprintf(buf + index, sizeof(buf) - index, ", ");
+         } else {
+            res2 = 1;
+         }
+         index += snprintf(buf + index, sizeof(buf) - index, "B ");
+         index += appl_format_time(time, buf + index, sizeof(buf) - index);
+      }
+      if (res2) {
+         LOG_INF("%s", buf);
+      }
+      index = 0;
+      if (res & 1) {
+         index += snprintf(buf + index, sizeof(buf) - index, "CHA %.2f kg, %.1f°C", scaleA, temperatureA);
+         if (res & 2) {
+            index += snprintf(buf + index, sizeof(buf) - index, ",");
+         }
+      }
+      if (res & 2) {
+         index += snprintf(buf + index, sizeof(buf) - index, "CHB %.2f kg, %.1f°C", scaleB, temperatureB);
+      }
+      LOG_INF("%s", buf);
+   }
+
+   return 0;
+}
+
+UART_CMD(scale, NULL, "read scale info.", scale_cmd, NULL, 0);

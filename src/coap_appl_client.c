@@ -35,6 +35,8 @@
 #include "appl_time.h"
 #include "environment_sensor.h"
 
+#include "uart_cmd.h"
+
 #ifdef CONFIG_LOCATION_ENABLE
 #include "location.h"
 #endif
@@ -520,23 +522,10 @@ int coap_appl_client_prepare_net_info(char *buf, size_t len, int flags)
    if (time >= 0) {
       if (index > start) {
          index += snprintf(buf + index, len - index, ", ");
-         memset(&params, 0, sizeof(params));
-         if (modem_get_rai_status(&params.rai_info) == 0) {
-            switch (params.rai_info) {
-               case LTE_NETWORK_NO_RAI:
-                  index += snprintf(buf + index, len - index, "no RAI, ");
-                  break;
-               case LTE_NETWORK_CP_RAI:
-                  index += snprintf(buf + index, len - index, "CP-RAI, ");
-                  break;
-               case LTE_NETWORK_AS_RAI:
-                  index += snprintf(buf + index, len - index, "AS-RAI, ");
-                  break;
-               case LTE_NETWORK_RAI_UNKNOWN:
-               default:
-                  break;
-            }
-         }
+      }
+      memset(&params, 0, sizeof(params));
+      if (modem_get_rai_status(&params.rai_info) == 0 && params.rai_info != LTE_NETWORK_RAI_UNKNOWN) {
+         index += snprintf(buf + index, len - index, "%s, ", modem_get_rai_description(params.rai_info));
       }
       index += snprintf(buf + index, len - index, "Released: %d ms", time);
    }
@@ -1158,3 +1147,28 @@ int coap_appl_client_init(const char *id)
    coap_client_id = id;
    return id ? strlen(id) : 0;
 }
+
+static char cmd_buf[512];
+
+static int at_cmd_net(const char *parameter)
+{
+   (void)parameter;
+   coap_appl_client_prepare_net_info(cmd_buf, sizeof(cmd_buf), 0);
+   return coap_appl_client_prepare_net_stats(cmd_buf, sizeof(cmd_buf), 0);
+}
+
+static int at_cmd_dev(const char *parameter)
+{
+   (void)parameter;
+   return coap_appl_client_prepare_modem_info(cmd_buf, sizeof(cmd_buf), 0);
+}
+
+static int at_cmd_env(const char *parameter)
+{
+   (void)parameter;
+   return coap_appl_client_prepare_env_info(cmd_buf, sizeof(cmd_buf), 0);
+}
+
+UART_CMD(net, "", "read network info.", at_cmd_net, NULL, 0);
+UART_CMD(dev, NULL, "read device info.", at_cmd_dev, NULL, 0);
+UART_CMD(env, NULL, "read environment sensor.", at_cmd_env, NULL, 0);

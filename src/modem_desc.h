@@ -16,6 +16,8 @@
 
 #include <modem/lte_lc.h>
 
+#include "modem.h"
+
 const char *modem_get_system_mode_description(
     enum lte_lc_system_mode lte_mode,
     enum lte_lc_system_mode_preference lte_preference);
@@ -29,6 +31,8 @@ const char *modem_get_registration_description(enum lte_lc_nw_reg_status reg_sta
 const char *modem_get_registration_short_description(enum lte_lc_nw_reg_status reg_status);
 
 const char *modem_get_network_mode_description(enum lte_lc_lte_mode mode);
+
+const char *modem_get_rai_description(enum lte_network_rai rai);
 
 const char *modem_get_emm_cause_description(int cause);
 

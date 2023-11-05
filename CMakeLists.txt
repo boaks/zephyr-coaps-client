@@ -32,7 +32,6 @@ target_sources(app PRIVATE
 	src/modem_desc.c
 	src/modem_sim.c
 	src/modem_at.c
-	src/modem_cmd.c
 	src/dtls_client.c
 	src/dtls_credentials.c
 	src/coap_client.c
@@ -40,6 +39,8 @@ target_sources(app PRIVATE
 	)
 
 target_sources_ifdef(CONFIG_UART_RECEIVER app PRIVATE src/uart_receiver.c)
+
+target_sources_ifdef(CONFIG_UART_RECEIVER app PRIVATE src/modem_cmd.c)
 
 target_sources_ifdef(CONFIG_UPDATE app PRIVATE src/appl_update.c)
 
@@ -101,8 +102,10 @@ if (CONFIG_BME680_BSEC)
         target_link_libraries(app PUBLIC bsec_lib)
 endif()
 
-
 zephyr_include_directories(src)
+
+# UART cmds
+zephyr_linker_sources(RODATA uart_cmds.ld)
 
 # tinydtls - support DTLS 1.2 Connection ID
 zephyr_library_link_libraries(tinydtls)

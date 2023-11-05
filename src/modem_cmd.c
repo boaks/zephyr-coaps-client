@@ -16,11 +16,9 @@
 #include <stdlib.h>
 #include <zephyr/logging/log.h>
 
-#include "modem.h"
-#include "modem_at.h"
-#include "modem_cmd.h"
-#include "modem_desc.h"
 #include "parse.h"
+
+#include "uart_cmd.h"
 
 LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 
@@ -30,6 +28,11 @@ LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 #include <modem/nrf_modem_lib.h>
 #include <modem/pdn.h>
 #include <nrf_modem_at.h>
+
+#include "modem.h"
+#include "modem_at.h"
+#include "modem_desc.h"
+#include "modem_sim.h"
 
 int modem_reinit(void);
 
@@ -47,34 +50,34 @@ static int previous_mode = -1;
 static int modem_off(void)
 {
    enum lte_lc_func_mode mode;
-   int rc = lte_lc_func_mode_get(&mode);
+   int res = lte_lc_func_mode_get(&mode);
    previous_mode = -1;
-   if (!rc) {
-      rc = mode;
+   if (!res) {
+      res = mode;
       previous_mode = mode;
       if (mode != LTE_LC_FUNC_MODE_POWER_OFF) {
          lte_lc_func_mode_set(LTE_LC_FUNC_MODE_POWER_OFF);
       }
    }
-   return rc;
+   return res;
 }
 
 static int modem_restore(void)
 {
-   int rc = 0;
+   int res = 0;
    if (-1 < previous_mode && previous_mode != LTE_LC_FUNC_MODE_POWER_OFF) {
-      rc = lte_lc_func_mode_set(previous_mode);
+      res = lte_lc_func_mode_set(previous_mode);
    }
    previous_mode = -1;
-   return rc;
+   return res;
 }
 
 #define CFG_NB_IOT "nb"
 #define CFG_LTE_M "m1"
 
-int modem_cmd_config(const char *config)
+static int modem_cmd_config(const char *config)
 {
-   int err;
+   int res;
    char buf[32];
    char value1[7];
    char value2[3];
@@ -97,15 +100,15 @@ int modem_cmd_config(const char *config)
       enum lte_lc_system_mode lte_mode = LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS;
       enum lte_lc_system_mode_preference lte_preference = CONFIG_LTE_MODE_PREFERENCE_VALUE;
 
-      err = lte_lc_system_mode_get(&lte_mode, &lte_preference);
-      if (err) {
+      res = lte_lc_system_mode_get(&lte_mode, &lte_preference);
+      if (res) {
          LOG_INF("Can't read current LTE mode!");
-         return err;
+         return res;
       }
       memset(plmn, 0, sizeof(plmn));
-      err = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS?");
-      if (err > 0) {
-         err = sscanf(buf, " %c,%c,%15[^,],%c",
+      res = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS?");
+      if (res > 0) {
+         res = sscanf(buf, " %c,%c,%15[^,],%c",
                       &mode, &type, plmn, &net_mode);
          strtrunc(plmn, '"');
       }
@@ -164,10 +167,10 @@ int modem_cmd_config(const char *config)
       enum lte_lc_system_mode lte_mode_new;
       enum lte_lc_system_mode_preference lte_preference_new;
       bool gps;
-      err = lte_lc_system_mode_get(&lte_mode, &lte_preference);
-      if (err) {
+      res = lte_lc_system_mode_get(&lte_mode, &lte_preference);
+      if (res) {
          LOG_INF("Can't read current LTE mode!");
-         return err;
+         return res;
       }
       lte_mode_new = lte_mode;
       lte_preference_new = lte_preference;
@@ -216,34 +219,34 @@ int modem_cmd_config(const char *config)
       }
       if (lte_mode != lte_mode_new || lte_preference != lte_preference_new) {
          modem_off();
-         err = lte_lc_system_mode_set(lte_mode_new, lte_preference_new);
+         res = lte_lc_system_mode_set(lte_mode_new, lte_preference_new);
          modem_set_preference(RESET_PREFERENCE);
          modem_restore();
-         if (!err) {
+         if (!res) {
             LOG_INF("Switched to %s", modem_get_system_mode_cfg(lte_mode_new, lte_preference_new));
          } else {
             LOG_INF("Switching LTE mode to %s failed!", modem_get_system_mode_cfg(lte_mode_new, lte_preference_new));
-            return err < 0 ? err : -EINVAL;
+            return res < 0 ? res : -EINVAL;
          }
       } else {
          LOG_INF("Keep %s", modem_get_system_mode_cfg(lte_mode_new, lte_preference_new));
       }
    }
    if (!stricmp("auto", value1)) {
-      err = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS=0");
-      if (err >= 0) {
+      res = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS=0");
+      if (res >= 0) {
          modem_lock_plmn(false);
       }
    } else {
-      err = modem_at_cmdf(buf, sizeof(buf), "+COPS: ", "AT+COPS=1,2,\"%s\"", value1);
-      if (err >= 0) {
+      res = modem_at_cmdf(buf, sizeof(buf), "+COPS: ", "AT+COPS=1,2,\"%s\"", value1);
+      if (res >= 0) {
          modem_lock_plmn(true);
       }
    }
-   if (err < 0) {
-      LOG_WRN("AT+COPS failed, err %d", err);
+   if (res < 0) {
+      LOG_WRN("AT+COPS failed, err %d", res);
    } else {
-      err = 1;
+      res = 1;
    }
    if (value3[0]) {
       LOG_INF(">> cfg %s %s %s ready", value1, value2, value3);
@@ -253,10 +256,10 @@ int modem_cmd_config(const char *config)
       LOG_INF(">> cfg %s ready", value1);
    }
 
-   return err;
+   return res;
 }
 
-void modem_cmd_config_help(void)
+static void modem_cmd_config_help(void)
 {
    LOG_INF("> help cfg:");
    LOG_INF("  cfg         : read configuration.");
@@ -270,9 +273,9 @@ void modem_cmd_config_help(void)
    LOG_INF("              : " CFG_LTE_M " " CFG_NB_IOT " := LTE-M /NB-IoT");
 }
 
-int modem_cmd_connect(const char *config)
+static int modem_cmd_connect(const char *config)
 {
-   int err;
+   int res;
    char value1[7];
    char value2[3];
    const char *cur = config;
@@ -290,9 +293,9 @@ int modem_cmd_connect(const char *config)
       const char *desc = "none";
 
       memset(plmn, 0, sizeof(plmn));
-      err = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS?");
-      if (err > 0) {
-         err = sscanf(buf, " %c,%c,%15[^,],%c",
+      res = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS?");
+      if (res > 0) {
+         res = sscanf(buf, " %c,%c,%15[^,],%c",
                       &mode, &type, plmn, &net_mode);
          strtrunc(plmn, '"');
       }
@@ -310,15 +313,15 @@ int modem_cmd_connect(const char *config)
          LOG_INF("mode %s is not supported for 'auto'.", value2);
          return -EINVAL;
       }
-      err = modem_at_cmd(NULL, 0, "+COPS: ", "AT+COPS=0");
-      if (err < 0) {
-         LOG_WRN("AT+COPS=0 failed, err %d", err);
+      res = modem_at_cmd(NULL, 0, "+COPS: ", "AT+COPS=0");
+      if (res < 0) {
+         LOG_WRN("AT+COPS=0 failed, err %d", res);
       } else {
-         err = 1;
+         res = 1;
          modem_lock_plmn(false);
       }
       LOG_INF(">> con auto ready");
-      return err;
+      return res;
    } else if (!modem_is_plmn(value1)) {
       LOG_INF("con %s", config);
       LOG_INF("plmn '%s' not supported, only numerical plmn.", value1);
@@ -337,11 +340,11 @@ int modem_cmd_connect(const char *config)
    } else {
       cur = "";
    }
-   err = modem_at_cmdf(NULL, 0, "+COPS: ", "AT+COPS=1,2,\"%s\"%s", value1, cur);
-   if (err < 0) {
-      LOG_WRN("AT+COPS failed, err %d", err);
+   res = modem_at_cmdf(NULL, 0, "+COPS: ", "AT+COPS=1,2,\"%s\"%s", value1, cur);
+   if (res < 0) {
+      LOG_WRN("AT+COPS failed, err %d", res);
    } else {
-      err = 1;
+      res = 1;
       modem_lock_plmn(true);
    }
    if (value2[0]) {
@@ -350,10 +353,10 @@ int modem_cmd_connect(const char *config)
       LOG_INF(">> con %s ready", value1);
    }
 
-   return err;
+   return res;
 }
 
-void modem_cmd_connect_help(void)
+static void modem_cmd_connect_help(void)
 {
    LOG_INF("> help con:");
    LOG_INF("  con         : read connection information");
@@ -365,33 +368,31 @@ void modem_cmd_connect_help(void)
    LOG_INF("  con auto    : automatic network selection.");
 }
 
-int modem_cmd_scan(const char *config)
+static int modem_cmd_scan(const char *config)
 {
    static struct lte_lc_ncellmeas_params params = {
        .search_type = LTE_LC_NEIGHBOR_SEARCH_TYPE_GCI_DEFAULT,
        .gci_count = 6};
 
-   if (*config == '=' || *config == ' ') {
+   if (*config) {
       char *t = NULL;
-      int type = (int)strtol(++config, &t, 10);
-      if (config != t) {
-         if (type < 0 || type > 5) {
-            LOG_INF("Type %d out of range [0,5]", type);
+      int type = (int)strtol(config, &t, 10);
+      if (config == t) {
+         return -EINVAL;
+      }
+      if (type < 0 || type > 5) {
+         LOG_INF("Type %d out of range [0,5]", type);
+         return -EINVAL;
+      }
+      params.search_type = type + 1;
+      if (*t == ',' || *t == ' ') {
+         int count = (int)strtol(++t, NULL, 10);
+         if (count < 2 || count > 15) {
+            LOG_INF("Count %d out of range [2,15]", count);
             return -EINVAL;
          }
-         params.search_type = type + 1;
-         if (*t == ',' || *t == ' ') {
-            int count = (int)strtol(++t, NULL, 10);
-            if (count < 2 || count > 15) {
-               LOG_INF("Count %d out of range [2,15]", count);
-               return -EINVAL;
-            }
-            params.gci_count = count;
-         }
+         params.gci_count = count;
       }
-   } else if (*config) {
-      LOG_INF("ignore > %s", config);
-      return -EINVAL;
    }
 
    if (params.search_type < LTE_LC_NEIGHBOR_SEARCH_TYPE_GCI_DEFAULT) {
@@ -403,7 +404,7 @@ int modem_cmd_scan(const char *config)
    return lte_lc_neighbor_cell_measurement(&params);
 }
 
-void modem_cmd_scan_help(void)
+static void modem_cmd_scan_help(void)
 {
    LOG_INF("> help scan:");
    LOG_INF("  scan        : repeat previous network scan.");
@@ -416,135 +417,120 @@ void modem_cmd_scan_help(void)
    LOG_INF("  <n>         : maximum cells to list, values 2 to 15.");
 }
 
-#ifdef CONFIG_SMS
-
-#include <modem/sms.h>
-
-int modem_cmd_sms(const char *config)
-{
-   char destination[32];
-   const char *cur = config;
-
-   memset(destination, 0, sizeof(destination));
-   cur = parse_next_text(cur, ' ', destination, sizeof(destination));
-   modem_set_psm(120);
-   if (destination[0]) {
-      return sms_send_text(destination, cur);
-   } else {
-      return -EINVAL;
-   }
-}
-
-void modem_cmd_sms_help(void)
-{
-   LOG_INF("> help sms:");
-   LOG_INF("  sms                  : receive sms (120s).");
-   LOG_INF("  sms <dest> <message> : send sms and receive sms (120s).");
-   LOG_INF("  <dest>               : international IMSI");
-   LOG_INF("  <message>            : message");
-}
-
-#endif
-
 #define ROUND_UP_TIME(T, D) (((T) + ((D)-1)) / (D))
 
-int modem_cmd_psm(const char *config)
+static int modem_cmd_psm(const char *config)
 {
-   unsigned int active_time = 0;
-   unsigned int tau_time = 0;
+   int res = 0;
+   int active_time = 0;
+   int tau_time = 0;
    char tau_unit = 's';
-   int err = sscanf(config, "%u %u%c", &active_time, &tau_time, &tau_unit);
-   if (err >= 2) {
-      char rat[9] = "00000000";
-      char tau[9] = "00000000";
-      int rat_mul = 2;
-      int tau_mul = 2;
-      int tau_unit_id = 0x3;
-      // requested active time
-      // 2s
-      active_time = ROUND_UP_TIME(active_time, 2);
-      if (active_time > 31) {
-         // 60s
-         active_time = ROUND_UP_TIME(active_time, 30);
-         rat_mul = 60;
-         if (active_time > 31) {
-            // 360s
-            active_time = ROUND_UP_TIME(active_time, 6);
-            rat_mul = 360;
-            rat[1] = '1';
+
+   const char *cur = config;
+   char value[8];
+
+   memset(value, 0, sizeof(value));
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+
+   if (!value[0]) {
+      res = lte_lc_psm_get(&tau_time, &active_time);
+      if (!res) {
+         if (active_time < 0) {
+            LOG_INF("PSM disabled");
          } else {
-            rat[2] = '1';
+            LOG_INF("PSM enabled, act: %d s, tau: %d s", active_time, tau_time);
          }
       }
-      print_bin(&rat[3], 5, active_time);
-      // requested tracking aree update time
-      // 2s
-      if (tau_unit == 'h') {
-         tau_time *= 3600;
-      }
-      tau_time = ROUND_UP_TIME(tau_time, 2);
-      if (tau_time > 31) {
-         // 30s
-         tau_time = ROUND_UP_TIME(tau_time, 15);
-         tau_mul = 30;
-         tau_unit_id = 0x4;
-         if (tau_time > 31) {
+   } else if (!stricmp("normal", value)) {
+      modem_lock_psm(false);
+      res = modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
+   } else {
+      res = sscanf(config, "%u %u%c", &active_time, &tau_time, &tau_unit);
+      if (res >= 2) {
+         char rat[9] = "00000000";
+         char tau[9] = "00000000";
+         int rat_mul = 2;
+         int tau_mul = 2;
+         int tau_unit_id = 0x3;
+         // requested active time
+         // 2s
+         active_time = ROUND_UP_TIME(active_time, 2);
+         if (active_time > 31) {
             // 60s
-            tau_time = ROUND_UP_TIME(tau_time, 2);
-            tau_mul = 60;
-            tau_unit_id = 0x5;
+            active_time = ROUND_UP_TIME(active_time, 30);
+            rat_mul = 60;
+            if (active_time > 31) {
+               // 360s
+               active_time = ROUND_UP_TIME(active_time, 6);
+               rat_mul = 360;
+               rat[1] = '1';
+            } else {
+               rat[2] = '1';
+            }
+         }
+         print_bin(&rat[3], 5, active_time);
+         // requested tracking aree update time
+         // 2s
+         if (tau_unit == 'h') {
+            tau_time *= 3600;
+         }
+         tau_time = ROUND_UP_TIME(tau_time, 2);
+         if (tau_time > 31) {
+            // 30s
+            tau_time = ROUND_UP_TIME(tau_time, 15);
+            tau_mul = 30;
+            tau_unit_id = 0x4;
             if (tau_time > 31) {
-               // 600s
-               tau_time = ROUND_UP_TIME(tau_time, 10);
-               tau_mul = 600;
-               tau_unit_id = 0;
+               // 60s
+               tau_time = ROUND_UP_TIME(tau_time, 2);
+               tau_mul = 60;
+               tau_unit_id = 0x5;
                if (tau_time > 31) {
-                  // 3600s / 1h
-                  tau_time = ROUND_UP_TIME(tau_time, 6);
-                  tau_mul = 3600;
-                  tau_unit_id = 1;
+                  // 600s
+                  tau_time = ROUND_UP_TIME(tau_time, 10);
+                  tau_mul = 600;
+                  tau_unit_id = 0;
                   if (tau_time > 31) {
-                     // 36000s / 10h
-                     tau_time = ROUND_UP_TIME(tau_time, 10);
-                     tau_mul = 36000;
-                     tau_unit_id = 2;
+                     // 3600s / 1h
+                     tau_time = ROUND_UP_TIME(tau_time, 6);
+                     tau_mul = 3600;
+                     tau_unit_id = 1;
                      if (tau_time > 31) {
-                        // 320h
-                        tau_time = ROUND_UP_TIME(tau_time, 32);
-                        tau_mul = 36000 * 32;
-                        tau_unit_id = 6;
+                        // 36000s / 10h
+                        tau_time = ROUND_UP_TIME(tau_time, 10);
+                        tau_mul = 36000;
+                        tau_unit_id = 2;
+                        if (tau_time > 31) {
+                           // 320h
+                           tau_time = ROUND_UP_TIME(tau_time, 32);
+                           tau_mul = 36000 * 32;
+                           tau_unit_id = 6;
+                        }
                      }
                   }
                }
             }
          }
-      }
-      print_bin(&tau[0], 3, tau_unit_id);
-      print_bin(&tau[3], 5, tau_time);
+         print_bin(&tau[0], 3, tau_unit_id);
+         print_bin(&tau[3], 5, tau_time);
 
-      if (tau_unit == 'h') {
-         LOG_INF("PSM enable, act: %d s, tau: %d h", active_time * rat_mul, (tau_time * tau_mul) / 3600);
+         if (tau_unit == 'h') {
+            LOG_INF("PSM enable, act: %d s, tau: %d h", active_time * rat_mul, (tau_time * tau_mul) / 3600);
+         } else {
+            LOG_INF("PSM enable, act: %d s, tau: %d s", active_time * rat_mul, tau_time * tau_mul);
+         }
+         modem_lock_psm(true);
+         lte_lc_psm_param_set(tau, rat);
+         res = lte_lc_psm_req(true);
       } else {
-         LOG_INF("PSM enable, act: %d s, tau: %d s", active_time * rat_mul, tau_time * tau_mul);
-      }
-      modem_lock_psm(true);
-      lte_lc_psm_param_set(tau, rat);
-      return lte_lc_psm_req(true);
-   } else {
-      char value[8];
-      const char *cur = config;
-
-      memset(value, 0, sizeof(value));
-      cur = parse_next_text(cur, ' ', value, sizeof(value));
-      if (!stricmp("normal", value)) {
-         modem_lock_psm(false);
-         return modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
+         res = -EINVAL;
       }
    }
-   return -EINVAL;
+
+   return res;
 }
 
-void modem_cmd_psm_help(void)
+static void modem_cmd_psm_help(void)
 {
    LOG_INF("> help psm:");
    LOG_INF("  psm <act-time> <tau-time>[h] : request PSM times.");
@@ -552,59 +538,83 @@ void modem_cmd_psm_help(void)
    LOG_INF("     <tau-time>    : tracking area update time in s.");
    LOG_INF("     <tau-time>h   : tracking area update time in h.");
    LOG_INF("  psm normal       : PSM handled by application.");
+   LOG_INF("  psm              : show current PSM status.");
 }
 
-int modem_cmd_rai(const char *config)
+static int modem_cmd_rai(const char *config)
 {
-   char value[5];
+   int res = 0;
    const char *cur = config;
+   char value[5];
 
    memset(value, 0, sizeof(value));
    cur = parse_next_text(cur, ' ', value, sizeof(value));
-   if (!stricmp("on", value)) {
+   if (!value[0]) {
+      enum lte_network_rai rai = LTE_NETWORK_RAI_UNKNOWN;
+      res = modem_get_rai_status(&rai);
+      if (!res) {
+         LOG_INF("%s.", modem_get_rai_description(rai));
+      }
+   } else if (!stricmp("on", value)) {
       modem_lock_rai(false);
-      return 0;
    } else if (!stricmp("off", value)) {
       modem_set_rai_mode(RAI_OFF, -1);
       modem_lock_rai(true);
-      return 0;
    } else {
-      return -EINVAL;
+      res = -EINVAL;
    }
+
+   return res;
 }
 
-void modem_cmd_rai_help(void)
+static void modem_cmd_rai_help(void)
 {
    LOG_INF("> help rai:");
    LOG_INF("  rai off|on : enable or disable RAI.");
+   LOG_INF("  rai        : show current RAI status.");
 }
 
-int modem_cmd_edrx(const char *config)
+static int modem_cmd_edrx(const char *config)
 {
+   int res = 0;
    unsigned int edrx_time = 0;
-   int err = sscanf(config, "%u", &edrx_time);
-   if (err == 1) {
-      return modem_set_edrx(edrx_time);
-   } else {
-      char value[5];
-      const char *cur = config;
+   const char *cur = config;
+   char value[5];
 
-      memset(value, 0, sizeof(value));
-      cur = parse_next_text(cur, ' ', value, sizeof(value));
-      if (!stricmp("off", value)) {
-         return modem_set_edrx(0);
+   memset(value, 0, sizeof(value));
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+   if (!value[0]) {
+      struct lte_lc_edrx_cfg edrx_cfg;
+      res = lte_lc_edrx_get(&edrx_cfg);
+      if (!res) {
+         if (edrx_cfg.edrx < 1.0) {
+            LOG_INF("eDRX disabled.");
+         } else {
+            LOG_INF("eDRX %.2fs, ptw %.2fs", edrx_cfg.edrx, edrx_cfg.ptw);
+         }
+      }
+   } else if (!stricmp("off", value)) {
+      res = modem_set_edrx(0);
+   } else {
+      res = sscanf(config, "%u", &edrx_time);
+      if (res == 1) {
+         res = modem_set_edrx(edrx_time);
+      } else {
+         res = -EINVAL;
       }
    }
-   return -EINVAL;
+
+   return res;
 }
 
-void modem_cmd_edrx_help(void)
+static void modem_cmd_edrx_help(void)
 {
    LOG_INF("> help edrx:");
    LOG_INF("  edrx <edrx-time> : request eDRX time.");
    LOG_INF("     <edrx-time>   : eDRX time in s.");
    LOG_INF("                   : 0 to disable eDRX.");
    LOG_INF("  edrx off         : disable eDRX.");
+   LOG_INF("  edrx             : show current eDRX status.");
 }
 
 static int modem_cmd_print_bands(const char *bands)
@@ -627,9 +637,9 @@ static int modem_cmd_print_bands(const char *bands)
    return pos;
 }
 
-int modem_cmd_band(const char *config)
+static int modem_cmd_band(const char *config)
 {
-   int err;
+   int res;
    char buf[128];
    char value[4];
    const char *cur = config;
@@ -637,13 +647,13 @@ int modem_cmd_band(const char *config)
    cur = parse_next_text(cur, ' ', value, sizeof(value));
    if (!value[0]) {
       // show bands
-      err = modem_at_cmd(buf, sizeof(buf), "%XBANDLOCK: ", "AT%XBANDLOCK?");
-      if (err > 0) {
+      res = modem_at_cmd(buf, sizeof(buf), "%XBANDLOCK: ", "AT%XBANDLOCK?");
+      if (res > 0) {
          LOG_DBG("BANDLOCK: %s", buf);
          parse_next_qtext(buf, '"', buf, sizeof(buf));
          if (!modem_cmd_print_bands(buf)) {
-            err = modem_at_cmd(buf, sizeof(buf), "%XCBAND: ", "AT%XCBAND=?");
-            if (err > 0) {
+            res = modem_at_cmd(buf, sizeof(buf), "%XCBAND: ", "AT%XCBAND=?");
+            if (res > 0) {
                strtrunc2(buf, '(', ')');
                LOG_INF("Supported BANDs: %s", buf);
             }
@@ -651,8 +661,8 @@ int modem_cmd_band(const char *config)
       }
    } else if (!stricmp(value, "all")) {
       modem_off();
-      err = modem_at_cmd(buf, sizeof(buf), "%XBANDLOCK: ", "AT%XBANDLOCK=0");
-      if (err > 0) {
+      res = modem_at_cmd(buf, sizeof(buf), "%XBANDLOCK: ", "AT%XBANDLOCK=0");
+      if (res > 0) {
          LOG_INF("BANDLOCK: %s", buf);
       }
       modem_restore();
@@ -666,8 +676,8 @@ int modem_cmd_band(const char *config)
          cur = parse_next_text(cur, ' ', value, sizeof(value));
       }
       modem_off();
-      err = modem_at_cmdf(buf, sizeof(buf), "%XBANDLOCK: ", "AT%%XBANDLOCK=1,\"%s\"", bands);
-      if (err >= 0) {
+      res = modem_at_cmdf(buf, sizeof(buf), "%XBANDLOCK: ", "AT%%XBANDLOCK=1,\"%s\"", bands);
+      if (res >= 0) {
          LOG_INF("BANDLOCK: %s", buf);
       }
       modem_restore();
@@ -675,7 +685,7 @@ int modem_cmd_band(const char *config)
    return 0;
 }
 
-void modem_cmd_band_help(void)
+static void modem_cmd_band_help(void)
 {
    LOG_INF("> help band:");
    LOG_INF("  band               : show current bands.");
@@ -683,20 +693,20 @@ void modem_cmd_band_help(void)
    LOG_INF("  band <b1> <b2> ... : activate bands <b1> <b2> ... .");
 }
 
-int modem_cmd_reduced_mobility(const char *config)
+static int modem_cmd_reduced_mobility(const char *config)
 {
    unsigned int mode = 0;
-   int err = sscanf(config, "%u", &mode);
-   if (err == 1) {
+   int res = sscanf(config, "%u", &mode);
+   if (res == 1) {
       if (mode > 2) {
          LOG_INF("Mode %u is out of scope [0..2].", mode);
-         err = -EINVAL;
+         res = -EINVAL;
       } else {
-         err = modem_set_reduced_mobility(mode);
+         res = modem_set_reduced_mobility(mode);
       }
-   } else if (err == EOF) {
-      err = modem_get_reduced_mobility();
-      switch (err) {
+   } else if (res == EOF) {
+      res = modem_get_reduced_mobility();
+      switch (res) {
          case 0:
          case 2:
             LOG_INF("Reduced mobility disabled.");
@@ -708,10 +718,10 @@ int modem_cmd_reduced_mobility(const char *config)
             break;
       }
    }
-   return err;
+   return res;
 }
 
-void modem_cmd_reduced_mobility_help(void)
+static void modem_cmd_reduced_mobility_help(void)
 {
    LOG_INF("> help remo:");
    LOG_INF("  remo   : show current reduced mobility mode.");
@@ -720,20 +730,20 @@ void modem_cmd_reduced_mobility_help(void)
    LOG_INF("  remo 2 : no reduced mobility.");
 }
 
-int modem_cmd_power_level(const char *config)
+static int modem_cmd_power_level(const char *config)
 {
    unsigned int level = 0;
-   int err = sscanf(config, "%d", &level);
-   if (err == 1) {
+   int res = sscanf(config, "%d", &level);
+   if (res == 1) {
       if (level > 4) {
          LOG_INF("Level %u is out of scope [0..4].", level);
-         err = -EINVAL;
+         res = -EINVAL;
       } else {
-         err = modem_set_power_level(level);
+         res = modem_set_power_level(level);
       }
-   } else if (err == EOF) {
-      err = modem_get_power_level();
-      switch (err) {
+   } else if (res == EOF) {
+      res = modem_get_power_level();
+      switch (res) {
          case 0:
             LOG_INF("Ultra-low power.");
             break;
@@ -754,10 +764,10 @@ int modem_cmd_power_level(const char *config)
       }
    }
 
-   return err;
+   return res;
 }
 
-void modem_cmd_power_level_help(void)
+static void modem_cmd_power_level_help(void)
 {
    LOG_INF("> help power:");
    LOG_INF("  power     : show current power level.");
@@ -769,105 +779,89 @@ void modem_cmd_power_level_help(void)
    LOG_INF("        4   : High performance");
 }
 
-#else
-
-int modem_config(const char *config)
+static int modem_cmd_switch_on(const char *parameter)
 {
-   (void)config;
-   return -ENOTSUP;
+   (void)parameter;
+   return modem_set_normal();
 }
 
-void modem_cmd_config_help(void)
+static int modem_cmd_sim(const char *parameter)
 {
-   LOG_WRN("> 'cfg' not supported!");
+   (void)parameter;
+   return modem_sim_read_info(NULL, true);
 }
 
-int modem_cmd_connect(const char *config)
+static int modem_cmd_state(const char *parameter)
 {
-   (void)config;
-   return -ENOTSUP;
+   (void)parameter;
+   return modem_read_network_info(NULL, true);
 }
 
-void modem_cmd_connect_help(void)
+static int modem_cmd_rate_limit(const char *parameter)
 {
-   LOG_WRN("> 'con' not supported!");
+   (void)parameter;
+   uint32_t time = 0;
+   int res = modem_read_rate_limit_time(&time);
+   if (time) {
+      LOG_INF(">> rate limit exceeded, %u s", time);
+   }
+   return res;
 }
 
-int modem_cmd_scan(const char *config)
+#ifdef CONFIG_SMS
+
+#include <modem/sms.h>
+
+static int modem_cmd_sms(const char *config)
 {
-   (void)config;
-   return -ENOTSUP;
+   char destination[32];
+   const char *cur = config;
+
+   memset(destination, 0, sizeof(destination));
+   cur = parse_next_text(cur, ' ', destination, sizeof(destination));
+   modem_set_psm(120);
+   if (destination[0]) {
+      return sms_send_text(destination, cur);
+   } else {
+      return 0;
+   }
 }
 
-void modem_cmd_scan_help(void)
+static void modem_cmd_sms_help(void)
 {
-   LOG_WRN("> 'scan' not supported!");
+   LOG_INF("> help sms:");
+   LOG_INF("  sms                  : receive sms (120s).");
+   LOG_INF("  sms <dest> <message> : send sms and receive sms (120s).");
+   LOG_INF("  <dest>               : international IMSI");
+   LOG_INF("  <message>            : message");
 }
 
-int modem_cmd_sms(const char *config)
-{
-   (void)config;
-   return -ENOTSUP;
-}
+UART_CMD(sms, "", "send SMS.", modem_cmd_sms, modem_cmd_sms_help, 0);
 
-void modem_cmd_sms_help(void)
-{
-   LOG_WRN("> 'sms' not supported!");
-}
+#endif
 
-int modem_cmd_psm(const char *config)
-{
-   (void)config;
-   return -ENOTSUP;
-}
+UART_CMD(eval, "AT%CONEVAL", "evaluate connection.", NULL, NULL, 0);
+UART_CMD(off, "AT+CFUN=0", "switch modem off.", NULL, NULL, 0);
+UART_CMD(offline, "AT+CFUN=4", "switch modem offline.", NULL, NULL, 0);
+UART_CMD(reset, "AT%XFACTORYRESET=0", "modem factory reset.", NULL, NULL, 0);
+UART_CMD(search, "AT+COPS=?", "network search.", NULL, NULL, 0);
 
-void modem_cmd_psm_help(void)
-{
-   LOG_WRN("> 'psm' not supported!");
-}
+UART_CMD(limit, "", "read apn rate limit.", modem_cmd_rate_limit, NULL, 0);
+UART_CMD(on, "", "switch modem on.", modem_cmd_switch_on, NULL, 0);
+UART_CMD(sim, "", "read SIM-card info.", modem_cmd_sim, NULL, 0);
+UART_CMD(state, "", "read modem state.", modem_cmd_state, NULL, 0);
 
-int modem_cmd_edrx(const char *config)
-{
-   (void)config;
-   return -ENOTSUP;
-}
+UART_CMD(cfg, "", "configure modem.", modem_cmd_config, modem_cmd_config_help, 3);
+UART_CMD(con, "", "connect modem.", modem_cmd_connect, modem_cmd_connect_help, 3);
 
-void modem_cmd_edrx_help(void)
-{
-   LOG_WRN("> 'edrx' not supported!");
-}
+UART_CMD(scan, "AT%NCELLMEAS", "network scan.", modem_cmd_scan, modem_cmd_scan_help, 0);
 
-int modem_cmd_band(const char *config)
-{
-   (void)config;
-   return -ENOTSUP;
-}
+UART_CMD(band, "", "configure bands.", modem_cmd_band, modem_cmd_band_help, 0);
+UART_CMD(edrx, "", "configure eDRX.", modem_cmd_edrx, modem_cmd_edrx_help, 0);
+UART_CMD(psm, "", "configure PSM.", modem_cmd_psm, modem_cmd_psm_help, 0);
+UART_CMD(rai, "", "configure RAI.", modem_cmd_rai, modem_cmd_rai_help, 0);
 
-void modem_cmd_band_help(void)
-{
-   LOG_WRN("> 'remo' not supported!");
-}
-
-int modem_cmd_reduced_mobility(const char *config)
-{
-   (void)config;
-   return -ENOTSUP;
-}
-
-void modem_cmd_reduced_mobility_help(void)
-{
-   LOG_WRN("> 'remo' not supported!");
-}
-
-int modem_cmd_power_level(const char *config)
-{
-   (void)config;
-   return -ENOTSUP;
-}
-
-void modem_cmd_power_level_help(void)
-{
-   LOG_WRN("> 'power' not supported!");
-}
+UART_CMD(remo, "", "reduced mobility.", modem_cmd_reduced_mobility, modem_cmd_reduced_mobility_help, 0);
+UART_CMD(power, "", "configure power level.", modem_cmd_power_level, modem_cmd_power_level_help, 0);
 
 #endif
