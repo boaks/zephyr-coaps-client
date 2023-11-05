@@ -38,9 +38,9 @@ The usage of the sensors also reduces that time. Consider to measure less freque
 
 ## Basic
 
-- **APPL_VERSION**, application version, if `McuBoot`is not used.
-
 - **APPL_MODEL**, application model, used to select the firmware variant for the hardware when downloading via CoAP. The resulting CoAP resource path will be `fw`/`<model>`/`<version>`, e.g. "fw/dk/0.7.108+2".
+
+-- **APPL_MODEL_DESCRIPTION**, application description to include in reported version.
 
 - **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox at `californium.eclipseprojects.io`.
 
@@ -195,7 +195,9 @@ Configure used URI query parameter. Please note, that these query parameter must
 
 - **ADP536X_POWER_MANAGEMENT_LOW_POWER**, enable sleeping mode for the Thingy's battery power management. Default enabled.
 
-- **BATTERY_ADC**, enable ADC battery voltage.
+- **BATTERY_ADC**, enable ADC battery voltage measurement.
+
+- **EXT_BATTERY_ADC**, enable external ADC battery voltage measurement. Monitors a second external battery. Requires [vbatt2.overlay](../vbatt2.overlay).
 
 - **BATTERY_TYPE**, select battery type. LiPo 1350mAh, LiPo 2000mAh, and NiMh 2000 mAh are supported.
 
@@ -264,13 +266,19 @@ As mentioned above, overlays are files, which are used to configure a set of fea
 
 [sht3x-prj.conf](../sht3x-prj.conf) prepares to use the **SHT3X Zephyr Sensor library**. Requires device tree overlay [sht3x.overlay](../sht3x.overlay) additionally.
 
-[one-wire-prj.conf](../one-wire-prj.conf) prepares to use the **DS18B20 Zephyr Sensor library**. Requires device tree overlay [one-wire-uart1.overlay](../one-wire-uart1.overlay) or [one-wire-uart2.overlay](../one-wire-uart2.overlay)additionally.
+[one-wire-prj.conf](../one-wire-prj.conf) prepares to use the **DS18B20 Zephyr Sensor library**. Requires device tree overlay [one-wire-uart1.overlay](../one-wire-uart1.overlay) or [one-wire-uart2.overlay](../one-wire-uart2.overlay) additionally.
 
 [5min-prj.conf](../5min-prj.conf) prepares to send a message every 5 minutes. Enables to use a environment history to store sensor data.
 
 [10min-prj.conf](../10min-prj.conf) prepares to send a message every 10 minutes. Enables to use a environment history to store sensor data.
 
 [60min-prj.conf](../60min-prj.conf) prepares to send a message every 60 minutes. Enables to use a environment history to store sensor data.
+
+[at-cmd-prj.conf](../at-cmd-prj.conf) prepares UART cmd shell. Supports a set of AT cmds and firmware update via XMODEM.
+
+[hivescale-prj.conf](../hivescale-prj.conf) prepares to use the **NAU7802 I2C ADC**. Requires device tree overlay [hivescale-feather.overlay](../hivescale-feather.overlay) or [hivescale-dk.overlay](../hivescale-dk.overlay) additionally.
+
+[vbatt2.overlay](../vbatt2.overlay) prepares to monitor a second, external batters.
 
 ## Apply overlays
 

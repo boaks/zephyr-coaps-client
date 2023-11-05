@@ -50,7 +50,8 @@ static K_CONDVAR_DEFINE(lte_condvar);
 
 static lte_state_change_callback_handler_t lte_state_change_handler = NULL;
 static int lte_initial_config = 0;
-static enum lte_lc_system_mode lte_initial_mode = LTE_LC_SYSTEM_MODE_NONE;
+static bool lte_mode_init = false;
+static enum lte_lc_system_mode lte_initial_mode = LTE_LC_SYSTEM_MODE_LTEM;
 
 static bool initialized = 0;
 
@@ -258,7 +259,7 @@ bool modem_set_preference(enum preference_mode mode)
             switch (mode) {
                case RESET_PREFERENCE:
                   op = "Reset";
-                  lte_new_preference = CONFIG_LTE_MODE_PREFERENCE;
+                  lte_new_preference = CONFIG_LTE_MODE_PREFERENCE_VALUE;
                   break;
                case SWAP_PREFERENCE:
                   op = "Swap";
@@ -562,7 +563,6 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
    switch (reg_status) {
       case LTE_LC_NW_REG_REGISTERED_HOME:
       case LTE_LC_NW_REG_REGISTERED_ROAMING:
-      case LTE_LC_NW_REG_REGISTERED_EMERGENCY:
          registered = true;
          break;
       case LTE_LC_NW_REG_SEARCHING:
@@ -890,6 +890,12 @@ static void pdn_handler(uint8_t cid, enum pdn_event event,
          LOG_INF("PDN CID %u, detach", cid);
          lte_pdn_status_set(false);
          break;
+      case PDN_EVENT_APN_RATE_CONTROL_ON:
+         LOG_INF("PDN CID %u, rate limit reached", cid);
+         break;
+      case PDN_EVENT_APN_RATE_CONTROL_OFF:
+         LOG_INF("PDN CID %u, rate limit off", cid);
+         break;
    }
 }
 #endif
@@ -981,8 +987,8 @@ static int modem_connect(void)
             LOG_WRN("Connecting to LTE network failed, error: %d", err);
          }
       }
-      if (!err && lte_initial_mode == LTE_LC_SYSTEM_MODE_NONE) {
-         lte_lc_system_mode_get(&lte_initial_mode, NULL);
+      if (!err && lte_mode_init) {
+         lte_mode_init = lte_lc_system_mode_get(&lte_initial_mode, NULL);
       }
    }
    return err;
@@ -1074,8 +1080,8 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          lte_force_lte_m = true;
          lte_lc_system_mode_set(LTE_LC_SYSTEM_MODE_LTEM, LTE_LC_SYSTEM_MODE_PREFER_LTEM);
       }
-      if (lte_initial_mode != LTE_LC_SYSTEM_MODE_NONE && !lte_force_lte_m && !lte_force_nb_iot) {
-         lte_lc_system_mode_set(lte_initial_mode, CONFIG_LTE_MODE_PREFERENCE);
+      if (!lte_mode_init && !lte_force_lte_m && !lte_force_nb_iot) {
+         lte_lc_system_mode_set(lte_initial_mode, CONFIG_LTE_MODE_PREFERENCE_VALUE);
       }
 #ifdef CONFIG_AS_RAI_ON
       err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%REL14FEAT=0,1,0,0,0");
@@ -1616,7 +1622,6 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
       switch (value) {
          case LTE_LC_NW_REG_REGISTERED_HOME:
          case LTE_LC_NW_REG_REGISTERED_ROAMING:
-         case LTE_LC_NW_REG_REGISTERED_EMERGENCY:
             temp.status = (enum lte_lc_nw_reg_status)value;
             temp.registered = LTE_NETWORK_STATE_ON;
             break;

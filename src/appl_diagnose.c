@@ -19,6 +19,13 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/reboot.h>
 
+#ifdef CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION
+#define APP_VERSION_STRING CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION
+#else /* No McuBoot */
+/* auto generated header file during west build */
+#include "app_version.h"
+#endif
+
 #include "appl_diagnose.h"
 #include "appl_storage.h"
 #include "appl_storage_config.h"
@@ -255,11 +262,8 @@ static int appl_watchdog_init(void)
 
 static int appl_diagnose_init(void)
 {
-#ifdef CONFIG_MCUBOOT_IMAGE_VERSION
-   const char *mcu_appl_version = CONFIG_MCUBOOT_IMAGE_VERSION;
-#else
-   const char *mcu_appl_version = CONFIG_APPL_VERSION;
-#endif
+   const char *mcu_appl_version = APP_VERSION_STRING;
+
    appl_watchdog_init();
 
    k_thread_create(&appl_diagnose_thread,

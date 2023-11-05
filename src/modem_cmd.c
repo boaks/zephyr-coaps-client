@@ -94,10 +94,14 @@ int modem_cmd_config(const char *config)
       char net_mode = 0;
       char plmn[16];
       const char *desc = "\?\?\?";
-      enum lte_lc_system_mode lte_mode = LTE_LC_SYSTEM_MODE_NONE;
-      enum lte_lc_system_mode_preference lte_preference = CONFIG_LTE_MODE_PREFERENCE;
+      enum lte_lc_system_mode lte_mode = LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS;
+      enum lte_lc_system_mode_preference lte_preference = CONFIG_LTE_MODE_PREFERENCE_VALUE;
 
-      lte_lc_system_mode_get(&lte_mode, &lte_preference);
+      err = lte_lc_system_mode_get(&lte_mode, &lte_preference);
+      if (err) {
+         LOG_INF("Can't read current LTE mode!");
+         return err;
+      }
       memset(plmn, 0, sizeof(plmn));
       err = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS?");
       if (err > 0) {
@@ -155,12 +159,16 @@ int modem_cmd_config(const char *config)
    }
    LOG_INF(">> cfg %s %s %s", value1, value2, value3);
    if (value2[0]) {
-      enum lte_lc_system_mode lte_mode = LTE_LC_SYSTEM_MODE_NONE;
-      enum lte_lc_system_mode_preference lte_preference = CONFIG_LTE_MODE_PREFERENCE;
+      enum lte_lc_system_mode lte_mode = LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS;
+      enum lte_lc_system_mode_preference lte_preference = CONFIG_LTE_MODE_PREFERENCE_VALUE;
       enum lte_lc_system_mode lte_mode_new;
       enum lte_lc_system_mode_preference lte_preference_new;
       bool gps;
-      lte_lc_system_mode_get(&lte_mode, &lte_preference);
+      err = lte_lc_system_mode_get(&lte_mode, &lte_preference);
+      if (err) {
+         LOG_INF("Can't read current LTE mode!");
+         return err;
+      }
       lte_mode_new = lte_mode;
       lte_preference_new = lte_preference;
       gps = lte_mode == LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS ||

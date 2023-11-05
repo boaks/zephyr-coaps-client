@@ -4,7 +4,7 @@
 
 ## Reliable - Efficient - Encrypted
 
-Version 0.7.0 - September 2023
+Version 0.8.0 - Novemberr 2023
 
 This [zephyr](https://www.zephyrproject.org/) client demonstrates to use coaps ([CoAP](https://tools.ietf.org/html/rfc7252) over [DTLS 1.2](https://tools.ietf.org/html/rfc6347)) with the [Eclipse/TinyDtls Library](https://github.com/eclipse/tinydtls). In combination with [Eclipse/Californium](https://github.com/eclipse/californium) as Cloud-Server, it enables a device to use [DTLS 1.2 Connection ID](https://tools.ietf.org/html/rfc9146), which obsolete the commonly used frequently DTLS handshakes and eliminates that expensive overhead.
 Reducing the messages exchange mostly down to two ip-messages (one request, one response), it enables your device for
@@ -38,7 +38,7 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160) based devic
 | [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/)<br>Requires additional batteries, antennas, and closures to work in the "wild". The design of the feather allows to easily add custom sensors. | ![nRF9160-feather-v5](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
 | [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. The design allows to easily add custom sensors. | ![nRF9160-DK](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK.png) |
 
-The demo works with [ncs-2.4.2](https://github.com/nrfconnect/sdk-nrf/tree/v2.4.2).
+The demo works with [ncs-2.5.0](https://github.com/nrfconnect/sdk-nrf/tree/v2.5.0).
 
 To benefit from the newer modem features, please consider to use the modem firmware [1.3.5](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.5.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
@@ -143,7 +143,7 @@ west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git zephyr-c
 ```
 
 from a toolchain-manager-installation, fails with an error message, that a workspace already exists.
-In order to add just this coaps-demo-app and the tinydtls module library to a workspace, open the workspace (for ncs the "ncs" installation folder and change to "v2.4.2" folder there). Here you find a ".west" folder, that contains the west-configuration for the workspace. Rename that ".west" folder into ".west.org" in order to replace that west-configuration by the one from this example. Now execute 
+In order to add just this coaps-demo-app and the tinydtls module library to a workspace, open the workspace (for ncs the "ncs" installation folder and change to "v2.5.0" folder there). Here you find a ".west" folder, that contains the west-configuration for the workspace. Rename that ".west" folder into ".west.org" in order to replace that west-configuration by the one from this example. Now execute 
 
 ```sh
 west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git

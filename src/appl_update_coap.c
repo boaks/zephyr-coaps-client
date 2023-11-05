@@ -25,6 +25,12 @@
 #include "io_job_queue.h"
 #include "parse.h"
 
+#ifdef CONFIG_MCUBOOT_IMAGE_VERSION
+#define IMAGE_VERSION CONFIG_MCUBOOT_IMAGE_VERSION
+#else 
+#define IMAGE_VERSION CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION
+#endif
+
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #define APP_COAP_MAX_RES_PATH_LEN 64
@@ -258,11 +264,11 @@ static int appl_update_coap_set_resource(const char *resource)
    if (coap_download) {
       rc = -EBUSY;
    } else {
-      if (!stricmp(resource, CONFIG_MCUBOOT_IMAGE_VERSION)) {
+      if (!stricmp(resource, IMAGE_VERSION)) {
          LOG_INF("Version '%s' already available.", resource);
          rc = -EEXIST;
       } else {
-         LOG_INF("Update '%s' to '%s'.", CONFIG_MCUBOOT_IMAGE_VERSION, resource);
+         LOG_INF("Update '%s' to '%s'.", IMAGE_VERSION, resource);
          memset(coap_resource_path, 0, sizeof(coap_resource_path));
          strncpy(coap_resource_path, resource, sizeof(coap_resource_path) - 1);
          coap_download = true;

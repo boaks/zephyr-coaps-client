@@ -563,7 +563,7 @@ static void uart_enable_rx_fn(struct k_work *work)
       pm_device_action_run(uart_dev, PM_DEVICE_ACTION_RESUME);
       atomic_clear_bit(&uart_at_state, UART_SUSPENDED);
    } else if (err == 0) {
-      if (k_uptime_get() > 2000 && k_sem_count_get(&uart_tx_sem) == 0) {
+      if (k_uptime_get() > 10000 && k_sem_count_get(&uart_tx_sem) == 0) {
          // early suspend seems to crash
          atomic_set_bit(&uart_at_state, UART_SUSPENDED);
          pm_device_action_run(uart_dev, PM_DEVICE_ACTION_SUSPEND);
@@ -604,24 +604,25 @@ static void at_cmd_result(int res)
          const char *desc = "";
          switch (res) {
             case -EFAULT:
-               desc = " (off)";
+               desc = "off";
                break;
             case -EINVAL:
-               desc = " (invalid parameter)";
+               desc = "invalid parameter";
                break;
             case -ESHUTDOWN:
-               desc = " (in shutdown)";
+               desc = "in shutdown";
                break;
             case -EINPROGRESS:
-               desc = " (in progress)";
+               desc = "in progress";
                break;
             case -ENOTSUP:
-               desc = " (not supported)";
+               desc = "not supported";
                break;
             default:
+               desc = strerror(-res);
                break;
          }
-         LOG_INF("ERROR %d%s\n", -res, desc);
+         LOG_INF("ERROR %d (%s)\n", -res, desc);
       }
 
       if (finish) {

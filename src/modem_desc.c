@@ -21,8 +21,6 @@ const char *modem_get_system_mode_description(
     enum lte_lc_system_mode_preference lte_preference)
 {
    switch (lte_mode) {
-      case LTE_LC_SYSTEM_MODE_NONE:
-         return "none";
       case LTE_LC_SYSTEM_MODE_LTEM:
          return "LTE-M";
       case LTE_LC_SYSTEM_MODE_NBIOT:
@@ -70,8 +68,6 @@ const char *modem_get_system_mode_cfg(
     enum lte_lc_system_mode_preference lte_preference)
 {
    switch (lte_mode) {
-      case LTE_LC_SYSTEM_MODE_NONE:
-         return "none";
       case LTE_LC_SYSTEM_MODE_LTEM:
          return "m1";
       case LTE_LC_SYSTEM_MODE_NBIOT:
@@ -129,8 +125,6 @@ const char *modem_get_registration_description(enum lte_lc_nw_reg_status reg_sta
          break;
       case LTE_LC_NW_REG_REGISTERED_ROAMING:
          return "Registered - roaming network";
-      case LTE_LC_NW_REG_REGISTERED_EMERGENCY:
-         return "Registered - emergency network";
       case LTE_LC_NW_REG_UICC_FAIL:
          return "Not Registered - UICC fail";
       default:
@@ -154,8 +148,6 @@ const char *modem_get_registration_short_description(enum lte_lc_nw_reg_status r
          break;
       case LTE_LC_NW_REG_REGISTERED_ROAMING:
          return "roaming";
-      case LTE_LC_NW_REG_REGISTERED_EMERGENCY:
-         return "emergency";
       case LTE_LC_NW_REG_UICC_FAIL:
          return "UICC fail";
       default:
