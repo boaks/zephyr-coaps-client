@@ -2,9 +2,9 @@
 
 # Zephyr - Coaps Demo Client with Eclipse/TinyDtls
 
-## Prebuild binaries v0.7.0
+## Prebuild binaries v0.8.0
 
-This folder contains 5 prebuild binaries intended to be used to get a first impression of CoAP / DTLS 1.2 CID. The compiled in destination server is californium.eclipseprojects.io. To gather more experience, please build and modify this example on your own.
+This folder contains 8 prebuild binaries intended to be used to get a first impression of CoAP / DTLS 1.2 CID. The compiled in destination server is californium.eclipseprojects.io. To gather more experience, please build and modify this example on your own.
 
 ## License
 
@@ -24,8 +24,9 @@ Therefore, before you start, ensure, that you're common with the tools in order 
 
 ## [nrf9160 feather](https://www.jaredwolff.com/store/nrf9160-feather/)
 
-- [full image: dojo_feather_nrf9160_ns_full.hex](../../../raw/main/prebuild/dojo_feather_nrf9160_ns_full.hex) using a debug probe, this is the preferred approach
-- [signed app image: dojo_feather_nrf9160_ns_app_signed.hex](../../../raw/main/prebuild/dojo_feather_nrf9160_ns_app_signed.hex) app signed with the demo keys. May be used without debug probe via USB and [bootloader with newtmgr](https://docs.jaredwolff.com/nrf9160-programming-and-debugging.html#bootloader-use).
+- [full image: circuitdojo_feather_nrf9160_ns_full.hex](../../../raw/main/prebuild/circuitdojo_feather_nrf9160_ns_full.hex) using a debug probe, this is the preferred approach
+- [signed app image: circuitdojo_feather_nrf9160_ns_app_signed.hex](../../../raw/main/prebuild/circuitdojo_feather_nrf9160_ns_app_signed.hex) app signed with the demo keys. May be used without debug probe via USB and [bootloader with newtmgr](https://docs.jaredwolff.com/nrf9160-programming-and-debugging.html#bootloader-use). You need to ensure also, that "\~/.zephyrtools/newtmgr/" and "\~/.zephyrtools/zephyr-tools/" are added to your `PATH`. 
+- [signed app update: circuitdojo_feather_nrf9160_ns_app_update.bin](../../../raw/main/prebuild/circuitdojo_feather_nrf9160_ns_app_update.bin) app signed with the demo keys. May be used for FOTA (CoAP) or XMODEM updates.
 
 For automatic bootloader support on linux, please ensure, that the permissions are granted by
 
@@ -39,7 +40,9 @@ For Windows you still need to switch on the bootloader mode manually by pressing
 
 - [full image: thingy91_nrf9160_ns_full.hex](../../../raw/main/prebuild/thingy91_nrf9160_ns_full.hex) using a debug probe, this is the preferred approach
 - [signed app image: thingy91_nrf9160_ns_app_signed.hex](../../../raw/main/prebuild/thingy91_nrf9160_ns_app_signed.hex) app signed with the demo keys. May be used without debug probe via USB and [nRF Connect Programmer](https://infocenter.nordicsemi.com/index.jsp?topic=/struct_nrftools/struct/nrftools_nrfconnect.html).
+- [signed app update: thingy91_nrf9160_ns_app_update.bin](../../../raw/main/prebuild/thingy91_nrf9160_ns_app_update.bin) app signed with the demo keys. May be used for FOTA (CoAP) or XMODEM updates.
 
 ## [nrf9160 DevKit](https://www.nordicsemi.com/Products/Development-hardware/nrf9160-dk)
 
 - [full image: nrf9160dk_nrf9160_ns_full.hex](../../../raw/main/prebuild/nrf9160dk_nrf9160_ns_full.hex) using the onboard debug probe of the devkit.
+- [signed app update: nrf9160dk_nrf9160_ns_app_update.bin](../../../raw/main/prebuild/nrf9160dk_nrf9160_ns_app_update.bin) app signed with the demo keys. May be used for FOTA (CoAP) or XMODEM updates.
