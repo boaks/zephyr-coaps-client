@@ -21,6 +21,7 @@
 #include <zephyr/logging/log.h>
 
 #include "battery_adc.h"
+#include "uart_cmd.h"
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
@@ -72,7 +73,6 @@ struct battery_adc_status {
        },                                                                                                                                                     \
    }
 
-
 CREATE_VBATT_INSTANCE(VBATT, 0, SAMPLE_MIN_INTERVAL_MILLIS);
 static volatile struct battery_adc_status battery_status_VBATT = {false, 0, 0};
 
@@ -81,7 +81,6 @@ static volatile struct battery_adc_status battery_status_VBATT = {false, 0, 0};
 CREATE_VBATT_INSTANCE(VBATT2, 1, SAMPLE_MIN_INTERVAL2_MILLIS);
 static volatile struct battery_adc_status battery_status_VBATT2 = {false, 0, 0};
 #endif
-
 
 static int16_t adc_raw_data = 0;
 
@@ -268,3 +267,18 @@ int battery2_sample(uint16_t *voltage)
    return -ENODEV;
 #endif
 }
+
+#ifdef VBATT2
+static int battery_cmd(const char *parameter)
+{
+   (void)parameter;
+   uint16_t battery_voltage = 0xffff;
+   int res = battery2_sample(&battery_voltage);
+   if (!res) {
+      LOG_INF("Ext.Bat.: %u mV", battery_voltage);
+   }
+   return res;
+}
+
+UART_CMD(extbat, NULL, "read external battery voltage.", battery_cmd, NULL, 0);
+#endif

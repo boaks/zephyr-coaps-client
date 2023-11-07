@@ -30,6 +30,7 @@
 #include "appl_storage.h"
 #include "appl_storage_config.h"
 #include "ui.h"
+#include "uart_cmd.h"
 
 #define MSEC_PER_HOUR (MSEC_PER_SEC * 60 * 60)
 
@@ -220,6 +221,20 @@ int appl_reset_cause_description(char *buf, size_t len)
    }
    return index;
 }
+
+static int at_cmd_reboot(const char *parameter)
+{
+   (void)parameter;
+   if (appl_reboots()) {
+      LOG_INF(">> device already reboots!");
+   } else {
+      LOG_INF(">> device reboot ...");
+      appl_reboot(ERROR_CODE_CMD, K_MSEC(2000));
+   }
+   return 0;
+}
+
+UART_CMD(reboot, NULL, "reboot device.", at_cmd_reboot, NULL, 0);
 
 static int appl_watchdog_init(void)
 {

@@ -41,6 +41,7 @@
 #include "modem_sim.h"
 #include "power_manager.h"
 #include "ui.h"
+#include "uart_cmd.h"
 
 #ifdef CONFIG_LOCATION_ENABLE
 #include "location.h"
@@ -1675,6 +1676,22 @@ static int init_destination(int protocol, session_t *destination)
    }
    return 0;
 }
+
+static int at_cmd_send(const char *parameter)
+{
+   LOG_INF(">> send %s", parameter);
+   dtls_cmd_trigger(true, 3, parameter, strlen(parameter));
+   return 0;
+}
+
+static void at_cmd_send_help(void)
+{
+   LOG_INF("> help send:");
+   LOG_INF("  send            : send application message.");
+   LOG_INF("  send <message>  : send provided message.");
+}
+
+UART_CMD(send, NULL, "send message.", at_cmd_send, at_cmd_send_help, 0);
 
 int main(void)
 {

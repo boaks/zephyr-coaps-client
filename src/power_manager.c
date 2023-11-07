@@ -11,6 +11,7 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <zephyr/device.h>
@@ -24,6 +25,7 @@
 #include "modem_at.h"
 #include "power_manager.h"
 #include "transform.h"
+#include "uart_cmd.h"
 
 #ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADC
 #include "battery_adc.h"
@@ -551,7 +553,11 @@ int power_manager_voltage(uint16_t *voltage)
       char buf[32];
       rc = modem_at_cmd(buf, sizeof(buf), "%XVBAT: ", "AT%XVBAT");
       if (rc < 0) {
-         LOG_WRN("Failed to read battery level from modem! %d", rc);
+         if (rc == -EBUSY) {
+            LOG_WRN("Failed to read battery level from modem, modem is busy!");
+         } else {
+            LOG_WRN("Failed to read battery level from modem! %d (%s)", rc, strerror(-rc));
+         }
       } else {
          internal_voltage = atoi(buf);
          LOG_DBG("Modem %u mV", internal_voltage);
@@ -612,3 +618,65 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
    }
    return rc;
 }
+
+int power_manager_status_desc(char *buf, size_t len)
+{
+   power_manager_status_t battery_status = POWER_UNKNOWN;
+   int index = 0;
+   uint16_t battery_voltage = 0xffff;
+   int16_t battery_forecast = -1;
+   uint8_t battery_level = 0xff;
+
+   power_manager_status(&battery_level, &battery_voltage, &battery_status, &battery_forecast);
+   if (battery_voltage < 0xffff) {
+      index += snprintf(buf, len, "%u mV", battery_voltage);
+      if (battery_level < 0xff) {
+         index += snprintf(buf + index, len - index, " %u%%", battery_level);
+      }
+      if (battery_forecast > 1 || battery_forecast == 0) {
+         index += snprintf(buf + index, len - index, " (%u days left)", battery_forecast);
+      } else if (battery_forecast == 1) {
+         index += snprintf(buf + index, len - index, " (1 day left)");
+      }
+      const char *msg = "";
+      switch (battery_status) {
+         case FROM_BATTERY:
+            msg = "battery";
+            break;
+         case CHARGING_TRICKLE:
+            msg = "charging (trickle)";
+            break;
+         case CHARGING_I:
+            msg = "charging (I)";
+            break;
+         case CHARGING_V:
+            msg = "charging (V)";
+            break;
+         case CHARGING_COMPLETED:
+            msg = "full";
+            break;
+         default:
+            break;
+      }
+      if (msg[0]) {
+         index += snprintf(buf + index, len - index, " %s", msg);
+      }
+   }
+   return index;
+}
+
+static int battery_cmd(const char *parameter)
+{
+   (void)parameter;
+   char buf[128];
+   if (power_manager_status_desc(buf, sizeof(buf))) {
+      LOG_INF("%s", buf);
+   }
+   return 0;
+}
+
+#ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_MODEM
+UART_CMD(bat, "", "read battery status.", battery_cmd, NULL, 0);
+#else
+UART_CMD(bat, NULL, "read battery status.", battery_cmd, NULL, 0);
+#endif

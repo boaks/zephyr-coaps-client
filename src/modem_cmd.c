@@ -29,10 +29,17 @@ LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 #include <modem/pdn.h>
 #include <nrf_modem_at.h>
 
+#include "io_job_queue.h"
 #include "modem.h"
 #include "modem_at.h"
 #include "modem_desc.h"
-#include "modem_sim.h"
+
+static void modem_logging_switching_off_fn(struct k_work *work)
+{
+   LOG_INF("Modem switching off ...");
+}
+
+static K_WORK_DELAYABLE_DEFINE(modem_logging_switching_off_work, modem_logging_switching_off_fn);
 
 int modem_reinit(void);
 
@@ -56,7 +63,9 @@ static int modem_off(void)
       res = mode;
       previous_mode = mode;
       if (mode != LTE_LC_FUNC_MODE_POWER_OFF) {
+         work_reschedule_for_io_queue(&modem_logging_switching_off_work, K_MSEC(5000));
          lte_lc_func_mode_set(LTE_LC_FUNC_MODE_POWER_OFF);
+         k_work_cancel_delayable(&modem_logging_switching_off_work);
       }
    }
    return res;
@@ -80,7 +89,7 @@ static int modem_cmd_config(const char *config)
    int res;
    char buf[32];
    char value1[7];
-   char value2[3];
+   char value2[5];
    char value3[3];
    const char *cur = config;
 
@@ -120,9 +129,9 @@ static int modem_cmd_config(const char *config)
       LOG_INF("cfg %s %s", desc, modem_get_system_mode_cfg(lte_mode, lte_preference));
       desc = "none";
       if (net_mode == '7') {
-         desc = "m1";
+         desc = CFG_LTE_M;
       } else if (net_mode == '9') {
-         desc = "nb";
+         desc = CFG_NB_IOT;
       }
       LOG_INF("currently %s %s", plmn, desc);
       return 0;
@@ -785,12 +794,6 @@ static int modem_cmd_switch_on(const char *parameter)
    return modem_set_normal();
 }
 
-static int modem_cmd_sim(const char *parameter)
-{
-   (void)parameter;
-   return modem_sim_read_info(NULL, true);
-}
-
 static int modem_cmd_state(const char *parameter)
 {
    (void)parameter;
@@ -848,7 +851,6 @@ UART_CMD(search, "AT+COPS=?", "network search.", NULL, NULL, 0);
 
 UART_CMD(limit, "", "read apn rate limit.", modem_cmd_rate_limit, NULL, 0);
 UART_CMD(on, "", "switch modem on.", modem_cmd_switch_on, NULL, 0);
-UART_CMD(sim, "", "read SIM-card info.", modem_cmd_sim, NULL, 0);
 UART_CMD(state, "", "read modem state.", modem_cmd_state, NULL, 0);
 
 UART_CMD(cfg, "", "configure modem.", modem_cmd_config, modem_cmd_config_help, 3);

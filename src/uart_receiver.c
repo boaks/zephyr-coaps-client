@@ -606,6 +606,9 @@ static void at_cmd_result(int res)
             case -EFAULT:
                desc = "off";
                break;
+            case -EBUSY:
+               desc = "busy";
+               break;
             case -EINVAL:
                desc = "invalid parameter";
                break;
@@ -764,35 +767,6 @@ static void at_cmd_resp_callback(const char *at_response)
 #define RESULT(X) ((X < 0) ? (X) : 0)
 #define PENDING(X) ((X < 0) ? (X) : 1)
 
-static int at_cmd_reboot(const char *parameter)
-{
-   (void)parameter;
-   if (appl_reboots()) {
-      LOG_INF(">> device already reboots!");
-   } else {
-      LOG_INF(">> device reboot ...");
-      appl_reboot(ERROR_CODE_CMD, K_MSEC(2000));
-   }
-   return 0;
-}
-
-static int at_cmd_send(const char *parameter)
-{
-   LOG_INF(">> send %s", parameter);
-   dtls_cmd_trigger(true, 3, parameter, strlen(parameter));
-   return 0;
-}
-
-static void at_cmd_send_help(void)
-{
-   LOG_INF("> help send:");
-   LOG_INF("  send            : send application message.");
-   LOG_INF("  send <message>  : send provided message.");
-}
-
-UART_CMD(reboot, NULL, "reboot device.", at_cmd_reboot, NULL, 0);
-UART_CMD(send, NULL, "send message.", at_cmd_send, at_cmd_send_help, 0);
-
 static const struct uart_cmd_entry *at_cmd_get(const char *cmd)
 {
    STRUCT_SECTION_FOREACH(uart_cmd_entry, e)
@@ -850,24 +824,12 @@ static void at_cmd_help_help(void)
 
 UART_CMD(help, NULL, NULL, at_cmd_help, at_cmd_help_help, 0);
 
-static int at_cmd_modem_send(const char *at_cmd)
-{
-   int res = 0;
-   if (!strstart(at_cmd, "AT", true)) {
-      LOG_INF("ignore > %s", at_cmd);
-      return -1;
-   }
-   LOG_INF(">%s", at_cmd);
-   at_cmd_time = k_uptime_get();
-   res = modem_at_cmd_async(at_cmd_resp_callback, NULL, at_cmd);
-   return PENDING(res);
-}
-
 static int at_cmd()
 {
    int res = 0;
    int i;
    const struct uart_cmd_entry *cmd = at_cmd_get(at_cmd_buf);
+   const char *at_cmd = at_cmd_buf;
 
    if (cmd) {
       i = strstartsep(at_cmd_buf, cmd->cmd, true, " ");
@@ -879,23 +841,27 @@ static int at_cmd()
          return 1;
       }
       if (cmd->at_cmd) {
-         if (atomic_test_and_set_bit(&uart_at_state, UART_AT_CMD_PENDING)) {
-            LOG_INF("Modem pending ...");
-            return 1;
-         }
          if (cmd->at_cmd[0] && !cmd->handler) {
-            res = at_cmd_modem_send(cmd->at_cmd);
+            /* simple AT cmd*/
+            at_cmd = cmd->at_cmd;
+            goto at_cmd_modem;
          } else {
+            /* handler AT cmd*/
+            if (atomic_test_and_set_bit(&uart_at_state, UART_AT_CMD_PENDING)) {
+               LOG_INF("Modem pending ...");
+               return 1;
+            }
             at_cmd_time = k_uptime_get();
             res = cmd->handler(&at_cmd_buf[i]);
-            if (res == 1 && cmd->send) {
-               LOG_INF(">> (new %s) send", cmd->cmd);
-               dtls_cmd_trigger(true, cmd->send, NULL, 0);
+            if (res == 1) {
+               if (cmd->send) {
+                  LOG_INF(">> (new %s) send", cmd->cmd);
+                  dtls_cmd_trigger(true, cmd->send, NULL, 0);
+               }
                res = 0;
+            } else {
+               res = RESULT(res);
             }
-            res = RESULT(res);
-         }
-         if (res < 1) {
             at_cmd_finish();
          }
       } else {
@@ -907,14 +873,23 @@ static int at_cmd()
       }
       return res;
    }
-
+at_cmd_modem:
+   if (!strstart(at_cmd, "AT", true)) {
+      LOG_INF("ignore > %s", at_cmd);
+      LOG_INF("> 'help' for available commands.");
+      return -1;
+   }
    if (atomic_test_and_set_bit(&uart_at_state, UART_AT_CMD_PENDING)) {
       LOG_INF("Modem pending ...");
       return 1;
    }
-   res = at_cmd_modem_send(at_cmd_buf);
-   if (res < 1) {
+   LOG_INF(">%s", at_cmd);
+   at_cmd_time = k_uptime_get();
+   res = modem_at_cmd_async(at_cmd_resp_callback, NULL, at_cmd);
+   if (res < 0) {
       at_cmd_finish();
+   } else {
+      res = 1;
    }
    return res;
 }

@@ -288,13 +288,9 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
    uint16_t reboot_codes[REBOOT_INFOS];
    struct lte_modem_info modem_info;
    int64_t uptime;
-   power_manager_status_t battery_status = POWER_UNKNOWN;
    int index = 0;
    int start = 0;
    int err;
-   uint16_t battery_voltage = 0xffff;
-   int16_t battery_forecast = -1;
-   uint8_t battery_level = 0xff;
 
    uptime = k_uptime_get() / MSEC_PER_SEC;
 
@@ -344,52 +340,25 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
 #endif
    }
 
-   power_manager_status(&battery_level, &battery_voltage, &battery_status, &battery_forecast);
-   if (battery_voltage < 0xffff) {
-      index += snprintf(buf + index, len - index, "!%u mV", battery_voltage);
-      if (battery_level < 0xff) {
-         index += snprintf(buf + index, len - index, " %u%%", battery_level);
-      }
-      if (battery_forecast > 1 || battery_forecast == 0) {
-         index += snprintf(buf + index, len - index, " (%u days left)", battery_forecast);
-      } else if (battery_forecast == 1) {
-         index += snprintf(buf + index, len - index, " (1 day left)");
-      }
-      const char *msg = "";
-      switch (battery_status) {
-         case FROM_BATTERY:
-            msg = "battery";
-            break;
-         case CHARGING_TRICKLE:
-            msg = "charging (trickle)";
-            break;
-         case CHARGING_I:
-            msg = "charging (I)";
-            break;
-         case CHARGING_V:
-            msg = "charging (V)";
-            break;
-         case CHARGING_COMPLETED:
-            msg = "full";
-            break;
-         default:
-            break;
-      }
-      if (strlen(msg)) {
-         index += snprintf(buf + index, len - index, " %s", msg);
-      }
+   err = power_manager_status_desc(&buf[index + 1], len - index - 1);
+   if (err) {
+      buf[index++] = '!';
+      index += err;
       dtls_info("%s", buf + start);
       buf[index++] = '\n';
       start = index;
    }
 
 #ifdef CONFIG_EXT_BATTERY_ADC
-   err = battery2_sample(&battery_voltage);
-   if (!err) {
-      index += snprintf(buf + index, len - index, "!Ext.Bat.: %u mV", battery_voltage);
-      dtls_info("%s", buf + start);
-      buf[index++] = '\n';
-      start = index;
+   {
+      uint16_t battery_voltage = 0xffff;
+      err = battery2_sample(&battery_voltage);
+      if (!err) {
+         index += snprintf(buf + index, len - index, "!Ext.Bat.: %u mV", battery_voltage);
+         dtls_info("%s", buf + start);
+         buf[index++] = '\n';
+         start = index;
+      }
    }
 #endif
 
@@ -1170,5 +1139,9 @@ static int at_cmd_env(const char *parameter)
 }
 
 UART_CMD(net, "", "read network info.", at_cmd_net, NULL, 0);
+#ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_MODEM
 UART_CMD(dev, NULL, "read device info.", at_cmd_dev, NULL, 0);
+#else
+UART_CMD(dev, "", "read device info.", at_cmd_dev, NULL, 0);
+#endif
 UART_CMD(env, NULL, "read environment sensor.", at_cmd_env, NULL, 0);
