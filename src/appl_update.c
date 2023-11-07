@@ -286,7 +286,6 @@ int appl_update_cancel(void)
       if (dfu_time > -1) {
          dfu_time = k_uptime_get() - dfu_time;
          LOG_INF("Transfer canceled after %d s.", (int)(dfu_time / MSEC_PER_SEC));
-         dfu_time = -1;
       } else {
          LOG_INF("Transfer canceled");
       }
