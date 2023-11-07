@@ -228,4 +228,5 @@ add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP8}"
                    COMMAND echo "${BUILD_SUMUP9}"
                    COMMAND echo "Build with network search timeout ${CONFIG_MODEM_SEARCH_TIMEOUT}s"
+                   COMMAND echo "${CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION}"
                    )
