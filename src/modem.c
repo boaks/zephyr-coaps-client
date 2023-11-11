@@ -945,30 +945,7 @@ static void modem_sms_callback(struct sms_data *const data, void *context)
       LOG_INF("SMS protocol message with unknown type received");
    }
 }
-
 #endif
-
-#if defined(CONFIG_LTE_LINK_CONTROL)
-
-LTE_LC_ON_CFUN(modem_on_cfun_hook, modem_on_cfun, NULL);
-
-static void modem_on_cfun(enum lte_lc_func_mode mode, void *ctx)
-{
-   int err;
-
-   if (mode == LTE_LC_FUNC_MODE_NORMAL ||
-       mode == LTE_LC_FUNC_MODE_ACTIVATE_LTE) {
-#ifdef CONFIG_SMS
-      LOG_DBG("Subscribing to +CNEC=16 and +CGEREP=1");
-      err = modem_at_cmd(NULL, 0, NULL, "AT+CNMI=3,2,0,1");
-      if (err < 0) {
-         LOG_ERR("Unable to subscribe to +CNMI=3,2,0,1, err %d", err);
-      }
-#endif
-      modem_read_network_info(NULL, true);
-   }
-}
-#endif /* CONFIG_LTE_LINK_CONTROL */
 
 static int modem_connect(void)
 {
