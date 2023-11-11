@@ -73,7 +73,7 @@
 	scale_a: scale@2a {
 		compatible = "nau7802-scale";
 		reg = <0x2a>;
-		avref_mv = <2400>;
+		avref_mv = <2700>;
 		gain = <64>;
 		calibration_storage = <&eeprom_a>;
 	};
@@ -97,7 +97,7 @@
 	scale_b: scale@2a {
 		compatible = "nau7802-scale";
 		reg = <0x2a>;
-		avref_mv = <2400>;
+		avref_mv = <2700>;
 		gain = <64>;
 		calibration_storage = <&eeprom_b>;
 	};

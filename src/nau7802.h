@@ -25,6 +25,8 @@
  */
 int scale_sample(double *valueA, double *valueB, double *temperatureA, double *temperatureB);
 
+int scale_sample_desc(char* buf, size_t len, bool series);
+
 enum calibrate_phase {
 	CALIBRATE_NONE,
 	CALIBRATE_START,
