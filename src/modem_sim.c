@@ -430,6 +430,7 @@ static void modem_sim_read(bool init)
          service = check_service(service, SERVICE_43_BIT, table, res, 43);
          /* Mailbox Dialling Numbers */
          service = check_service(service, SERVICE_47_BIT, table, res, 47);
+         service |= SERVICE_47_BIT;
          /* Equivalent Home PLMN */
          service = check_service(service, SERVICE_71_BIT, table, res, 71);
          /* Non Access Stratum Configuration */
@@ -620,6 +621,7 @@ static void modem_sim_read(bool init)
 
    if (service & SERVICE_47_BIT) {
       /* 0x6FC8, Serv. 47, Mailbox Dialling Numbers */
+      /* 178 := Read Record, 220 := Update Record */
       res = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=178,28616,1,4,13");
       if (res < 0) {
          LOG_INF("Failed to read CRSM MBDN/EXT6.");
