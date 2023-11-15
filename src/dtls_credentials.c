@@ -49,10 +49,10 @@ static const unsigned char ecdsa_pub_key_y[] = {
 #ifdef DTLS_PSK
 
 /* The PSK information for DTLS */
-static unsigned char psk_id[32] = { 0 };
+static unsigned char psk_id[DTLS_PSK_MAX_CLIENT_IDENTITY_LEN + 1] = {0};
 static size_t psk_id_length = sizeof(psk_id);
 static unsigned char psk_key[] = CONFIG_DTLS_PSK_SECRET;
-static size_t psk_key_length = sizeof(psk_key) - 1;
+static size_t psk_key_length = 0;
 
 /* This function is the "key store" for tinyDTLS. It is called to
  * retrieve a key for the given identity within this particular
@@ -105,7 +105,10 @@ void dtls_credentials_init_psk(const char *imei)
    cur = (unsigned char *)strstr(psk_id, "${imei}");
    if (cur) {
       if (imei && strlen(imei)) {
-         snprintf(cur, sizeof(psk_id) - (cur - psk_id), "%s", imei);
+         size_t imei_len = strlen(imei);
+         size_t id_len = strlen(psk_id);
+         memmove(cur + imei_len, cur + 7, id_len - 6 - (cur - psk_id));
+         memmove(cur, imei, imei_len);
       } else {
          uint32_t id = 0;
          dtls_prng((unsigned char *)&id, sizeof(id));
@@ -114,6 +117,23 @@ void dtls_credentials_init_psk(const char *imei)
    }
    dtls_info("psk-id: %s\n", psk_id);
    psk_id_length = strlen(psk_id);
+   if (psk_key_length == 0) {
+#ifdef CONFIG_DTLS_PSK_SECRET_HEX
+      psk_key_length = hex2bin(psk_key, sizeof(psk_key) - 1, psk_key, sizeof(psk_key) - 1);
+#else
+      psk_key_length = sizeof(psk_key) - 1;
+#endif
+   }
+#ifdef CONFIG_DTLS_PSK_SECRET_HEX
+   cur = "hex";
+#else
+   cur = "ascii";
+#endif
+   if (psk_key_length) {
+      dtls_info("psk-secret: %d (%s)\n", psk_key_length, cur);
+   } else {
+      dtls_crit("psk-secret: %d (%s)\n", psk_key_length, cur);
+   }
 }
 #else /* DTLS_PSK */
 
@@ -168,7 +188,7 @@ const char *dtls_credentials_get_psk_identity(void)
 {
 #ifdef DTLS_PSK
    return psk_id;
-   #else 
+#else
    return "cali.anonymous";
 #endif
 }
