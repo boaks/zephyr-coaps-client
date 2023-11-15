@@ -16,7 +16,7 @@
 
 #include <sys/types.h>
 
-#define MAX_VALUE_SIZE 10
+#define MAX_VALUE_SIZE 26
 
 struct storage_config;
 

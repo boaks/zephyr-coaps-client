@@ -91,7 +91,7 @@ static const struct storage_config calibration_storage_configs[] = {
         .is_flash_device = false,
         .id = CALIBRATION_A_ID,
         .magic = 0x03400560,
-        .version = 2,
+        .version = 1,
         .value_size = CALIBRATE_VALUE_SIZE,
         .pages = 4,
     },
@@ -101,7 +101,7 @@ static const struct storage_config calibration_storage_configs[] = {
         .is_flash_device = false,
         .id = CALIBRATION_B_ID,
         .magic = 0x03400560,
-        .version = 2,
+        .version = 1,
         .value_size = CALIBRATE_VALUE_SIZE,
         .pages = 4,
     },
@@ -189,9 +189,9 @@ static void scale_save_external_calibration(struct scale_config *scale_dev)
 
       memset(calibration, 0, sizeof(calibration));
       sys_put_be24(scale_dev->offset, calibration);
-      sys_put_be16(scale_dev->divider, &calibration[3]);
-      sys_put_be24(scale_dev->calibration_temperature, &calibration[5]);
-      sys_put_be16(scale_dev->avref, &calibration[8]);
+      sys_put_be24(scale_dev->divider, &calibration[3]);
+      sys_put_be24(scale_dev->calibration_temperature, &calibration[6]);
+      sys_put_be16(scale_dev->avref, &calibration[9]);
       appl_storage_write_bytes_item(scale_dev->storage_config->id, calibration, sizeof(calibration));
    }
 }
@@ -204,12 +204,12 @@ static void scale_read_external_calibration(struct scale_config *scale_dev)
    memset(calibration, 0, sizeof(calibration));
    rc = appl_storage_read_bytes_item(scale_dev->storage_config->id, 0, NULL, calibration, sizeof(calibration));
    if (rc == sizeof(calibration)) {
-      uint16_t calibration_avref = sys_get_be16(&calibration[8]);
-      scale_dev->divider = NORMALIZE_DIVIDER(sys_get_be16(&calibration[3]));
+      uint16_t calibration_avref = sys_get_be16(&calibration[9]);
+      scale_dev->divider = NORMALIZE_DIVIDER(sys_get_be24(&calibration[3]));
       if (scale_dev->divider > 0 && scale_dev->avref == calibration_avref) {
          scale_dev->offset = expand_sign_24((int32_t)sys_get_be24(calibration));
          scale_dev->calibration_temperature =
-             expand_sign_24((int32_t)sys_get_be24(&calibration[5]));
+             expand_sign_24((int32_t)sys_get_be24(&calibration[6]));
          LOG_INF("ADC %s calibration 0x%06x, %d, %.1f loaded.", scale_dev->channel_name, scale_dev->offset, scale_dev->divider, TEMPERATURE_DOUBLE(scale_dev->calibration_temperature));
       } else {
          LOG_INF("ADC %s disabled.", scale_dev->channel_name);
@@ -802,8 +802,9 @@ static int scale_read_temperature(struct scale_config *scale_dev, int max_loops,
    }
    scale_dev->resume_time = k_uptime_get() + NAU7802_MIN_PAUSE_SAMPLE_MS;
 
+   // avref [mV] * 1000 => [uV]
    val = ((int64_t)scale_dev->raw * scale_dev->avref * 1000) >> 24;
-   LOG_INF("ADC %s temperature %d V", scale_dev->channel_name, (int32_t)val);
+   LOG_INF("ADC %s temperature %d uV", scale_dev->channel_name, (int32_t)val);
    // datasheet 109mV at 25°C and +390uV/°C
    val = 25000 + (val - 109000) * 1000 / 390;
    LOG_INF("ADC %s temperature %d", scale_dev->channel_name, (int32_t)val);
@@ -1544,10 +1545,10 @@ static void scale_dump_calibration(struct scale_config *scale_dev)
    memset(calibration, 0, sizeof(calibration));
    rc = appl_storage_read_bytes_item(scale_dev->storage_config->id, 0, &time, calibration, sizeof(calibration));
    if (rc == sizeof(calibration)) {
-      uint16_t avref = sys_get_be16(&calibration[8]);
-      int32_t divider = NORMALIZE_DIVIDER(sys_get_be16(&calibration[3]));
+      uint16_t avref = sys_get_be16(&calibration[9]);
+      int32_t divider = NORMALIZE_DIVIDER(sys_get_be24(&calibration[3]));
       int32_t offset = expand_sign_24((int32_t)sys_get_be24(calibration));
-      int32_t temperature = expand_sign_24((int32_t)sys_get_be24(&calibration[5]));
+      int32_t temperature = expand_sign_24((int32_t)sys_get_be24(&calibration[6]));
       char buf[32];
       appl_format_time(time, buf, sizeof(buf));
       LOG_INF("ADC %s calibration  %s", scale_dev->channel_name, buf);
