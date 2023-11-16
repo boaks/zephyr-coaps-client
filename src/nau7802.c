@@ -87,7 +87,7 @@ static K_MUTEX_DEFINE(scale_mutex);
 static const struct storage_config calibration_storage_configs[] = {
     {
         .storage_device = DEVICE_DT_GET_OR_NULL(DT_PHANDLE(DT_ALIAS(scale_a), calibration_storage)),
-        .desc = "calibration",
+        .desc = "calibration A",
         .is_flash_device = false,
         .id = CALIBRATION_A_ID,
         .magic = 0x03400560,
@@ -97,7 +97,7 @@ static const struct storage_config calibration_storage_configs[] = {
     },
     {
         .storage_device = DEVICE_DT_GET_OR_NULL(DT_PHANDLE(DT_ALIAS(scale_b), calibration_storage)),
-        .desc = "calibration",
+        .desc = "calibration B",
         .is_flash_device = false,
         .id = CALIBRATION_B_ID,
         .magic = 0x03400560,
@@ -185,6 +185,7 @@ static inline int32_t expand_sign_24(int32_t value)
 static void scale_save_external_calibration(struct scale_config *scale_dev)
 {
    if (scale_dev->i2c_ok) {
+      int rc = 0;
       uint8_t calibration[CALIBRATE_VALUE_SIZE];
 
       memset(calibration, 0, sizeof(calibration));
@@ -192,7 +193,14 @@ static void scale_save_external_calibration(struct scale_config *scale_dev)
       sys_put_be24(scale_dev->divider, &calibration[3]);
       sys_put_be24(scale_dev->calibration_temperature, &calibration[6]);
       sys_put_be16(scale_dev->avref, &calibration[9]);
-      appl_storage_write_bytes_item(scale_dev->storage_config->id, calibration, sizeof(calibration));
+      rc = appl_storage_write_bytes_item(scale_dev->storage_config->id, calibration, sizeof(calibration));
+      if (rc) {
+         LOG_INF("ADC %s saving external calibration failed, %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
+      } else {
+         LOG_INF("ADC %s external calibration saved.", scale_dev->channel_name);
+      }
+   } else {
+      LOG_INF("ADC %s I2C error.", scale_dev->channel_name);
    }
 }
 
@@ -216,7 +224,11 @@ static void scale_read_external_calibration(struct scale_config *scale_dev)
          scale_dev->offset = 0;
       }
    } else {
-      LOG_INF("ADC %s disabled, calibration loading failed, %d (%s)", scale_dev->channel_name, rc, strerror(-rc));
+      if (rc) {
+         LOG_INF("ADC %s disabled, calibration loading failed, %d (%s)", scale_dev->channel_name, rc, strerror(-rc));
+      } else {
+         LOG_INF("ADC %s disabled, calibration not available.", scale_dev->channel_name);
+      }
       scale_dev->divider = 0;
       scale_dev->offset = 0;
    }
@@ -1193,8 +1205,6 @@ int scale_calibrate(enum calibrate_phase phase)
          case CALIBRATE_START:
             LOG_INF("ADC Scale start calibration.");
             current_calibrate_phase = phase;
-            scale_prepare_calibration(&configs[0]);
-            scale_prepare_calibration(&configs[1]);
 #ifdef CONFIG_NAU7802_PARALLEL_READ
             k_sem_reset(&scale_ready);
             work_submit_to_cmd_queue(&scale_check_channel_B_work);
@@ -1206,6 +1216,8 @@ int scale_calibrate(enum calibrate_phase phase)
 #else  /* CONFIG_NAU7802_PARALLEL_READ */
             scale_check_channel(&configs[1]);
 #endif /* CONFIG_NAU7802_PARALLEL_READ */
+            scale_prepare_calibration(&configs[0]);
+            scale_prepare_calibration(&configs[1]);
             rc = CALIBRATE_ZERO;
             next_calibrate_phase = rc;
             current_calibrate_phase = phase;
@@ -1482,13 +1494,15 @@ int scale_sample_desc(char *buf, size_t len, bool series)
             start = index;
          }
          if (configs[0].weight != NAU7802_NONE_ADC_VALUE) {
-            index += snprintf(buf + index, len - index, "CHA %d raw, %.1f°C", configs[0].weight, temperatureA);
+            index += snprintf(buf + index, len - index, "CHA %d/%d raw, %.1f°C",
+                              configs[0].weight, configs[0].internal_offset, temperatureA);
          }
          if (index > start) {
             index += snprintf(buf + index, len - index, ", ");
          }
          if (configs[1].weight != NAU7802_NONE_ADC_VALUE) {
-            index += snprintf(buf + index, len - index, "CHB %d raw, %.1f°C", configs[1].weight, temperatureB);
+            index += snprintf(buf + index, len - index, "CHB %d/%d raw, %.1f°C",
+                              configs[1].weight, configs[1].internal_offset, temperatureB);
          }
          LOG_INF("%s", &buf[start]);
       }
@@ -1556,8 +1570,10 @@ static void scale_dump_calibration(struct scale_config *scale_dev)
       LOG_INF("ADC %s offset:      %7d", scale_dev->channel_name, offset);
       LOG_INF("ADC %s divider:     %7d", scale_dev->channel_name, divider);
       LOG_INF("ADC %s temperature: %7.1f", scale_dev->channel_name, TEMPERATURE_DOUBLE(temperature));
-   } else {
+   } else if (scale_dev->i2c_ok) {
       LOG_INF("ADC %s calibration missing.", scale_dev->channel_name);
+   } else {
+      LOG_INF("ADC %s I2C error.", scale_dev->channel_name);
    }
 }
 

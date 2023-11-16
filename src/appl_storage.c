@@ -25,6 +25,8 @@
 #include "appl_storage_config.h"
 #include "appl_time.h"
 
+#include "uart_cmd.h"
+
 #ifndef CONFIG_EEPROM
 #undef CONFIG_EEPROM_APPL_STORAGE
 #endif
@@ -42,6 +44,7 @@ LOG_MODULE_REGISTER(STORAGE, CONFIG_STORAGE_LOG_LEVEL);
 #define TIME_SIZE 6
 
 #define MAX_ITEM_SIZE (TIME_SIZE + MAX_VALUE_SIZE)
+#define HEADER_SIZE 10
 
 enum storage_init_state {
    STORAGE_NOT_INITIALIZED,
@@ -51,7 +54,7 @@ enum storage_init_state {
 
 struct storage_setup {
    const struct storage_config *config;
-   uint8_t header[8];
+   uint8_t header[HEADER_SIZE];
    enum storage_init_state init_state;
    size_t item_size;
    off_t headers_offset;
@@ -72,10 +75,9 @@ static inline off_t appl_storage_start_offset(const struct storage_setup *config
 static struct storage_setup *appl_storage_setup(int id)
 {
    if (id) {
-      size_t cid = id < 0 ? -id : id;
       for (int index = 0; index < storage_setups_count; ++index) {
-         if (storage_setups[index].config->id == cid) {
-            if (id < 0 || storage_setups[index].init_state == STORAGE_INITIALIZED) {
+         if (storage_setups[index].config->id == id) {
+            if (storage_setups[index].init_state == STORAGE_INITIALIZED) {
                return &storage_setups[index];
             }
          }
@@ -265,13 +267,13 @@ static int appl_storage_init_offset(struct storage_setup *setup)
    k_mutex_lock(&storage_mutex, K_FOREVER);
    if (!(rc = appl_storage_read_memory(setup->config, setup->headers_offset, data, sizeof(setup->header)))) {
       if (memcmp(data, setup->header, sizeof(setup->header)) != 0) {
-         LOG_INF("Storage: format %s 0x%lx.", setup->config->desc, setup->headers_offset);
+         LOG_INF("Storage %s: format 0x%lx.", setup->config->desc, setup->headers_offset);
          LOG_HEXDUMP_DBG(data, sizeof(setup->header), "Storage: header read");
          LOG_HEXDUMP_DBG(setup->header, sizeof(setup->header), "Storage: header expected");
          appl_storage_erase_memory(setup->config, setup->headers_offset, setup->end_offset - setup->headers_offset);
          appl_storage_init_headers(setup);
          setup->current_offset = appl_storage_start_offset(setup);
-         LOG_INF("Storage: format %s ready.", setup->config->desc);
+         LOG_INF("Storage %s: format ready.", setup->config->desc);
       } else {
          for (int addr = appl_storage_start_offset(setup); addr < setup->end_offset; addr += sizeof(data)) {
             if (!(rc = appl_storage_read_memory(setup->config, addr, data, sizeof(data)))) {
@@ -292,94 +294,127 @@ static int appl_storage_init_offset(struct storage_setup *setup)
    return rc;
 }
 
-int appl_storage_add(const struct storage_config *config)
+static int appl_storage_check_config(const struct storage_config *config)
 {
    int rc = 0;
-   size_t index_setup = 0;
-   uint8_t data[16];
-   struct flash_pages_info info;
+   uint8_t data = 0;
    const struct device *dev = config->storage_device;
    const char *dev_type = "\?\?\?";
-   struct storage_setup *setup = appl_storage_setup(-config->id);
-
-   if (!setup) {
-      LOG_INF("Storage add");
-      index_setup = storage_setups_count;
-      setup = &storage_setups[index_setup];
-   } else {
-      for (; index_setup < storage_setups_count; ++index_setup) {
-         if (&storage_setups[index_setup] == setup) {
-            break;
-         }
-      }
-   }
 
    if (config->is_flash_device) {
 #if defined(CONFIG_FLASH_APPL_STORAGE)
       dev_type = "SPI flash";
 #else
-      LOG_WRN("Storage-%d: flash not supported!", index_setup);
+      LOG_WRN("Storage %s: flash not supported!", config->desc);
       return -EINVAL;
 #endif
    } else {
 #if defined(CONFIG_EEPROM_APPL_STORAGE)
       dev_type = "I2C EEPROM";
 #else
-      LOG_WRN("Storage-%d: EEPROM not supported!", index_setup);
+      LOG_WRN("Storage %s: EEPROM not supported!", config->desc);
       return -EINVAL;
 #endif
    }
+
    if (dev == NULL) {
-      LOG_WRN("Storage-%d: could not get %s driver", index_setup, dev_type);
+      LOG_WRN("Storage %s: could not get %s driver", config->desc, dev_type);
       return -EINVAL;
    } else if (!device_is_ready(dev)) {
-      LOG_WRN("Storage-%d: %s device is not ready", index_setup, dev->name);
+      LOG_WRN("Storage %s: %s device is not ready", config->desc, dev->name);
       return -EINVAL;
    } else {
-      rc = appl_storage_read_memory(config, 0, data, 1);
+      rc = appl_storage_read_memory(config, 0, &data, sizeof(data));
       if (rc) {
-         LOG_WRN("Storage-%d: %s read failed, %d", index_setup, dev->name, rc);
+         LOG_WRN("Storage %s: %s read failed, %d", config->desc, dev->name, rc);
          return -rc;
       }
    }
+   return rc;
+}
 
-   rc = appl_storage_get_page_info_by_offs(config, 0, &info);
+static int appl_storage_init_setup(struct storage_setup *setup, const struct storage_config *config, int end)
+{
+   struct flash_pages_info info;
+   int rc = appl_storage_get_page_info_by_offs(config, end, &info);
+   if (!rc) {
+      setup->config = config;
+      setup->item_size = (config->value_size + TIME_SIZE);
+      setup->headers_offset = end;
+      setup->current_offset = appl_storage_start_offset(setup);
+      setup->end_offset = setup->headers_offset + config->pages * info.size;
+      sys_put_be32(config->magic, setup->header);
+      sys_put_be32(config->version, &(setup->header[4]));
+      sys_put_be16(config->value_size, &(setup->header[8]));
+
+      LOG_INF("Storage %s: page-size 0x%x, off 0x%lx, index 0x%x", config->desc,
+              info.size, info.start_offset, info.index);
+      LOG_INF("Storage %s: 0x%lx-0x%lx", config->desc,
+              setup->headers_offset, setup->end_offset);
+   } else {
+      LOG_WRN("Storage %s: %s could not get page info, %d", config->desc, config->storage_device->name, rc);
+   }
+   return rc;
+}
+
+int appl_storage_add(const struct storage_config *config)
+{
+   int rc = 0;
+
+   LOG_INF("Storage add %s", config->desc);
+
+   rc = appl_storage_check_config(config);
    if (rc) {
-      LOG_WRN("Storage-%d: %s could not get page info, %d", index_setup, dev->name, rc);
       return rc;
    }
-   setup->config = config;
-   setup->item_size = (config->value_size + TIME_SIZE);
-   setup->headers_offset = 0;
-   setup->current_offset = appl_storage_start_offset(setup);
-   setup->end_offset = setup->headers_offset + config->pages * info.size;
-   sys_put_be32(config->magic, setup->header);
-   sys_put_be32(config->version, &(setup->header[4]));
 
-   LOG_INF("%s/%s-%d: page-size 0x%x, off 0x%lx, index 0x%x", config->desc, config->storage_device->name, index_setup,
-           info.size, info.start_offset, info.index);
-   LOG_INF("%s/%s-%d: 0x%lx-0x%lx", config->desc, config->storage_device->name, index_setup,
-           setup->headers_offset, setup->end_offset);
+   k_mutex_lock(&storage_mutex, K_FOREVER);
+   {
+      uint8_t data[16];
+      size_t index_setup = 0;
+      struct storage_setup *setup = NULL;
 
-   rc = appl_storage_init_offset(setup);
-   if (rc) {
-      setup->init_state = STORAGE_INITIALIZE_ERROR;
-      return rc;
-   }
-   setup->init_state = STORAGE_INITIALIZED;
+      for (; index_setup < storage_setups_count; ++index_setup) {
+         if (storage_setups[index_setup].config->id == config->id) {
+            setup = &storage_setups[index_setup];
+            break;
+         }
+      }
 
-   for (off_t addr = setup->headers_offset; addr < setup->end_offset; addr += sizeof(data)) {
-      rc = appl_storage_read_memory(setup->config, addr, data, sizeof(data));
-      if (!rc && !only_ff(data, sizeof(data))) {
-         char label[24];
-         snprintf(label, sizeof(label), "Storage: @0x%lx", addr);
-         LOG_HEXDUMP_DBG(data, sizeof(data), label);
+      if (setup) {
+         LOG_INF("Storage reinit %s at %d", config->desc, index_setup);
+      } else {
+         setup = &storage_setups[index_setup];
+         LOG_INF("Storage add %s at %d", config->desc, index_setup);
+      }
+
+      rc = appl_storage_init_setup(setup, config, 0);
+      if (rc) {
+         goto exit_add;
+      }
+
+      rc = appl_storage_init_offset(setup);
+      if (rc) {
+         setup->init_state = STORAGE_INITIALIZE_ERROR;
+         goto exit_add;
+      }
+      setup->init_state = STORAGE_INITIALIZED;
+
+      for (off_t addr = setup->headers_offset; addr < setup->end_offset; addr += sizeof(data)) {
+         rc = appl_storage_read_memory(setup->config, addr, data, sizeof(data));
+         if (!rc && !only_ff(data, sizeof(data))) {
+            char label[48];
+            snprintf(label, sizeof(label), "Storage %s: @0x%lx", config->desc, addr);
+            LOG_HEXDUMP_DBG(data, sizeof(data), label);
+         }
+      }
+      if (storage_setups_count == index_setup) {
+         storage_setups_count++;
       }
    }
-   if (storage_setups_count == index_setup) {
-      storage_setups_count++;
-   }
-   return 0;
+exit_add:
+   k_mutex_unlock(&storage_mutex);
+   return rc;
 }
 
 static int appl_storage_init(void)
@@ -389,69 +424,24 @@ static int appl_storage_init(void)
    size_t index_setup = storage_setups_count;
    off_t end = 0;
    uint8_t data[16];
-   struct flash_pages_info info;
    const struct storage_config *config = storage_configs;
    const struct device *dev = NULL;
-   const char *dev_type = "\?\?\?";
    bool ok = false;
 
    LOG_INF("Storage init");
 
    while (index_config < storage_config_count) {
       if (dev != config->storage_device) {
-         ok = true;
          end = 0;
          dev = config->storage_device;
-         if (config->is_flash_device) {
-#if defined(CONFIG_FLASH_APPL_STORAGE)
-            dev_type = "SPI flash";
-#else
-            LOG_WRN("Storage-%d: flash not supported!", index_config);
-            ok = false;
-#endif
-         } else {
-#if defined(CONFIG_EEPROM_APPL_STORAGE)
-            dev_type = "I2C EEPROM";
-#else
-            LOG_WRN("Storage-%d: EEPROM not supported!", index_config);
-            ok = false;
-#endif
-         }
-         if (ok) {
-            if (dev == NULL) {
-               LOG_WRN("Storage-%d: could not get %s driver", index_config, dev_type);
-               ok = false;
-            } else if (!device_is_ready(dev)) {
-               LOG_WRN("Storage-%d: %s device is not ready", index_config, dev->name);
-               ok = false;
-            } else {
-               rc = appl_storage_read_memory(config, 0, data, 1);
-               if (rc) {
-                  LOG_WRN("Storage-%d: %s read failed, %d", index_config, dev->name, rc);
-                  ok = false;
-               }
-            }
-         }
+         ok = !appl_storage_check_config(config);
       }
       if (ok) {
-         rc = appl_storage_get_page_info_by_offs(config, end, &info);
+         struct storage_setup *setup = &storage_setups[index_setup];
+         rc = appl_storage_init_setup(setup, config, end);
          if (!rc) {
-            struct storage_setup *setup = &storage_setups[index_setup++];
-            setup->config = config;
-            setup->item_size = (config->value_size + TIME_SIZE);
-            setup->headers_offset = end;
-            setup->current_offset = appl_storage_start_offset(setup);
-            setup->end_offset = setup->headers_offset + config->pages * info.size;
-            sys_put_be32(config->magic, setup->header);
-            sys_put_be32(config->version, &(setup->header[4]));
+            ++index_setup;
             end = setup->end_offset;
-
-            LOG_INF("%s/%s-%d: page-size 0x%x, off 0x%lx, index 0x%x", config->desc, config->storage_device->name, index_config,
-                    info.size, info.start_offset, info.index);
-            LOG_INF("%s/%s-%d: 0x%lx-0x%lx", config->desc, config->storage_device->name, index_config,
-                    setup->headers_offset, setup->end_offset);
-         } else {
-            LOG_WRN("Storage-%d: %s could not get page info, %d", index_config, dev->name, rc);
          }
       }
       ++index_config;
@@ -655,6 +645,23 @@ int appl_storage_read_bytes_item(size_t id, size_t index, int64_t *time, uint8_t
    }
    return rc;
 }
+
+static int appl_storage_list(const char *parameter)
+{
+   (void)parameter;
+   for (int index = 0; index < storage_setups_count; ++index) {
+      const struct storage_setup *setup = &storage_setups[index];
+      const struct storage_config *config = setup->config;
+      LOG_INF("Storage %s, ID %d at %d, %d bytes/value",
+              config->desc, config->id, index, config->value_size);
+      LOG_INF("Storage %s: 0x%lx-0x%lx, cur: 0x%lx",
+              config->desc, setup->headers_offset, setup->end_offset, setup->current_offset);
+   }
+
+   return 0;
+}
+
+UART_CMD(storage, NULL, "list storage sections.", appl_storage_list, NULL, 0);
 
 #else /* defined(STORAGE_DEV_FLASH) || defined(STORAGE_DEV_EEPROM) */
 
