@@ -949,12 +949,11 @@ static int scale_restart_channel(struct scale_config *scale_dev)
          scale_dev->i2c_ok = false;
       } else if (scale_dev->internal_offset != offset) {
          // different internal calibration offset => new sensor
-         LOG_INF("ADC %s int. calibration offset changed,  new %d != old %d.",
+         LOG_INF("ADC %s changed sensor, int. calibration offset changed,  new %d != old %d.",
                  scale_dev->channel_name, offset, scale_dev->internal_offset);
          scale_dev->i2c_ok = false;
       } else {
-         LOG_INF("ADC %s int. calibration offset unchanged,  new %d == old %d.",
-                 scale_dev->channel_name, offset, scale_dev->internal_offset);
+         LOG_INF("ADC %s same sensor.", scale_dev->channel_name);
       }
    }
    if (scale_dev->i2c_ok) {
@@ -1568,7 +1567,7 @@ static void scale_dump_calibration(struct scale_config *scale_dev)
       LOG_INF("ADC %s calibration  %s", scale_dev->channel_name, buf);
       LOG_INF("ADC %s aref         %7.1f V", scale_dev->channel_name, ((double)avref) / 1000);
       LOG_INF("ADC %s offset:      %7d", scale_dev->channel_name, offset);
-      LOG_INF("ADC %s divider:     %7d", scale_dev->channel_name, divider);
+      LOG_INF("ADC %s divider:     %7d%s", scale_dev->channel_name, divider, divider == DUMMY_ADC_DIVIDER ? " (dummy)" : "");
       LOG_INF("ADC %s temperature: %7.1f", scale_dev->channel_name, TEMPERATURE_DOUBLE(temperature));
    } else if (scale_dev->i2c_ok) {
       LOG_INF("ADC %s calibration missing.", scale_dev->channel_name);
