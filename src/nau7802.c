@@ -1493,15 +1493,15 @@ int scale_sample_desc(char *buf, size_t len, bool series)
             start = index;
          }
          if (configs[0].weight != NAU7802_NONE_ADC_VALUE) {
-            index += snprintf(buf + index, len - index, "CHA %d/%d raw, %.1f°C",
-                              configs[0].weight, configs[0].internal_offset, temperatureA);
+            index += snprintf(buf + index, len - index, "CHA %d/%d/%d raw, %.1f°C",
+                              configs[0].weight, configs[0].internal_offset, configs[0].divider, temperatureA);
          }
          if (index > start) {
             index += snprintf(buf + index, len - index, ", ");
          }
          if (configs[1].weight != NAU7802_NONE_ADC_VALUE) {
-            index += snprintf(buf + index, len - index, "CHB %d/%d raw, %.1f°C",
-                              configs[1].weight, configs[1].internal_offset, temperatureB);
+            index += snprintf(buf + index, len - index, "CHB %d/%d/%d raw, %.1f°C",
+                              configs[1].weight, configs[1].internal_offset, configs[1].divider, temperatureB);
          }
          LOG_INF("%s", &buf[start]);
       }
@@ -1544,7 +1544,7 @@ static int scale_cmd(const char *parameter)
 {
    (void)parameter;
 
-   char buf[256];
+   char buf[300];
    scale_sample_desc(buf, sizeof(buf), false);
    return 0;
 }
