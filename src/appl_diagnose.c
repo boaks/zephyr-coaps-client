@@ -29,8 +29,9 @@
 #include "appl_diagnose.h"
 #include "appl_storage.h"
 #include "appl_storage_config.h"
-#include "ui.h"
+#include "appl_time.h"
 #include "uart_cmd.h"
+#include "ui.h"
 
 #define MSEC_PER_HOUR (MSEC_PER_SEC * 60 * 60)
 
@@ -71,9 +72,9 @@ void watchdog_feed(void)
 
 static void appl_reboot_fn(void *p1, void *p2, void *p3)
 {
-   (void) p1;
-   (void) p2;
-   (void) p3;
+   (void)p1;
+   (void)p2;
+   (void)p3;
 
    int error = 0;
    k_sem_take(&appl_diagnose_shutdown, K_FOREVER);
@@ -233,6 +234,39 @@ static int at_cmd_reboot(const char *parameter)
    }
    return 0;
 }
+
+#define REBOOT_INFOS 4
+
+static int appl_reboot_code_read(const char *parameter)
+{
+   (void)parameter;
+   int64_t reboot_times[REBOOT_INFOS];
+   uint16_t reboot_codes[REBOOT_INFOS];
+   char buf[128];
+   int len = sizeof(buf);
+   int err = 0;
+   int index = 0;
+
+   memset(reboot_times, 0, sizeof(reboot_times));
+   memset(reboot_codes, 0, sizeof(reboot_codes));
+   err = appl_storage_read_int_items(REBOOT_CODE_ID, 0, reboot_times, reboot_codes, REBOOT_INFOS);
+   if (err > 0) {
+      index += snprintf(buf + index, len - index, "Last code: ");
+      index += appl_format_time(reboot_times[0], buf + index, len - index);
+      index += snprintf(buf + index, len - index, " %s (0x%04x)", appl_get_reboot_desciption(reboot_codes[0]), reboot_codes[0]);
+      LOG_INF("%s", buf);
+      for (int i = 1; i < err; ++i) {
+         index = 0;
+         index += appl_format_time(reboot_times[i], buf + index, len - index);
+         index += snprintf(buf + index, len - index, " %s (0x%04x)", appl_get_reboot_desciption(reboot_codes[i]), reboot_codes[i]);
+         LOG_INF("%s", buf);
+      }
+   }
+
+   return err > 0 ? 0 : err;
+}
+
+UART_CMD(reboots, NULL, "read reboot codes.", appl_reboot_code_read, NULL, 0);
 
 UART_CMD(reboot, NULL, "reboot device.", at_cmd_reboot, NULL, 0);
 
