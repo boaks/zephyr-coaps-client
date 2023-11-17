@@ -58,6 +58,7 @@ struct storage_setup {
    enum storage_init_state init_state;
    size_t item_size;
    off_t headers_offset;
+   off_t start_offset;
    off_t current_offset;
    off_t end_offset;
 };
@@ -66,11 +67,6 @@ static size_t storage_setups_count = 0;
 static struct storage_setup storage_setups[MAX_STORAGE_SETUPS];
 
 static K_MUTEX_DEFINE(storage_mutex);
-
-static inline off_t appl_storage_start_offset(const struct storage_setup *config)
-{
-   return config->headers_offset + config->item_size;
-}
 
 static struct storage_setup *appl_storage_setup(int id)
 {
@@ -259,23 +255,23 @@ static void appl_storage_init_headers(const struct storage_setup *setup)
    appl_storage_write_memory(setup->config, setup->headers_offset, setup->header, sizeof(setup->header));
 }
 
-static int appl_storage_init_offset(struct storage_setup *setup)
+static int appl_storage_init_offset(struct storage_setup *setup, bool force)
 {
    int rc = 0;
    uint8_t data[MAX_ITEM_SIZE];
 
    k_mutex_lock(&storage_mutex, K_FOREVER);
    if (!(rc = appl_storage_read_memory(setup->config, setup->headers_offset, data, sizeof(setup->header)))) {
-      if (memcmp(data, setup->header, sizeof(setup->header)) != 0) {
+      if (force || memcmp(data, setup->header, sizeof(setup->header)) != 0) {
          LOG_INF("Storage %s: format 0x%lx.", setup->config->desc, setup->headers_offset);
          LOG_HEXDUMP_DBG(data, sizeof(setup->header), "Storage: header read");
          LOG_HEXDUMP_DBG(setup->header, sizeof(setup->header), "Storage: header expected");
          appl_storage_erase_memory(setup->config, setup->headers_offset, setup->end_offset - setup->headers_offset);
          appl_storage_init_headers(setup);
-         setup->current_offset = appl_storage_start_offset(setup);
+         setup->current_offset = setup->start_offset;
          LOG_INF("Storage %s: format ready.", setup->config->desc);
       } else {
-         for (int addr = appl_storage_start_offset(setup); addr < setup->end_offset; addr += sizeof(data)) {
+         for (int addr = setup->start_offset; addr < setup->end_offset; addr += sizeof(data)) {
             if (!(rc = appl_storage_read_memory(setup->config, addr, data, sizeof(data)))) {
                for (int index = 0;
                     index < sizeof(data) && (addr + index) < setup->end_offset;
@@ -338,10 +334,15 @@ static int appl_storage_init_setup(struct storage_setup *setup, const struct sto
    struct flash_pages_info info;
    int rc = appl_storage_get_page_info_by_offs(config, end, &info);
    if (!rc) {
+      size_t header_size = 0;
       setup->config = config;
       setup->item_size = (config->value_size + TIME_SIZE);
+      while (header_size < HEADER_SIZE) {
+         header_size += setup->item_size;
+      }
       setup->headers_offset = end;
-      setup->current_offset = appl_storage_start_offset(setup);
+      setup->start_offset = end + header_size;
+      setup->current_offset = setup->start_offset;
       setup->end_offset = setup->headers_offset + config->pages * info.size;
       sys_put_be32(config->magic, setup->header);
       sys_put_be32(config->version, &(setup->header[4]));
@@ -393,7 +394,7 @@ int appl_storage_add(const struct storage_config *config)
          goto exit_add;
       }
 
-      rc = appl_storage_init_offset(setup);
+      rc = appl_storage_init_offset(setup, false);
       if (rc) {
          setup->init_state = STORAGE_INITIALIZE_ERROR;
          goto exit_add;
@@ -428,7 +429,7 @@ static int appl_storage_init(void)
    const struct device *dev = NULL;
    bool ok = false;
 
-   LOG_INF("Storage init");
+   LOG_INF("Storage init %d", storage_config_count);
 
    while (index_config < storage_config_count) {
       if (dev != config->storage_device) {
@@ -453,7 +454,7 @@ static int appl_storage_init(void)
    index_setup = index_config;
 
    while (index_setup < storage_setups_count) {
-      if (appl_storage_init_offset(&storage_setups[index_setup])) {
+      if (appl_storage_init_offset(&storage_setups[index_setup], false)) {
          storage_setups[index_setup].init_state = STORAGE_INITIALIZE_ERROR;
       } else {
          storage_setups[index_setup].init_state = STORAGE_INITIALIZED;
@@ -494,7 +495,7 @@ static int appl_storage_write_item(struct storage_setup *setup, int64_t time, co
       next = setup->current_offset + setup->item_size;
    } else {
       rc = appl_storage_read_memory(setup->config, setup->current_offset, data, setup->item_size);
-      next = appl_storage_start_offset(setup);
+      next = setup->start_offset;
       rc = rc || appl_storage_read_memory(setup->config, next, &data[setup->item_size], 1);
    }
    if (!rc) {
@@ -538,7 +539,7 @@ static int appl_storage_read_item(const struct storage_setup *setup, off_t *curr
       k_mutex_unlock(&storage_mutex);
    }
 
-   if (offset == appl_storage_start_offset(setup)) {
+   if (offset == setup->start_offset) {
       offset = setup->end_offset;
    }
    offset -= setup->item_size;
@@ -649,6 +650,9 @@ int appl_storage_read_bytes_item(size_t id, size_t index, int64_t *time, uint8_t
 static int appl_storage_list(const char *parameter)
 {
    (void)parameter;
+   if (storage_setups_count == 0) {
+      LOG_INF("Storage - no configuration available");
+   }
    for (int index = 0; index < storage_setups_count; ++index) {
       const struct storage_setup *setup = &storage_setups[index];
       const struct storage_config *config = setup->config;
@@ -661,7 +665,27 @@ static int appl_storage_list(const char *parameter)
    return 0;
 }
 
+static int appl_storage_clear(const char *parameter)
+{
+   (void)parameter;
+   if (storage_setups_count == 0) {
+      LOG_INF("Storage - no configuration available");
+   }
+   for (int index = 0; index < storage_setups_count; ++index) {
+      struct storage_setup *setup = &storage_setups[index];
+      const struct storage_config *config = setup->config;
+      appl_storage_init_offset(setup, true);
+      LOG_INF("Storage %s, ID %d at %d, %d bytes/value cleared.",
+              config->desc, config->id, index, config->value_size);
+      LOG_INF("Storage %s: 0x%lx-0x%lx, cur: 0x%lx",
+              config->desc, setup->headers_offset, setup->end_offset, setup->current_offset);
+   }
+
+   return 0;
+}
+
 UART_CMD(storage, NULL, "list storage sections.", appl_storage_list, NULL, 0);
+UART_CMD(storageclear, NULL, "clear all storage sections.", appl_storage_clear, NULL, 0);
 
 #else /* defined(STORAGE_DEV_FLASH) || defined(STORAGE_DEV_EEPROM) */
 
