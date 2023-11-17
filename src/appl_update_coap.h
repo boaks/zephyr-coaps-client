@@ -17,9 +17,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "serialize.h"
+
 bool appl_update_coap_pending(void);
 bool appl_update_coap_reboot(void);
 int appl_update_coap_status(uint8_t *data, size_t len);
+int appl_update_coap_status_serialize(serializer_t *serializer, serialize_buffer_t *buffer);
 int appl_update_coap_cmd(const char* config);
 int appl_update_coap_cancel(void);
 int appl_update_coap_parse_data(uint8_t *data, size_t len);

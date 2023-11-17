@@ -780,6 +780,54 @@ int power_manager_status_desc(char *buf, size_t len)
    return index;
 }
 
+int power_manager_status_serialize(serializer_t *serializer, serialize_buffer_t *buffer)
+{
+   size_t current = buffer->current;
+   power_manager_status_t battery_status = POWER_UNKNOWN;
+   uint16_t battery_voltage = 0xffff;
+   int16_t battery_forecast = -1;
+   uint8_t battery_level = 0xff;
+
+   power_manager_status(&battery_level, &battery_voltage, &battery_status, &battery_forecast);
+   if (battery_voltage < 0xffff) {
+      serializer->field(buffer, "power", false);
+      serializer->start_map(buffer);
+      serializer->number_field(buffer, "voltage", "mV", (double)battery_voltage, 0);
+      if (battery_level < 0xff) {
+         serializer->number_field(buffer, "fill", "%", (double)battery_level, 0);
+      }
+      if (battery_forecast > -1) {
+         serializer->number_field(buffer, "left", "days", (double)battery_forecast, 0);
+      }
+      const char *msg = NULL;
+      switch (battery_status) {
+         case FROM_BATTERY:
+            msg = "battery";
+            break;
+         case CHARGING_TRICKLE:
+            msg = "charging (trickle)";
+            break;
+         case CHARGING_I:
+            msg = "charging (I)";
+            break;
+         case CHARGING_V:
+            msg = "charging (V)";
+            break;
+         case CHARGING_COMPLETED:
+            msg = "full";
+            break;
+         default:
+            break;
+      }
+      if (msg) {
+         serializer->field(buffer, "status", true);
+         serializer->text(buffer, msg);
+      }
+      serializer->end_map(buffer);
+   }
+   return buffer->current - current;
+}
+
 #ifdef CONFIG_SH_CMD
 
 static int sh_cmd_battery(const char *parameter)

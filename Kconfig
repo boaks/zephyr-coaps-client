@@ -108,6 +108,10 @@ config COAP_RESOURCE
 	string "CoAP resource - defaults to Californium's echo resource"
 	default "echo"
 
+config COAP_FOLLOW_UP_RESOURCE
+	string "CoAP resource for follow-up requests"
+	default COAP_RESOURCE
+
 config COAP_QUERY_DELAY_ENABLE
 	bool "Enable CoAP query - delay=%d (delay response)"
 	default n

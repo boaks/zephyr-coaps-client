@@ -22,6 +22,7 @@ target_compile_options(app PRIVATE -fanalyzer)
 # APP START
 target_sources(app PRIVATE
 	src/parse.c
+	src/serialize.c
 	src/transform.c
 	src/power_manager.c
 	src/io_job_queue.c
@@ -37,8 +38,15 @@ target_sources(app PRIVATE
 	src/dtls_client.c
 	src/dtls_credentials.c
 	src/coap_client.c
-	src/coap_appl_client.c
 	)
+
+if (CMAKE_GOLIOTH_CLIENT)
+set(BUILD_CLIENT "Golioth client.")
+target_sources(app PRIVATE src/coap_appl_golioth_client.c)
+else()
+set(BUILD_CLIENT "CloudCoAP client.")
+target_sources(app PRIVATE src/coap_appl_client.c)
+endif()
 
 target_sources_ifdef(CONFIG_SH_CMD app PRIVATE src/sh_cmd.c)
 
@@ -233,4 +241,5 @@ add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP9}"
                    COMMAND echo "Build with network search timeout ${CONFIG_MODEM_SEARCH_TIMEOUT}s"
                    COMMAND echo "${CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION}"
+                   COMMAND echo "${BUILD_CLIENT}"
                    )

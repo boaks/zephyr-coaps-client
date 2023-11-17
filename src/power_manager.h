@@ -17,6 +17,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "serialize.h"
+
 typedef enum {
    POWER_UNKNOWN,
    FROM_BATTERY,
@@ -45,5 +47,7 @@ int power_manager_voltage_ext(uint16_t *voltage);
 int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status, int16_t *forecast);
 
 int power_manager_status_desc(char* buf, size_t len);
+
+int power_manager_status_serialize(serializer_t *serializer, serialize_buffer_t *buffer);
 
 #endif /* POWER_MANAGER_H */

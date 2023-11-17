@@ -239,6 +239,67 @@ int appl_update_coap_status(uint8_t *buf, size_t len)
    return index;
 }
 
+int appl_update_coap_status_serialize(serializer_t *serializer, serialize_buffer_t *buffer)
+{
+   size_t current = buffer->current;
+   int64_t time = appl_update_time();
+
+   k_mutex_lock(&appl_update_coap_mutex, K_FOREVER);
+   if (coap_download || coap_download_ready || coap_download_canceled) {
+      serializer->field(buffer, "update", false);
+      serializer->start_map(buffer);
+
+      if (coap_download) {
+         serializer->field(buffer, "downloading", false);
+         serializer->text(buffer, coap_resource_path);
+         if (coap_block_context.total_size > 0) {
+            serializer->number_field(buffer, "progress", "%", (double)(coap_block_context.current * 100) / coap_block_context.total_size, 0);
+         }
+      } else if (coap_download_ready) {
+         serializer->field(buffer, "downloaded", false);
+         serializer->text(buffer, coap_resource_path);
+         if (coap_apply_update) {
+            serializer->field(buffer, "reboot", false);
+         }
+      } else if (coap_download_canceled) {
+         const char *reason = NULL;
+         switch (coap_download_cancel_reason) {
+            case REASON_NOT_AVAILABLE:
+               break;
+            case REASON_CMD:
+               reason = "cmd";
+               break;
+            case REASON_CHANGED:
+               reason = "content changed";
+               break;
+            case REASON_BLOCK_OPTION:
+               reason = "block option error";
+               break;
+            case REASON_BLOCK_NO:
+               reason = "block option no";
+               break;
+            case REASON_NO_CONTENT:
+               reason = "no content";
+               break;
+         }
+         serializer->field(buffer, "canceled", false);
+         serializer->text(buffer, coap_resource_path);
+         if (reason) {
+            serializer->field(buffer, "block", false);
+            serializer->number(buffer, coap_current_block, 0);
+            serializer->field(buffer, "reason", true);
+            serializer->text(buffer, reason);
+         }
+         if (time > -1) {
+            serializer->number_field(buffer, "time", "s", (double)(time / MSEC_PER_SEC), 0);
+         }
+      }
+   }
+   k_mutex_unlock(&appl_update_coap_mutex);
+
+   return buffer->current - current;
+}
+
 int appl_update_coap_cmd(const char *config)
 {
    int rc = 0;
