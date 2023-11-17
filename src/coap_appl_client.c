@@ -835,7 +835,7 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
 
       start = index + 1;
       index += snprintf(buf + index, len - index, "\nRestart: ");
-      err = appl_reset_cause_description(buf + index, sizeof(buf) - index);
+      err = appl_reset_cause_description(buf + index, len - index);
       if (err > 0) {
          dtls_info("%s", buf + start);
          index += err;

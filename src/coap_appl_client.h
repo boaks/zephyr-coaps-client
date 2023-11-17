@@ -16,8 +16,6 @@
 
 #include "coap_client.h"
 
-#include "dtls.h"
-
 #define COAP_SEND_FLAG_NO_RESPONSE 1
 #define COAP_SEND_FLAG_MINIMAL 2
 
