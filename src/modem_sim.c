@@ -242,9 +242,8 @@ static size_t get_plmns(const char *list, size_t len, char *plmn, size_t plmn_si
 #define SERVICE_20_BIT 1
 #define SERVICE_42_BIT 2
 #define SERVICE_43_BIT 4
-#define SERVICE_47_BIT 8
-#define SERVICE_71_BIT 16
-#define SERVICE_96_BIT 32
+#define SERVICE_71_BIT 8
+#define SERVICE_96_BIT 16
 
 static void modem_sim_read(bool init)
 {
@@ -317,7 +316,7 @@ static void modem_sim_read(bool init)
       }
       locked = true;
    }
-   res = modem_at_cmdf(buf, sizeof(buf), NULL, "AT+CIMI");
+   res = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CIMI");
    if (res == -EBUSY) {
       if (locked) {
          modem_at_unlock();
@@ -331,7 +330,7 @@ static void modem_sim_read(bool init)
          modem_at_unlock();
          locked = false;
       }
-      res = modem_at_cmdf(buf, sizeof(buf), NULL, "AT+CIMI");
+      res = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CIMI");
    }
    if (locked) {
       modem_at_unlock();
@@ -428,9 +427,6 @@ static void modem_sim_read(bool init)
          service = check_service(service, SERVICE_42_BIT, table, res, 42);
          /* Home PLMN selector */
          service = check_service(service, SERVICE_43_BIT, table, res, 43);
-         /* Mailbox Dialling Numbers */
-         service = check_service(service, SERVICE_47_BIT, table, res, 47);
-         service |= SERVICE_47_BIT;
          /* Equivalent Home PLMN */
          service = check_service(service, SERVICE_71_BIT, table, res, 71);
          /* Non Access Stratum Configuration */
@@ -617,23 +613,6 @@ static void modem_sim_read(bool init)
       k_mutex_lock(&sim_mutex, K_FOREVER);
       strcpy(sim_info.forbidden, plmn);
       k_mutex_unlock(&sim_mutex);
-   }
-
-   if (service & SERVICE_47_BIT) {
-      /* 0x6FC8, Serv. 47, Mailbox Dialling Numbers */
-      /* 178 := Read Record, 220 := Update Record */
-      res = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=178,28616,1,4,13");
-      if (res < 0) {
-         LOG_INF("Failed to read CRSM MBDN/EXT6.");
-         return;
-      } else {
-         start = strstart(buf, CRSM_SUCCESS, false);
-         if (start) {
-            LOG_INF("CRSM MBDN/EXT6: %s", buf);
-         } else {
-            service &= ~SERVICE_47_BIT;
-         }
-      }
    }
 
    if (service & SERVICE_96_BIT) {
