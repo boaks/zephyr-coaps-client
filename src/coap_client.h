@@ -26,7 +26,7 @@ typedef enum { PARSE_NONE = 0,
                PARSE_CON_RESPONSE } parse_result_t;
 
 #define COAP_CONTEXT(N, S)    \
-   struct n ## _coap_context {      \
+   struct N ## _coap_context {      \
       uint32_t token;         \
       uint16_t mid;           \
       uint16_t message_len;   \
