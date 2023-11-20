@@ -708,7 +708,7 @@ static int modem_cmd_reduced_mobility(const char *config)
    int res = sscanf(config, "%u", &mode);
    if (res == 1) {
       if (mode > 2) {
-         LOG_INF("Mode %u is out of scope [0..2].", mode);
+         LOG_INF("Mode %u is out of range [0..2].", mode);
          res = -EINVAL;
       } else {
          res = modem_set_reduced_mobility(mode);
@@ -742,10 +742,10 @@ static void modem_cmd_reduced_mobility_help(void)
 static int modem_cmd_power_level(const char *config)
 {
    unsigned int level = 0;
-   int res = sscanf(config, "%d", &level);
+   int res = sscanf(config, "%u", &level);
    if (res == 1) {
       if (level > 4) {
-         LOG_INF("Level %u is out of scope [0..4].", level);
+         LOG_INF("Level %u is out of range [0..4].", level);
          res = -EINVAL;
       } else {
          res = modem_set_power_level(level);
