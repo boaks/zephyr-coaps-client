@@ -367,20 +367,36 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
    err = appl_storage_read_int_items(REBOOT_CODE_ID, 0, reboot_times, reboot_codes, REBOOT_INFOS);
    if (err > 0) {
       index += snprintf(buf + index, len - index, "Last code: ");
-      index += appl_format_time(reboot_times[0], buf + index, len - index);
-      index += snprintf(buf + index, len - index, " %s", appl_get_reboot_desciption(reboot_codes[0]));
+      if (reboot_times[0]) {
+         index += appl_format_time(reboot_times[0], buf + index, len - index);
+         index += snprintf(buf + index, len - index, " ");
+      }
+      index += snprintf(buf + index, len - index, "%s", appl_get_reboot_desciption(reboot_codes[0]));
       dtls_info("%s", buf + start);
       buf[index++] = '\n';
       start = index;
       for (int i = 1; i < err; ++i) {
-         index += appl_format_time(reboot_times[i], buf + index, len - index);
-         index += snprintf(buf + index, len - index, " %s", appl_get_reboot_desciption(reboot_codes[i]));
+         if (reboot_times[i]) {
+            index += appl_format_time(reboot_times[i], buf + index, len - index);
+            index += snprintf(buf + index, len - index, " ");
+         }
+         index += snprintf(buf + index, len - index, "%s", appl_get_reboot_desciption(reboot_codes[i]));
          dtls_info("%s", buf + start);
          index = start;
       }
    }
 
-   return index - 1;
+   start = index;
+   index += snprintf(buf + index, len - index, "Restart: ");
+   err = appl_reset_cause_description(buf + index, len - index);
+   if (err > 0) {
+      dtls_info("%s", buf + start);
+      index += err;
+   } else {
+      index = start - 1;
+   }
+
+   return index;
 }
 
 int coap_appl_client_prepare_sim_info(char *buf, size_t len, int flags)
@@ -832,16 +848,6 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
          index = start + err;
       }
 #endif
-
-      start = index + 1;
-      index += snprintf(buf + index, len - index, "\nRestart: ");
-      err = appl_reset_cause_description(buf + index, len - index);
-      if (err > 0) {
-         dtls_info("%s", buf + start);
-         index += err;
-      } else {
-         index = start - 1;
-      }
 
 #ifdef CONFIG_COAP_SEND_SIM_INFO
       buf[index] = '\n';
