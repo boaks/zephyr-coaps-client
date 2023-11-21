@@ -917,9 +917,7 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
       return err;
    }
 
-   err = coap_packet_append_option(&request, COAP_OPTION_URI_PATH,
-                                   (uint8_t *)CONFIG_COAP_RESOURCE,
-                                   strlen(CONFIG_COAP_RESOURCE));
+   err = coap_packet_set_path(&request, CONFIG_COAP_RESOURCE);
    if (err < 0) {
       dtls_warn("Failed to encode CoAP URI-PATH option, %d", err);
       return err;
