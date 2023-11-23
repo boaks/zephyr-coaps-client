@@ -50,7 +50,7 @@ static K_CONDVAR_DEFINE(lte_condvar);
 
 static lte_state_change_callback_handler_t lte_state_change_handler = NULL;
 static int lte_initial_config = 0;
-static bool lte_mode_init = false;
+static bool lte_mode_init = true;
 static enum lte_lc_system_mode lte_initial_mode = LTE_LC_SYSTEM_MODE_LTEM;
 
 static bool initialized = 0;
@@ -954,6 +954,9 @@ static int modem_connect(void)
    if (IS_ENABLED(CONFIG_LTE_AUTO_INIT_AND_CONNECT)) {
       /* Do nothing, modem is already configured and LTE connected. */
    } else {
+      enum lte_lc_system_mode lte_mode;
+      enum lte_lc_system_mode_preference lte_preference;
+
       lte_lc_modem_events_enable();
       err = lte_lc_connect_async(lte_handler);
       if (err) {
@@ -964,8 +967,14 @@ static int modem_connect(void)
             LOG_WRN("Connecting to LTE network failed, error: %d", err);
          }
       }
-      if (!err && lte_mode_init) {
-         lte_mode_init = lte_lc_system_mode_get(&lte_initial_mode, NULL);
+      if (!err && !lte_lc_system_mode_get(&lte_mode, &lte_preference)) {
+         if (lte_mode_init) {
+            lte_initial_mode = lte_mode;
+            lte_mode_init = false;
+            LOG_INF("Start %s", modem_get_system_mode_description(lte_mode, lte_preference));
+         } else {
+            LOG_INF("Restart %s", modem_get_system_mode_description(lte_mode, lte_preference));
+         }
       }
    }
    return err;
@@ -1340,15 +1349,11 @@ int modem_wait_ready(const k_timeout_t timeout)
 
 int modem_start(const k_timeout_t timeout, bool save)
 {
-   enum lte_lc_system_mode lte_mode;
-   enum lte_lc_system_mode_preference lte_preference;
    int err = 0;
    int64_t time;
 
    modem_cancel_all_job();
-   if (!lte_lc_system_mode_get(&lte_mode, &lte_preference)) {
-      LOG_INF("%s", modem_get_system_mode_description(lte_mode, lte_preference));
-   }
+
    k_mutex_lock(&lte_mutex, K_FOREVER);
    err = network_info.plmn_lock;
    memset(&network_info, 0, sizeof(network_info));
@@ -1365,6 +1370,7 @@ int modem_start(const k_timeout_t timeout, bool save)
       if (lte_system_mode_preference) {
          modem_sim_apply_iccid_preference();
       }
+      lte_lc_offline();
    }
 
    ui_led_op(LED_COLOR_BLUE, LED_SET);
