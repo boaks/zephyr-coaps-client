@@ -93,7 +93,7 @@ static bool s_location_visibility_detection = false;
 
 static struct modem_gnss_state s_location_gnss_result = {.result = MODEM_GNSS_NOT_AVAILABLE, .valid = false};
 static struct modem_gnss_state s_location_gnss_state = {.result = MODEM_GNSS_NOT_AVAILABLE, .valid = false};
-static struct nrf_modem_gnss_agps_expiry gnss_expiry;
+static struct nrf_modem_gnss_agnss_expiry gnss_expiry;
 
 static inline uint16_t backoff(uint16_t time, const uint16_t max)
 {
@@ -113,8 +113,8 @@ static void location_gnss_event_handler(int event)
       case NRF_MODEM_GNSS_EVT_FIX:
          work_submit_to_io_queue(&location_gnss_pvt_work);
          break;
-      case NRF_MODEM_GNSS_EVT_AGPS_REQ:
-         LOG_INF("GNSS: A-GPS request!");
+      case NRF_MODEM_GNSS_EVT_AGNSS_REQ:
+         LOG_INF("GNSS: A-GNSS request!");
          break;
       case NRF_MODEM_GNSS_EVT_BLOCKED:
          LOG_INF("GNSS: blocked by LTE!");
@@ -123,6 +123,18 @@ static void location_gnss_event_handler(int event)
       case NRF_MODEM_GNSS_EVT_UNBLOCKED:
          LOG_INF("GNSS: unblocked by LTE!");
          s_gnss_blocked = false;
+         break;
+      case NRF_MODEM_GNSS_EVT_PERIODIC_WAKEUP:
+         LOG_INF("GNSS: periodic wakeup.");
+         break;
+      case NRF_MODEM_GNSS_EVT_SLEEP_AFTER_TIMEOUT:
+         LOG_INF("GNSS: sleep after timeout.");
+         break;
+      case NRF_MODEM_GNSS_EVT_SLEEP_AFTER_FIX:
+         LOG_INF("GNSS: sleep after fix.");
+         break;
+      case NRF_MODEM_GNSS_EVT_REF_ALT_EXPIRED:
+         LOG_INF("GNSS: ref alt expired.");
          break;
       default:
          LOG_INF("GNSS event: %d", event);
@@ -380,7 +392,7 @@ static void location_gnss_pvt_work_fn(struct k_work *item)
    }
 }
 
-static void location_print_expiry(const struct nrf_modem_gnss_agps_expiry *gnss_expiry)
+static void location_print_expiry(const struct nrf_modem_gnss_agnss_expiry *gnss_expiry)
 {
    LOG_DBG("GNSS: A-GPS - flags %02x, utc %u, klob %u, neq %u, integ %u",
            gnss_expiry->data_flags, gnss_expiry->utc_expiry, gnss_expiry->klob_expiry,
@@ -453,7 +465,7 @@ static void location_gnss_start(void)
          return;
       }
 
-      err = nrf_modem_gnss_agps_expiry_get(&gnss_expiry);
+      err = nrf_modem_gnss_agnss_expiry_get(&gnss_expiry);
       if (err) {
          LOG_ERR("GNSS get A-GPS expiry failed! err %d %s", -err, strerror(-err));
       } else {
