@@ -105,7 +105,7 @@ endif()
 zephyr_include_directories(src)
 
 # UART cmds
-zephyr_linker_sources(RODATA uart_cmds.ld)
+zephyr_linker_sources(SECTIONS uart_cmds.ld)
 
 # tinydtls - support DTLS 1.2 Connection ID
 zephyr_library_link_libraries(tinydtls)
