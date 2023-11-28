@@ -27,7 +27,7 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #define MAX_DITHER 2
 #define MIN_SAMPLES 4
-#define MAX_LOOPS 15
+#define MAX_LOOPS 20
 
 #define MEASURE_INTERVAL_MILLIS 50
 #define SAMPLE_MIN_INTERVAL_MILLIS 10000
@@ -157,9 +157,12 @@ static int battery_adc_inst(const struct battery_adc_config *cfg,
       int32_t min = adc_raw_data;
 
       values[counter++] = adc_raw_data;
-      k_sleep(K_MSEC(MEASURE_INTERVAL_MILLIS));
-      rc = adc_read(cfg->adc, &adc_seq);
-      while (!rc && loop > 0 && counter < MIN_SAMPLES) {
+      do {
+         k_sleep(K_MSEC(MEASURE_INTERVAL_MILLIS));
+         rc = adc_read(cfg->adc, &adc_seq);
+         if (rc) {
+            break;
+         }
          --loop;
          if (min > adc_raw_data) {
             min = adc_raw_data;
@@ -176,28 +179,30 @@ static int battery_adc_inst(const struct battery_adc_config *cfg,
          } else {
             values[counter++] = adc_raw_data;
          }
-         k_sleep(K_MSEC(MEASURE_INTERVAL_MILLIS));
-         rc = adc_read(cfg->adc, &adc_seq);
-      }
-      if (!rc && counter == MIN_SAMPLES) {
-         int32_t val_avg = values[0];
-         for (counter = 1; counter < MIN_SAMPLES; ++counter) {
-            val_avg += values[counter];
-         }
-         val_avg = (val_avg + (counter / 2)) / counter;
-         adc_raw_data = val_avg;
-         adc_raw_to_millivolts(adc_ref_internal(cfg->adc),
-                               cfg->adc_cfg.gain,
-                               adc_seq.resolution,
-                               &val_avg);
-         if (cfg->output_ohm != 0) {
-            val_avg = val_avg * (uint64_t)cfg->full_ohm / cfg->output_ohm;
-         }
-         LOG_INF("#%s %d raw %u => %u mV", cfg->name, MAX_LOOPS - loop, adc_raw_data, val_avg);
-         status->last_voltage = (uint16_t)val_avg;
-         status->last_uptime = k_uptime_get();
-         if (voltage) {
-            *voltage = (uint16_t)val_avg;
+      } while (loop > 0 && counter < MIN_SAMPLES);
+      if (!rc) {
+         if (counter == MIN_SAMPLES) {
+            int32_t val_avg = values[0];
+            for (counter = 1; counter < MIN_SAMPLES; ++counter) {
+               val_avg += values[counter];
+            }
+            val_avg = (val_avg + (counter / 2)) / counter;
+            adc_raw_data = val_avg;
+            adc_raw_to_millivolts(adc_ref_internal(cfg->adc),
+                                  cfg->adc_cfg.gain,
+                                  adc_seq.resolution,
+                                  &val_avg);
+            if (cfg->output_ohm != 0) {
+               val_avg = val_avg * (uint64_t)cfg->full_ohm / cfg->output_ohm;
+            }
+            LOG_INF("#%s %d raw %u => %u mV", cfg->name, MAX_LOOPS - loop, adc_raw_data, val_avg);
+            status->last_voltage = (uint16_t)val_avg;
+            status->last_uptime = k_uptime_get();
+            if (voltage) {
+               *voltage = (uint16_t)val_avg;
+            }
+         } else {
+            rc = -ESTALE;
          }
       }
    }
