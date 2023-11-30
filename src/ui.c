@@ -18,6 +18,8 @@
 #include <zephyr/logging/log.h>
 
 #include "io_job_queue.h"
+#include "sh_cmd.h"
+#include "parse.h"
 #include "ui.h"
 
 LOG_MODULE_REGISTER(UI, CONFIG_UI_LOG_LEVEL);
@@ -540,3 +542,57 @@ int ui_input(k_timeout_t timeout)
    }
    return rc;
 }
+
+static int sh_cmd_led(const char *parameter)
+{
+   led_t led = LED_NONE;
+   led_op_t op = LED_CLEAR;
+   char value1[6];
+   char value2[6];
+   const char *cur = parameter;
+
+   memset(value1, 0, sizeof(value1));
+   memset(value2, 0, sizeof(value2));
+
+   cur = parse_next_text(cur, ' ', value1, sizeof(value1));
+   cur = parse_next_text(cur, ' ', value2, sizeof(value2));
+
+   if (!stricmp("red", value1)) {
+      led = LED_COLOR_RED;
+   } else if (!stricmp("blue", value1)) {
+      led = LED_COLOR_BLUE;
+   } else if (!stricmp("green", value1)) {
+      led = LED_COLOR_GREEN;
+   } else if (!stricmp("all", value1)) {
+      led = LED_COLOR_ALL;
+   } else {
+      LOG_INF("led %s", parameter);
+      LOG_INF("color '%s' not supported!", value1);
+      return -EINVAL;
+   }
+   if (!stricmp("on", value2)) {
+      op = LED_SET;
+   } else if (!stricmp("off", value2)) {
+      op = LED_CLEAR;
+   } else if (!stricmp("blink", value2)) {
+      op = LED_BLINK;
+   } else if (!stricmp("blinking", value2)) {
+      op = LED_BLINKING;
+   } else {
+      LOG_INF("led %s", parameter);
+      LOG_INF("operation '%s' not supported!", value2);
+      return -EINVAL;
+   }
+   ui_led_op(led, op);
+   return 0;
+}
+
+static void sh_cmd_led_help(void)
+{
+   LOG_INF("> help led:");
+   LOG_INF("  led <color> <op> : apply opartion on color LED.");
+   LOG_INF("      <color>      : red, blue, green, or all.");
+   LOG_INF("              <op> : on, off, blink, or blinking.");
+}
+
+SH_CMD(led, NULL, "led command.", sh_cmd_led, sh_cmd_led_help, 0);

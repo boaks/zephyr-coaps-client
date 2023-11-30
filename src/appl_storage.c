@@ -25,7 +25,7 @@
 #include "appl_storage_config.h"
 #include "appl_time.h"
 
-#include "uart_cmd.h"
+#include "sh_cmd.h"
 
 #ifndef CONFIG_EEPROM
 #undef CONFIG_EEPROM_APPL_STORAGE
@@ -686,8 +686,8 @@ static int appl_storage_clear(const char *parameter)
    return 0;
 }
 
-UART_CMD(storage, NULL, "list storage sections.", appl_storage_list, NULL, 0);
-UART_CMD(storageclear, NULL, "clear all storage sections.", appl_storage_clear, NULL, 0);
+SH_CMD(storage, NULL, "list storage sections.", appl_storage_list, NULL, 0);
+SH_CMD(storageclear, NULL, "clear all storage sections.", appl_storage_clear, NULL, 0);
 
 #else /* defined(STORAGE_DEV_FLASH) || defined(STORAGE_DEV_EEPROM) */
 

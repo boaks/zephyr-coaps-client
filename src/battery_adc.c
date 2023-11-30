@@ -21,7 +21,6 @@
 #include <zephyr/logging/log.h>
 
 #include "battery_adc.h"
-#include "uart_cmd.h"
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 

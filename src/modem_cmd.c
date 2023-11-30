@@ -18,7 +18,7 @@
 
 #include "parse.h"
 
-#include "uart_cmd.h"
+#include "sh_cmd.h"
 
 LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 
@@ -941,32 +941,32 @@ static void modem_cmd_sms_help(void)
    LOG_INF("  <message>            : message");
 }
 
-UART_CMD(sms, "", "send SMS.", modem_cmd_sms, modem_cmd_sms_help, 0);
+SH_CMD(sms, "", "send SMS.", modem_cmd_sms, modem_cmd_sms_help, 0);
 
 #endif
 
-UART_CMD(eval, "AT%CONEVAL", "evaluate connection.", NULL, NULL, 0);
-UART_CMD(off, "AT+CFUN=0", "switch modem off.", NULL, NULL, 0);
-UART_CMD(offline, "AT+CFUN=4", "switch modem offline.", NULL, NULL, 0);
-UART_CMD(reset, "AT%XFACTORYRESET=0", "modem factory reset.", NULL, NULL, 0);
-UART_CMD(search, "AT+COPS=?", "network search.", NULL, NULL, 0);
+SH_CMD(eval, "AT%CONEVAL", "evaluate connection.", NULL, NULL, 0);
+SH_CMD(off, "AT+CFUN=0", "switch modem off.", NULL, NULL, 0);
+SH_CMD(offline, "AT+CFUN=4", "switch modem offline.", NULL, NULL, 0);
+SH_CMD(reset, "AT%XFACTORYRESET=0", "modem factory reset.", NULL, NULL, 0);
+SH_CMD(search, "AT+COPS=?", "network search.", NULL, NULL, 0);
 
-UART_CMD(limit, "", "read apn rate limit.", modem_cmd_rate_limit, NULL, 0);
-UART_CMD(on, "", "switch modem on.", modem_cmd_switch_on, NULL, 0);
-UART_CMD(state, "", "read modem state.", modem_cmd_state, NULL, 0);
+SH_CMD(limit, "", "read apn rate limit.", modem_cmd_rate_limit, NULL, 0);
+SH_CMD(on, "", "switch modem on.", modem_cmd_switch_on, NULL, 0);
+SH_CMD(state, "", "read modem state.", modem_cmd_state, NULL, 0);
 
-UART_CMD(cfg, "", "configure modem.", modem_cmd_config, modem_cmd_config_help, 3);
-UART_CMD(con, "", "connect modem.", modem_cmd_connect, modem_cmd_connect_help, 3);
+SH_CMD(cfg, "", "configure modem.", modem_cmd_config, modem_cmd_config_help, 3);
+SH_CMD(con, "", "connect modem.", modem_cmd_connect, modem_cmd_connect_help, 3);
 
-UART_CMD(scan, "AT%NCELLMEAS", "network scan.", modem_cmd_scan, modem_cmd_scan_help, 0);
+SH_CMD(scan, "AT%NCELLMEAS", "network scan.", modem_cmd_scan, modem_cmd_scan_help, 0);
 
-UART_CMD(band, "", "configure bands.", modem_cmd_band, modem_cmd_band_help, 0);
-UART_CMD(edrx, "", "configure eDRX.", modem_cmd_edrx, modem_cmd_edrx_help, 0);
-UART_CMD(psm, "", "configure PSM.", modem_cmd_psm, modem_cmd_psm_help, 0);
-UART_CMD(rai, "", "configure RAI.", modem_cmd_rai, modem_cmd_rai_help, 0);
+SH_CMD(band, "", "configure bands.", modem_cmd_band, modem_cmd_band_help, 0);
+SH_CMD(edrx, "", "configure eDRX.", modem_cmd_edrx, modem_cmd_edrx_help, 0);
+SH_CMD(psm, "", "configure PSM.", modem_cmd_psm, modem_cmd_psm_help, 0);
+SH_CMD(rai, "", "configure RAI.", modem_cmd_rai, modem_cmd_rai_help, 0);
 
-UART_CMD(remo, "", "reduced mobility.", modem_cmd_reduced_mobility, modem_cmd_reduced_mobility_help, 0);
-UART_CMD(power, "", "configure power level.", modem_cmd_power_level, modem_cmd_power_level_help, 0);
-UART_CMD(imsi, "", "select IMSI.", modem_cmd_imsi_sel, modem_cmd_imsi_sel_help, 0);
+SH_CMD(remo, "", "reduced mobility.", modem_cmd_reduced_mobility, modem_cmd_reduced_mobility_help, 0);
+SH_CMD(power, "", "configure power level.", modem_cmd_power_level, modem_cmd_power_level_help, 0);
+SH_CMD(imsi, "", "select IMSI.", modem_cmd_imsi_sel, modem_cmd_imsi_sel_help, 0);
 
 #endif

@@ -510,54 +510,48 @@ static void lte_network_sleeping_set(bool sleep)
    k_mutex_unlock(&lte_mutex);
 }
 
-#ifndef CONFIG_LOG_BACKEND_UART_RECEIVER
-AT_MONITOR(modem, ANY, modem_handler);
+AT_MONITOR(modem_monitor, ANY, modem_monitor_handler);
 
 static const char *IGNORE_NOTIFY[] = {"%NCELLMEAS:", "%XMODEMSLEEP:", NULL};
 
-static bool modem_ignore_notify(const char *notif)
+static int modem_monitor_ignore_notify(const char *notif)
 {
-   const char **ignore = IGNORE_NOTIFY;
-   while (*ignore) {
-      if (strstart(notif, *ignore, false)) {
-         return true;
+   int index = 0;
+   while (IGNORE_NOTIFY[index]) {
+      if (strstart(notif, IGNORE_NOTIFY[index], false)) {
+         return index;
       }
-      ++ignore;
+      ++index;
    }
-   return false;
+   return -1;
 }
 
-static volatile int lte_last_cereg_cause = 0;
-
-static void modem_handler(const char *notif)
+static void modem_monitor_handler(const char *notif)
 {
-   if (!appl_reboots() && !modem_ignore_notify(notif)) {
-      int len = strlen(notif) - 1;
-      while (len >= 0 && (notif[len] == '\n' || notif[len] == '\r')) {
-         --len;
-      }
-      if (len >= 0) {
-         char buf[256];
-         if (len > sizeof(buf) - 2) {
-            len = sizeof(buf) - 2;
-         }
-         memcpy(buf, notif, len + 1);
-         buf[len + 1] = 0;
-         LOG_INF("%s", buf);
-         len = strstart(notif, "+CEREG:", false);
-         if (len > 0) {
-            const char *cur = parse_next_chars(notif + len, ',', 4);
-            if (cur && strstart(cur, "0,", false)) {
-               lte_last_cereg_cause = atoi(cur + 2);
-               LOG_INF("LTE +CEREG: rejected, cause %d", lte_last_cereg_cause);
+   int index;
+
+   if (appl_reboots()) {
+      return;
+   }
+   index = modem_monitor_ignore_notify(notif);
+   if (index < 0) {
+      int len;
+      printk("%s", notif);
+      len = strstart(notif, "+CEREG:", false);
+      if (len > 0) {
+         const char *cur = parse_next_chars(notif + len, ',', 4);
+         if (*cur && strstart(cur, "0,", false)) {
+            int code = atoi(cur + 2);
+            const char *desc = modem_get_emm_cause_description(code);
+            if (desc) {
+               LOG_INF("LTE +CEREG: rejected, %s", desc);
             } else {
-               lte_last_cereg_cause = 0;
+               LOG_INF("LTE +CEREG: rejected, cause %d", code);
             }
          }
       }
    }
 }
-#endif /* CONFIG_LOG_BACKEND_UART_RECEIVER */
 
 static void lte_registration(enum lte_lc_nw_reg_status reg_status)
 {

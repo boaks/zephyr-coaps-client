@@ -27,7 +27,6 @@
 #include "modem_sim.h"
 #include "parse.h"
 #include "power_manager.h"
-#include "ui.h"
 
 #include "appl_diagnose.h"
 #include "appl_storage.h"
@@ -35,7 +34,7 @@
 #include "appl_time.h"
 #include "environment_sensor.h"
 
-#include "uart_cmd.h"
+#include "sh_cmd.h"
 
 #ifdef CONFIG_LOCATION_ENABLE
 #include "location.h"
@@ -47,10 +46,6 @@
 
 #ifdef CONFIG_NAU7802_SCALE
 #include "nau7802.h"
-#endif
-
-#ifdef CONFIG_EXT_BATTERY_ADC
-#include "battery_adc.h"
 #endif
 
 #define APP_COAP_LOG_PAYLOAD_SIZE 128
@@ -161,6 +156,9 @@ static void coap_appl_client_decode_text_payload(char *payload)
          }
          if (!stricmp(cur, "cmd")) {
             dtls_info("cmd %s", val);
+#ifdef CONFIG_UART_RECEIVER
+            sh_cmd_schedule(val, K_SECONDS(5));
+#endif
          } else if (!stricmp(cur, "fw")) {
             dtls_info("fw %s", val);
 #ifdef CONFIG_COAP_UPDATE
@@ -1085,29 +1083,29 @@ int coap_appl_client_init(const char *id)
 
 static char cmd_buf[512];
 
-static int at_cmd_net(const char *parameter)
+static int sh_cmd_net(const char *parameter)
 {
    (void)parameter;
    coap_appl_client_prepare_net_info(cmd_buf, sizeof(cmd_buf), 0);
    return coap_appl_client_prepare_net_stats(cmd_buf, sizeof(cmd_buf), 0);
 }
 
-static int at_cmd_dev(const char *parameter)
+static int sh_cmd_dev(const char *parameter)
 {
    (void)parameter;
    return coap_appl_client_prepare_modem_info(cmd_buf, sizeof(cmd_buf), 0);
 }
 
-static int at_cmd_env(const char *parameter)
+static int sh_cmd_env(const char *parameter)
 {
    (void)parameter;
    return coap_appl_client_prepare_env_info(cmd_buf, sizeof(cmd_buf), 0);
 }
 
-UART_CMD(net, "", "read network info.", at_cmd_net, NULL, 0);
+SH_CMD(net, "", "read network info.", sh_cmd_net, NULL, 0);
 #ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_MODEM
-UART_CMD(dev, NULL, "read device info.", at_cmd_dev, NULL, 0);
+SH_CMD(dev, "", "read device info.", sh_cmd_dev, NULL, 0);
 #else
-UART_CMD(dev, "", "read device info.", at_cmd_dev, NULL, 0);
+SH_CMD(dev, NULL, "read device info.", sh_cmd_dev, NULL, 0);
 #endif
-UART_CMD(env, NULL, "read environment sensor.", at_cmd_env, NULL, 0);
+SH_CMD(env, NULL, "read environment sensor.", sh_cmd_env, NULL, 0);

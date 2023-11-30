@@ -27,7 +27,7 @@
 #include "modem_at.h"
 #include "power_manager.h"
 #include "transform.h"
-#include "uart_cmd.h"
+#include "sh_cmd.h"
 
 #ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADC
 #include "battery_adc.h"
@@ -729,7 +729,7 @@ int power_manager_status_desc(char *buf, size_t len)
    return index;
 }
 
-static int battery_cmd(const char *parameter)
+static int sh_cmd_battery(const char *parameter)
 {
    (void)parameter;
    char buf[128];
@@ -745,7 +745,7 @@ static int battery_cmd(const char *parameter)
 }
 
 #ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_MODEM
-UART_CMD(bat, "", "read battery status.", battery_cmd, NULL, 0);
+SH_CMD(bat, "", "read battery status.", sh_cmd_battery, NULL, 0);
 #else
-UART_CMD(bat, NULL, "read battery status.", battery_cmd, NULL, 0);
+SH_CMD(bat, NULL, "read battery status.", sh_cmd_battery, NULL, 0);
 #endif

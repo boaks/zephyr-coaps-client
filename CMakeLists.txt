@@ -38,6 +38,8 @@ target_sources(app PRIVATE
 	src/coap_appl_client.c
 	)
 
+target_sources_ifdef(CONFIG_UART_RECEIVER app PRIVATE src/sh_cmd.c)
+
 target_sources_ifdef(CONFIG_UART_RECEIVER app PRIVATE src/uart_receiver.c)
 
 target_sources_ifdef(CONFIG_UART_RECEIVER app PRIVATE src/modem_cmd.c)
@@ -105,7 +107,7 @@ endif()
 zephyr_include_directories(src)
 
 # UART cmds
-zephyr_linker_sources(SECTIONS uart_cmds.ld)
+zephyr_linker_sources(SECTIONS sh_cmds.ld)
 
 # tinydtls - support DTLS 1.2 Connection ID
 zephyr_library_link_libraries(tinydtls)

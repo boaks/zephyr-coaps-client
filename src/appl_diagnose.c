@@ -30,8 +30,7 @@
 #include "appl_storage.h"
 #include "appl_storage_config.h"
 #include "appl_time.h"
-#include "uart_cmd.h"
-#include "ui.h"
+#include "sh_cmd.h"
 
 #define MSEC_PER_HOUR (MSEC_PER_SEC * 60 * 60)
 
@@ -247,7 +246,7 @@ int appl_reset_cause_description(char *buf, size_t len)
    return index;
 }
 
-static int at_cmd_reboot(const char *parameter)
+static int sh_cmd_reboot(const char *parameter)
 {
    (void)parameter;
    if (appl_reboots()) {
@@ -261,7 +260,7 @@ static int at_cmd_reboot(const char *parameter)
 
 #define REBOOT_INFOS 4
 
-static int at_cmd_read_reboots(const char *parameter)
+static int sh_cmd_read_reboots(const char *parameter)
 {
    (void)parameter;
    int64_t reboot_times[REBOOT_INFOS];
@@ -290,7 +289,7 @@ static int at_cmd_read_reboots(const char *parameter)
    return err > 0 ? 0 : err;
 }
 
-static int at_cmd_read_restarts(const char *parameter)
+static int sh_cmd_read_restarts(const char *parameter)
 {
    (void)parameter;
 
@@ -314,9 +313,9 @@ static int at_cmd_read_restarts(const char *parameter)
    return 0;
 }
 
-UART_CMD(reboot, NULL, "reboot device.", at_cmd_reboot, NULL, 0);
-UART_CMD(reboots, NULL, "read reboot codes.", at_cmd_read_reboots, NULL, 0);
-UART_CMD(restarts, NULL, "read restart reasons.", at_cmd_read_restarts, NULL, 0);
+SH_CMD(reboot, NULL, "reboot device.", sh_cmd_reboot, NULL, 0);
+SH_CMD(reboots, NULL, "read reboot codes.", sh_cmd_read_reboots, NULL, 0);
+SH_CMD(restarts, NULL, "read restart reasons.", sh_cmd_read_restarts, NULL, 0);
 
 static int appl_watchdog_init(void)
 {

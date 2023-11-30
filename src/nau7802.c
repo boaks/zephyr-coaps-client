@@ -29,7 +29,7 @@
 #include "nau7802.h"
 #include "ui.h"
 
-#include "uart_cmd.h"
+#include "sh_cmd.h"
 
 LOG_MODULE_REGISTER(SCALE, CONFIG_SCALE_LOG_LEVEL);
 
@@ -1562,7 +1562,7 @@ UART_CMD(scaledummy, NULL, "dummy scale calibation.", scale_dummy_calibration, N
 
 #endif /* CONFIG_NAU7802_DUMMY_CALIBRATION */
 
-static int scale_cmd(const char *parameter)
+static int sh_cmd_scale(const char *parameter)
 {
    (void)parameter;
 
@@ -1608,7 +1608,7 @@ static void scale_dump_calibration(struct scale_config *scale_dev)
    }
 }
 
-static int scale_calibration_cmd(const char *parameter)
+static int sh_cmd_scale_calibration(const char *parameter)
 {
    (void)parameter;
    scale_dump_calibration(&configs[0]);
@@ -1616,5 +1616,5 @@ static int scale_calibration_cmd(const char *parameter)
    return 0;
 }
 
-UART_CMD(scale, NULL, "read scale info.", scale_cmd, NULL, 0);
-UART_CMD(scalecal, NULL, "read scale calibration info.", scale_calibration_cmd, NULL, 0);
+SH_CMD(scale, NULL, "read scale info.", sh_cmd_scale, NULL, 0);
+SH_CMD(scalecal, NULL, "read scale calibration info.", sh_cmd_scale_calibration, NULL, 0);

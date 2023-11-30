@@ -23,7 +23,7 @@
 #include "modem_at.h"
 #include "modem_sim.h"
 #include "parse.h"
-#include "uart_cmd.h"
+#include "sh_cmd.h"
 
 LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 
@@ -721,6 +721,6 @@ static int modem_cmd_sim(const char *parameter)
    return 0;
 }
 
-UART_CMD(sim, "", "read SIM-card info.", modem_cmd_sim, NULL, 0);
+SH_CMD(sim, "", "read SIM-card info.", modem_cmd_sim, NULL, 0);
 
 #endif

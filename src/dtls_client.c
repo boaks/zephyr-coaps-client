@@ -41,7 +41,7 @@
 #include "modem_sim.h"
 #include "parse.h"
 #include "power_manager.h"
-#include "uart_cmd.h"
+#include "sh_cmd.h"
 #include "ui.h"
 
 #ifdef CONFIG_LOCATION_ENABLE
@@ -1700,21 +1700,21 @@ static int init_destination(int protocol, session_t *destination)
    return 0;
 }
 
-static int at_cmd_send(const char *parameter)
+static int sh_cmd_send(const char *parameter)
 {
    LOG_INF(">> send %s", parameter);
    dtls_cmd_trigger(true, 3, parameter, strlen(parameter));
    return 0;
 }
 
-static void at_cmd_send_help(void)
+static void sh_cmd_send_help(void)
 {
    LOG_INF("> help send:");
    LOG_INF("  send            : send application message.");
    LOG_INF("  send <message>  : send provided message.");
 }
 
-static int at_cmd_send_interval(const char *parameter)
+static int sh_cmd_send_interval(const char *parameter)
 {
    int res = 0;
    uint32_t interval = send_interval;
@@ -1734,7 +1734,9 @@ static int at_cmd_send_interval(const char *parameter)
                interval *= 3600;
             }
             send_interval = interval;
-            dtls_cmd_trigger(true, 3, NULL, 0);
+            if (send_interval > 0) {
+               work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(send_interval));
+            }
             res = 0;
          } else {
             LOG_INF("interval %s", parameter);
@@ -1754,7 +1756,7 @@ static int at_cmd_send_interval(const char *parameter)
    return res;
 }
 
-static void at_cmd_send_interval_help(void)
+static void sh_cmd_send_interval_help(void)
 {
    LOG_INF("> help interval:");
    LOG_INF("  interval             : read send interval.");
@@ -1763,8 +1765,8 @@ static void at_cmd_send_interval_help(void)
    LOG_INF("               <time>h : interval in hours.");
 }
 
-UART_CMD(send, NULL, "send message.", at_cmd_send, at_cmd_send_help, 0);
-UART_CMD(interval, NULL, "send interval.", at_cmd_send_interval, at_cmd_send_interval_help, 0);
+SH_CMD(send, NULL, "send message.", sh_cmd_send, sh_cmd_send_help, 0);
+SH_CMD(interval, NULL, "send interval.", sh_cmd_send_interval, sh_cmd_send_interval_help, 0);
 
 int main(void)
 {
