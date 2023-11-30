@@ -40,8 +40,8 @@
 #include "modem.h"
 #include "modem_sim.h"
 #include "power_manager.h"
-#include "ui.h"
 #include "uart_cmd.h"
+#include "ui.h"
 
 #ifdef CONFIG_LOCATION_ENABLE
 #include "location.h"
@@ -1618,10 +1618,12 @@ static int init_destination(int protocol, session_t *destination)
 
       host = CONFIG_COAP_SERVER_HOSTNAME;
       dtls_info("DNS lookup: %s", host);
+      watchdog_feed();
       err = getaddrinfo(CONFIG_COAP_SERVER_HOSTNAME, NULL, &hints, &result);
       while (-err == EAGAIN && count < 10) {
          k_sleep(K_MSEC(1000));
          ++count;
+         watchdog_feed();
          err = getaddrinfo(CONFIG_COAP_SERVER_HOSTNAME, NULL, &hints, &result);
       }
       if (err != 0) {
