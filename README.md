@@ -49,6 +49,8 @@ Maybe other modems and devices gets supported over the time as well. For some of
 | [Sparkfun Thing Plus nRF9160](https://www.sparkfun.com/products/17354?utm_source=sendfox&utm_medium=email&utm_campaign=nrf9160-thing-plus)<br>Qwiic and 2x5 plug for JTAG. | ![Sparkfun Thing Plus nRF9160](https://cdn.sparkfun.com//assets/parts/1/6/3/6/0/17354-SparkFun_Thing_Plus_-_nRF9160-01.jpg) |
 | [Icarus IoT Board v2](https://www.actinius.com/icarus)<br>Includes a eSIM.| ![Icarus IoT Board v2](https://www.actinius.com/images/icarus-nrf9160-feather-v2-front-sm-p-500.png) |
 | [Conexio Stratus](https://www.crowdsupply.com/conexio/stratus)<br>Built-in energy harvesting capability for autonomous operation. Includes a SIM card with 500MB in 10 years. | ![Conexio Stratus](https://www.crowdsupply.com/img/9c62/side.png) |
+| [Fanstel LN60E](https://www.fanstel.com/buy/bt840f-v1-nrf52840-bluetooth-5-thread-zigbee-module-by45z-8ypje)<br>Reduced to the minimum. Unfortunately the current version uses a LDO with 50µA quiescent current.| ![Fanstel LN60E](https://images.squarespace-cdn.com/content/v1/561459a2e4b0b39f5cefa12e/1600900228634-0AGSVRBYZKC1MD9Q5YDA/LN60E.png) |
+| [MIKROE LTE IoT 4 Click](https://www.mikroe.com/lte-iot-4-click)<br>Even less, but with power LED and B0 (old nRF9160 revision).| ![MIKROE LTE IoT 4 Click](https://cdn1-shop.mikroe.com/img/product/lte-iot-4-click/lte-iot-4-click-large_default-1.jpg) |
 
 
 ## Required HW-Tools for Thingy:91
