@@ -61,8 +61,7 @@
 	clock-frequency = <I2C_BITRATE_STANDARD>;
 
 	eeprom_a: eeprom@50 {
-		/* AT24HC04B (4 kbit eeprom) */
-		/* 0x8000 config register not accessible! If required, set size to 64K */
+		/* AT24HC04B (4 kbit eeprom 512x8 bit) */
 		compatible = "atmel,at24";
 		reg = <0x50>;
 		size = <512>;
@@ -86,8 +85,7 @@
 	clock-frequency = <I2C_BITRATE_STANDARD>;
 
 	eeprom_b: eeprom@50 {
-		/* AT24HC04B (4 kbit eeprom) */
-		/* 0x8000 config register not accessible! If required, set size to 64K */
+		/* AT24HC04B (4 kbit eeprom 512x8 bit) */
 		compatible = "atmel,at24";
 		reg = <0x50>;
 		size = <512>;

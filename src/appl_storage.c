@@ -255,23 +255,38 @@ static void appl_storage_init_headers(const struct storage_setup *setup)
    appl_storage_write_memory(setup->config, setup->headers_offset, setup->header, sizeof(setup->header));
 }
 
-static int appl_storage_init_offset(struct storage_setup *setup, bool force)
+static int appl_storage_format(struct storage_setup *setup)
+{
+   int rc = 0;
+
+   k_mutex_lock(&storage_mutex, K_FOREVER);
+   LOG_INF("Storage %s: format 0x%lx-0x%lx.", setup->config->desc, setup->headers_offset, setup->end_offset);
+   rc = appl_storage_erase_memory(setup->config, setup->headers_offset, setup->end_offset - setup->headers_offset);
+   if (rc < 0) {
+      LOG_INF("Storage %s: format failed, %d (%s).", setup->config->desc, rc, strerror(-rc));
+   } else {
+      appl_storage_init_headers(setup);
+      setup->current_offset = setup->start_offset;
+      LOG_INF("Storage %s: format ready.", setup->config->desc);
+   }
+   k_mutex_unlock(&storage_mutex);
+   return rc;
+}
+
+static int appl_storage_init_offset(struct storage_setup *setup)
 {
    int rc = 0;
    uint8_t data[MAX_ITEM_SIZE];
 
    k_mutex_lock(&storage_mutex, K_FOREVER);
    if (!(rc = appl_storage_read_memory(setup->config, setup->headers_offset, data, sizeof(setup->header)))) {
-      if (force || memcmp(data, setup->header, sizeof(setup->header)) != 0) {
-         LOG_INF("Storage %s: format 0x%lx.", setup->config->desc, setup->headers_offset);
-         LOG_HEXDUMP_DBG(data, sizeof(setup->header), "Storage: header read");
+      if (memcmp(data, setup->header, sizeof(setup->header)) != 0) {
          LOG_HEXDUMP_DBG(setup->header, sizeof(setup->header), "Storage: header expected");
-         appl_storage_erase_memory(setup->config, setup->headers_offset, setup->end_offset - setup->headers_offset);
-         appl_storage_init_headers(setup);
-         setup->current_offset = setup->start_offset;
-         LOG_INF("Storage %s: format ready.", setup->config->desc);
+         LOG_HEXDUMP_DBG(data, sizeof(setup->header), "Storage: header read");
+         rc = appl_storage_format(setup);
       } else {
-         for (int addr = setup->start_offset; addr < setup->end_offset; addr += sizeof(data)) {
+         int addr;
+         for (addr = setup->start_offset; addr < setup->end_offset; addr += sizeof(data)) {
             if (!(rc = appl_storage_read_memory(setup->config, addr, data, sizeof(data)))) {
                for (int index = 0;
                     index < sizeof(data) && (addr + index) < setup->end_offset;
@@ -284,6 +299,8 @@ static int appl_storage_init_offset(struct storage_setup *setup, bool force)
                }
             }
          }
+         LOG_INF("Storage %s: missing free entry!", setup->config->desc);
+         rc = appl_storage_format(setup);
       }
    }
    k_mutex_unlock(&storage_mutex);
@@ -322,21 +339,21 @@ static int appl_storage_check_config(const struct storage_config *config)
    } else {
       rc = appl_storage_read_memory(config, 0, &data, sizeof(data));
       if (rc) {
-         LOG_WRN("Storage %s: %s read failed, %d", config->desc, dev->name, rc);
-         return -rc;
+         LOG_WRN("Storage %s: %s read failed, %d (%s)", config->desc, dev->name, rc, strerror(-rc));
+         return rc;
       }
    }
    return rc;
 }
 
-static int appl_storage_init_setup(struct storage_setup *setup, const struct storage_config *config, int end)
+static int appl_storage_init_setup(struct storage_setup *setup, const struct storage_config *config, off_t end)
 {
    struct flash_pages_info info;
    int rc = appl_storage_get_page_info_by_offs(config, end, &info);
    if (!rc) {
-      size_t header_size = 0;
       setup->config = config;
       setup->item_size = (config->value_size + TIME_SIZE);
+      size_t header_size = setup->item_size;
       while (header_size < HEADER_SIZE) {
          header_size += setup->item_size;
       }
@@ -347,11 +364,11 @@ static int appl_storage_init_setup(struct storage_setup *setup, const struct sto
       sys_put_be32(config->magic, setup->header);
       sys_put_be32(config->version, &(setup->header[4]));
       sys_put_be16(config->value_size, &(setup->header[8]));
-
+      rc = appl_storage_init_offset(setup);
       LOG_INF("Storage %s: page-size 0x%x, off 0x%lx, index 0x%x", config->desc,
               info.size, info.start_offset, info.index);
-      LOG_INF("Storage %s: 0x%lx-0x%lx", config->desc,
-              setup->headers_offset, setup->end_offset);
+      LOG_INF("Storage %s: 0x%lx-0x%lx, off 0x%lx", config->desc,
+              setup->headers_offset, setup->end_offset, setup->current_offset);
    } else {
       LOG_WRN("Storage %s: %s could not get page info, %d", config->desc, config->storage_device->name, rc);
    }
@@ -390,11 +407,6 @@ int appl_storage_add(const struct storage_config *config)
       }
 
       rc = appl_storage_init_setup(setup, config, 0);
-      if (rc) {
-         goto exit_add;
-      }
-
-      rc = appl_storage_init_offset(setup, false);
       if (rc) {
          setup->init_state = STORAGE_INITIALIZE_ERROR;
          goto exit_add;
@@ -440,28 +452,21 @@ static int appl_storage_init(void)
       if (ok) {
          struct storage_setup *setup = &storage_setups[index_setup];
          rc = appl_storage_init_setup(setup, config, end);
-         if (!rc) {
-            ++index_setup;
-            end = setup->end_offset;
+         if (rc) {
+            storage_setups[index_setup].init_state = STORAGE_INITIALIZE_ERROR;
+         } else {
+            storage_setups[index_setup].init_state = STORAGE_INITIALIZED;
          }
+         ++index_setup;
+         end = setup->end_offset;
       }
       ++index_config;
       ++config;
    }
 
-   index_config = storage_setups_count;
    storage_setups_count = index_setup;
-   index_setup = index_config;
+   index_setup = 0;
 
-   while (index_setup < storage_setups_count) {
-      if (appl_storage_init_offset(&storage_setups[index_setup], false)) {
-         storage_setups[index_setup].init_state = STORAGE_INITIALIZE_ERROR;
-      } else {
-         storage_setups[index_setup].init_state = STORAGE_INITIALIZED;
-      }
-      ++index_setup;
-   }
-   index_setup = index_config;
    while (index_setup < storage_setups_count && !rc) {
       struct storage_setup *setup = &storage_setups[index_setup++];
       if (setup->init_state == STORAGE_INITIALIZED) {
@@ -531,14 +536,7 @@ static int appl_storage_read_item(const struct storage_setup *setup, off_t *curr
    off_t offset;
    uint8_t data[MAX_ITEM_SIZE];
 
-   if (current) {
-      offset = *current;
-   } else {
-      k_mutex_lock(&storage_mutex, K_FOREVER);
-      offset = setup->current_offset;
-      k_mutex_unlock(&storage_mutex);
-   }
-
+   offset = *current;
    if (offset == setup->start_offset) {
       offset = setup->end_offset;
    }
@@ -641,6 +639,10 @@ int appl_storage_read_bytes_item(size_t id, size_t index, int64_t *time, uint8_t
       }
       if (rc > 0) {
          rc = appl_storage_read_item(setup, &current, time, data, data_size);
+      }
+      if (rc < 0) {
+         LOG_INF("Read %s: failed, %d (%s)", setup->config->desc, rc, strerror(-rc));
+      } else {
          LOG_INF("Read %s: %d", setup->config->desc, rc);
       }
    }
@@ -674,8 +676,8 @@ static int appl_storage_clear(const char *parameter)
    for (int index = 0; index < storage_setups_count; ++index) {
       struct storage_setup *setup = &storage_setups[index];
       const struct storage_config *config = setup->config;
-      appl_storage_init_offset(setup, true);
-      LOG_INF("Storage %s, ID %d at %d, %d bytes/value cleared.",
+      appl_storage_format(setup);
+      LOG_INF("Storage %s, ID %d at %d, %d bytes/values cleared.",
               config->desc, config->id, index, config->value_size);
       LOG_INF("Storage %s: 0x%lx-0x%lx, cur: 0x%lx",
               config->desc, setup->headers_offset, setup->end_offset, setup->current_offset);
