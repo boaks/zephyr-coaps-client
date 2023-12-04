@@ -15,12 +15,14 @@
 #include <stdlib.h>
 
 #include <zephyr/device.h>
+#include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/logging/log_ctrl.h>
 #include <zephyr/pm/device.h>
 
+#include "appl_diagnose.h"
 #include "io_job_queue.h"
 #include "modem_at.h"
 #include "power_manager.h"
@@ -35,6 +37,33 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 static K_MUTEX_DEFINE(pm_mutex);
 typedef const struct device *t_devptr;
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay) && defined(CONFIG_DISABLE_REALTIME_CLOCK)
+
+#define REALTIME_CLOCK_ADDR 0x51
+
+static inline void power_manager_suspend_realtime_clock()
+{
+   const struct device *i2c_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(i2c1));
+   if (device_is_ready(i2c_dev)) {
+      // disable output
+      int rc1 = i2c_reg_write_byte(i2c_dev, REALTIME_CLOCK_ADDR, 1, 7);
+      // stop
+      int rc2 = i2c_reg_write_byte(i2c_dev, REALTIME_CLOCK_ADDR, 0, BIT(5));
+      if (!rc1 && !rc2) {
+         LOG_INF("Suspended realtime clock.");
+      } else {
+         LOG_INF("Suspending realtime clock failed. %d %d", rc1, rc2);
+      }
+   }
+}
+#else
+static inline void power_manager_suspend_realtime_clock()
+{
+   // empty
+}
+
+#endif
 
 #define MAX_PM_DEVICES 10
 
@@ -443,6 +472,7 @@ int power_manager_init(void)
       LOG_WRN("UART0 console not available.");
 #endif
    }
+   power_manager_suspend_realtime_clock();
 
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
    rc = adp536x_power_manager_init();
