@@ -18,6 +18,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include "appl_diagnose.h"
 #include "modem.h"
 #include "modem_at.h"
 #include "modem_sim.h"
@@ -346,7 +347,8 @@ static void modem_sim_read(bool init)
       if (strcmp(sim_info.imsi, buf)) {
          if (sim_info.imsi[0]) {
             strncpy(sim_info.prev_imsi, sim_info.imsi, sizeof(sim_info.prev_imsi) - 1);
-            sim_info.imsi_interval = MSEC_TO_SEC((now - imsi_time));
+            imsi_time = MSEC_TO_SEC(now - imsi_time);
+            sim_info.imsi_interval = MIN(imsi_time, 30000);
             sim_info.imsi_counter++;
          }
          strncpy(sim_info.imsi, buf, sizeof(sim_info.imsi) - 1);
@@ -634,6 +636,20 @@ void modem_sim_init(void)
    imsi_time = 0;
    sim_info.hpplmn_search_interval = -ENODATA;
    k_mutex_unlock(&sim_mutex);
+}
+
+void modem_sim_network(bool registered)
+{
+   static bool network_registered = false;
+
+   if (network_registered != registered) {
+      network_registered = registered;
+      if (!registered) {
+         k_mutex_lock(&sim_mutex, K_FOREVER);
+         imsi_time = k_uptime_get();
+         k_mutex_unlock(&sim_mutex);
+      }
+   }
 }
 
 bool modem_sim_multi_imsi(void)

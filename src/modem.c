@@ -214,8 +214,10 @@ static void modem_state_change_callback_work_fn(struct k_work *work)
          callback(LTE_STATE_READY, false);
       } else if (work == &modem_registered_callback_work) {
          callback(LTE_STATE_REGISTRATION, true);
+         modem_sim_network(true);
       } else if (work == &modem_unregistered_callback_work) {
          callback(LTE_STATE_REGISTRATION, false);
+         modem_sim_network(false);
       } else if (work == &modem_power_management_resume_work) {
          callback(LTE_STATE_SLEEPING, false);
       } else if (work == &modem_power_management_suspend_work) {

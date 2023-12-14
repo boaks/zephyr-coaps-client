@@ -17,6 +17,7 @@
 #include "modem.h"
 
 void modem_sim_init(void);
+void modem_sim_network(bool registered);
 bool modem_sim_multi_imsi(void);
 bool modem_sim_apply_iccid_preference(void);
 int modem_sim_get_info(struct lte_sim_info* info);
