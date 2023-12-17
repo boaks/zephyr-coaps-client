@@ -34,6 +34,8 @@ const char *modem_get_network_mode_description(enum lte_lc_lte_mode mode);
 
 const char *modem_get_rai_description(enum lte_network_rai rai);
 
+const char *modem_get_state_type(enum lte_network_state_type state_type);
+
 const char *modem_get_emm_cause_description(int cause);
 
 #endif /* MODEM_DESC_H */

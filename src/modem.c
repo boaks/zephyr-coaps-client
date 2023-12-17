@@ -446,11 +446,14 @@ static void lte_connection_status(void)
          k_work_cancel_delayable(&modem_ready_work);
          work_submit_to_io_queue(&modem_not_ready_callback_work);
 #ifdef CONFIG_PDN
-         LOG_INF("Modem not ready. con=%d/reg=%d/pdn=%d",
-                 network_info.rrc_active, network_info.registered, network_info.pdn_active);
+         LOG_INF("Modem not ready. con=%s/reg=%s/pdn=%s",
+                 modem_get_state_type(network_info.rrc_active), 
+                 modem_get_state_type(network_info.registered),
+                 modem_get_state_type(network_info.pdn_active));
 #else
-         LOG_INF("Modem not ready. con=%d/reg=%d",
-                 network_info.rrc_active, network_info.registered);
+         LOG_INF("Modem not ready. con=%s/reg=%s",
+                 modem_get_state_type(network_info.rrc_active), 
+                 modem_get_state_type(network_info.registered));
 #endif
       }
    }

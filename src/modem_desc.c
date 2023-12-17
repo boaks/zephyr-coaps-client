@@ -184,6 +184,21 @@ const char *modem_get_rai_description(enum lte_network_rai rai)
    return "Unknown";
 }
 
+const char *modem_get_state_type(enum lte_network_state_type state_type)
+{
+   switch (state_type) {
+      case LTE_NETWORK_STATE_INIT:
+         return "init";
+      case LTE_NETWORK_STATE_OFF:
+         return "off";
+      case LTE_NETWORK_STATE_ON:
+         return "on";
+      default:
+         break;
+   }
+   return "Unknown";
+}
+
 const char *modem_get_emm_cause_description(int cause)
 {
    switch (cause) {
