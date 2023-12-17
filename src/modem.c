@@ -949,6 +949,19 @@ static void modem_sms_callback(struct sms_data *const data, void *context)
 }
 #endif
 
+#if defined(CONFIG_LTE_LINK_CONTROL)
+
+LTE_LC_ON_CFUN(modem_on_cfun_hook, modem_on_cfun, NULL);
+
+static void modem_on_cfun(enum lte_lc_func_mode mode, void *ctx)
+{
+   if (mode == LTE_LC_FUNC_MODE_NORMAL ||
+       mode == LTE_LC_FUNC_MODE_ACTIVATE_LTE) {
+      modem_read_network_info(NULL, true);
+   }
+}
+#endif /* CONFIG_LTE_LINK_CONTROL */
+
 static int modem_connect(void)
 {
    int err = 0;

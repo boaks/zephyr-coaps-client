@@ -246,6 +246,33 @@ static size_t get_plmns(const char *list, size_t len, char *plmn, size_t plmn_si
 #define SERVICE_71_BIT 8
 #define SERVICE_96_BIT 16
 
+static int modem_sim_read_with_retry(int retries, char *buf, size_t len, const char *skip, const char *cmd)
+{
+   int res = modem_at_cmd(buf, len, skip, cmd);
+   if (res == -EBUSY) {
+      return res;
+   }
+   while (res < 0 && retries > 0) {
+      --retries;
+      k_sleep(K_MSEC(SIM_READ_RETRY_MILLIS));
+      res = modem_at_cmd(buf, len, skip, cmd);
+   }
+   return res;
+}
+
+static int modem_sim_read_locked_with_retry(int retries, char *buf, size_t len, const char *skip, const char *cmd)
+{
+   int res = modem_at_lock_no_warn(K_FOREVER);
+   if (!res) {
+      res = modem_sim_read_with_retry(retries - 1, buf, len, skip, cmd);
+      modem_at_unlock();
+      if (res) {
+         res = modem_sim_read_with_retry(0, buf, len, skip, cmd);
+      }
+   }
+   return res;
+}
+
 static void modem_sim_read(bool init)
 {
    static uint8_t service = 0xff;
@@ -255,37 +282,13 @@ static void modem_sim_read(bool init)
    char plmn[MODEM_PLMN_SIZE];
    char c_plmn[MODEM_PLMN_SIZE];
    char mcc[4];
-   int retries = 0;
    int res = 0;
    int start = 0;
-   bool locked = false;
 
    if (init) {
-      res = modem_at_lock_no_warn(K_FOREVER);
-      if (res == -EBUSY) {
-         return;
-      }
-      locked = true;
-   }
-   res = modem_at_cmd(buf, sizeof(buf), "%XICCID: ", "AT%XICCID");
-   if (res == -EBUSY) {
-      if (locked) {
-         modem_at_unlock();
-      }
-      return;
-   }
-   while (res < 0 && retries < MAX_SIM_RETRIES) {
-      ++retries;
-      k_sleep(K_MSEC(SIM_READ_RETRY_MILLIS));
-      if (locked && retries == MAX_SIM_RETRIES) {
-         modem_at_unlock();
-         locked = false;
-      }
-      res = modem_at_cmd(buf, sizeof(buf), "%XICCID: ", "AT%XICCID");
-   }
-   if (locked) {
-      modem_at_unlock();
-      locked = false;
+      res = modem_sim_read_locked_with_retry(MAX_SIM_RETRIES, buf, sizeof(buf), "%XICCID: ", "AT%XICCID");
+   } else {
+      res = modem_sim_read_with_retry(MAX_SIM_RETRIES, buf, sizeof(buf), "%XICCID: ", "AT%XICCID");
    }
    if (res < 0) {
       LOG_INF("Failed to read ICCID.");
@@ -309,35 +312,11 @@ static void modem_sim_read(bool init)
          LOG_INF("iccid: %s", buf);
       }
    }
-
    if (init) {
-      res = modem_at_lock_no_warn(K_FOREVER);
-      if (res == -EBUSY) {
-         return;
-      }
-      locked = true;
+      res = modem_sim_read_locked_with_retry(MAX_SIM_RETRIES, buf, sizeof(buf), NULL, "AT+CIMI");
+   } else {
+      res = modem_sim_read_with_retry(MAX_SIM_RETRIES, buf, sizeof(buf), NULL, "AT+CIMI");
    }
-   res = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CIMI");
-   if (res == -EBUSY) {
-      if (locked) {
-         modem_at_unlock();
-      }
-      return;
-   }
-   while (res < 0 && retries < MAX_SIM_RETRIES) {
-      ++retries;
-      k_sleep(K_MSEC(SIM_READ_RETRY_MILLIS));
-      if (locked && retries == MAX_SIM_RETRIES) {
-         modem_at_unlock();
-         locked = false;
-      }
-      res = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CIMI");
-   }
-   if (locked) {
-      modem_at_unlock();
-      locked = false;
-   }
-
    if (res < 0) {
       LOG_INF("Failed to read IMSI.");
       return;
@@ -720,10 +699,26 @@ int modem_sim_read_info(struct lte_sim_info *info, bool init)
    return res;
 }
 
+#if defined(CONFIG_LTE_LINK_CONTROL)
+
+LTE_LC_ON_CFUN(modem_sim_on_cfun_hook, modem_sim_on_cfun, NULL);
+
+static void modem_sim_on_cfun(enum lte_lc_func_mode mode, void *ctx)
+{
+   if (mode == LTE_LC_FUNC_MODE_NORMAL ||
+       mode == LTE_LC_FUNC_MODE_ACTIVATE_LTE) {
+      k_mutex_lock(&sim_mutex, K_FOREVER);
+      imsi_time = k_uptime_get();
+      k_mutex_unlock(&sim_mutex);
+   }
+}
+#endif /* CONFIG_LTE_LINK_CONTROL */
+
 static int modem_cmd_sim(const char *parameter)
 {
    (void)parameter;
-   return modem_sim_read_info(NULL, true);
+   modem_sim_read_info(NULL, true);
+   return 0;
 }
 
 UART_CMD(sim, "", "read SIM-card info.", modem_cmd_sim, NULL, 0);
