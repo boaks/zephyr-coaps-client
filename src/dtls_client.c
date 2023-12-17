@@ -1177,6 +1177,7 @@ static int dtls_loop(session_t *dst, int flags)
    long time;
    bool send_request = false;
    bool restarting_modem = false;
+   bool restarting_modem_power_off = false;
 #ifdef CONFIG_COAP_WAIT_ON_POWERMANAGER
    uint16_t battery_voltage = 0xffff;
 #endif
@@ -1293,18 +1294,30 @@ static int dtls_loop(session_t *dst, int flags)
 
       if (current_failures > handled_failures) {
          handled_failures = current_failures;
-         dtls_info("handle failure %d.", current_failures);
-         if (current_failures == 3 && (flags & FLAG_TLS)) {
-            // restart dtls
-            app_data.dtls_pending = true;
-            dtls_trigger();
-         } else if (current_failures >= 3) {
-            // reboot
-            dtls_info("> Too many failures, reboot");
-            reboot(ERROR_CODE_TOO_MANY_FAILURES, false);
-         } else if (current_failures == 2) {
-            // restart modem
-            restarting_modem = true;
+         enum dtls_retry_strategy strategy = coap_appl_client_retry_strategy(current_failures, flags & FLAG_TLS);
+         switch (strategy) {
+            case RETRY_NONE:
+               dtls_info("handle failure %d. new message", current_failures);
+               break;
+            case RETRY_DTLS:
+               dtls_info("handle failure %d. new DTLS handshake.", current_failures);
+               app_data.dtls_pending = true;
+               dtls_trigger();
+               break;
+            case RETRY_OFFLINE:
+               dtls_info("handle failure %d. switch modem offline.", current_failures);
+               restarting_modem_power_off = false;
+               restarting_modem = true;
+               break;
+            case RETRY_OFF:
+               dtls_info("handle failure %d. switch modem off.", current_failures);
+               restarting_modem_power_off = true;
+               restarting_modem = true;
+               break;
+            case RETRY_RESTART:
+               dtls_info("Too many failures, reboot");
+               reboot(ERROR_CODE_TOO_MANY_FAILURES, false);
+               break;
          }
       }
 #ifdef CONFIG_ADC_SCALE
@@ -1317,14 +1330,15 @@ static int dtls_loop(session_t *dst, int flags)
       }
 
       if (restarting_modem) {
-         dtls_info("Trigger restart modem.");
+         dtls_info("Trigger restart modem %s.", restarting_modem_power_off ? "power off" : "offline");
          restarting_modem = false;
-         if (restart_modem(false)) {
+         if (restart_modem(restarting_modem_power_off)) {
             if (!reopen_cause) {
                reopen_cause = "restart modem";
             }
             dtls_trigger();
          }
+         restarting_modem_power_off = false;
       }
 
       if (!atomic_test_bit(&general_states, LTE_READY)) {

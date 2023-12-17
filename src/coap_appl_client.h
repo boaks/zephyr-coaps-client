@@ -18,6 +18,7 @@
 
 #define COAP_SEND_FLAG_NO_RESPONSE 1
 #define COAP_SEND_FLAG_MINIMAL 2
+#define COAP_SEND_FLAG_DYNAMIC_VALUES 4
 
 #ifdef CONFIG_COAP_SEND_MINIMAL
 #define COAP_SEND_FLAGS COAP_SEND_FLAG_MINIMAL
@@ -42,6 +43,8 @@ int coap_appl_client_prepare_env_info(char *buf, size_t len, int flags);
 int coap_appl_client_prepare_post(char *buf, size_t len, int flags);
 
 int coap_appl_client_message(const uint8_t** buffer);
+
+enum dtls_retry_strategy coap_appl_client_retry_strategy(int counter, bool dtls);
 
 int coap_appl_client_init(const char *id);
 

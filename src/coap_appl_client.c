@@ -1056,6 +1056,28 @@ int coap_appl_client_message(const uint8_t **buffer)
    return appl_context.message_len;
 }
 
+enum dtls_retry_strategy coap_appl_client_retry_strategy(int counter, bool dtls)
+{
+   if (dtls) {
+      switch (counter) {
+         case 1:
+            return RETRY_NONE;
+         case 2:
+            return RETRY_OFF;
+         case 3:
+            return RETRY_DTLS;
+      }
+   } else {
+      switch (counter) {
+         case 1:
+            return RETRY_NONE;
+         case 2:
+            return RETRY_OFF;
+      }
+   }
+   return RETRY_RESTART;
+}
+
 int coap_appl_client_init(const char *id)
 {
    coap_client_id = id;

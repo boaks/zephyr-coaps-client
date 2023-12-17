@@ -19,6 +19,14 @@
 
 #define COAP_MAX_RETRANSMISSION 3
 
+enum dtls_retry_strategy {
+	RETRY_NONE,
+	RETRY_DTLS,
+	RETRY_OFFLINE,
+	RETRY_OFF,
+	RETRY_RESTART,
+};
+
 extern unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
 
 void dtls_cmd_trigger(bool led, int mode, const uint8_t* data, size_t len);

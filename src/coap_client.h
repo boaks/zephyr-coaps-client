@@ -16,7 +16,7 @@
 
 #include <zephyr/net/coap.h>
 
-#include "dtls.h"
+#include "dtls_client.h"
 
 typedef enum { PARSE_NONE = 0,
                PARSE_IGN,
