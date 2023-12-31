@@ -144,12 +144,13 @@ static volatile size_t appl_buffer_len = MAX_APPL_BUF;
 #define RTT_INTERVAL (2 * MSEC_PER_SEC)
 static unsigned int rtts[RTT_SLOTS + 2] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20};
 
-unsigned int transmissions[COAP_MAX_RETRANSMISSION + 2];
+unsigned int transmissions[COAP_MAX_RETRANSMISSION + 1];
+unsigned int failures = 0;
+unsigned int sockets = 0;
+unsigned int dtls_handshakes = 0;
 
 static K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
 static K_SEM_DEFINE(dtls_trigger_search, 0, 1);
-
-static K_MUTEX_DEFINE(dtls_pm_mutex);
 
 static void dtls_power_management(void);
 
@@ -204,12 +205,10 @@ static void dtls_power_management(void)
    bool suspend = false;
 
    if (!appl_reboots()) {
-      k_mutex_lock(&dtls_pm_mutex, K_FOREVER);
       suspend = atomic_test_bit(&general_states, LTE_SLEEPING) &&
                 !atomic_test_bit(&general_states, PM_PREVENT_SUSPEND) &&
                 !atomic_test_bit(&general_states, SETUP_MODE) &&
                 app_data.request_state == NONE;
-      k_mutex_unlock(&dtls_pm_mutex);
    }
 
    if (suspend) {
@@ -351,6 +350,7 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
                 loc, app->fd, errno, strerror(errno));
       reboot(ERROR_CODE(ERROR_CODE_OPEN_SOCKET, errno), false);
    }
+   ++sockets;
    modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
 #ifdef CONFIG_UDP_USE_CONNECT
    // using SO_RAI_NO_DATA requires a destination, for what ever
@@ -546,7 +546,7 @@ static void dtls_coap_success(dtls_app_data_t *app)
       unsigned long sum = 0;
       unsigned int num = 0;
       unsigned int rtt = 0;
-      dtls_info("retrans: 0*%u, 1*%u, 2*%u, 3*%u, failures %u", transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
+      dtls_info("retrans: 0*%u, 1*%u, 2*%u, 3*%u, failures %u", transmissions[0], transmissions[1], transmissions[2], transmissions[3], failures);
       dtls_info("rtt: 0-2s: %u, 2-4s: %u, 4-6s: %u, 6-8s: %u, 8-10s: %u", rtts[0], rtts[1], rtts[2], rtts[3], rtts[4]);
       dtls_info("rtt: 10-12s: %u, 12-14s: %u, 14-16s: %u, 16-18s: %u, 18-%u: %u", rtts[5], rtts[6], rtts[7], rtts[8], rtts[10], rtts[9]);
       for (index = 0; index <= RTT_SLOTS; ++index) {
@@ -598,7 +598,7 @@ static void dtls_coap_failure(dtls_app_data_t *app, const char *cause)
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    dtls_info("%dms/%dms: failure, %s", time1, time2, cause);
-   transmissions[COAP_MAX_RETRANSMISSION + 1]++;
+   failures++;
    if (initial_success) {
       ++current_failures;
       dtls_info("current failures %d.", current_failures);
@@ -793,6 +793,7 @@ recvfrom_peer(dtls_app_data_t *app, dtls_context_t *ctx)
 
    memset(&session, 0, sizeof(session_t));
    session.size = sizeof(session.addr);
+   dtls_info("recvfrom_peer ...");
    result = recvfrom(app->fd, appl_buffer, MAX_APPL_BUF, 0,
                      &session.addr.sa, &session.size);
    if (result < 0) {
@@ -1103,7 +1104,6 @@ static int dtls_network_searching(const k_timeout_t timeout)
       if (trigger != NO_SEARCH) {
          trigger = NO_SEARCH;
          if (off) {
-            watchdog_feed();
             modem_set_normal();
             off = false;
          }
@@ -1140,7 +1140,6 @@ static int dtls_network_searching(const k_timeout_t timeout)
             dtls_info("Multi IMSI, interval %d s.", info.sim_info.imsi_interval);
             if (((long)now - last_not_ready_time) > (MSEC_PER_SEC * timeout_s)) {
                dtls_info("Multi IMSI, offline");
-               watchdog_feed();
                modem_set_offline();
                off = true;
             }
@@ -1206,6 +1205,7 @@ static int dtls_loop(session_t *dst, int flags)
       dtls_credentials_init_handler(&cb);
       dtls_set_handler(dtls_context, &cb);
       app_data.dtls_pending = true;
+      ++dtls_handshakes;
    }
 
    app_data.timeout = COAP_ACK_TIMEOUT;
@@ -1302,6 +1302,7 @@ static int dtls_loop(session_t *dst, int flags)
             case RETRY_DTLS:
                dtls_info("handle failure %d. new DTLS handshake.", current_failures);
                app_data.dtls_pending = true;
+               ++dtls_handshakes;
                dtls_trigger();
                break;
             case RETRY_OFFLINE:
@@ -1600,6 +1601,7 @@ static int dtls_loop(session_t *dst, int flags)
                 !(flags & FLAG_KEEP_CONNECTION) &&
                 !app_data.dtls_pending) {
                app_data.dtls_pending = true;
+               ++dtls_handshakes;
                ui_led_op(LED_DTLS, LED_CLEAR);
             }
          } else if (udp_poll.revents & (POLLERR | POLLNVAL)) {
@@ -1718,7 +1720,9 @@ int main(void)
    session_t dst;
 
    memset(&app_data, 0, sizeof(app_data));
+   memset(transmissions, 0, sizeof(transmissions));
    memset(appl_buffer, 0, sizeof(appl_buffer));
+
    LOG_INF("CoAP/DTLS 1.2 CID sample %s has started", appl_get_version());
    appl_reset_cause(&flags);
 

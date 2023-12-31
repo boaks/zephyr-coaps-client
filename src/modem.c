@@ -69,7 +69,7 @@ static int psm_rat = -1;
 
 static int rai_lock = 0;
 
-static uint32_t lte_restarts = 0;
+static uint32_t lte_starts = 0;
 static uint32_t lte_searchs = 0;
 static uint32_t lte_psm_delays = 0;
 static uint32_t lte_cell_updates = 0;
@@ -447,12 +447,12 @@ static void lte_connection_status(void)
          work_submit_to_io_queue(&modem_not_ready_callback_work);
 #ifdef CONFIG_PDN
          LOG_INF("Modem not ready. con=%s/reg=%s/pdn=%s",
-                 modem_get_state_type(network_info.rrc_active), 
+                 modem_get_state_type(network_info.rrc_active),
                  modem_get_state_type(network_info.registered),
                  modem_get_state_type(network_info.pdn_active));
 #else
          LOG_INF("Modem not ready. con=%s/reg=%s",
-                 modem_get_state_type(network_info.rrc_active), 
+                 modem_get_state_type(network_info.rrc_active),
                  modem_get_state_type(network_info.registered));
 #endif
       }
@@ -960,6 +960,7 @@ static void modem_on_cfun(enum lte_lc_func_mode mode, void *ctx)
 {
    if (mode == LTE_LC_FUNC_MODE_NORMAL ||
        mode == LTE_LC_FUNC_MODE_ACTIVATE_LTE) {
+      ++lte_starts;
       modem_read_network_info(NULL, true);
    }
 }
@@ -1395,7 +1396,6 @@ int modem_start(const k_timeout_t timeout, bool save)
    ui_led_op(LED_COLOR_RED, LED_SET);
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
 
-   ++lte_restarts;
    err = modem_connect();
    if (!err) {
       time = k_uptime_get();
@@ -1880,7 +1880,7 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
    statistic->search_time = MSEC_TO_SEC(lte_search_time);
    statistic->psm_delays = lte_psm_delays;
    statistic->psm_delay_time = MSEC_TO_SEC(lte_psm_delay_time);
-   statistic->restarts = lte_restarts > 0 ? lte_restarts - 1 : 0;
+   statistic->restarts = lte_starts > 0 ? lte_starts - 1 : 0;
    statistic->cell_updates = lte_cell_updates;
    statistic->wakeups = lte_wakeups;
    statistic->wakeup_time = MSEC_TO_SEC(lte_wakeup_time);
@@ -2260,25 +2260,29 @@ void modem_lock_plmn(bool on)
 int modem_set_offline(void)
 {
    LOG_INF("modem offline");
+   watchdog_feed();
+
    return lte_lc_offline();
 }
 
 int modem_set_normal(void)
 {
-   ++lte_restarts;
    LOG_INF("modem normal");
+   watchdog_feed();
    return lte_lc_normal();
 }
 
 int modem_set_lte_offline(void)
 {
    LOG_INF("modem deactivate LTE");
+   watchdog_feed();
    return lte_lc_func_mode_set(LTE_LC_FUNC_MODE_DEACTIVATE_LTE) ? -EFAULT : 0;
 }
 
 int modem_power_off(void)
 {
    LOG_INF("modem off");
+   watchdog_feed();
    return lte_lc_power_off();
 }
 

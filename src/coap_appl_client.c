@@ -316,7 +316,7 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
    }
 
    index += snprintf(buf + index, len - index, ", %s %s, 0*%u, 1*%u, 2*%u, 3*%u, failures %u",
-                     CONFIG_APPL_MODEL_DESCRIPTION, appl_get_version(), transmissions[0], transmissions[1], transmissions[2], transmissions[3], transmissions[4]);
+                     CONFIG_APPL_MODEL_DESCRIPTION, appl_get_version(), transmissions[0], transmissions[1], transmissions[2], transmissions[3], failures);
    dtls_info("%s", buf + start);
 
    buf[index++] = '\n';
@@ -589,9 +589,12 @@ int coap_appl_client_prepare_net_stats(char *buf, size_t len, int flags)
       dtls_info("%s", buf + start);
       if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
          start = index + 1;
-         index += snprintf(buf + index, len - index, "\nCell updates %u, Network searchs %u (%u s), PSM delays %u (%u s), Restarts %u",
+         index += snprintf(buf + index, len - index, "\nCell updates %u, Network searchs %u (%u s), PSM delays %u (%u s)",
                            params.network_statistic.cell_updates, params.network_statistic.searchs, params.network_statistic.search_time,
-                           params.network_statistic.psm_delays, params.network_statistic.psm_delay_time, params.network_statistic.restarts);
+                           params.network_statistic.psm_delays, params.network_statistic.psm_delay_time);
+         dtls_info("%s", buf + start);
+         start = index + 1;
+         index += snprintf(buf + index, len - index, "\nModem Restarts %u, Sockets %u, DTLS handshakes %u", params.network_statistic.restarts, sockets, dtls_handshakes);
          dtls_info("%s", buf + start);
          start = index + 1;
          index += snprintf(buf + index, len - index, "\nWakeups %u, %u s, connected %u s, asleep %u s",
