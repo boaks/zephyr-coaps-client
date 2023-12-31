@@ -150,7 +150,7 @@ uint32_t appl_reset_cause(int *flags)
       reset_cause = cause;
    }
    if (reset_cause) {
-      LOG_INF("Reset cause %x", reset_cause);
+      LOG_INF("Reset cause 0x%04x", reset_cause);
       if (reset_cause & RESET_PIN) {
          LOG_INF("PIN");
          if (flags) {
