@@ -265,22 +265,19 @@ int appl_update_coap_cmd(const char *config)
       k_mutex_lock(&appl_update_coap_mutex, K_FOREVER);
       if (!coap_resource_path[0]) {
          LOG_INF("No CoAP download!");
-         k_mutex_unlock(&appl_update_coap_mutex);
          rc = -EINVAL;
       } else if (stricmp(version, coap_resource_path)) {
          LOG_INF("CoAP download version %s doesn't match %s!", version, coap_resource_path);
-         k_mutex_unlock(&appl_update_coap_mutex);
          rc = -EINVAL;
       } else if (!coap_download_ready) {
          LOG_INF("CoAP download not ready!");
-         k_mutex_unlock(&appl_update_coap_mutex);
          rc = -EINVAL;
       } else if (!appl_update_coap_verify_version()) {
-         k_mutex_unlock(&appl_update_coap_mutex);
          rc = -EINVAL;
       } else {
          appl_update_cmd("reboot");
       }
+      k_mutex_unlock(&appl_update_coap_mutex);
    } else if (!stricmp(cmd, "cancel")) {
       if (!coap_resource_path[0]) {
          LOG_INF("No CoAP download!");
