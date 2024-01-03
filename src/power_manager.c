@@ -26,12 +26,12 @@
 #include "io_job_queue.h"
 #include "modem_at.h"
 #include "power_manager.h"
-#include "transform.h"
 #include "sh_cmd.h"
+#include "transform.h"
 
-#ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADC
+#ifdef CONFIG_BATTERY_ADC
 #include "battery_adc.h"
-#endif /* CONFIG_BATTERY_VOLTAGE_SOURCE_ADC */
+#endif /* CONFIG_BATTERY_ADC */
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
@@ -325,13 +325,13 @@ static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_ma
 #define ADP536X_I2C_REG_BUCK_CONFIG 0x29
 #define ADP536X_I2C_REG_BUCK_BOOST_CONFIG 0x2B
 
-static const struct i2c_dt_spec i2c_spec =  I2C_DT_SPEC_GET(DT_ALIAS(pmic));
+static const struct i2c_dt_spec i2c_spec = I2C_DT_SPEC_GET(DT_ALIAS(pmic));
 
 static int adp536x_reg_read_bytes(uint8_t reg, uint8_t *buff, size_t len)
 {
-   return i2c_write_read_dt(&i2c_spec, 
-                         &reg, sizeof(reg),
-                         buff, len);
+   return i2c_write_read_dt(&i2c_spec,
+                            &reg, sizeof(reg),
+                            buff, len);
 }
 
 static int adp536x_reg_read(uint8_t reg, uint8_t *buff)
@@ -455,6 +455,50 @@ int adp536x_power_manager_init(void)
 
 #endif
 
+#ifdef CONFIG_INA219
+
+#include <zephyr/drivers/sensor.h>
+
+#define PM_NODE DT_NODELABEL(ina219)
+
+const struct device *const ina219 = DEVICE_DT_GET_OR_NULL(PM_NODE);
+
+int power_manager_read_ina219(uint16_t *voltage, uint16_t *current)
+{
+   int rc;
+   struct sensor_value value;
+
+   if (!device_is_ready(ina219)) {
+      if (ina219) {
+         LOG_WRN("Device %s is not ready.", ina219->name);
+      } else {
+         LOG_WRN("Device INA219 is not available.");
+      }
+      return -EINVAL;
+   }
+
+   rc = sensor_sample_fetch(ina219);
+   if (rc) {
+      LOG_WRN("Device %s could not fetch sensor data.\n", ina219->name);
+      return rc;
+   }
+
+   rc = sensor_channel_get(ina219, SENSOR_CHAN_VOLTAGE, &value);
+   if (rc) {
+      LOG_WRN("Device %s could not get voltage.\n", ina219->name);
+   } else if (voltage) {
+      *voltage = sensor_value_to_double(&value) * 1000;
+   }
+   rc = sensor_channel_get(ina219, SENSOR_CHAN_CURRENT, &value);
+   if (rc) {
+      LOG_WRN("Device %s could not get current.\n", ina219->name);
+   } else if (current) {
+      *current = sensor_value_to_double(&value) * 1000;
+   }
+   return rc;
+}
+#endif /* CONFIG_INA219 */
+
 int power_manager_init(void)
 {
    int rc = -ENOTSUP;
@@ -472,6 +516,11 @@ int power_manager_init(void)
 #endif
    }
    power_manager_suspend_realtime_clock();
+#ifdef CONFIG_INA219
+   if (device_is_ready(ina219)) {
+      power_manager_add_device(ina219);
+   }
+#endif
 
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
    rc = adp536x_power_manager_init();
@@ -629,6 +678,8 @@ int power_manager_voltage_ext(uint16_t *voltage)
    int rc = -ENODEV;
 #ifdef CONFIG_BATTERY_ADC
    rc = battery2_sample(voltage);
+#elif defined(CONFIG_INA219)
+   rc = power_manager_read_ina219(voltage, NULL);
 #endif
    return rc;
 }

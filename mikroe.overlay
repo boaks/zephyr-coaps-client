@@ -1,0 +1,91 @@
+/*
+ * Copyright (c) 2023 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0 or Apache-2.0
+ */
+
+/*
+ * Usage: 
+ *
+ * west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- \
+ *    -DOVERLAY_CONFIG="60min0-prj.conf;mikroe-prj.conf" -DDTC_OVERLAY_FILE="mikroe.overlay"
+ */
+
+#include "boards/nrf9160dk_nrf9160_ns.overlay"
+
+&spi3 {
+	status = "disabled";
+	/delete-property/ cs-gpios;
+	/delete-node/ mx25r6435f@1;
+};
+
+&pinctrl {
+
+	i2c2_default: i2c2_default {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 11)>,
+				<NRF_PSEL(TWIM_SCL, 0, 12)>;
+		};
+	};
+
+	i2c2_sleep: i2c2_sleep {
+		group1 {
+			psels = <NRF_PSEL(TWIM_SDA, 0, 11)>,
+				<NRF_PSEL(TWIM_SCL, 0, 12)>;
+			low-power-enable;
+		};
+	};
+};
+
+&i2c2 {
+	clock-frequency = <I2C_BITRATE_FAST>;
+};
+
+/ {
+	leds {
+		compatible = "gpio-leds";
+		led0: led_0 {
+			/* SPI SCK */
+			gpios = <&gpio0 3 GPIO_ACTIVE_LOW>;
+		};
+		/delete-node/ led_1;
+		/delete-node/ led_2;
+		/delete-node/ led_3;
+	};
+
+	buttons {
+		button0: button_0 {
+			/* SPI CS */
+			gpios = <&gpio0 7 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+		};
+		/delete-node/ button_1;
+		/delete-node/ button_2;
+		/delete-node/ button_3;
+	};
+
+
+	aliases {
+		/delete-property/ appl-storage-flash;
+		/delete-property/ spi-flash0;
+		/delete-property/ pwm_led0;
+		/delete-property/ led0;
+		/delete-property/ led2;
+		/delete-property/ led3;
+		/delete-property/ sw1;
+		/delete-property/ sw2;
+		/delete-property/ sw3;
+		/delete-property/ out1;
+		/delete-property/ out2;
+		// green led, and mcuboot led
+		led1 = &led0;
+	};
+
+};
+
