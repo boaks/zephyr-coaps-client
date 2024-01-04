@@ -14,6 +14,9 @@
 #ifndef BATTERY_ADC_H_
 #define BATTERY_ADC_H_
 
+#include <stdint.h>
+#include <stdbool.h>
+
 /** Enable or disable measurement of the battery voltage.
  *
  * @param enable true to enable, false to disable
