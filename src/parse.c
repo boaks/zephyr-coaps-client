@@ -17,16 +17,26 @@
 
 #include "parse.h"
 
-void print_bin(char *buf, size_t bits, int val)
+void print_bin_groups(char *buf, size_t bits, size_t groups, int val)
 {
-   for (int bit = 0; bit < bits; ++bit) {
-      if (val & (1 << (bits - 1 - bit))) {
-         buf[bit] = '1';
+   int index = 0;
+   while (bits > 0) {
+      if (index && (bits % groups) == 0) {
+         buf[index++] = ' ';
+      }
+      --bits;
+      if (val & (1 << bits)) {
+         buf[index++] = '1';
       } else {
-         buf[bit] = '0';
+         buf[index++] = '0';
       }
    }
-   buf[bits] = 0;
+   buf[index] = 0;
+}
+
+void print_bin(char *buf, size_t bits, int val)
+{
+   print_bin_groups(buf, bits, bits, val);
 }
 
 const char *parse_next_char(const char *value, char sep)
