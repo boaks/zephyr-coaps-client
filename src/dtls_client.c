@@ -1605,6 +1605,7 @@ static int dtls_loop(session_t *dst, int flags)
                ui_led_op(LED_DTLS, LED_CLEAR);
             }
          } else if (udp_poll.revents & (POLLERR | POLLNVAL)) {
+            dtls_info("Poll: 0x%x", udp_poll.revents);
             if (check_socket(&app_data)) {
                k_sleep(K_MSEC(1000));
             }
@@ -1612,6 +1613,7 @@ static int dtls_loop(session_t *dst, int flags)
       }
    }
 
+   dtls_info("Exit.");
    dtls_free_context(dtls_context);
    return 0;
 }
