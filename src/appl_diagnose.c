@@ -55,6 +55,7 @@ static const struct device *const wdt = DEVICE_DT_GET_OR_NULL(DT_ALIAS(watchdog0
 static int wdt_channel_id = -1;
 
 static volatile uint32_t reset_cause = 0;
+static volatile int32_t reset_error = 0;
 
 static char appl_version[16] = {'v', 0};
 
@@ -145,12 +146,16 @@ const char *appl_get_reboot_desciption(int error)
 uint32_t appl_reset_cause(int *flags)
 {
    uint32_t cause = 0;
-   if (atomic_cas(&read_reset_cause, 0, 1) && !hwinfo_get_reset_cause(&cause)) {
-      hwinfo_clear_reset_cause();
-      reset_cause = cause;
+   if (atomic_cas(&read_reset_cause, 0, 1)) {
+      reset_error = hwinfo_get_reset_cause(&cause);
+      if (!reset_error) {
+         hwinfo_clear_reset_cause();
+         reset_cause = cause;
+      }
    }
+   LOG_INF("Reset cause 0x%04x", reset_cause);
    if (reset_cause) {
-      LOG_INF("Reset cause 0x%04x", reset_cause);
+      // supported flags: 0x1b3
       if (reset_cause & RESET_PIN) {
          LOG_INF("PIN");
          if (flags) {
@@ -172,11 +177,17 @@ uint32_t appl_reset_cause(int *flags)
             }
          }
       }
-      if (reset_cause & RESET_POR) {
-         LOG_INF("POR");
-      }
       if (reset_cause & RESET_WATCHDOG) {
          LOG_INF("WATCHDOG");
+      }
+      if (reset_cause & RESET_DEBUG) {
+         LOG_INF("DEBUG");
+      }
+      if (reset_cause & RESET_LOW_POWER_WAKE) {
+         LOG_INF("LOWPOWER");
+      }
+      if (reset_cause & RESET_CPU_LOCKUP) {
+         LOG_INF("CPU");
       }
    } else {
       LOG_INF("No reset cause available.");
@@ -190,7 +201,10 @@ int appl_reset_cause_description(char *buf, size_t len)
 
    if (atomic_get(&read_reset_cause) && len > 8) {
       uint32_t cause = reset_cause;
-      if (cause) {
+      int error = reset_error;
+      if (error) {
+         index += snprintf(buf + index, len - index, "%d (%s)", error, strerror(-error));
+      } else if (cause) {
          if (cause & RESET_PIN) {
             cause &= ~RESET_PIN;
             index += snprintf(buf + index, len - index, "Reset, ");
@@ -199,13 +213,21 @@ int appl_reset_cause_description(char *buf, size_t len)
             cause &= ~RESET_SOFTWARE;
             index += snprintf(buf + index, len - index, "Reboot, ");
          }
-         if (cause & RESET_POR && index < len) {
-            cause &= ~RESET_POR;
-            index += snprintf(buf + index, len - index, "Power On, ");
-         }
          if (cause & RESET_WATCHDOG && index < len) {
             cause &= ~RESET_WATCHDOG;
             index += snprintf(buf + index, len - index, "Watchdog, ");
+         }
+         if (cause & RESET_DEBUG && index < len) {
+            cause &= ~RESET_DEBUG;
+            index += snprintf(buf + index, len - index, "Debug, ");
+         }
+         if (cause & RESET_LOW_POWER_WAKE && index < len) {
+            cause &= ~RESET_LOW_POWER_WAKE;
+            index += snprintf(buf + index, len - index, "Low-Power, ");
+         }
+         if (cause & RESET_CPU_LOCKUP && index < len) {
+            cause &= ~RESET_CPU_LOCKUP;
+            index += snprintf(buf + index, len - index, "CPU, ");
          }
          if (((index - 2) > len) || (cause && (index + 8 > len))) {
             // buffer overflow, reset output
@@ -218,6 +240,8 @@ int appl_reset_cause_description(char *buf, size_t len)
             index -= 2;
             buf[index] = 0;
          }
+      } else {
+         index += snprintf(buf + index, len - index, "none");
       }
    }
    return index;
@@ -237,7 +261,7 @@ static int at_cmd_reboot(const char *parameter)
 
 #define REBOOT_INFOS 4
 
-static int appl_reboot_code_read(const char *parameter)
+static int at_cmd_read_reboots(const char *parameter)
 {
    (void)parameter;
    int64_t reboot_times[REBOOT_INFOS];
@@ -266,9 +290,33 @@ static int appl_reboot_code_read(const char *parameter)
    return err > 0 ? 0 : err;
 }
 
-UART_CMD(reboots, NULL, "read reboot codes.", appl_reboot_code_read, NULL, 0);
+static int at_cmd_read_restarts(const char *parameter)
+{
+   (void)parameter;
+
+#if 0
+   uint32_t supported = 0;
+   hwinfo_get_supported_reset_cause(&supported);
+   LOG_INF("Reset cause supported: %x", supported);
+#endif
+
+   if (atomic_get(&read_reset_cause)) {
+      int len = 0;
+      char buf[128];
+
+      memset(buf, 0, sizeof(buf));
+      len = appl_reset_cause_description(buf, sizeof(buf));
+      LOG_INF("Reset cause: %s", buf);
+   } else {
+      LOG_WRN("Reset cause not read.");
+   }
+
+   return 0;
+}
 
 UART_CMD(reboot, NULL, "reboot device.", at_cmd_reboot, NULL, 0);
+UART_CMD(reboots, NULL, "read reboot codes.", at_cmd_read_reboots, NULL, 0);
+UART_CMD(restarts, NULL, "read restart reasons.", at_cmd_read_restarts, NULL, 0);
 
 static int appl_watchdog_init(void)
 {
