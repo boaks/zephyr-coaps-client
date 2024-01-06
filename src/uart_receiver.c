@@ -78,7 +78,7 @@ static char at_cmd_buf[CONFIG_AT_CMD_MAX_LEN];
 static int uart_rx_buf_id = 0;
 static uint8_t uart_rx_buf[2][CONFIG_UART_BUFFER_LEN];
 
-#define UART_RX_ENABLED 0
+#define UART_TX_ENABLED 0
 #define UART_AT_CMD_EXECUTING 1
 #define UART_AT_CMD_PENDING 2
 #define UART_SUSPENDED 3
@@ -127,7 +127,7 @@ static int uart_get_lines(void)
 {
    int res = -ENODATA;
    if (device_is_ready(uart_rx.port)) {
-      res = gpio_pin_get(uart_rx.port, uart_rx.pin);
+      res = gpio_pin_get_dt(&uart_rx);
    }
    return res;
 }
@@ -135,9 +135,6 @@ static int uart_get_lines(void)
 static void uart_rx_line_active(const struct device *dev, struct gpio_callback *cb,
                                 uint32_t pins)
 {
-   if ((BIT(uart_rx.pin) & pins) == 0) {
-      return;
-   }
    gpio_pin_interrupt_configure_dt(&uart_rx, GPIO_INT_DISABLE);
    uart_reschedule_rx_enable(K_MSEC(CONFIG_UART_RX_CHECK_INTERVAL_MS));
 }
@@ -191,7 +188,6 @@ static K_MUTEX_DEFINE(uart_tx_mutex);
 static K_CONDVAR_DEFINE(uart_tx_condvar);
 static K_WORK_DELAYABLE_DEFINE(uart_end_pause_tx_work, uart_pause_tx_fn);
 static bool uart_tx_in_pause = false;
-static bool uart_tx_in_off = false;
 #endif
 
 static K_SEM_DEFINE(uart_tx_sem, 0, 1);
@@ -225,9 +221,11 @@ static void uart_tx_off(bool off)
 #ifdef CONFIG_LOG_MODE_IMMEDIATE
    ARG_UNUSED(off);
 #else
-   k_mutex_lock(&uart_tx_mutex, K_FOREVER);
-   uart_tx_in_off = off;
-   k_mutex_unlock(&uart_tx_mutex);
+   if (off) {
+      atomic_clear_bit(&uart_at_state, UART_TX_ENABLED);
+   } else {
+      atomic_set_bit(&uart_at_state, UART_TX_ENABLED);
+   }
 #endif
 }
 
@@ -238,21 +236,20 @@ static inline void uart_tx_ready(void)
 
 static int uart_tx_out(uint8_t *data, size_t length, bool panic)
 {
-   if (atomic_test_bit(&uart_at_state, UART_SUSPENDED)) {
-      return length;
-   }
-   if (panic || length == 1) {
-      for (size_t i = 0; i < length; i++) {
-         uart_poll_out(uart_dev, data[i]);
+   if (!atomic_test_bit(&uart_at_state, UART_SUSPENDED)) {
+      if (panic || length == 1) {
+         for (size_t i = 0; i < length; i++) {
+            uart_poll_out(uart_dev, data[i]);
+         }
+      } else {
+
+         k_sem_reset(&uart_tx_sem);
+
+         /* SYS_FOREVER_US disable timeout */
+         uart_tx(uart_dev, data, length, SYS_FOREVER_US);
+
+         k_sem_take(&uart_tx_sem, K_MSEC(CONFIG_UART_TX_OUTPUT_TIMEOUT_MS));
       }
-   } else {
-
-      k_sem_reset(&uart_tx_sem);
-
-      /* SYS_FOREVER_US disable timeout */
-      uart_tx(uart_dev, data, length, SYS_FOREVER_US);
-
-      k_sem_take(&uart_tx_sem, K_MSEC(CONFIG_UART_TX_OUTPUT_TIMEOUT_MS));
    }
    return length;
 }
@@ -404,7 +401,9 @@ static bool uart_log_filter(struct log_msg *msg)
 static void uart_log_process(const struct log_backend *const backend,
                              union log_msg_generic *msg)
 {
-   if (atomic_test_bit(&uart_at_state, UART_SUSPENDED)) {
+   if (atomic_test_bit(&uart_at_state, UART_SUSPENDED) ||
+       !atomic_test_bit(&uart_at_state, UART_TX_ENABLED)) {
+      // silently drop during suspended UART or XMODEM
       return;
    }
 
@@ -418,25 +417,20 @@ static void uart_log_process(const struct log_backend *const backend,
 
       if (plen || dlen) {
          int prefix = 0;
-         bool off;
          char level = level_tab[msg->log.hdr.desc.level];
 
          if (uart_log_filter(&msg->log)) {
+            // drop filtered msg
             return;
          }
 
-         k_mutex_lock(&uart_tx_mutex, K_FOREVER);
-         off = uart_tx_in_off;
 #ifndef CONFIG_LOG_MODE_IMMEDIATE
-         if (!off && uart_tx_in_pause) {
+         k_mutex_lock(&uart_tx_mutex, K_FOREVER);
+         if (uart_tx_in_pause) {
             k_condvar_wait(&uart_tx_condvar, &uart_tx_mutex, K_FOREVER);
          }
-#endif
          k_mutex_unlock(&uart_tx_mutex);
-         if (off) {
-            // silently drop during XMODEM
-            return;
-         }
+#endif
          if (level) {
             int cycles = sys_clock_hw_cycles_per_sec();
             log_timestamp_t seconds = (msg->log.hdr.timestamp / cycles) % 100;
@@ -465,7 +459,7 @@ static void uart_log_process(const struct log_backend *const backend,
 static void uart_log_init(struct log_backend const *const backend)
 {
    ARG_UNUSED(backend);
-
+   uart_tx_off(false);
    uart_init();
 }
 
@@ -584,7 +578,6 @@ static void uart_enable_rx_fn(struct k_work *work)
       } else if (err) {
          LOG_DBG("UART async rx not enabled! %d", err);
       } else {
-         atomic_set_bit(&uart_at_state, UART_RX_ENABLED);
          LOG_INF("UART async rx enabled.");
          return;
       }
@@ -636,7 +629,6 @@ static void at_cmd_result(int res)
          }
       }
    }
-   uart_tx_pause(false);
 }
 
 static void at_coneval_result(const char *result)
@@ -1228,7 +1220,6 @@ static void uart_receiver_callback(const struct device *dev,
          break;
    }
    if (enable) {
-      atomic_clear_bit(&uart_at_state, UART_RX_ENABLED);
       uart_reschedule_rx_enable(K_MSEC(CONFIG_UART_RX_CHECK_INTERVAL_MS));
    }
 }
