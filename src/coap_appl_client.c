@@ -1024,14 +1024,14 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
    }
 #endif /* CONFIG_COAP_QUERY_READ_SUBRESOURCE_ENABLE */
 
-#if CONFIG_COAP_SEND_INTERVAL > 0
-   err = coap_append_option_int(&request, CUSTOM_COAP_OPTION_INTERVAL,
-                                CONFIG_COAP_SEND_INTERVAL);
-   if (err < 0) {
-      dtls_warn("Failed to encode CoAP interval option, %d", err);
-      return err;
+   if (send_interval > 0) {
+      err = coap_append_option_int(&request, CUSTOM_COAP_OPTION_INTERVAL,
+                                   send_interval);
+      if (err < 0) {
+         dtls_warn("Failed to encode CoAP interval option, %d", err);
+         return err;
+      }
    }
-#endif /* CONFIG_COAP_SEND_INTERVAL */
 
    err = coap_packet_append_payload_marker(&request);
    if (err < 0) {

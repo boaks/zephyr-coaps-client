@@ -31,6 +31,7 @@ extern unsigned int transmissions[COAP_MAX_RETRANSMISSION + 1];
 extern unsigned int failures;
 extern unsigned int sockets;
 extern unsigned int dtls_handshakes;
+extern volatile uint32_t send_interval;
 
 void dtls_cmd_trigger(bool led, int mode, const uint8_t* data, size_t len);
 

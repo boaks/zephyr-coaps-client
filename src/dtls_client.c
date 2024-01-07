@@ -149,6 +149,8 @@ unsigned int failures = 0;
 unsigned int sockets = 0;
 unsigned int dtls_handshakes = 0;
 
+volatile uint32_t send_interval = CONFIG_COAP_SEND_INTERVAL;
+
 static K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
 static K_SEM_DEFINE(dtls_trigger_search, 0, 1);
 
@@ -464,8 +466,8 @@ static void dtls_timer_trigger_fn(struct k_work *work)
       ui_enable(false);
       dtls_trigger();
    } else {
-      LOG_DBG("Busy, schedule again in %d s.", CONFIG_COAP_SEND_INTERVAL);
-      work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
+      LOG_DBG("Busy, schedule again in %d s.", send_interval);
+      work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(send_interval));
    }
 }
 #endif
@@ -482,20 +484,20 @@ static void dtls_coap_next(dtls_app_data_t *app)
       modem_power_off();
       dtls_info("modem off");
    }
-#if CONFIG_COAP_SEND_INTERVAL > 0
+   if (send_interval > 0) {
 #if CONFIG_COAP_FAILURE_SEND_INTERVAL > 0
-   if (current_failures > 0) {
-      LOG_DBG("Failure, schedule in %d s.", CONFIG_COAP_FAILURE_SEND_INTERVAL);
-      work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_FAILURE_SEND_INTERVAL));
-   } else {
-      LOG_DBG("Success, schedule in %d s.", CONFIG_COAP_SEND_INTERVAL);
-      work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
-   }
+      if (current_failures > 0) {
+         LOG_DBG("Failure, schedule in %d s.", CONFIG_COAP_FAILURE_SEND_INTERVAL);
+         work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_FAILURE_SEND_INTERVAL));
+      } else {
+         LOG_DBG("Success, schedule in %d s.", send_interval);
+         work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(send_interval));
+      }
 #else  /*CONFIG_COAP_FAILURE_SEND_INTERVAL*/
-   LOG_DBG("Next, schedule in %d s.", CONFIG_COAP_SEND_INTERVAL);
-   work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
+      LOG_DBG("Next, schedule in %d s.", send_interval);
+      work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(send_interval));
 #endif /*CONFIG_COAP_FAILURE_SEND_INTERVAL*/
-#endif /*CONFIG_COAP_SEND_INTERVAL*/
+   }
 
    appl_get_now(&now);
    if (appl_format_time(now, buf, sizeof(buf))) {
@@ -1454,9 +1456,9 @@ static int dtls_loop(session_t *dst, int flags)
                app_data.request_state = SEND;
                dtls_power_management();
                ui_led_op(LED_APPLICATION, LED_SET);
-#if CONFIG_COAP_SEND_INTERVAL > 0
-               work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(CONFIG_COAP_SEND_INTERVAL));
-#endif
+               if (send_interval > 0) {
+                  work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(send_interval));
+               }
                if (lte_power_off) {
                   dtls_info("modem on");
                   lte_power_off = false;
@@ -1711,7 +1713,57 @@ static void at_cmd_send_help(void)
    LOG_INF("  send <message>  : send provided message.");
 }
 
+static int at_cmd_send_interval(const char *parameter)
+{
+   int res = 0;
+   uint32_t interval = send_interval;
+   char unit = 's';
+   const char *cur = parameter;
+   char value[10];
+
+   memset(value, 0, sizeof(value));
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+
+   if (value[0]) {
+      res = sscanf(value, "%u%c", &interval, &unit);
+      if (res >= 1) {
+         if (unit == 's' || unit == 'h') {
+            LOG_INF("set send interval %u%c", interval, unit);
+            if (unit == 'h') {
+               interval *= 3600;
+            }
+            send_interval = interval;
+            dtls_cmd_trigger(true, 3, NULL, 0);
+            res = 0;
+         } else {
+            LOG_INF("interval %s", parameter);
+            LOG_INF("   unit '%c' not supported", unit);
+            res = -EINVAL;
+         }
+      } else {
+         res = -EINVAL;
+      }
+   } else {
+      if ((interval % 3600) == 0) {
+         LOG_INF("send interval %uh", interval / 3600);
+      } else {
+         LOG_INF("send interval %us", interval);
+      }
+   }
+   return res;
+}
+
+static void at_cmd_send_interval_help(void)
+{
+   LOG_INF("> help interval:");
+   LOG_INF("  interval             : read send interval.");
+   LOG_INF("  interval <time>[s|h] : set send interval.");
+   LOG_INF("        <time>|<time>s : interval in seconds.");
+   LOG_INF("               <time>h : interval in hours.");
+}
+
 UART_CMD(send, NULL, "send message.", at_cmd_send, at_cmd_send_help, 0);
+UART_CMD(interval, NULL, "send interval.", at_cmd_send_interval, at_cmd_send_interval_help, 0);
 
 int main(void)
 {
