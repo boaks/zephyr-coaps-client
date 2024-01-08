@@ -39,6 +39,7 @@
 #include "io_job_queue.h"
 #include "modem.h"
 #include "modem_sim.h"
+#include "parse.h"
 #include "power_manager.h"
 #include "uart_cmd.h"
 #include "ui.h"
