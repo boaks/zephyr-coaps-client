@@ -57,7 +57,6 @@ LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 
 #define CONFIG_UART_RX_CHECK_INTERVAL_MS 50
 #define CONFIG_UART_RX_CHECK_INTERVAL_S 60
-#define CONFIG_UART_RX_SUSPEND_DELAY_S 5
 
 #define CONFIG_UART_RX_INPUT_TIMEOUT_S 30
 
@@ -120,8 +119,12 @@ static int uart_reschedule_rx_enable(const k_timeout_t delay)
 }
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(rx0), okay))
+
+#define UART_RX_EXTRA_FLAGS (GPIO_INPUT | GPIO_PULL_DOWN)
+
 static const struct gpio_dt_spec uart_rx = GPIO_DT_SPEC_GET(DT_NODELABEL(rx0), gpios);
 static struct gpio_callback uart_rx_cb_data;
+
 
 static int uart_get_lines(void)
 {
@@ -141,12 +144,13 @@ static void uart_rx_line_active(const struct device *dev, struct gpio_callback *
 
 static int uart_enable_rx_interrupt(void)
 {
-   gpio_pin_configure_dt(&uart_rx, GPIO_INPUT);
+   gpio_pin_configure_dt(&uart_rx, UART_RX_EXTRA_FLAGS);
    return gpio_pin_interrupt_configure_dt(&uart_rx, GPIO_INT_LEVEL_HIGH);
 }
 
 static int uart_init_lines(void)
 {
+   gpio_pin_configure_dt(&uart_rx, UART_RX_EXTRA_FLAGS);
    gpio_init_callback(&uart_rx_cb_data, uart_rx_line_active, BIT(uart_rx.pin));
    return gpio_add_callback(uart_rx.port, &uart_rx_cb_data);
 }

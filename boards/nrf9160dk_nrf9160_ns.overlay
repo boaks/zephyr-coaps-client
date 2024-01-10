@@ -36,7 +36,7 @@
 	ins {
 		compatible = "gpio-keys";
 		rx0: uart0_rx {
-			gpios = <&gpio0 28 GPIO_PULL_DOWN>;
+			gpios = <&gpio0 28 0>;
 		};
 	};
 
