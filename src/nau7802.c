@@ -653,6 +653,7 @@ static int scale_read_channel_value(struct scale_config *scale_dev, int max_loop
    int rc = 0;
    int loops = 0;
    int counter = 0;
+   int maxCounter = 1;
 
    int32_t v = 0;
    int32_t max = 0;
@@ -714,6 +715,9 @@ static int scale_read_channel_value(struct scale_config *scale_dev, int max_loop
          }
       } else {
          values[counter++] = v;
+         if (counter > maxCounter) {
+            maxCounter = counter;
+         }
       }
    } while (counter < min_values && loops < max_loops);
 
@@ -744,7 +748,7 @@ static int scale_read_channel_value(struct scale_config *scale_dev, int max_loop
       LOG_INF("ADC %s read failed, %d (%s)", scale_dev->channel_name, rc, strerror(-rc));
    } else if (counter < min_values) {
       LOG_INF("ADC %s raw 0x%06x, %d, ++/-- %d, %d/%d loops, instable",
-              scale_dev->channel_name, v & 0xffffff, v, (max - min), counter, loops);
+              scale_dev->channel_name, v & 0xffffff, v, (max - min), maxCounter, loops);
       rc = -ESTALE;
    } else {
       scale_dev->raw = v;
