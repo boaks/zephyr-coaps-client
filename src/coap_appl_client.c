@@ -286,6 +286,7 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
 {
    int64_t reboot_times[REBOOT_INFOS];
    uint16_t reboot_codes[REBOOT_INFOS];
+   uint16_t battery_voltage = 0xffff;
    struct lte_modem_info modem_info;
    int64_t uptime;
    int index = 0;
@@ -349,18 +350,13 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
       start = index;
    }
 
-#ifdef CONFIG_EXT_BATTERY_ADC
-   {
-      uint16_t battery_voltage = 0xffff;
-      err = battery2_sample(&battery_voltage);
-      if (!err) {
-         index += snprintf(buf + index, len - index, "!Ext.Bat.: %u mV", battery_voltage);
-         dtls_info("%s", buf + start);
-         buf[index++] = '\n';
-         start = index;
-      }
+   err = power_manager_voltage_ext(&battery_voltage);
+   if (!err) {
+      index += snprintf(buf + index, len - index, "!Ext.Bat.: %u mV", battery_voltage);
+      dtls_info("%s", buf + start);
+      buf[index++] = '\n';
+      start = index;
    }
-#endif
 
    memset(reboot_times, 0, sizeof(reboot_times));
    memset(reboot_codes, 0, sizeof(reboot_codes));

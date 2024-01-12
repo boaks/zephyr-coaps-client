@@ -62,9 +62,9 @@ static inline void power_manager_suspend_realtime_clock()
 {
    // empty
 }
-
 #endif
 
+#define VOLTAGE_MIN_INTERVAL_MILLIS 10000
 #define MAX_PM_DEVICES 10
 
 static volatile bool pm_init = false;
@@ -316,10 +316,6 @@ static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_ma
 
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
 
-#include <zephyr/drivers/i2c.h>
-
-#define ADP536X_I2C_ADDR 0x46
-
 #define ADP536X_I2C_REG_CHARGE_TERMINATION 0x3
 #define ADP536X_I2C_REG_STATUS 0x8
 #define ADP536X_I2C_REG_LEVEL 0x21
@@ -329,32 +325,35 @@ static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_ma
 #define ADP536X_I2C_REG_BUCK_CONFIG 0x29
 #define ADP536X_I2C_REG_BUCK_BOOST_CONFIG 0x2B
 
-static const struct device *const i2c_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(i2c2));
+static const struct i2c_dt_spec i2c_spec =  I2C_DT_SPEC_GET(DT_ALIAS(pmic));
+
+static int adp536x_reg_read_bytes(uint8_t reg, uint8_t *buff, size_t len)
+{
+   return i2c_write_read_dt(&i2c_spec, 
+                         &reg, sizeof(reg),
+                         buff, len);
+}
 
 static int adp536x_reg_read(uint8_t reg, uint8_t *buff)
 {
-   return i2c_reg_read_byte(i2c_dev, ADP536X_I2C_ADDR, reg, buff);
+   return i2c_reg_read_byte_dt(&i2c_spec, reg, buff);
 }
 
 static int adp536x_reg_write(uint8_t reg, uint8_t val)
 {
-   return i2c_reg_write_byte(i2c_dev, ADP536X_I2C_ADDR, reg, val);
+   return i2c_reg_write_byte_dt(&i2c_spec, reg, val);
 }
 
 #ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADP536X
 static int adp536x_power_manager_voltage(uint16_t *voltage)
 {
-   int rc = -EIO;
-   uint8_t value1 = 0xff;
-   uint8_t value2 = 0xff;
-
-   if (!adp536x_reg_read(ADP536X_I2C_REG_VOLTAGE_HIGH_BYTE, &value1) &&
-       !adp536x_reg_read(ADP536X_I2C_REG_VOLTAGE_LOW_BYTE, &value2)) {
-      uint16_t value = value1;
+   uint8_t buf[2] = {0, 0};
+   int rc = adp536x_reg_read_bytes(ADP536X_I2C_REG_VOLTAGE_HIGH_BYTE, buf, sizeof(buf));
+   if (!rc) {
+      uint16_t value = buf[0];
       value <<= 5;
-      value |= ((value2 >> 3) & 0x1f);
+      value |= ((buf[1] >> 3) & 0x1f);
       *voltage = value;
-      rc = 0;
    }
    return rc;
 }
@@ -409,7 +408,7 @@ static int adp536x_power_manager_xvy(uint8_t config_register, bool enable)
 {
    int rc = -ENOTSUP;
 
-   if (device_is_ready(i2c_dev)) {
+   if (device_is_ready(i2c_spec.bus)) {
       uint8_t buck_config = 0;
       rc = adp536x_reg_read(config_register, &buck_config);
       if (!rc) {
@@ -432,7 +431,7 @@ int adp536x_power_manager_init(void)
 {
    int rc = -ENOTSUP;
 
-   if (device_is_ready(i2c_dev)) {
+   if (device_is_ready(i2c_spec.bus)) {
       uint8_t value = 0;
 
       adp536x_reg_read(ADP536X_I2C_REG_CHARGE_TERMINATION, &value);
@@ -480,8 +479,10 @@ int power_manager_init(void)
 
    pm_init = true;
    rc = power_manager_voltage(NULL);
-
-   pm_init = !rc;
+   if (rc) {
+      LOG_WRN("Read battery voltage failed %d (%s).", rc, strerror(-rc));
+      pm_init = rc == -ESTALE;
+   }
 
    return rc;
 }
@@ -568,36 +569,67 @@ int power_manager_suspend(bool enable)
 
 int power_manager_voltage(uint16_t *voltage)
 {
+   static int64_t last_time = 0;
+   static uint16_t last_voltage = 0;
+
    int rc = -ENOTSUP;
 
    if (pm_init) {
-      uint16_t internal_voltage = 0xffff;
+      uint16_t internal_voltage;
+      int64_t time;
+
+      k_mutex_lock(&pm_mutex, K_FOREVER);
+      time = last_time ? k_uptime_get() - last_time : VOLTAGE_MIN_INTERVAL_MILLIS;
+      internal_voltage = last_voltage;
+      k_mutex_unlock(&pm_mutex);
+
+      if (time < VOLTAGE_MIN_INTERVAL_MILLIS) {
+         rc = 0;
+         LOG_DBG("Last %u mV", internal_voltage);
+      } else {
+         internal_voltage = 0xffff;
 
 #ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADP536X
-      rc = adp536x_power_manager_voltage(&internal_voltage);
-      LOG_DBG("ADP536X %u mV", internal_voltage);
+         rc = adp536x_power_manager_voltage(&internal_voltage);
+         LOG_DBG("ADP536X %u mV", internal_voltage);
 #elif defined(CONFIG_BATTERY_VOLTAGE_SOURCE_ADC)
-      rc = battery_sample(&internal_voltage);
-      LOG_DBG("ADC %u mV", internal_voltage);
+         rc = battery_sample(&internal_voltage);
+         LOG_DBG("ADC %u mV", internal_voltage);
 #else
-      char buf[32];
-      rc = modem_at_cmd(buf, sizeof(buf), "%XVBAT: ", "AT%XVBAT");
-      if (rc < 0) {
-         if (rc == -EBUSY) {
-            LOG_WRN("Failed to read battery level from modem, modem is busy!");
+         char buf[32];
+         rc = modem_at_cmd(buf, sizeof(buf), "%XVBAT: ", "AT%XVBAT");
+         if (rc < 0) {
+            if (rc == -EBUSY) {
+               LOG_WRN("Failed to read battery level from modem, modem is busy!");
+            } else {
+               LOG_WRN("Failed to read battery level from modem! %d (%s)", rc, strerror(-rc));
+            }
          } else {
-            LOG_WRN("Failed to read battery level from modem! %d (%s)", rc, strerror(-rc));
+            internal_voltage = atoi(buf);
+            LOG_DBG("Modem %u mV", internal_voltage);
+            rc = 0;
          }
-      } else {
-         internal_voltage = atoi(buf);
-         LOG_DBG("Modem %u mV", internal_voltage);
-         rc = 0;
-      }
 #endif
+         if (!rc) {
+            k_mutex_lock(&pm_mutex, K_FOREVER);
+            last_time = k_uptime_get();
+            last_voltage = internal_voltage;
+            k_mutex_unlock(&pm_mutex);
+         }
+      }
       if (!rc && voltage) {
          *voltage = internal_voltage;
       }
    }
+   return rc;
+}
+
+int power_manager_voltage_ext(uint16_t *voltage)
+{
+   int rc = -ENODEV;
+#ifdef CONFIG_BATTERY_ADC
+   rc = battery2_sample(voltage);
+#endif
    return rc;
 }
 
@@ -642,9 +674,11 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
             *forecast = days;
          }
          LOG_DBG("%u%% %umV %d (%d left days)", internal_level, internal_voltage, internal_status, days);
+      } else {
+         LOG_WRN("Read battery status failed %d (%s).", rc, strerror(-rc));
       }
    } else {
-      LOG_WRN("Failed to read battery status!");
+      LOG_WRN("Failed to read initial battery status!");
    }
    return rc;
 }
@@ -699,8 +733,13 @@ static int battery_cmd(const char *parameter)
 {
    (void)parameter;
    char buf[128];
+   uint16_t battery_voltage = 0xffff;
+
    if (power_manager_status_desc(buf, sizeof(buf))) {
       LOG_INF("%s", buf);
+   }
+   if (!power_manager_voltage_ext(&battery_voltage)) {
+      LOG_INF("Ext.Bat.: %u mV", battery_voltage);
    }
    return 0;
 }

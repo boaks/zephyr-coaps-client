@@ -26,7 +26,7 @@
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 #define MAX_DITHER 2
-#define MIN_SAMPLES 4
+#define MIN_SAMPLES 3
 #define MAX_LOOPS 20
 
 #define MEASURE_INTERVAL_MILLIS 50
@@ -152,6 +152,7 @@ static int battery_adc_inst(const struct battery_adc_config *cfg,
    if (!rc) {
       int loop = MAX_LOOPS;
       int counter = 0;
+      int maxCounter = 1;
       int32_t values[MIN_SAMPLES];
       int32_t max = adc_raw_data;
       int32_t min = adc_raw_data;
@@ -178,6 +179,9 @@ static int battery_adc_inst(const struct battery_adc_config *cfg,
             }
          } else {
             values[counter++] = adc_raw_data;
+            if (counter > maxCounter) {
+               maxCounter = counter;
+            }
          }
       } while (loop > 0 && counter < MIN_SAMPLES);
       if (!rc) {
@@ -202,6 +206,7 @@ static int battery_adc_inst(const struct battery_adc_config *cfg,
                *voltage = (uint16_t)val_avg;
             }
          } else {
+            LOG_INF("#%s %d loops, max %d samples, instable!", cfg->name, MAX_LOOPS - loop, maxCounter);
             rc = -ESTALE;
          }
       }
@@ -272,18 +277,3 @@ int battery2_sample(uint16_t *voltage)
    return -ENODEV;
 #endif
 }
-
-#ifdef VBATT2
-static int battery_cmd(const char *parameter)
-{
-   (void)parameter;
-   uint16_t battery_voltage = 0xffff;
-   int res = battery2_sample(&battery_voltage);
-   if (!res) {
-      LOG_INF("Ext.Bat.: %u mV", battery_voltage);
-   }
-   return res;
-}
-
-UART_CMD(extbat, NULL, "read external battery voltage.", battery_cmd, NULL, 0);
-#endif

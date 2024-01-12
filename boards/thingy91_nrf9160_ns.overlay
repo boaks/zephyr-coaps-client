@@ -44,7 +44,8 @@
 
 		/* alias for watchdog */
 		watchdog0 = &wdt0;
-
+		
+		pmic = &pmic0; 
 	};
 
 };
@@ -60,7 +61,8 @@
 		address-width = <16>;
 		timeout = <5>;
 	};
-
+    
+	pmic0: pmic@46 {};
 };
 
 sensor_i2c: &i2c2 {};
