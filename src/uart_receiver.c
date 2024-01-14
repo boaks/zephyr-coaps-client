@@ -120,7 +120,11 @@ static int uart_reschedule_rx_enable(const k_timeout_t delay)
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(rx0), okay))
 
+#ifdef CONFIG_UART_RX_PULLDOWN
 #define UART_RX_EXTRA_FLAGS (GPIO_INPUT | GPIO_PULL_DOWN)
+#else
+#define UART_RX_EXTRA_FLAGS GPIO_INPUT
+#endif /* CONFIG_UART_RX_PULLDOWN */
 
 static const struct gpio_dt_spec uart_rx = GPIO_DT_SPEC_GET(DT_NODELABEL(rx0), gpios);
 static struct gpio_callback uart_rx_cb_data;

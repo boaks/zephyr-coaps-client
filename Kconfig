@@ -302,6 +302,13 @@ config UART_RECEIVER
     bool "Use UART receiver for cmd and at-cmd."
 	default n
 
+config UART_RX_PULLDOWN
+    bool "Use pulldown for RX."
+    depends on UART_RECEIVER
+	default n
+	help
+	  Use pulldown for RX to ensure UART is suspended if RX is not connected.
+
 config LOG_BACKEND_UART_RECEIVER
    bool "Use UART receiver as log backend."
    depends on UART_RECEIVER
