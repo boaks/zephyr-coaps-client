@@ -110,7 +110,8 @@ typedef struct dtls_app_data_t {
 #define PM_SUSPENDED 7
 #define APN_RATE_LIMIT 8
 #define APN_RATE_LIMIT_RESTART 9
-#define SETUP_MODE 10
+#define LTE_LOW_VOLTAGE 10
+#define SETUP_MODE 11
 
 static atomic_t general_states = ATOMIC_INIT(0);
 
@@ -185,6 +186,8 @@ static void dtls_log_state(void)
       index = snprintf(buf, sizeof(buf), "ready");
    } else if (atomic_test_bit(&general_states, LTE_REGISTERED)) {
       index = snprintf(buf, sizeof(buf), "registered");
+   } else if (atomic_test_bit(&general_states, LTE_LOW_VOLTAGE)) {
+      index = snprintf(buf, sizeof(buf), "low voltage");
    } else {
       index = snprintf(buf, sizeof(buf), "not registered");
    }
@@ -226,6 +229,34 @@ static void dtls_power_management(void)
       }
       power_manager_suspend(suspend);
    }
+}
+
+static int dtls_low_voltage(const k_timeout_t timeout)
+{
+   const int64_t start_time = k_uptime_get();
+   int64_t timeout_ms = k_ticks_to_ms_floor64(timeout.ticks);
+
+   while (!trigger_duration) {
+      uint16_t battery_voltage = 0xffff;
+      power_manager_status_t battery_status = POWER_UNKNOWN;
+
+      if (!power_manager_status(NULL, &battery_voltage, &battery_status, NULL)) {
+         if (battery_voltage > 3300 || battery_status >= CHARGING_I) {
+            atomic_clear_bit(&general_states, LTE_LOW_VOLTAGE);
+            modem_set_normal();
+            return false;
+         }
+         dtls_info("waiting, low voltage %d mV.", battery_voltage);
+      }
+      if (k_uptime_get() - start_time > timeout_ms) {
+         break;
+      }
+      k_sem_reset(&dtls_trigger_search);
+      watchdog_feed();
+      k_sem_take(&dtls_trigger_search, K_SECONDS(WATCHDOG_TIMEOUT_S));
+   }
+   watchdog_feed();
+   return true;
 }
 
 static void reboot(int error, bool factoryReset)
@@ -304,8 +335,11 @@ static bool restart_modem(bool power_off)
       modem_set_lte_offline();
    }
    dtls_info("> modem offline");
-   k_sleep(K_MSEC(2000));
    ui_led_op(LED_COLOR_ALL, LED_CLEAR);
+   k_sleep(K_MSEC(2000));
+   if (dtls_low_voltage(K_HOURS(24))) {
+      reboot(ERROR_CODE_LOW_VOLTAGE, false);
+   }
    dtls_info("> modem restarting ...");
    modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), false);
    atomic_clear_bit(&general_states, PM_PREVENT_SUSPEND);
@@ -922,6 +956,10 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
          desc = "sleeping";
          bit = LTE_SLEEPING;
          break;
+      case LTE_STATE_LOW_VOLTAGE:
+         desc = "low voltage";
+         bit = LTE_LOW_VOLTAGE;
+         break;
       default:
          break;
    }
@@ -996,6 +1034,10 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
          trigger_search = EVENT_SEARCH;
          k_sem_give(&dtls_trigger_search);
          work_submit_to_io_queue(&dtls_power_management_work);
+      }
+   } else if (type == LTE_STATE_LOW_VOLTAGE) {
+      if (active) {
+         work_schedule_for_io_queue(&dtls_power_management_suspend_work, K_NO_WAIT);
       }
    }
 }
@@ -1081,9 +1123,10 @@ static int dtls_network_searching(const k_timeout_t timeout)
    int trigger = MANUAL_SEARCH;
    int swap_state = 1;
 
-   while (true) {
+   while (!trigger_duration) {
       int64_t now = k_uptime_get();
       long time = atomic_get(&not_ready_time);
+
       if (time != last_not_ready_time) {
          last_not_ready_time = time;
          trigger = READY_SEARCH;
@@ -1095,6 +1138,11 @@ static int dtls_network_searching(const k_timeout_t timeout)
          time = (long)now - time;
       }
       if (time > timeout_ms) {
+         if (atomic_test_bit(&general_states, LTE_LOW_VOLTAGE)) {
+            if (dtls_low_voltage(K_NO_WAIT)) {
+               reboot(ERROR_CODE_LOW_VOLTAGE, false);
+            }
+         }
          modem_read_network_info(&info.net_info, false);
          if (info.net_info.registered == LTE_NETWORK_STATE_ON) {
             dtls_info("Network found");
@@ -1102,6 +1150,11 @@ static int dtls_network_searching(const k_timeout_t timeout)
          } else {
             dtls_info("Network not found (%ld s)", time / MSEC_PER_SEC);
             return true;
+         }
+      }
+      if (atomic_test_bit(&general_states, LTE_LOW_VOLTAGE)) {
+         if (dtls_low_voltage(timeout)) {
+            reboot(ERROR_CODE_LOW_VOLTAGE, false);
          }
       }
       if (trigger != NO_SEARCH) {
@@ -1215,7 +1268,6 @@ static int dtls_loop(session_t *dst, int flags)
    app_data.request_state = NONE;
 
    while (1) {
-
 #ifdef CONFIG_LOCATION_ENABLE
       power_manager_status_t battery_status = POWER_UNKNOWN;
       uint8_t battery_level = 0xff;
@@ -1246,6 +1298,7 @@ static int dtls_loop(session_t *dst, int flags)
       }
 #endif
       watchdog_feed();
+
       if (!initial_success) {
          if (k_uptime_get() > ((flags & FLAG_REBOOT_1) ? (4 * MSEC_PER_HOUR) : MSEC_PER_DAY)) {
             // no initial_success for 4 hours / 1 day => reboot

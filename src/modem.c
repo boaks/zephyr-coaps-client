@@ -59,6 +59,7 @@ static bool lte_signal_ready = false;
 static bool lte_ready = false;
 static bool lte_connected = false;
 static bool lte_cell_updated = false;
+static bool lte_low_power = false;
 
 static struct lte_lc_edrx_cfg edrx_status = {LTE_LC_LTE_MODE_NONE, 0.0, 0.0};
 static struct lte_lc_psm_cfg psm_status = {0, -1};
@@ -74,6 +75,7 @@ static uint32_t lte_searchs = 0;
 static uint32_t lte_psm_delays = 0;
 static uint32_t lte_cell_updates = 0;
 static uint32_t lte_wakeups = 0;
+static uint32_t lte_low_voltage = 0;
 static int64_t lte_search_time = 0;
 static int64_t lte_wakeup_time = 0;
 static int64_t lte_connected_time = 0;
@@ -178,6 +180,7 @@ static K_WORK_DEFINE(modem_ready_callback_work, modem_state_change_callback_work
 static K_WORK_DEFINE(modem_not_ready_callback_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_connected_callback_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_unconnected_callback_work, modem_state_change_callback_work_fn);
+static K_WORK_DEFINE(modem_low_voltage_callback_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_power_management_resume_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_power_management_suspend_work, modem_state_change_callback_work_fn);
 
@@ -204,7 +207,9 @@ static void modem_state_change_callback_work_fn(struct k_work *work)
 {
    lte_state_change_callback_handler_t callback = lte_state_change_handler;
    if (callback) {
-      if (work == &modem_connected_callback_work) {
+      if (work == &modem_low_voltage_callback_work) {
+         callback(LTE_STATE_LOW_VOLTAGE, true);
+      } else if (work == &modem_connected_callback_work) {
          callback(LTE_STATE_CONNECTED, true);
       } else if (work == &modem_unconnected_callback_work) {
          callback(LTE_STATE_CONNECTED, false);
@@ -306,7 +311,9 @@ static int lte_ready_wait(k_timeout_t timeout)
    int status = -EINPROGRESS;
    int res = -EINPROGRESS;
    if (!k_mutex_lock(&lte_mutex, timeout)) {
-      if (lte_signal_ready) {
+      if (lte_low_power) {
+         res = -EINVAL;
+      } else if (lte_signal_ready) {
          status = 0;
          res = 0;
       } else {
@@ -318,7 +325,9 @@ static int lte_ready_wait(k_timeout_t timeout)
       }
       k_mutex_unlock(&lte_mutex);
    }
-   if (status == 0) {
+   if (res == -EINVAL) {
+      LOG_INF("Modem low voltage.");
+   } else if (status == 0) {
       LOG_INF("Modem is ready.");
    } else if (res == 0) {
       LOG_INF("Modem becomes ready.");
@@ -815,6 +824,11 @@ static void lte_handler(const struct lte_lc_evt *const evt)
       case LTE_LC_EVT_MODEM_EVENT:
          if (evt->modem_evt == LTE_LC_MODEM_EVT_BATTERY_LOW) {
             LOG_INF("LTE modem Battery Low!");
+            work_submit_to_io_queue(&modem_low_voltage_callback_work);
+            k_mutex_lock(&lte_mutex, K_FOREVER);
+            ++lte_low_voltage;
+            lte_low_power= true;
+            k_mutex_unlock(&lte_mutex);
          } else if (evt->modem_evt == LTE_LC_MODEM_EVT_OVERHEATED) {
             LOG_INF("LTE modem Overheated!");
          } else if (evt->modem_evt == LTE_LC_MODEM_EVT_RESET_LOOP) {
@@ -955,6 +969,7 @@ static void modem_on_cfun(enum lte_lc_func_mode mode, void *ctx)
    if (mode == LTE_LC_FUNC_MODE_NORMAL ||
        mode == LTE_LC_FUNC_MODE_ACTIVATE_LTE) {
       ++lte_starts;
+      lte_low_power = false;
       modem_read_network_info(NULL, true);
    }
 }

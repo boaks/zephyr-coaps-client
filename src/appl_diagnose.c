@@ -140,6 +140,8 @@ const char *appl_get_reboot_desciption(int error)
          return "reboot triggered";
       case ERROR_CODE_UPDATE:
          return "update";
+      case ERROR_CODE_LOW_VOLTAGE:
+         return "low voltage";
    }
    return "\?\?\?";
 }
@@ -170,6 +172,11 @@ uint32_t appl_reset_cause(int *flags)
             LOG_INF("Reboot 1.");
             if (flags) {
                *flags |= FLAG_REBOOT_1;
+            }
+         } else if (!rc && reboot_code == ERROR_CODE_LOW_VOLTAGE) {
+            LOG_INF("Reboot low voltage.");
+            if (flags) {
+               *flags |= FLAG_REBOOT_LOW_VOLTAGE;
             }
          } else {
             LOG_INF("Reboot");
