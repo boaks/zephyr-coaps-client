@@ -753,7 +753,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
                phase = 2;
                phase_start_time = now;
                lte_connection_status_set(true);
-               work_submit_to_io_queue(&modem_power_management_resume_work);
+               lte_network_sleeping_set(false);
                LOG_INF("RRC mode: Connected");
             } else {
                int64_t transmission_time = get_transmission_time();
