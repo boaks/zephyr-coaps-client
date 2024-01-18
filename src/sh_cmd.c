@@ -20,8 +20,8 @@
 #include <zephyr/logging/log.h>
 
 #include "dtls_client.h"
-#include "modem_at.h"
 #include "modem.h"
+#include "modem_at.h"
 #include "parse.h"
 #include "sh_cmd.h"
 
@@ -30,9 +30,17 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #define CONFIG_SH_CMD_THREAD_PRIO 10
 #define CONFIG_SH_CMD_MAX_LEN 512
 #define CONFIG_SH_CMD_STACK_SIZE 2048
+#define CONFIG_SH_CMD_HEAP_SIZE (1024 + 512)
 #define CONFIG_SH_AT_RESPONSE_MAX_LEN 256
 
+struct sh_cmd_fifo {
+   void *fifo_reserved;
+   k_timeout_t delay;
+   char data[]; /* Null-terminated cmd string */
+};
+
 static void sh_cmd_execute_fn(struct k_work *work);
+static void sh_cmd_wait_fn(struct k_work *work);
 static void at_cmd_response_fn(struct k_work *work);
 
 static int64_t at_cmd_time = 0;
@@ -40,6 +48,8 @@ static size_t sh_cmd_max_length = 0;
 
 static char sh_cmd_buf[CONFIG_SH_CMD_MAX_LEN];
 static char at_response_buf[CONFIG_SH_AT_RESPONSE_MAX_LEN];
+
+#define SH_CMD_QUEUED 4
 
 static atomic_t sh_cmd_state = ATOMIC_INIT(0);
 
@@ -49,6 +59,9 @@ static K_WORK_DEFINE(at_cmd_response_work, at_cmd_response_fn);
 
 static struct k_work_q sh_cmd_work_q;
 static K_THREAD_STACK_DEFINE(sh_cmd_stack, CONFIG_SH_CMD_STACK_SIZE);
+
+static K_FIFO_DEFINE(sh_cmd_fifo);
+static K_HEAP_DEFINE(sh_cmd_heap, CONFIG_SH_CMD_HEAP_SIZE);
 
 static int line_length(const uint8_t *data, size_t length)
 {
@@ -103,6 +116,7 @@ static void sh_cmd_result(int res)
          } else {
             printk("OK\n");
          }
+         sh_cmd_wait_fn(NULL);
       }
    }
 }
@@ -364,7 +378,6 @@ at_cmd_modem:
 
 static void sh_cmd_execute_fn(struct k_work *work)
 {
-   ARG_UNUSED(work);
    int res = 0;
 
    if (&sh_cmd_schedule_work.work == work) {
@@ -372,6 +385,40 @@ static void sh_cmd_execute_fn(struct k_work *work)
    }
    res = sh_cmd(sh_cmd_buf);
    sh_cmd_result(res);
+}
+
+static void sh_cmd_wait_fn(struct k_work *work)
+{
+   if (!atomic_test_and_set_bit(&sh_cmd_state, SH_CMD_EXECUTING)) {
+      struct sh_cmd_fifo *sh_cmd = k_fifo_get(&sh_cmd_fifo, K_NO_WAIT);
+      if (sh_cmd) {
+         uint32_t delay_ms = (uint32_t)k_ticks_to_ms_floor64(sh_cmd->delay.ticks);
+         strncpy(sh_cmd_buf, sh_cmd->data, sizeof(sh_cmd_buf) - 1);
+         LOG_INF("Cmd '%s' scheduled (%u ms).", sh_cmd_buf, delay_ms);
+         k_work_reschedule_for_queue(&sh_cmd_work_q, &sh_cmd_schedule_work, sh_cmd->delay);
+      } else {
+         if (atomic_test_and_clear_bit(&sh_cmd_state, SH_CMD_QUEUED)) {
+            LOG_INF("No cmd left.");
+         }
+         atomic_clear_bit(&sh_cmd_state, SH_CMD_EXECUTING);
+      }
+   } else if (work) {
+      LOG_INF("Cmd busy, still waiting.");
+   }
+}
+
+int sh_cmd_execute(const char *cmd)
+{
+   size_t len = strlen(cmd);
+   if (len >= sizeof(sh_cmd_buf)) {
+      return -EINVAL;
+   }
+   if (!atomic_test_and_set_bit(&sh_cmd_state, SH_CMD_EXECUTING)) {
+      strncpy(sh_cmd_buf, cmd, sizeof(sh_cmd_buf) - 1);
+      k_work_submit_to_queue(&sh_cmd_work_q, &sh_cmd_execute_work);
+      return 0;
+   }
+   return -EBUSY;
 }
 
 int sh_cmd_schedule(const char *cmd, const k_timeout_t delay)
@@ -388,16 +435,20 @@ int sh_cmd_schedule(const char *cmd, const k_timeout_t delay)
    return -EBUSY;
 }
 
-int sh_cmd_execute(const char *cmd)
+int sh_cmd_append(const char *cmd, const k_timeout_t delay)
 {
-   size_t len = strlen(cmd);
-   if (len >= sizeof(sh_cmd_buf)) {
-      return -EINVAL;
-   }
-   if (!atomic_test_and_set_bit(&sh_cmd_state, SH_CMD_EXECUTING)) {
-      strncpy(sh_cmd_buf, cmd, sizeof(sh_cmd_buf) - 1);
-      k_work_submit_to_queue(&sh_cmd_work_q, &sh_cmd_execute_work);
+   size_t len = sizeof(struct sh_cmd_fifo) + strlen(cmd) + sizeof(char);
+   struct sh_cmd_fifo *item = k_heap_alloc(&sh_cmd_heap, len, K_NO_WAIT);
+   if (item) {
+      item->delay = delay;
+      strcpy(item->data, cmd);
+      k_fifo_put(&sh_cmd_fifo, item);
+      atomic_set_bit(&sh_cmd_state, SH_CMD_QUEUED);
+      LOG_DBG("Cmd appended.");
+      sh_cmd_wait_fn(NULL);
       return 0;
+   } else {
+      LOG_INF("Cmd-queue full, cmd dropped.");
    }
    return -EBUSY;
 }

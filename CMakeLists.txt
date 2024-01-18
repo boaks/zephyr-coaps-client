@@ -38,11 +38,11 @@ target_sources(app PRIVATE
 	src/coap_appl_client.c
 	)
 
-target_sources_ifdef(CONFIG_UART_RECEIVER app PRIVATE src/sh_cmd.c)
+target_sources_ifdef(CONFIG_SH_CMD app PRIVATE src/sh_cmd.c)
+
+target_sources_ifdef(CONFIG_SH_CMD app PRIVATE src/modem_cmd.c)
 
 target_sources_ifdef(CONFIG_UART_RECEIVER app PRIVATE src/uart_receiver.c)
-
-target_sources_ifdef(CONFIG_UART_RECEIVER app PRIVATE src/modem_cmd.c)
 
 target_sources_ifdef(CONFIG_UPDATE app PRIVATE src/appl_update.c)
 

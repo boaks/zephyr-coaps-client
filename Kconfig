@@ -298,6 +298,10 @@ endmenu
 
 menu "Extra Functions"
 
+config SH_CMD
+    bool "Enable sh cmd support."
+	default y
+
 config UART_RECEIVER
     bool "Use UART receiver for cmd and at-cmd."
 	default n

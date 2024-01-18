@@ -42,6 +42,8 @@ struct sh_cmd_entry {
 int sh_cmd_execute(const char *cmd);
 int sh_cmd_schedule(const char *cmd, const k_timeout_t delay);
 
+int sh_cmd_append(const char *cmd, const k_timeout_t delay);
+
 #define SH_CMD_EXECUTING 1
 #define AT_CMD_PENDING 2
 

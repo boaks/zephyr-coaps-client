@@ -138,34 +138,54 @@ static void coap_appl_client_decode_payload(const uint8_t *payload, uint16_t len
 static void coap_appl_client_decode_text_payload(char *payload)
 {
    while (*payload) {
-      int pos = strcspn(payload, " :=\n\r");
+      size_t pos = strcspn(payload, " :=\n\r");
+      char *val = "";
+      char *cur = payload;
+
       if (pos) {
-         char *val = "";
-         char *cur = payload;
          char sep = cur[pos];
-         cur[pos] = 0;
-         payload += pos + 1;
-         if (strchr(" :=", sep)) {
-            pos = strcspn(payload, "\n\r");
-            if (pos) {
-               val = payload;
-               val[pos] = 0;
-               payload += pos + 1;
-               payload += strspn(payload, "\n\r");
+         payload += pos;
+         if (sep) {
+            cur[pos] = 0;
+            ++payload;
+            if (strchr(" :=", sep)) {
+               pos = strcspn(payload, "\n\r");
+               if (pos) {
+                  val = payload;
+                  payload += pos;
+                  if (*payload) {
+                     *payload = 0;
+                     ++payload;
+                  }
+               }
             }
+            payload += strspn(payload, "\n\r");
          }
-         if (!stricmp(cur, "cmd")) {
-            dtls_info("cmd %s", val);
-#ifdef CONFIG_UART_RECEIVER
-            sh_cmd_schedule(val, K_SECONDS(5));
-#endif
-         } else if (!stricmp(cur, "fw")) {
-            dtls_info("fw %s", val);
-#ifdef CONFIG_COAP_UPDATE
-            appl_update_coap_cmd(val);
-#endif
+      } else {
+         pos = strlen(payload);
+         if (!pos) {
+            break;
          }
+         payload += pos;
       }
+#ifdef CONFIG_SH_CMD
+      if (!stricmp(cur, "cmd")) {
+         long delay_ms = 1000;
+         const char *cmd = parse_next_long(val, 10, &delay_ms);
+         cmd += strspn(cmd, " \t");
+         sh_cmd_append(cmd, K_MSEC(delay_ms));
+         continue;
+      }
+#endif
+#ifdef CONFIG_COAP_UPDATE
+      if (!stricmp(cur, "fw")) {
+         /* deprecated use "cmd fota" instead */
+         dtls_info("fw %s", val);
+         appl_update_coap_cmd(val);
+         continue;
+      }
+#endif
+      dtls_info("%s %s", cur, val);
    }
 }
 
@@ -220,21 +240,25 @@ int coap_appl_client_parse_data(uint8_t *data, size_t len)
       payload = coap_packet_get_payload(&reply, &payload_len);
 
       if (payload_len > 0) {
-         const char *more = "";
          if (format == COAP_CONTENT_FORMAT_TEXT_PLAIN && payload_len < sizeof(appl_context.message_buf)) {
             memmove(appl_context.message_buf, payload, payload_len);
             appl_context.message_buf[payload_len] = 0;
+            dtls_info("===== %u bytes", (unsigned int) payload_len);
             coap_appl_client_decode_text_payload(appl_context.message_buf);
+            dtls_info("=====");
          } else {
             coap_appl_client_decode_payload(payload, payload_len);
+            if (coap_client_printable_content_format(format)) {
+               const char *more = "";
+               if (payload_len > APP_COAP_LOG_PAYLOAD_SIZE) {
+                  payload_len = APP_COAP_LOG_PAYLOAD_SIZE;
+                  more = "...";
+               }
+               memmove(appl_context.message_buf, payload, payload_len);
+               appl_context.message_buf[payload_len] = 0;
+               dtls_info("  payload: '%s'%s", (const char *)appl_context.message_buf, more);
+            }
          }
-         if (payload_len > APP_COAP_LOG_PAYLOAD_SIZE) {
-            payload_len = APP_COAP_LOG_PAYLOAD_SIZE;
-            more = "...";
-         }
-         memmove(appl_context.message_buf, payload, payload_len);
-         appl_context.message_buf[payload_len] = 0;
-         dtls_info("  payload: '%s'%s", (const char *)appl_context.message_buf, more);
       }
    }
    if (PARSE_CON_RESPONSE == res) {

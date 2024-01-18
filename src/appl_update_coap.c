@@ -24,6 +24,7 @@
 #include "coap_client.h"
 #include "io_job_queue.h"
 #include "parse.h"
+#include "sh_cmd.h"
 
 #ifdef CONFIG_MCUBOOT_IMAGE_VERSION
 #define IMAGE_VERSION CONFIG_MCUBOOT_IMAGE_VERSION
@@ -474,7 +475,7 @@ static int appl_update_coap_resonse(struct coap_packet *reply, struct coap_block
 int appl_update_coap_parse_data(uint8_t *data, size_t len)
 {
    int res;
-   size_t current;
+   size_t current = 0;
    bool ready = true;
    struct coap_packet reply;
    struct coap_block_context block_context;
@@ -610,3 +611,20 @@ int appl_update_coap_message(const uint8_t **buffer)
    }
    return update_context.message_len;
 }
+
+static int sh_cmd_fota(const char *parameter)
+{
+   int res = appl_update_coap_cmd(parameter);
+   return (res == -EEXIST) ? 0 : res;
+}
+
+static void sh_cmd_fota_help(void)
+{
+   LOG_INF("> help fota:");
+   LOG_INF("  fota apply <version>    : apply an already downloaded version.");
+   LOG_INF("  fota download <version> : download a version.");
+   LOG_INF("  fota update <version>   : download and apply a version.");
+   LOG_INF("  fota cancel <version>   : cancel downloading a version.");
+}
+
+SH_CMD(fota, NULL, "start application firmware-over-the-air update.", sh_cmd_fota, sh_cmd_fota_help, 0);

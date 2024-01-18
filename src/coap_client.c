@@ -62,14 +62,26 @@ int coap_client_decode_content_format(const struct coap_option *option)
       case COAP_CONTENT_FORMAT_TEXT_PLAIN:
          desc = "text/plain";
          break;
+      case COAP_CONTENT_FORMAT_APP_LINK_FORMAT:
+         desc = "appl/link-format";
+         break;
       case COAP_CONTENT_FORMAT_APP_XML:
          desc = "appl/xml";
          break;
       case COAP_CONTENT_FORMAT_APP_OCTET_STREAM:
          desc = "appl/octetstream";
          break;
+      case COAP_CONTENT_FORMAT_APP_EXI:
+         desc = "appl/exi";
+         break;
       case COAP_CONTENT_FORMAT_APP_JSON:
          desc = "appl/json";
+         break;
+      case COAP_CONTENT_FORMAT_APP_JSON_PATCH_JSON:
+         desc = "appl/json-patch+json";
+         break;
+      case COAP_CONTENT_FORMAT_APP_MERGE_PATCH_JSON:
+         desc = "appl/json-merge+json";
          break;
       case COAP_CONTENT_FORMAT_APP_CBOR:
          desc = "appl/cbor";
@@ -83,6 +95,24 @@ int coap_client_decode_content_format(const struct coap_option *option)
       dtls_info("CoAP content format %d", format);
    }
    return format;
+}
+
+bool coap_client_printable_content_format(int format) {
+   bool res = false;
+   switch (format) {
+      case COAP_CONTENT_FORMAT_TEXT_PLAIN:
+      case COAP_CONTENT_FORMAT_APP_LINK_FORMAT:
+      case COAP_CONTENT_FORMAT_APP_XML:
+      case COAP_CONTENT_FORMAT_APP_EXI:
+      case COAP_CONTENT_FORMAT_APP_JSON:
+      case COAP_CONTENT_FORMAT_APP_JSON_PATCH_JSON:
+      case COAP_CONTENT_FORMAT_APP_MERGE_PATCH_JSON:
+         res = true;
+         break;
+      default:
+         break;
+   }
+   return res;
 }
 
 int coap_client_match(const struct coap_packet *reply, uint16_t expected_mid, uint32_t expected_token)
