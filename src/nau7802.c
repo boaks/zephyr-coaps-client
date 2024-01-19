@@ -1549,7 +1549,7 @@ static void scale_save_dummy_calibration(struct scale_config *scale_dev)
    }
 }
 
-static int scale_dummy_calibration(const char *parameter)
+static int sh_cmd_scale_dummy_calibration(const char *parameter)
 {
    (void)parameter;
    for (int channel = 0; channel < MAX_ADC_CHANNELS; ++channel) {
@@ -1558,7 +1558,7 @@ static int scale_dummy_calibration(const char *parameter)
    return 0;
 }
 
-UART_CMD(scaledummy, NULL, "dummy scale calibation.", scale_dummy_calibration, NULL, 0);
+SH_CMD(scaledummy, NULL, "dummy scale calibation.", sh_cmd_scale_dummy_calibration, NULL, 0);
 
 #endif /* CONFIG_NAU7802_DUMMY_CALIBRATION */
 
