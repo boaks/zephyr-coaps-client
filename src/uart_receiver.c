@@ -170,7 +170,6 @@ static K_SEM_DEFINE(uart_tx_sem, 0, 1);
 static uint8_t uart_tx_buf[256];
 static atomic_t uart_tx_buf_offset = ATOMIC_INIT(0);
 static atomic_t uart_tx_buf_lines = ATOMIC_INIT(0);
-static const bool uart_tx_immediate = IS_ENABLED(CONFIG_LOG_MODE_IMMEDIATE);
 
 static void uart_tx_pause(bool pause)
 {
@@ -193,15 +192,11 @@ static void uart_tx_pause(bool pause)
 
 static void uart_tx_off(bool off)
 {
-#ifdef CONFIG_LOG_MODE_IMMEDIATE
-   ARG_UNUSED(off);
-#else
    if (off) {
       atomic_clear_bit(&uart_at_state, UART_TX_ENABLED);
    } else {
       atomic_set_bit(&uart_at_state, UART_TX_ENABLED);
    }
-#endif
 }
 
 static inline void uart_tx_ready(void)
@@ -212,6 +207,11 @@ static inline void uart_tx_ready(void)
 static int uart_tx_out(uint8_t *data, size_t length, bool panic)
 {
    if (!atomic_test_bit(&uart_at_state, UART_SUSPENDED)) {
+#ifdef CONFIG_LOG_MODE_IMMEDIATE
+      for (size_t i = 0; i < length; i++) {
+         uart_poll_out(uart_dev, data[i]);
+      }
+#else
       if (panic || length == 1) {
          for (size_t i = 0; i < length; i++) {
             uart_poll_out(uart_dev, data[i]);
@@ -225,6 +225,7 @@ static int uart_tx_out(uint8_t *data, size_t length, bool panic)
 
          k_sem_take(&uart_tx_sem, K_MSEC(CONFIG_UART_TX_OUTPUT_TIMEOUT_MS));
       }
+#endif
    }
    return length;
 }
@@ -233,13 +234,11 @@ static void uart_tx_out_flush(bool panic);
 
 static int uart_tx_out_buf(int c)
 {
+#ifdef CONFIG_LOG_MODE_IMMEDIATE
+   char x = (char)c;
+   uart_tx_out((uint8_t *)&x, 1, true);
+#else
    int idx;
-
-   if (uart_tx_immediate) {
-      char x = (char)c;
-      uart_tx_out((uint8_t *)&x, 1, true);
-      return 0;
-   }
 
    if (atomic_get(&uart_tx_buf_offset) == sizeof(uart_tx_buf)) {
       uart_tx_out_flush(false);
@@ -247,6 +246,7 @@ static int uart_tx_out_buf(int c)
 
    idx = atomic_inc(&uart_tx_buf_offset);
    uart_tx_buf[idx] = (uint8_t)c;
+#endif
 
    return 0;
 }
