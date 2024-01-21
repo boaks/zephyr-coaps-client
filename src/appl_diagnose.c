@@ -17,6 +17,8 @@
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/logging/log_ctrl.h>
+#include <zephyr/sys/__assert.h>
 #include <zephyr/sys/reboot.h>
 
 #ifdef CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION
@@ -248,7 +250,7 @@ int appl_reset_cause_description(char *buf, size_t len)
 
 static int sh_cmd_reboot(const char *parameter)
 {
-   (void)parameter;
+   ARG_UNUSED(parameter);
    if (appl_reboots()) {
       LOG_INF(">> device already reboots!");
    } else {
@@ -262,7 +264,7 @@ static int sh_cmd_reboot(const char *parameter)
 
 static int sh_cmd_read_reboots(const char *parameter)
 {
-   (void)parameter;
+   ARG_UNUSED(parameter);
    int64_t reboot_times[REBOOT_INFOS];
    uint16_t reboot_codes[REBOOT_INFOS];
    char buf[128];
@@ -291,7 +293,7 @@ static int sh_cmd_read_reboots(const char *parameter)
 
 static int sh_cmd_read_restarts(const char *parameter)
 {
-   (void)parameter;
+   ARG_UNUSED(parameter);
 
 #if 0
    uint32_t supported = 0;
@@ -316,6 +318,38 @@ static int sh_cmd_read_restarts(const char *parameter)
 SH_CMD(reboot, NULL, "reboot device.", sh_cmd_reboot, NULL, 0);
 SH_CMD(reboots, NULL, "read reboot codes.", sh_cmd_read_reboots, NULL, 0);
 SH_CMD(restarts, NULL, "read restart reasons.", sh_cmd_read_restarts, NULL, 0);
+
+#ifdef CONFIG_ASSERT
+static int sh_cmd_fail(const char *parameter)
+{
+   ARG_UNUSED(parameter);
+
+   uint8_t val = 0;
+   char *p = (char *)sh_cmd_fail;
+   // cause failure
+   val = *p;
+   *p = 0;
+   return 0;
+}
+
+static int sh_cmd_oops(const char *parameter)
+{
+   ARG_UNUSED(parameter);
+   k_oops();
+   return 0;
+}
+
+static int sh_cmd_assert(const char *parameter)
+{
+   ARG_UNUSED(parameter);
+   __ASSERT(sh_cmd_assert == NULL, "sh_cmd assert");
+   return 0;
+}
+
+SH_CMD(fail, NULL, "cause a failure (access *NULL).", sh_cmd_fail, NULL, 0);
+SH_CMD(oops, NULL, "cause a k_oops().", sh_cmd_oops, NULL, 0);
+SH_CMD(assert, NULL, "cause an assert.", sh_cmd_assert, NULL, 0);
+#endif
 
 static int appl_watchdog_init(void)
 {
@@ -356,17 +390,35 @@ static int appl_watchdog_init(void)
    return 0;
 }
 
+#ifndef CONFIG_RESET_ON_FATAL_ERROR
+void k_sys_fatal_error_handler(unsigned int reason, const z_arch_esf_t *esf)
+{
+   (void)arch_irq_lock();
+   LOG_PANIC();
+   if (esf) {
+      printk("fatal error %d 0x%x", reason, esf->basic.lr);
+   } else {
+      printk("fatal error %d", reason);
+   }
+   for (;;) {
+      k_sleep(K_MSEC(100));
+   }
+}
+#endif /* CONFIG_RESET_ON_FATAL_ERROR */
+
 static int appl_diagnose_init(void)
 {
    const char *mcu_appl_version = APP_VERSION_STRING;
+   k_tid_t id = 0;
 
    appl_watchdog_init();
 
-   k_thread_create(&appl_diagnose_thread,
-                   appl_diagnose_stack,
-                   CONFIG_DIAGNOSE_STACK_SIZE,
-                   appl_reboot_fn, NULL, NULL, NULL,
-                   K_HIGHEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
+   id = k_thread_create(&appl_diagnose_thread,
+                        appl_diagnose_stack,
+                        CONFIG_DIAGNOSE_STACK_SIZE,
+                        appl_reboot_fn, NULL, NULL, NULL,
+                        K_HIGHEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
+   k_thread_name_set(id, "shutdown");
 
    memset(appl_version, 0, sizeof(appl_version));
    appl_version[0] = 'v';

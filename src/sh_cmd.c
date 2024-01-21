@@ -460,6 +460,10 @@ int sh_busy(void)
 
 static int sh_cmd_init(void)
 {
+   struct k_work_queue_config sh_cmd_cfg = {
+       .name = "sh_cmd_workq",
+   };
+
    STRUCT_SECTION_FOREACH(sh_cmd_entry, e)
    {
       if (e->cmd) {
@@ -470,7 +474,7 @@ static int sh_cmd_init(void)
 
    k_work_queue_start(&sh_cmd_work_q, sh_cmd_stack,
                       K_THREAD_STACK_SIZEOF(sh_cmd_stack),
-                      CONFIG_SH_CMD_THREAD_PRIO, NULL);
+                      CONFIG_SH_CMD_THREAD_PRIO, &sh_cmd_cfg);
 
    return 0;
 }

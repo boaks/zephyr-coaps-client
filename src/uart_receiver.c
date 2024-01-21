@@ -879,6 +879,9 @@ static int uart_init(void)
 static int uart_receiver_init(void)
 {
    int err;
+   struct k_work_queue_config uart_cfg = {
+       .name = "uart_workq",
+   };
 
    err = uart_init();
 
@@ -886,7 +889,7 @@ static int uart_receiver_init(void)
 
    k_work_queue_start(&uart_work_q, uart_stack,
                       K_THREAD_STACK_SIZEOF(uart_stack),
-                      CONFIG_UART_THREAD_PRIO, NULL);
+                      CONFIG_UART_THREAD_PRIO, &uart_cfg);
 
    uart_reschedule_rx_enable(K_MSEC(CONFIG_UART_RX_CHECK_INTERVAL_MS));
 

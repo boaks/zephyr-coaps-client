@@ -41,8 +41,16 @@ static int64_t imsi_time = 0;
 
 static const char *find_id(const char *buf, const char *id)
 {
+   size_t len = strlen(id);
    char *pos = strstr(buf, id);
-   while (pos > buf && *(pos - 1) != ',') {
+   while (pos) {
+      // start
+      if (pos == buf || *(pos - 1) == ',') {
+         // end
+         if (pos[len] == ',' || !pos[len]) {
+            return pos;
+         }
+      }
       pos = strstr(pos + 1, id);
    }
    return pos;
