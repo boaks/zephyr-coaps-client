@@ -302,25 +302,25 @@ config SH_CMD
     bool "Enable sh cmd support."
 	default y
 
-config UART_RECEIVER
-    bool "Use UART receiver for cmd and at-cmd."
+config UART_MANAGER
+    bool "Use UART manager for sh-cmd console."
 	default n
 
 config UART_RX_PULLDOWN
     bool "Use pulldown for RX."
-    depends on UART_RECEIVER
+    depends on UART_MANAGER
 	default n
 	help
-	  Use pulldown for RX to ensure UART is suspended if RX is not connected.
+	  Use pulldown for RX to ensure UART is suspended, if RX is not connected.
 
-config LOG_BACKEND_UART_RECEIVER
-   bool "Use UART receiver as log backend."
-   depends on UART_RECEIVER
+config LOG_BACKEND_UART_MANAGER
+   bool "Use UART manager as log backend."
+   depends on UART_MANAGER
    default y
 
-config LOG_BACKEND_UART_RECEIVER_AUTOSTART
+config LOG_BACKEND_UART_MANAGER_AUTOSTART
    bool
-   depends on LOG_BACKEND_UART_RECEIVER
+   depends on LOG_BACKEND_UART_MANAGER
    default y
 
 config UART_UPDATE
@@ -332,7 +332,7 @@ config UART_UPDATE
 	select FLASH_MAP
 	select STREAM_FLASH
 	select IMG_MANAGER
-	depends on LOG_BACKEND_UART_RECEIVER
+	depends on LOG_BACKEND_UART_MANAGER && UART_MANAGER
 
 config COAP_UPDATE
     bool "Enabel CoAP firmware updates."
@@ -358,7 +358,7 @@ config SUSPEND_3V3
 
 config SUSPEND_UART
 	bool "Low power mode, suspend UART when sleeping"
-	default y if !UART_RECEIVER
+	default y if !UART_MANAGER
 
 config LOCATION_ENABLE
 	bool "Enable GNSS Location"
@@ -672,6 +672,12 @@ source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
 module = MODEM
 module-str = Modem
 source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
+
+if UART_MANAGER
+module = UART_MANAGER
+module-str = UART
+source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
+endif
 
 if FLASH || EEPROM
 module = STORAGE

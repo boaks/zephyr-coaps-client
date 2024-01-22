@@ -42,7 +42,7 @@ target_sources_ifdef(CONFIG_SH_CMD app PRIVATE src/sh_cmd.c)
 
 target_sources_ifdef(CONFIG_SH_CMD app PRIVATE src/modem_cmd.c)
 
-target_sources_ifdef(CONFIG_UART_RECEIVER app PRIVATE src/uart_receiver.c)
+target_sources_ifdef(CONFIG_UART_MANAGER app PRIVATE src/uart_manager.c)
 
 target_sources_ifdef(CONFIG_UPDATE app PRIVATE src/appl_update.c)
 
@@ -211,12 +211,12 @@ else()
 set(BUILD_SUMUP8 "Build without battery.")
 endif()
 
-if (CONFIG_LOG_BACKEND_UART_RECEIVER)
-set(BUILD_SUMUP9 "Build with UART receiver log backend.")
-elseif (CONFIG_UART_RECEIVER)
-set(BUILD_SUMUP9 "Build with UART receiver.")
+if (CONFIG_LOG_BACKEND_UART_MANAGER)
+set(BUILD_SUMUP9 "Build with UART manager log backend.")
+elseif (CONFIG_UART_MANAGER)
+set(BUILD_SUMUP9 "Build with UART manager.")
 else()
-set(BUILD_SUMUP9 "Build without UART receiver.")
+set(BUILD_SUMUP9 "Build without UART manager.")
 endif()
 
 add_custom_command(TARGET app POST_BUILD
