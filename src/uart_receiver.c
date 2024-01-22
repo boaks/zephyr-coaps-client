@@ -64,9 +64,11 @@ static uint8_t uart_rx_buf[2][CONFIG_UART_BUFFER_LEN];
 
 #define UART_TX_ENABLED 0
 #define UART_SUSPENDED 1
-#define UART_UPDATE 2
-#define UART_UPDATE_START 3
-#define UART_UPDATE_APPLY 4
+#define UART_PANIC 2
+
+#define UART_UPDATE 3
+#define UART_UPDATE_START 4
+#define UART_UPDATE_APPLY 5
 #define UART_UPDATE_FLAGS (BIT(UART_UPDATE) | BIT(UART_UPDATE_START) | BIT(UART_UPDATE_APPLY))
 
 static atomic_t uart_at_state = ATOMIC_INIT(0);
@@ -204,18 +206,21 @@ static inline void uart_tx_ready(void)
    k_sem_give(&uart_tx_sem);
 }
 
-static int uart_tx_out(uint8_t *data, size_t length, bool panic)
+static int uart_tx_out(uint8_t *data, size_t length)
 {
-   if (!atomic_test_bit(&uart_at_state, UART_SUSPENDED)) {
 #ifdef CONFIG_LOG_MODE_IMMEDIATE
+   for (size_t i = 0; i < length; i++) {
+      uart_poll_out(uart_dev, data[i]);
+   }
+#else
+   bool panic = atomic_test_bit(&uart_at_state, UART_PANIC);
+   if (panic) {
       for (size_t i = 0; i < length; i++) {
          uart_poll_out(uart_dev, data[i]);
       }
-#else
-      if (panic || length == 1) {
-         for (size_t i = 0; i < length; i++) {
-            uart_poll_out(uart_dev, data[i]);
-         }
+   } else if (!atomic_test_bit(&uart_at_state, UART_SUSPENDED)) {
+      if (length == 1) {
+         uart_poll_out(uart_dev, data[0]);
       } else {
 
          k_sem_reset(&uart_tx_sem);
@@ -225,27 +230,29 @@ static int uart_tx_out(uint8_t *data, size_t length, bool panic)
 
          k_sem_take(&uart_tx_sem, K_MSEC(CONFIG_UART_TX_OUTPUT_TIMEOUT_MS));
       }
-#endif
    }
+#endif
    return length;
 }
 
-static void uart_tx_out_flush(bool panic);
+static void uart_tx_out_flush(void);
 
 static int uart_tx_out_buf(int c)
 {
 #ifdef CONFIG_LOG_MODE_IMMEDIATE
    char x = (char)c;
-   uart_tx_out((uint8_t *)&x, 1, true);
+   uart_poll_out(uart_dev, c);
 #else
-   int idx;
 
    if (atomic_get(&uart_tx_buf_offset) == sizeof(uart_tx_buf)) {
-      uart_tx_out_flush(false);
+      uart_tx_out_flush();
    }
-
-   idx = atomic_inc(&uart_tx_buf_offset);
-   uart_tx_buf[idx] = (uint8_t)c;
+   if (atomic_test_bit(&uart_at_state, UART_PANIC)) {
+      uart_poll_out(uart_dev, c);
+   } else {
+      int idx = atomic_inc(&uart_tx_buf_offset);
+      uart_tx_buf[idx] = (uint8_t)c;
+   }
 #endif
 
    return 0;
@@ -264,11 +271,11 @@ static void uart_tx_out_nl(void)
    }
 }
 
-static void uart_tx_out_flush(bool panic)
+static void uart_tx_out_flush(void)
 {
    atomic_cas(&uart_tx_buf_lines, 0, 1);
    uart_tx_out_nl();
-   uart_tx_out(uart_tx_buf, atomic_get(&uart_tx_buf_offset), panic);
+   uart_tx_out(uart_tx_buf, atomic_get(&uart_tx_buf_offset));
    atomic_set(&uart_tx_buf_offset, 0);
 }
 
@@ -376,8 +383,11 @@ static bool uart_log_filter(struct log_msg *msg)
 static void uart_log_process(const struct log_backend *const backend,
                              union log_msg_generic *msg)
 {
-   if (atomic_test_bit(&uart_at_state, UART_SUSPENDED) ||
-       !atomic_test_bit(&uart_at_state, UART_TX_ENABLED)) {
+   bool panic = atomic_test_bit(&uart_at_state, UART_PANIC);
+
+   if (!panic &&
+       (atomic_test_bit(&uart_at_state, UART_SUSPENDED) ||
+        !atomic_test_bit(&uart_at_state, UART_TX_ENABLED))) {
       // silently drop during suspended UART or XMODEM
       return;
    }
@@ -394,17 +404,19 @@ static void uart_log_process(const struct log_backend *const backend,
          int prefix = 0;
          char level = level_tab[msg->log.hdr.desc.level];
 
-         if (uart_log_filter(&msg->log)) {
+         if (!panic && uart_log_filter(&msg->log)) {
             // drop filtered msg
             return;
          }
 
 #ifndef CONFIG_LOG_MODE_IMMEDIATE
-         k_mutex_lock(&uart_tx_mutex, K_FOREVER);
-         if (uart_tx_in_pause) {
-            k_condvar_wait(&uart_tx_condvar, &uart_tx_mutex, K_FOREVER);
+         if (!panic) {
+            k_mutex_lock(&uart_tx_mutex, K_FOREVER);
+            if (uart_tx_in_pause) {
+               k_condvar_wait(&uart_tx_condvar, &uart_tx_mutex, K_FOREVER);
+            }
+            k_mutex_unlock(&uart_tx_mutex);
          }
-         k_mutex_unlock(&uart_tx_mutex);
 #endif
          if (level) {
             int cycles = sys_clock_hw_cycles_per_sec();
@@ -421,10 +433,10 @@ static void uart_log_process(const struct log_backend *const backend,
          if (plen) {
             cbpprintf(uart_tx_out_func, NULL, package);
          }
-         uart_tx_out_flush(false);
+         uart_tx_out_flush();
          if (dlen) {
             uart_log_dump_hex(prefix, data, dlen);
-            uart_tx_out_flush(false);
+            uart_tx_out_flush();
          }
       }
    }
@@ -440,8 +452,8 @@ static void uart_log_init(struct log_backend const *const backend)
 static void uart_log_panic(struct log_backend const *const backend)
 {
    ARG_UNUSED(backend);
-
-   uart_tx_out_flush(true);
+   atomic_set_bit(&uart_at_state, UART_PANIC);
+   uart_tx_out_flush();
 }
 
 static void uart_log_dropped(const struct log_backend *const backend, uint32_t cnt)
@@ -449,7 +461,7 @@ static void uart_log_dropped(const struct log_backend *const backend, uint32_t c
    ARG_UNUSED(backend);
    cbprintf(uart_tx_out_func, NULL,
             "--- %u  messages dropped ---", cnt);
-   uart_tx_out_flush(false);
+   uart_tx_out_flush();
 }
 
 const struct log_backend_api uart_log_backend_api = {
