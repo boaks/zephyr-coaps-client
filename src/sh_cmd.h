@@ -39,14 +39,24 @@ struct sh_cmd_entry {
        .send = _send,                                                    \
    }
 
+#define SH_CMD_EXECUTING 1
+#define AT_CMD_PENDING 2
+
+#ifdef CONFIG_SH_CMD
+
 int sh_cmd_execute(const char *cmd);
 int sh_cmd_schedule(const char *cmd, const k_timeout_t delay);
 
 int sh_cmd_append(const char *cmd, const k_timeout_t delay);
 
-#define SH_CMD_EXECUTING 1
-#define AT_CMD_PENDING 2
-
 int sh_busy(void);
+#else
+
+#define sh_cmd_execute(cmd) 0
+#define sh_cmd_schedule(cmd, delay) 0
+#define sh_cmd_append(cmd, delay) 0;
+#define sh_busy() 0
+
+#endif
 
 #endif /* SH_CMD_H_ */
