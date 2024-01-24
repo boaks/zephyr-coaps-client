@@ -722,6 +722,8 @@ static void modem_sim_on_cfun(enum lte_lc_func_mode mode, void *ctx)
 }
 #endif /* CONFIG_LTE_LINK_CONTROL */
 
+#ifdef CONFIG_SH_CMD
+
 static int modem_cmd_sim(const char *parameter)
 {
    (void)parameter;
@@ -729,6 +731,108 @@ static int modem_cmd_sim(const char *parameter)
    return 0;
 }
 
-SH_CMD(sim, "", "read SIM-card info.", modem_cmd_sim, NULL, 0);
+static int modem_cmd_read_imsi_sel(unsigned int *selected)
+{
+   char buf[64];
 
-#endif
+   int res = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=178,28616,1,4,13");
+   if (res <= 0) {
+      return res;
+   }
+   res = strstart(buf, CRSM_SUCCESS, false);
+   if (!res) {
+      LOG_DBG("IMSI read selection failed, %s", buf);
+      return -ENOTSUP;
+   }
+
+   buf[res + 6] = 0;
+   return sscanf(buf + res, "%x", selected);
+}
+
+static int modem_cmd_imsi_sel(const char *config)
+{
+   unsigned int select = 0;
+   unsigned int selected = 0;
+   const char *cur = config;
+   char buf[64];
+
+   int res = modem_cmd_read_imsi_sel(&selected);
+   if (res == 1) {
+      parse_next_text(cur, ' ', buf, sizeof(buf));
+      if (!buf[0]) {
+         // show selection
+         if ((selected >> 8) == 0) {
+            LOG_INF("IMSI auto select, %u selected", selected);
+         } else if ((selected >> 8) == (selected & 0xff)) {
+            LOG_INF("IMSI %u selected", selected >> 8);
+         } else {
+            LOG_INF("IMSI %u selection pending", selected >> 8);
+         }
+      } else {
+         if (stricmp(buf, "auto")) {
+            res = sscanf(config, "%d", &select);
+         }
+         /* if "auto" res is already 1 and select is 0 */
+         if (res == 1) {
+            if (select < 0 || select > 255) {
+               LOG_INF("Selection %u is out of range [0..255].", select);
+               return 0;
+            }
+            if (select == (selected >> 8)) {
+               LOG_INF("IMSI %u already selected.", select);
+            } else {
+               res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=220,28616,1,4,13,\"%04xFFFFFFFFFFFFFFFFFFFFFF\"", select);
+               if (res <= 0) {
+                  return res;
+               }
+               res = strstart(buf, CRSM_SUCCESS, false);
+               if (res > 0) {
+                  LOG_INF("IMSI %u selected", select);
+                  modem_at_push_off(false);
+                  modem_at_restore();
+                  res = modem_cmd_read_imsi_sel(&selected);
+                  if (res != 1) {
+                     return res;
+                  }
+                  if (select == 0) {
+                     LOG_INF("IMSI auto select, %u selected.", selected);
+                  } else if (select == (selected & 0xff)) {
+                     LOG_INF("IMSI %u gets selected.", select);
+                  } else {
+                     LOG_INF("IMSI %u not selected.", select);
+                  }
+               } else {
+                  LOG_INF("IMSI selection failed, %s", buf);
+               }
+            }
+         } else {
+            LOG_INF("imis %s invalid argument!", config);
+            return -EINVAL;
+         }
+      }
+   } else if (res == -ENOTSUP) {
+      LOG_INF("IMSI selection not supported by SIM.");
+   }
+   res = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CIMI");
+   if (res > 0) {
+      LOG_INF("IMSI: %s", buf);
+   }
+   return 0;
+}
+
+static void modem_cmd_imsi_sel_help(void)
+{
+   LOG_INF("> help imsi:");
+   LOG_INF("  imsi      : show current IMSI selection.");
+   LOG_INF("  imsi auto : automatic IMSI select. Switching IMSI on timeout (300s).");
+   LOG_INF("  imsi <n>  : select IMSI (FloLive SIM card). Values 0 to 255.");
+   LOG_INF("  imsi 0    : automatic IMSI select. Switching IMSI on timeout (300s).");
+   LOG_INF("  imsi 1    : select IMSI profile 1.");
+   LOG_INF("  imsi n    : select IMSI profile n. The largest value depends on the SIM card");
+}
+
+SH_CMD(sim, "", "read SIM-card info.", modem_cmd_sim, NULL, 0);
+SH_CMD(imsi, "", "select IMSI.", modem_cmd_imsi_sel, modem_cmd_imsi_sel_help, 0);
+
+#endif /* CONFIG_SH_CMD */
+#endif /* CONFIG_NRF_MODEM_LIB */

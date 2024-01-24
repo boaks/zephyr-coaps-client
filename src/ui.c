@@ -543,6 +543,8 @@ int ui_input(k_timeout_t timeout)
    return rc;
 }
 
+#ifdef CONFIG_SH_CMD
+
 static int sh_cmd_led(const char *parameter)
 {
    led_t led = LED_NONE;
@@ -596,3 +598,4 @@ static void sh_cmd_led_help(void)
 }
 
 SH_CMD(led, NULL, "led command.", sh_cmd_led, sh_cmd_led_help, 0);
+#endif /* CONFIG_SH_CMD */

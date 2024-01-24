@@ -612,6 +612,8 @@ int appl_update_coap_message(const uint8_t **buffer)
    return update_context.message_len;
 }
 
+#ifdef CONFIG_SH_CMD
+
 static int sh_cmd_fota(const char *parameter)
 {
    int res = appl_update_coap_cmd(parameter);
@@ -628,3 +630,4 @@ static void sh_cmd_fota_help(void)
 }
 
 SH_CMD(fota, NULL, "start application firmware-over-the-air update.", sh_cmd_fota, sh_cmd_fota_help, 0);
+#endif /* CONFIG_SH_CMD */

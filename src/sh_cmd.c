@@ -264,37 +264,57 @@ static const struct sh_cmd_entry *sh_cmd_get(const char *cmd)
 
 static int sh_cmd_help(const char *parameter)
 {
+   bool full = false;
+   int counter = 0;
+
    if (*parameter) {
       const struct sh_cmd_entry *cmd = sh_cmd_get(parameter);
       const char *msg = cmd ? "no details available." : "cmd unknown.";
       if (cmd && cmd->help && cmd->help_handler) {
          cmd->help_handler();
+         return 0;
+      } else if (stricmp(parameter, "full") == 0) {
+         full = true;
       } else {
          LOG_INF("> help %s:", parameter);
          LOG_INF("  %s", msg);
+         return 0;
       }
-   } else {
-      LOG_INF("> help:");
-      LOG_INF("  %-*s: generic modem at-cmd.(*)", sh_cmd_max_length, "at\?\?\?");
+   }
+   LOG_INF("> help:");
+   LOG_INF("  %-*s: generic modem at-cmd.(*)", sh_cmd_max_length, "at\?\?\?");
 
-      STRUCT_SECTION_FOREACH(sh_cmd_entry, e)
-      {
-         if (e->help) {
-            const char *details = "";
-            if (e->at_cmd) {
-               if (e->help_handler) {
-                  details = "(*?)";
-               } else {
-                  details = "(*)";
-               }
-            } else if (e->help_handler) {
-               details = "(?)";
+   STRUCT_SECTION_FOREACH(sh_cmd_entry, e)
+   {
+      if (e->help) {
+         const char *details = "";
+         if (e->at_cmd) {
+            if (e->help_handler) {
+               details = "(*?)";
+            } else {
+               details = "(*)";
             }
-            LOG_INF("  %-*s: %s%s", sh_cmd_max_length, e->cmd, e->help, details);
+         } else if (e->help_handler) {
+            details = "(?)";
+         }
+         LOG_INF("  %-*s: %s%s", sh_cmd_max_length, e->cmd, e->help, details);
+         ++counter;
+         if ((counter & 0xf) == 0) {
+            k_sleep(K_MSEC(50));
          }
       }
-      LOG_INF("  %-*s: AT-cmd is used, maybe busy.", sh_cmd_max_length, "*");
-      LOG_INF("  %-*s: help <cmd> available.", sh_cmd_max_length, "?");
+   }
+   LOG_INF("  %-*s: AT-cmd is used, maybe busy.", sh_cmd_max_length, "*");
+   LOG_INF("  %-*s: help <cmd> available.", sh_cmd_max_length, "?");
+   if (full) {
+      STRUCT_SECTION_FOREACH(sh_cmd_entry, e)
+      {
+         if (e->help && e->help_handler) {
+            LOG_INF("");
+            k_sleep(K_MSEC(50));
+            e->help_handler();
+         }
+      }
    }
    return 0;
 }

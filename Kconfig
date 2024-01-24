@@ -332,7 +332,7 @@ config UART_UPDATE
 	select FLASH_MAP
 	select STREAM_FLASH
 	select IMG_MANAGER
-	depends on LOG_BACKEND_UART_MANAGER && UART_MANAGER
+	depends on LOG_BACKEND_UART_MANAGER && UART_MANAGER && SH_CMD
 
 config COAP_UPDATE
     bool "Enabel CoAP firmware updates."

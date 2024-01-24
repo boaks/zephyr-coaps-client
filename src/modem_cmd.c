@@ -34,13 +34,6 @@ LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 #include "modem_at.h"
 #include "modem_desc.h"
 
-static void modem_logging_switching_off_fn(struct k_work *work)
-{
-   LOG_INF("Modem switching off ...");
-}
-
-static K_WORK_DELAYABLE_DEFINE(modem_logging_switching_off_work, modem_logging_switching_off_fn);
-
 int modem_reinit(void);
 
 static bool modem_is_plmn(const char *value)
@@ -50,35 +43,6 @@ static bool modem_is_plmn(const char *value)
       ++len;
    }
    return !value[len] && 5 <= len && len <= 6;
-}
-
-static int previous_mode = -1;
-
-static int modem_off(void)
-{
-   enum lte_lc_func_mode mode;
-   int res = lte_lc_func_mode_get(&mode);
-   previous_mode = -1;
-   if (!res) {
-      res = mode;
-      previous_mode = mode;
-      if (mode != LTE_LC_FUNC_MODE_POWER_OFF) {
-         work_reschedule_for_io_queue(&modem_logging_switching_off_work, K_MSEC(5000));
-         lte_lc_func_mode_set(LTE_LC_FUNC_MODE_POWER_OFF);
-         k_work_cancel_delayable(&modem_logging_switching_off_work);
-      }
-   }
-   return res;
-}
-
-static int modem_restore(void)
-{
-   int res = 0;
-   if (-1 < previous_mode && previous_mode != LTE_LC_FUNC_MODE_POWER_OFF) {
-      res = lte_lc_func_mode_set(previous_mode);
-   }
-   previous_mode = -1;
-   return res;
 }
 
 #define CFG_NB_IOT "nb"
@@ -143,9 +107,9 @@ static int modem_cmd_config(const char *config)
          return -EINVAL;
       }
       LOG_INF(">> cfg init");
-      modem_off();
+      modem_at_push_off(false);
       modem_reinit();
-      modem_restore();
+      modem_at_restore();
       LOG_INF(">> cfg init ready");
       return 1;
    }
@@ -227,10 +191,10 @@ static int modem_cmd_config(const char *config)
          }
       }
       if (lte_mode != lte_mode_new || lte_preference != lte_preference_new) {
-         modem_off();
+         modem_at_push_off(false);
          res = lte_lc_system_mode_set(lte_mode_new, lte_preference_new);
          modem_set_preference(RESET_PREFERENCE);
-         modem_restore();
+         modem_at_restore();
          if (!res) {
             LOG_INF("Switched to %s", modem_get_system_mode_cfg(lte_mode_new, lte_preference_new));
          } else {
@@ -275,11 +239,12 @@ static void modem_cmd_config_help(void)
    LOG_INF("  cfg init    : reset configuration.");
    LOG_INF("  cfg <plmn> <modes>");
    LOG_INF("      <plmn>  : either auto or numerical plmn, e.g. 26202");
-   LOG_INF("      <modes> : " CFG_NB_IOT ", " CFG_LTE_M ", " CFG_NB_IOT " " CFG_LTE_M ", " CFG_LTE_M " " CFG_NB_IOT ".");
+   LOG_INF("      <modes> : " CFG_NB_IOT ", " CFG_LTE_M ", " CFG_NB_IOT " " CFG_LTE_M ", " CFG_LTE_M " " CFG_NB_IOT ", or auto.");
    LOG_INF("              : " CFG_NB_IOT "    := NB-IoT");
    LOG_INF("              : " CFG_LTE_M "    := LTE-M");
    LOG_INF("              : " CFG_NB_IOT " " CFG_LTE_M " := NB-IoT/LTE-M");
-   LOG_INF("              : " CFG_LTE_M " " CFG_NB_IOT " := LTE-M /NB-IoT");
+   LOG_INF("              : " CFG_LTE_M " " CFG_NB_IOT " := LTE-M/NB-IoT");
+   LOG_INF("              : auto := LTE-M/NB-IoT without preference");
 }
 
 static int modem_cmd_connect(const char *config)
@@ -622,6 +587,8 @@ static void modem_cmd_edrx_help(void)
    LOG_INF("  edrx <edrx-time> : request eDRX time.");
    LOG_INF("     <edrx-time>   : eDRX time in s.");
    LOG_INF("                   : 0 to disable eDRX.");
+   LOG_INF("                   : If modem is sleeping, the eDRX settings will be");
+   LOG_INF("                   : sent to the network with the next connection.");
    LOG_INF("  edrx off         : disable eDRX.");
    LOG_INF("  edrx             : show current eDRX status.");
 }
@@ -669,12 +636,12 @@ static int modem_cmd_band(const char *config)
          }
       }
    } else if (!stricmp(value, "all")) {
-      modem_off();
+      modem_at_push_off(false);
       res = modem_at_cmd(buf, sizeof(buf), "%XBANDLOCK: ", "AT%XBANDLOCK=0");
       if (res > 0) {
          LOG_INF("BANDLOCK: %s", buf);
       }
-      modem_restore();
+      modem_at_restore();
    } else {
       char bands[] = "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
       long band;
@@ -684,12 +651,12 @@ static int modem_cmd_band(const char *config)
          }
          cur = parse_next_text(cur, ' ', value, sizeof(value));
       }
-      modem_off();
+      modem_at_push_off(false);
       res = modem_at_cmdf(buf, sizeof(buf), "%XBANDLOCK: ", "AT%%XBANDLOCK=1,\"%s\"", bands);
       if (res >= 0) {
          LOG_INF("BANDLOCK: %s", buf);
       }
-      modem_restore();
+      modem_at_restore();
    }
    return 0;
 }
@@ -788,108 +755,6 @@ static void modem_cmd_power_level_help(void)
    LOG_INF("        4   : High performance");
 }
 
-#define CRSM_SUCCESS "144,0,\""
-
-static int modem_cmd_read_imsi_sel(unsigned int *selected)
-{
-   char buf[64];
-
-   int res = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=178,28616,1,4,13");
-   if (res <= 0) {
-      return res;
-   }
-   res = strstart(buf, CRSM_SUCCESS, false);
-   if (!res) {
-      LOG_DBG("IMSI read selection failed, %s", buf);
-      return -ENOTSUP;
-   }
-
-   buf[res + 6] = 0;
-   return sscanf(buf + res, "%x", selected);
-}
-
-static int modem_cmd_imsi_sel(const char *config)
-{
-   unsigned int select = 0;
-   unsigned int selected = 0;
-   const char *cur = config;
-   char buf[64];
-
-   int res = modem_cmd_read_imsi_sel(&selected);
-   if (res == 1) {
-      parse_next_text(cur, ' ', buf, sizeof(buf));
-      if (!buf[0]) {
-         // show selection
-         if ((selected >> 8) == 0) {
-            LOG_INF("IMSI auto select, %u selected", selected);
-         } else if ((selected >> 8) == (selected & 0xff)) {
-            LOG_INF("IMSI %u selected", selected >> 8);
-         } else {
-            LOG_INF("IMSI %u selection pending", selected >> 8);
-         }
-      } else {
-         if (stricmp(buf, "auto")) {
-            res = sscanf(config, "%d", &select);
-         }
-         /* if "auto" res is already 1 and select is 0 */
-         if (res == 1) {
-            if (select < 0 || select > 255) {
-               LOG_INF("Selection %u is out of range [0..255].", select);
-               return 0;
-            }
-            if (select == (selected >> 8)) {
-               LOG_INF("IMSI %u already selected.", select);
-            } else {
-               res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=220,28616,1,4,13,\"%04xFFFFFFFFFFFFFFFFFFFFFF\"", select);
-               if (res <= 0) {
-                  return res;
-               }
-               res = strstart(buf, CRSM_SUCCESS, false);
-               if (res > 0) {
-                  LOG_INF("IMSI %u selected", select);
-                  modem_off();
-                  modem_restore();
-                  res = modem_cmd_read_imsi_sel(&selected);
-                  if (res != 1) {
-                     return res;
-                  }
-                  if (select == 0) {
-                     LOG_INF("IMSI auto select, %u selected.", selected);
-                  } else if (select == (selected & 0xff)) {
-                     LOG_INF("IMSI %u gets selected.", select);
-                  } else {
-                     LOG_INF("IMSI %u not selected.", select);
-                  }
-               } else {
-                  LOG_INF("IMSI selection failed, %s", buf);
-               }
-            }
-         } else {
-            LOG_INF("imis %s invalid argument!", config);
-            return -EINVAL;
-         }
-      }
-   } else if (res == -ENOTSUP) {
-      LOG_INF("IMSI selection not supported by SIM.");
-   }
-   res = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CIMI");
-   if (res > 0) {
-      LOG_INF("IMSI: %s", buf);
-   }
-   return 0;
-}
-
-static void modem_cmd_imsi_sel_help(void)
-{
-   LOG_INF("> help imsi:");
-   LOG_INF("  imsi      : show current IMSI selection.");
-   LOG_INF("  imsi auto : automatic IMSI select. Switching IMSI on timeout (300s).");
-   LOG_INF("  imsi <n>  : select IMSI (FloLive SIM card). Values 0 to 255.");
-   LOG_INF("  imsi 0    : automatic IMSI select. Switching IMSI on timeout (300s).");
-   LOG_INF("  imsi 1    : select IMSI profile 1.");
-   LOG_INF("  imsi n    : select IMSI profile n. The largest value depends on the SIM card");
-}
-
 static int modem_cmd_switch_on(const char *parameter)
 {
    (void)parameter;
@@ -967,6 +832,5 @@ SH_CMD(rai, "", "configure RAI.", modem_cmd_rai, modem_cmd_rai_help, 0);
 
 SH_CMD(remo, "", "reduced mobility.", modem_cmd_reduced_mobility, modem_cmd_reduced_mobility_help, 0);
 SH_CMD(power, "", "configure power level.", modem_cmd_power_level, modem_cmd_power_level_help, 0);
-SH_CMD(imsi, "", "select IMSI.", modem_cmd_imsi_sel, modem_cmd_imsi_sel_help, 0);
 
 #endif

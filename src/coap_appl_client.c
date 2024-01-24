@@ -1105,6 +1105,8 @@ int coap_appl_client_init(const char *id)
    return id ? strlen(id) : 0;
 }
 
+#ifdef CONFIG_SH_CMD
+
 static char cmd_buf[512];
 
 static int sh_cmd_net(const char *parameter)
@@ -1133,3 +1135,4 @@ SH_CMD(dev, "", "read device info.", sh_cmd_dev, NULL, 0);
 SH_CMD(dev, NULL, "read device info.", sh_cmd_dev, NULL, 0);
 #endif
 SH_CMD(env, NULL, "read environment sensor.", sh_cmd_env, NULL, 0);
+#endif /* CONFIG_SH_CMD */

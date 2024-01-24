@@ -649,6 +649,8 @@ int appl_storage_read_bytes_item(size_t id, size_t index, int64_t *time, uint8_t
    return rc;
 }
 
+#ifdef CONFIG_SH_CMD
+
 static int appl_storage_list(const char *parameter)
 {
    (void)parameter;
@@ -688,6 +690,7 @@ static int appl_storage_clear(const char *parameter)
 
 SH_CMD(storage, NULL, "list storage sections.", appl_storage_list, NULL, 0);
 SH_CMD(storageclear, NULL, "clear all storage sections.", appl_storage_clear, NULL, 0);
+#endif /* CONFIG_SH_CMD */
 
 #else /* defined(STORAGE_DEV_FLASH) || defined(STORAGE_DEV_EEPROM) */
 

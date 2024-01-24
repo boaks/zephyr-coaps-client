@@ -1753,6 +1753,8 @@ static int init_destination(int protocol, session_t *destination)
    return 0;
 }
 
+#ifdef CONFIG_SH_CMD
+
 static int sh_cmd_send(const char *parameter)
 {
    LOG_INF(">> send %s", parameter);
@@ -1820,6 +1822,7 @@ static void sh_cmd_send_interval_help(void)
 
 SH_CMD(send, NULL, "send message.", sh_cmd_send, sh_cmd_send_help, 0);
 SH_CMD(interval, NULL, "send interval.", sh_cmd_send_interval, sh_cmd_send_interval_help, 0);
+#endif /* CONFIG_SH_CMD */
 
 int main(void)
 {

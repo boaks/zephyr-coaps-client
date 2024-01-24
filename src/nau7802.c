@@ -1532,6 +1532,8 @@ int scale_sample_desc(char *buf, size_t len, bool series)
    return index;
 }
 
+#ifdef CONFIG_SH_CMD
+
 #ifdef CONFIG_NAU7802_DUMMY_CALIBRATION
 static void scale_save_dummy_calibration(struct scale_config *scale_dev)
 {
@@ -1618,3 +1620,4 @@ static int sh_cmd_scale_calibration(const char *parameter)
 
 SH_CMD(scale, NULL, "read scale info.", sh_cmd_scale, NULL, 0);
 SH_CMD(scalecal, NULL, "read scale calibration info.", sh_cmd_scale_calibration, NULL, 0);
+#endif /* CONFIG_SH_CMD */

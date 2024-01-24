@@ -628,7 +628,7 @@ static bool uart_receiver_handler(uint8_t character)
    return false;
 }
 
-#ifdef CONFIG_UART_UPDATE
+#if defined(CONFIG_UART_UPDATE)
 
 static void uart_xmodem_start_fn(struct k_work *work)
 {
@@ -794,7 +794,7 @@ static int sh_cmd_update(const char *parameter)
 }
 
 SH_CMD(update, NULL, "start application firmware update. Requires XMODEM client.", sh_cmd_update, appl_update_cmd_help, 0);
-#endif
+#endif /* CONFIG_UART_UPDATE */
 
 static void uart_receiver_loop(const char *buffer, size_t len)
 {

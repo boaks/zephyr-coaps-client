@@ -11,11 +11,13 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include <modem/lte_lc.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+
 // #include <zephyr/sys/atomic.h>
 
 #include <nrf_modem_at.h>
@@ -234,6 +236,44 @@ int modem_at_cmd_async(modem_at_response_handler_t handler, const char *skip, co
    }
    k_mutex_unlock(&lte_at_mutex);
 
+   return res;
+}
+
+static void modem_at_logging_switching_off_fn(struct k_work *work)
+{
+   LOG_INF("Modem switching off ...");
+}
+
+static K_WORK_DELAYABLE_DEFINE(modem_at_logging_switching_off_work, modem_at_logging_switching_off_fn);
+
+static atomic_t previous_mode = ATOMIC_INIT(-1);
+
+int modem_at_push_off(bool force)
+{
+   enum lte_lc_func_mode mode;
+   int res = lte_lc_func_mode_get(&mode);
+
+   if (!res && (atomic_cas(&previous_mode, -1, mode) || force)) {
+      if (mode != LTE_LC_FUNC_MODE_POWER_OFF) {
+         work_reschedule_for_io_queue(&modem_at_logging_switching_off_work, K_MSEC(5000));
+         res = lte_lc_func_mode_set(LTE_LC_FUNC_MODE_POWER_OFF);
+         k_work_cancel_delayable(&modem_at_logging_switching_off_work);
+      }
+   }
+   return res;
+}
+
+int modem_at_restore(void)
+{
+   int res = -EINVAL;
+   atomic_val_t previous = atomic_get(&previous_mode);
+   if (-1 < previous && atomic_cas(&previous_mode, previous, -1)) {
+      if (previous != LTE_LC_FUNC_MODE_POWER_OFF) {
+         res = lte_lc_func_mode_set(previous);
+      } else {
+         res = 0;
+      }
+   }
    return res;
 }
 

@@ -33,4 +33,8 @@ int modem_at_cmdf_async(modem_at_response_handler_t handler, const char *skip, c
 
 int modem_at_cmd_async(modem_at_response_handler_t handler, const char *skip, const char* cmd);
 
+int modem_at_push_off(bool force);
+
+int modem_at_restore(void);
+
 #endif /* MODEM_AT_H */

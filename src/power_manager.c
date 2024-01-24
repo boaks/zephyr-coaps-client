@@ -729,6 +729,8 @@ int power_manager_status_desc(char *buf, size_t len)
    return index;
 }
 
+#ifdef CONFIG_SH_CMD
+
 static int sh_cmd_battery(const char *parameter)
 {
    (void)parameter;
@@ -749,3 +751,4 @@ SH_CMD(bat, "", "read battery status.", sh_cmd_battery, NULL, 0);
 #else
 SH_CMD(bat, NULL, "read battery status.", sh_cmd_battery, NULL, 0);
 #endif
+#endif /* CONFIG_SH_CMD */

@@ -255,6 +255,8 @@ int appl_reset_cause_description(char *buf, size_t len)
    return index;
 }
 
+#ifdef CONFIG_SH_CMD
+
 static int sh_cmd_reboot(const char *parameter)
 {
    ARG_UNUSED(parameter);
@@ -326,7 +328,7 @@ SH_CMD(reboot, NULL, "reboot device.", sh_cmd_reboot, NULL, 0);
 SH_CMD(reboots, NULL, "read reboot codes.", sh_cmd_read_reboots, NULL, 0);
 SH_CMD(restarts, NULL, "read restart reasons.", sh_cmd_read_restarts, NULL, 0);
 
-#ifdef CONFIG_ASSERT
+#if defined(CONFIG_ASSERT) && defined(CONFIG_DEBUG)
 static int sh_cmd_fail(const char *parameter)
 {
    ARG_UNUSED(parameter);
@@ -356,7 +358,8 @@ static int sh_cmd_assert(const char *parameter)
 SH_CMD(fail, NULL, "cause a failure (access *NULL).", sh_cmd_fail, NULL, 0);
 SH_CMD(oops, NULL, "cause a k_oops().", sh_cmd_oops, NULL, 0);
 SH_CMD(assert, NULL, "cause an assert.", sh_cmd_assert, NULL, 0);
-#endif
+#endif /* CONFIG_ASSERT && CONFIG_DEBUG */
+#endif /* CONFIG_SH_CMD */
 
 static int appl_watchdog_init(void)
 {
