@@ -174,6 +174,7 @@ static void coap_appl_client_decode_text_payload(char *payload)
          const char *cmd = parse_next_long(val, 10, &delay_ms);
          cmd += strspn(cmd, " \t");
          sh_cmd_append(cmd, K_MSEC(delay_ms));
+         dtls_info("cmd %ld %s", delay_ms, cmd);
          continue;
       }
 #endif
@@ -438,7 +439,10 @@ int coap_appl_client_prepare_sim_info(char *buf, size_t len, int flags)
       }
       dtls_info("%s", buf);
       start = index + 1;
-      if (sim_info.prev_imsi[0]) {
+      if (sim_info.imsi_select_support && sim_info.imsi_select != 0xffff) {
+         index += snprintf(buf + index, len - index, "\nMulti-IMSI: %s (imsi %u)",
+                           sim_info.imsi, sim_info.imsi_select & 0xff);
+      } else if (sim_info.prev_imsi[0]) {
          index += snprintf(buf + index, len - index, "\nMulti-IMSI: %s, %s, %d s",
                            sim_info.imsi, sim_info.prev_imsi, sim_info.imsi_interval);
       } else {

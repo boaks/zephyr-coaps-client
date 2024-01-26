@@ -17,6 +17,8 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 
 project(coaps-client)
 
+target_compile_options(app PRIVATE -fanalyzer)
+
 # APP START
 target_sources(app PRIVATE
 	src/parse.c

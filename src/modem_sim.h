@@ -18,9 +18,11 @@
 
 void modem_sim_init(void);
 void modem_sim_network(bool registered);
-bool modem_sim_multi_imsi(void);
+bool modem_sim_automatic_multi_imsi(void);
 bool modem_sim_apply_iccid_preference(void);
 int modem_sim_get_info(struct lte_sim_info* info);
 int modem_sim_read_info(struct lte_sim_info* info, bool init);
+int modem_sim_ready(void);
+int modem_sim_reset(bool restart);
 
 #endif /* MODEM_SIM_H */

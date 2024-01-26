@@ -252,6 +252,18 @@ config MODEM_SEARCH_TIMEOUT
 	default 360 if LTE_MODE_PREFERENCE_NBIOT || LTE_MODE_PREFERENCE_LTE_M
 	default 180
 
+config MODEM_SEARCH_TIMEOUT_RESTART
+	int "Modem search timeout in minutes before restarting the modem."
+	default 20
+
+config MODEM_SEARCH_TIMEOUT_REBOOT
+	int "Modem initial search timeout in minutes before rebooting the modem."
+	default 480
+
+config MODEM_SEARCH_TIMEOUT_IMSI
+	int "Modem search timeout in minutes for IMSI selection."
+	default 30
+
 config MODEM_ICCID_LTE_M_PREFERENCE
 	string "Modem ICCID header list for LTE-M preference."
 	default ""
@@ -263,6 +275,12 @@ config MODEM_ICCID_NBIOT_PREFERENCE
 	default ""
 	help
 	  List of ICCID header (first 5 digits), which only supports NB-IoT.
+
+config MODEM_ICCID_IMSI_SELECT
+	string "Modem ICCID header list for IMSI select support."
+	default "89357"
+	help
+	  List of ICCID header (first 5 digits), which supports IMSI select.
 
 config MODEM_FAULT_THRESHOLD
     int "Threshold for modem faults per week."

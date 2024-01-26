@@ -19,6 +19,7 @@
 #include <zephyr/logging/log.h>
 
 #include "appl_diagnose.h"
+#include "io_job_queue.h"
 #include "modem.h"
 #include "modem_at.h"
 #include "modem_sim.h"
@@ -34,6 +35,12 @@ LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 #define MULTI_IMSI_MINIMUM_TIMEOUT_MS (300 * MSEC_PER_SEC)
 
 static K_MUTEX_DEFINE(sim_mutex);
+
+#define SIM_STATUS_SELECT_IMSI 0
+#define SIM_STATUS_TEST_IMSI 1
+
+static atomic_t sim_status = ATOMIC_INIT(0);
+static atomic_t imsi_success = ATOMIC_INIT(-1);
 
 static struct lte_sim_info sim_info;
 
@@ -70,6 +77,83 @@ static const char *find_id(const char *buf, const char *id)
 // #define CONFIG_FORBIDDEN_PLMN "FFFFFFFFFFFFFFFFFFFFFFFF"
 
 #define CRSM_SUCCESS "144,0,\""
+
+static void modem_sim_log_imsi_sel(unsigned int selected)
+{
+   unsigned int select = selected >> 8;
+   selected &= 0xff;
+   if (select == 0) {
+      LOG_INF("SIM auto select, imsi %u selected", selected);
+   } else if (select == selected) {
+      LOG_INF("SIM imsi %u selected", selected);
+   } else {
+      LOG_INF("SIM imsi %u pending", select);
+   }
+}
+
+static int modem_sim_get_imsi_sel(unsigned int selected)
+{
+   unsigned int select = selected >> 8;
+   selected &= 0xff;
+   if (select == 0) {
+      return 0;
+   } else if (select == selected) {
+      return select == 0xff ? 0 : select;
+   } else {
+      return -EINVAL;
+   }
+}
+
+static int modem_sim_read_imsi_sel(unsigned int *selected)
+{
+   char buf[64];
+
+   int res = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=178,28616,1,4,13");
+   if (res <= 0) {
+      return res;
+   }
+   res = strstart(buf, CRSM_SUCCESS, false);
+   if (!res) {
+      LOG_DBG("SIM read imsi ID failed, %s", buf);
+      return -ENOTSUP;
+   }
+   // SSSSUU 4 digits select, 2 digits used
+   buf[res + 6] = 0;
+   return sscanf(buf + res, "%x", selected);
+}
+
+static int modem_sim_write_imsi_sel(unsigned int select, bool restart, const char *action)
+{
+   char buf[64];
+   unsigned int selected = 0;
+   int res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=220,28616,1,4,13,\"%04xFFFFFFFFFFFFFFFFFFFFFF\"", select);
+   if (res <= 0) {
+      return res;
+   }
+   res = strstart(buf, CRSM_SUCCESS, false);
+   if (res > 0) {
+      atomic_set_bit(&sim_status, SIM_STATUS_SELECT_IMSI);
+      if (restart) {
+         modem_at_push_off(false);
+         modem_at_restore();
+         res = modem_sim_read_imsi_sel(&selected);
+         if (res == 1) {
+            if (select == 0) {
+               LOG_INF("SIM %s auto select, imsi %u selected.", action, selected);
+            } else if (select == (selected & 0xff)) {
+               LOG_INF("SIM %s imsi %u gets selected.", action, select);
+            } else {
+               LOG_INF("SIM %s imsi %u not selected.", action, select);
+            }
+         }
+      } else {
+         LOG_INF("SIM %s imsi %u written", action, select);
+      }
+   } else {
+      LOG_INF("SIM %s writing imsi %u failed, %s", action, select, buf);
+   }
+   return res;
+}
 
 static size_t copy_plmn(const char *buf, char *plmn, size_t len, const char *mcc)
 {
@@ -285,6 +369,7 @@ static void modem_sim_read(bool init)
 {
    static uint8_t service = 0xff;
 
+   bool imsi_select = false;
    char buf[25 + MAX_SIM_BYTES * 2];
    char temp[MAX_PLMNS * MODEM_PLMN_SIZE];
    char plmn[MODEM_PLMN_SIZE];
@@ -311,6 +396,20 @@ static void modem_sim_read(bool init)
          memset(&sim_info, 0, sizeof(sim_info));
          strncpy(sim_info.iccid, buf, sizeof(sim_info.iccid) - 1);
          changed = true;
+#if defined(CONFIG_MODEM_ICCID_IMSI_SELECT)
+         if (sim_info.iccid[0]) {
+            char iccid[6];
+
+            memset(&iccid, 0, sizeof(iccid));
+            memcpy(iccid, sim_info.iccid, sizeof(iccid) - 1);
+
+            if (find_id(CONFIG_MODEM_ICCID_IMSI_SELECT, iccid)) {
+               LOG_INF("Found ICCID %s in IMSI select support list.", iccid);
+               sim_info.imsi_select_support = true;
+               imsi_select = true;
+            }
+         }
+#endif
       }
       k_mutex_unlock(&sim_mutex);
       if (changed) {
@@ -330,12 +429,17 @@ static void modem_sim_read(bool init)
       return;
    } else {
       int64_t now = k_uptime_get();
+      bool selected = false;
+      int imsi = 0;
       k_mutex_lock(&sim_mutex, K_FOREVER);
       if (strcmp(sim_info.imsi, buf)) {
+         selected = atomic_test_and_clear_bit(&sim_status, SIM_STATUS_SELECT_IMSI);
          if (sim_info.imsi[0]) {
             strncpy(sim_info.prev_imsi, sim_info.imsi, sizeof(sim_info.prev_imsi) - 1);
-            imsi_time = MSEC_TO_SEC(now - imsi_time);
-            sim_info.imsi_interval = MIN(imsi_time, 30000);
+            if (!selected) {
+               imsi_time = MSEC_TO_SEC(now - imsi_time);
+               sim_info.imsi_interval = MIN(imsi_time, 30000);
+            }
             sim_info.imsi_counter++;
          }
          strncpy(sim_info.imsi, buf, sizeof(sim_info.imsi) - 1);
@@ -343,10 +447,12 @@ static void modem_sim_read(bool init)
       } else if (init) {
          imsi_time = now;
       }
+      imsi = modem_sim_get_imsi_sel(sim_info.imsi_select);
       k_mutex_unlock(&sim_mutex);
-      if (sim_info.prev_imsi[0]) {
-         LOG_INF("multi-imsi: %s (%s, %d seconds)", buf,
-                 sim_info.prev_imsi, sim_info.imsi_interval);
+      if (modem_sim_automatic_multi_imsi()) {
+         LOG_INF("multi-imsi: %s (%s, %d seconds)", buf, sim_info.prev_imsi, sim_info.imsi_interval);
+      } else if (sim_info.imsi_select_support && imsi >= 0) {
+         LOG_INF("multi-imsi: %s (%d imsi)", buf, imsi);
       } else {
          LOG_INF("imsi: %s", buf);
       }
@@ -614,6 +720,16 @@ static void modem_sim_read(bool init)
          LOG_INF("CRSM NAS config: %s", buf);
       }
    }
+
+   if (imsi_select) {
+      unsigned int selected = 0;
+      if (modem_sim_read_imsi_sel(&selected) == 1) {
+         k_mutex_lock(&sim_mutex, K_FOREVER);
+         sim_info.imsi_select = selected;
+         k_mutex_unlock(&sim_mutex);
+         modem_sim_log_imsi_sel(selected);
+      }
+   }
 }
 
 void modem_sim_init(void)
@@ -639,11 +755,14 @@ void modem_sim_network(bool registered)
    }
 }
 
-bool modem_sim_multi_imsi(void)
+bool modem_sim_automatic_multi_imsi(void)
 {
-   bool multi;
+   bool multi = false;
+
    k_mutex_lock(&sim_mutex, K_FOREVER);
-   multi = sim_info.prev_imsi[0];
+   if (sim_info.prev_imsi[0]) {
+      multi = !sim_info.imsi_select_support || !modem_sim_get_imsi_sel(sim_info.imsi_select);
+   }
    k_mutex_unlock(&sim_mutex);
    return multi;
 }
@@ -685,7 +804,7 @@ int modem_sim_get_info(struct lte_sim_info *info)
    if (info) {
       *info = sim_info;
    }
-   if (sim_info.prev_imsi[0]) {
+   if (modem_sim_automatic_multi_imsi()) {
       res = 1;
    }
    k_mutex_unlock(&sim_mutex);
@@ -694,17 +813,62 @@ int modem_sim_get_info(struct lte_sim_info *info)
 
 int modem_sim_read_info(struct lte_sim_info *info, bool init)
 {
-   int res = 0;
    modem_sim_read(init);
+   return modem_sim_get_info(info);
+}
+
+static void modem_cmd_sim_reset_fn(struct k_work *work)
+{
+   ARG_UNUSED(work);
+   modem_sim_reset(true);
+}
+
+static K_WORK_DELAYABLE_DEFINE(modem_cmd_sim_reset_work, modem_cmd_sim_reset_fn);
+
+int modem_sim_ready(void)
+{
+   int sim_info_select = -1;
+
    k_mutex_lock(&sim_mutex, K_FOREVER);
-   if (info) {
-      *info = sim_info;
-   }
-   if (sim_info.prev_imsi[0]) {
-      res = 1;
+   if (sim_info.imsi_select_support) {
+      sim_info_select = sim_info.imsi_select;
    }
    k_mutex_unlock(&sim_mutex);
-   return res;
+   if (0 <= sim_info_select) {
+      unsigned int select = 0;
+      if (modem_sim_read_imsi_sel(&select) == 1) {
+         int imsi = modem_sim_get_imsi_sel(select);
+         int sim_info_imsi = modem_sim_get_imsi_sel(sim_info_select);
+         if (0 <= imsi && imsi == sim_info_imsi) {
+            atomic_set(&imsi_success, imsi);
+            atomic_clear_bit(&sim_status, SIM_STATUS_TEST_IMSI);
+            k_work_cancel_delayable(&modem_cmd_sim_reset_work);
+            LOG_INF("SIM imsi %u successful registered.", imsi);
+         } else {
+            LOG_INF("SIM imsi %u changed while register, was %u.", imsi, sim_info_imsi);
+         }
+      } else {
+         LOG_INF("SIM read imsi ID failed on register.");
+      }
+   }
+   return 0;
+}
+
+int modem_sim_reset(bool restart)
+{
+   if (atomic_test_and_clear_bit(&sim_status, SIM_STATUS_TEST_IMSI)) {
+      int imsi = atomic_clear(&imsi_success);
+      atomic_set(&imsi_success, -1);
+      k_work_cancel_delayable(&modem_cmd_sim_reset_work);
+      if (0 <= imsi) {
+         modem_sim_write_imsi_sel(imsi, restart, "restore");
+      } else {
+         LOG_INF("SIM no imsi to restore.");
+      }
+   } else {
+      LOG_INF("SIM no imsi-test pending.");
+   }
+   return 0;
 }
 
 #if defined(CONFIG_LTE_LINK_CONTROL)
@@ -731,24 +895,6 @@ static int modem_cmd_sim(const char *parameter)
    return 0;
 }
 
-static int modem_cmd_read_imsi_sel(unsigned int *selected)
-{
-   char buf[64];
-
-   int res = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=178,28616,1,4,13");
-   if (res <= 0) {
-      return res;
-   }
-   res = strstart(buf, CRSM_SUCCESS, false);
-   if (!res) {
-      LOG_DBG("IMSI read selection failed, %s", buf);
-      return -ENOTSUP;
-   }
-
-   buf[res + 6] = 0;
-   return sscanf(buf + res, "%x", selected);
-}
-
 static int modem_cmd_imsi_sel(const char *config)
 {
    unsigned int select = 0;
@@ -756,62 +902,53 @@ static int modem_cmd_imsi_sel(const char *config)
    const char *cur = config;
    char buf[64];
 
-   int res = modem_cmd_read_imsi_sel(&selected);
+   int res = modem_sim_read_imsi_sel(&selected);
    if (res == 1) {
-      parse_next_text(cur, ' ', buf, sizeof(buf));
+      int imsi = atomic_get(&imsi_success);
+      cur = parse_next_text(cur, ' ', buf, sizeof(buf));
       if (!buf[0]) {
          // show selection
-         if ((selected >> 8) == 0) {
-            LOG_INF("IMSI auto select, %u selected", selected);
-         } else if ((selected >> 8) == (selected & 0xff)) {
-            LOG_INF("IMSI %u selected", selected >> 8);
-         } else {
-            LOG_INF("IMSI %u selection pending", selected >> 8);
+         modem_sim_log_imsi_sel(selected);
+         if (atomic_test_bit(&sim_status, SIM_STATUS_TEST_IMSI)) {
+            if (0 <= imsi) {
+               LOG_INF("(SIM imsi %u for restore.)", imsi);
+            }
          }
       } else {
+         bool force = false;
+         if (stricmp(buf, "force") == 0) {
+            force = true;
+            cur = parse_next_text(cur, ' ', buf, sizeof(buf));
+            if (!buf[0]) {
+               LOG_INF("imsi %s 'force' requires select <n>!", config);
+               return -EINVAL;
+            }
+         }
          if (stricmp(buf, "auto")) {
-            res = sscanf(config, "%d", &select);
+            res = sscanf(buf, "%u", &select);
          }
          /* if "auto" res is already 1 and select is 0 */
          if (res == 1) {
-            if (select < 0 || select > 255) {
-               LOG_INF("Selection %u is out of range [0..255].", select);
-               return 0;
-            }
-            if (select == (selected >> 8)) {
-               LOG_INF("IMSI %u already selected.", select);
+            if (select > 255) {
+               LOG_INF("imsi select %u is out of range [0..255].", select);
+               return -EINVAL;
+            } else if (select == (selected >> 8)) {
+               LOG_INF("SIM imsi %u already selected.", select);
             } else {
-               res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=220,28616,1,4,13,\"%04xFFFFFFFFFFFFFFFFFFFFFF\"", select);
-               if (res <= 0) {
-                  return res;
-               }
-               res = strstart(buf, CRSM_SUCCESS, false);
-               if (res > 0) {
-                  LOG_INF("IMSI %u selected", select);
-                  modem_at_push_off(false);
-                  modem_at_restore();
-                  res = modem_cmd_read_imsi_sel(&selected);
-                  if (res != 1) {
-                     return res;
-                  }
-                  if (select == 0) {
-                     LOG_INF("IMSI auto select, %u selected.", selected);
-                  } else if (select == (selected & 0xff)) {
-                     LOG_INF("IMSI %u gets selected.", select);
-                  } else {
-                     LOG_INF("IMSI %u not selected.", select);
-                  }
-               } else {
-                  LOG_INF("IMSI selection failed, %s", buf);
+               res = modem_sim_write_imsi_sel(select, true, force ? "force" : "test");
+               if (!force && res == 1 && 0 < select && select < 255 && 0 <= imsi) {
+                  atomic_set_bit(&sim_status, SIM_STATUS_TEST_IMSI);
+                  LOG_INF("SIM remember imsi %d to restore.", imsi);
+                  work_reschedule_for_io_queue(&modem_cmd_sim_reset_work, K_MINUTES(CONFIG_MODEM_SEARCH_TIMEOUT_IMSI));
                }
             }
          } else {
-            LOG_INF("imis %s invalid argument!", config);
+            LOG_INF("imsi %s invalid argument!", config);
             return -EINVAL;
          }
       }
    } else if (res == -ENOTSUP) {
-      LOG_INF("IMSI selection not supported by SIM.");
+      LOG_INF("SIM imsi selection not supported.");
    }
    res = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CIMI");
    if (res > 0) {
@@ -823,12 +960,13 @@ static int modem_cmd_imsi_sel(const char *config)
 static void modem_cmd_imsi_sel_help(void)
 {
    LOG_INF("> help imsi:");
-   LOG_INF("  imsi      : show current IMSI selection.");
-   LOG_INF("  imsi auto : automatic IMSI select. Switching IMSI on timeout (300s).");
-   LOG_INF("  imsi <n>  : select IMSI (FloLive SIM card). Values 0 to 255.");
-   LOG_INF("  imsi 0    : automatic IMSI select. Switching IMSI on timeout (300s).");
-   LOG_INF("  imsi 1    : select IMSI profile 1.");
-   LOG_INF("  imsi n    : select IMSI profile n. The largest value depends on the SIM card");
+   LOG_INF("  imsi           : show current IMSI selection.");
+   LOG_INF("  imsi auto      : select IMSI automatically. Switching IMSI on timeout (300s).");
+   LOG_INF("  imsi <n>       : select IMSI. Values 0 to 255.");
+   LOG_INF("  imsi 0         : select IMSI automatically. Switching IMSI on timeout (300s).");
+   LOG_INF("  imsi 1         : select IMSI 1. Fallback to latest successful IMSI.");
+   LOG_INF("  imsi n         : select IMSI. The largest value depends on the SIM card");
+   LOG_INF("  imsi force <n> : select IMSI. No fallback!");
 }
 
 SH_CMD(sim, "", "read SIM-card info.", modem_cmd_sim, NULL, 0);

@@ -34,9 +34,9 @@ typedef struct lte_sim_info {
    bool edrx_cycle_support;
    bool imsi_select_support;
    uint16_t imsi_select;
-   int16_t hpplmn_search_interval;
    int16_t imsi_interval;
    uint16_t imsi_counter;
+   int16_t hpplmn_search_interval;
    char hpplmn[MODEM_PLMN_SIZE];
    char forbidden[MODEM_PLMN_SIZE];
    char iccid[MODEM_ID_SIZE];
@@ -159,6 +159,8 @@ int modem_get_power_state(enum lte_power_state* state);
 
 bool modem_set_preference(enum preference_mode mode);
 
+bool modem_uses_preference(void);
+
 int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx);
 
 int modem_get_psm_status(struct lte_lc_psm_cfg *psm);
@@ -170,8 +172,6 @@ int modem_get_network_info(struct lte_network_info* info);
 int modem_get_mcc(char* mcc);
 
 int modem_get_coverage_enhancement_info(struct lte_ce_info* info);
-
-int modem_get_sim_info(struct lte_sim_info* info);
 
 int modem_get_modem_info(struct lte_modem_info* info);
 

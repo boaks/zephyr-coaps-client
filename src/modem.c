@@ -88,6 +88,8 @@ static struct lte_modem_info modem_info;
 static struct lte_network_info network_info;
 static struct lte_ce_info ce_info;
 
+static volatile bool lte_interrupt_search = false;
+
 static int64_t transmission_time = 0;
 static int64_t network_search_time = 0;
 static int64_t scan_time = 0;
@@ -173,6 +175,7 @@ static void modem_read_coverage_enhancement_info_work_fn(struct k_work *work)
 static K_WORK_DEFINE(modem_read_coverage_enhancement_info_work, modem_read_coverage_enhancement_info_work_fn);
 
 static void modem_state_change_callback_work_fn(struct k_work *work);
+static void modem_ready_work_fn(struct k_work *work);
 
 static K_WORK_DEFINE(modem_registered_callback_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_unregistered_callback_work, modem_state_change_callback_work_fn);
@@ -184,8 +187,6 @@ static K_WORK_DEFINE(modem_low_voltage_callback_work, modem_state_change_callbac
 static K_WORK_DEFINE(modem_power_management_resume_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_power_management_suspend_work, modem_state_change_callback_work_fn);
 
-static void modem_ready_work_fn(struct k_work *work);
-
 static K_WORK_DELAYABLE_DEFINE(modem_ready_work, modem_ready_work_fn);
 
 static void modem_ready_work_fn(struct k_work *work)
@@ -193,6 +194,14 @@ static void modem_ready_work_fn(struct k_work *work)
    bool ready;
    k_mutex_lock(&lte_mutex, K_FOREVER);
    ready = lte_ready;
+   k_mutex_unlock(&lte_mutex);
+   if (ready) {
+      lte_state_change_callback_handler_t callback = lte_state_change_handler;
+      if (callback) {
+         callback(LTE_STATE_READY_1S, true);
+      }
+   }
+   k_mutex_lock(&lte_mutex, K_FOREVER);
    if (ready) {
       lte_signal_ready = true;
       k_condvar_broadcast(&lte_condvar);
@@ -304,6 +313,11 @@ bool modem_set_preference(enum preference_mode mode)
       }
    }
    return false;
+}
+
+bool modem_uses_preference(void)
+{
+   return lte_system_mode_preference;
 }
 
 static int lte_ready_wait(k_timeout_t timeout)
@@ -641,12 +655,16 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
    }
    if (cells_info->gci_cells_count) {
       int quality;
+      int max_quality = 0;
       const struct lte_lc_cell *gci_cells = cells_info->gci_cells;
       const struct lte_lc_cell *gci_cells_sorted[cells_info->gci_cells_count];
       int w = cells_info->gci_cells_count > 9 ? 2 : 1;
 
       for (int index = 0; index < cells_info->gci_cells_count; ++index) {
          quality = lte_lc_cell_quality(gci_cells);
+         if (quality > max_quality) {
+            max_quality = quality;
+         }
          gci_cells_sorted[index] = gci_cells;
          for (int index2 = index; index2 > 0; --index2) {
             if (quality <= lte_lc_cell_quality(gci_cells_sorted[index2 - 1])) {
@@ -658,11 +676,10 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
          ++gci_cells;
       }
       ++scans;
-      quality = lte_lc_cell_quality(gci_cells_sorted[0]);
       for (int index = 0; index < cells_info->gci_cells_count; ++index) {
          gci_cells = gci_cells_sorted[index];
          if (current_cell == gci_cells->id) {
-            if ((quality - lte_lc_cell_quality(gci_cells)) > MIN_QUALITY_DELTA) {
+            if ((max_quality - lte_lc_cell_quality(gci_cells)) > MIN_QUALITY_DELTA) {
                ++hits;
             }
          }
@@ -678,7 +695,7 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
                  (unsigned long)MSEC_TO_SEC(all));
       }
    } else {
-      if (cells_info->ncells_count) {
+      if (cells_info->ncells_count > 0) {
          const struct lte_lc_ncell *neighbor_cells = cells_info->neighbor_cells;
          const struct lte_lc_ncell *neighbor_cells_sorted[cells_info->ncells_count];
          for (int index = 0; index < cells_info->ncells_count; ++index) {
@@ -1331,7 +1348,6 @@ int modem_wait_ready(const k_timeout_t timeout)
 {
    int err = 0;
    int led_on = 0;
-   bool multi_imsi = false;
    uint64_t timeout_ms = k_ticks_to_ms_floor64(timeout.ticks);
    int64_t now = k_uptime_get();
    int64_t start = now;
@@ -1340,8 +1356,9 @@ int modem_wait_ready(const k_timeout_t timeout)
    watchdog_feed();
    err = lte_ready_wait(K_MSEC(10));
    if (err == -EINPROGRESS) {
+      lte_interrupt_search = false;
       LOG_INF("Modem connects for %ld s", (long)MSEC_TO_SEC(timeout_ms));
-      while (-EINPROGRESS == (err = lte_ready_wait(K_MSEC(1500)))) {
+      while (!lte_interrupt_search && -EINPROGRESS == (err = lte_ready_wait(K_MSEC(1500)))) {
          now = k_uptime_get();
          led_on = !led_on;
          if (led_on) {
@@ -1351,19 +1368,14 @@ int modem_wait_ready(const k_timeout_t timeout)
             ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
          }
-         if (timeout_ms < MULTI_IMSI_MINIMUM_TIMEOUT_MS && modem_sim_multi_imsi()) {
-            multi_imsi = true;
-            timeout_ms = MULTI_IMSI_MINIMUM_TIMEOUT_MS;
-         }
          if ((now - start) > timeout_ms) {
             err = -1;
             break;
          }
          if ((now - last) > (MSEC_PER_SEC * 30)) {
             watchdog_feed();
-            LOG_INF("Modem connects for %ld s of %ld s%s",
-                    (long)MSEC_TO_SEC(now - start), (long)MSEC_TO_SEC(timeout_ms),
-                    multi_imsi ? "(multi imsi)" : "");
+            LOG_INF("Modem connects for %ld s of %ld s",
+                    (long)MSEC_TO_SEC(now - start), (long)MSEC_TO_SEC(timeout_ms));
             last = now;
          }
       }
@@ -1371,8 +1383,14 @@ int modem_wait_ready(const k_timeout_t timeout)
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
    now = k_uptime_get();
+   lte_interrupt_search = false;
    LOG_INF("Modem network %sconnected in %ld s", err ? "not " : "", (long)MSEC_TO_SEC(now - start));
    return err;
+}
+
+void modem_interrupt_wait(void)
+{
+   lte_interrupt_search = true;
 }
 
 int modem_start(const k_timeout_t timeout, bool save)
@@ -1412,7 +1430,7 @@ int modem_start(const k_timeout_t timeout, bool save)
       time = k_uptime_get() - time;
       if (!err) {
          LOG_INF("LTE attached in %ld [ms]", (long)time);
-         if (modem_sim_multi_imsi()) {
+         if (modem_sim_automatic_multi_imsi()) {
             // multi imsi may get irritated by switching off the modem
             save = false;
          }
@@ -1575,15 +1593,6 @@ int modem_get_coverage_enhancement_info(struct lte_ce_info *info)
       k_mutex_unlock(&lte_mutex);
    }
    return 0;
-}
-
-int modem_get_sim_info(struct lte_sim_info *info)
-{
-   int res = modem_sim_get_info(info);
-   if (!lte_system_mode_preference) {
-      res = 0;
-   }
-   return res;
 }
 
 int modem_get_modem_info(struct lte_modem_info *info)
