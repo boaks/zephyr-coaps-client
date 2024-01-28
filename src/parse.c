@@ -42,7 +42,7 @@ void print_bin(char *buf, size_t bits, int val)
 const char *parse_next_char(const char *value, char sep)
 {
    if (!value) {
-      return value;
+      return "";
    }
    while (*value && *value != sep) {
       ++value;
