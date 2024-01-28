@@ -17,9 +17,10 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include "appl_diagnose.h"
 #include "io_job_queue.h"
-#include "sh_cmd.h"
 #include "parse.h"
+#include "sh_cmd.h"
 #include "ui.h"
 
 LOG_MODULE_REGISTER(UI, CONFIG_UI_LOG_LEVEL);
@@ -371,9 +372,9 @@ int ui_led_op_prio(led_t led, led_op_t op)
       case LED_NONE:
          break;
       case LED_COLOR_ALL:
-         ui_led_op(LED_COLOR_RED, op);
-         ui_led_op(LED_COLOR_BLUE, op);
-         ui_led_op(LED_COLOR_GREEN, op);
+         ui_led_op_prio(LED_COLOR_RED, op);
+         ui_led_op_prio(LED_COLOR_BLUE, op);
+         ui_led_op_prio(LED_COLOR_GREEN, op);
          break;
       case LED_COLOR_RED:
 #if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
@@ -509,7 +510,12 @@ int ui_config(void)
 
 void ui_enable(bool enable)
 {
-   ui_enabled = enable;
+   if (ui_enabled != enable) {
+      if (!enable) {
+         ui_led_op_prio(LED_COLOR_ALL, LED_CLEAR);
+      }
+      ui_enabled = enable;
+   }
 }
 
 void ui_prio(bool enable)
