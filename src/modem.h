@@ -32,6 +32,8 @@ typedef struct lte_modem_info {
 typedef struct lte_sim_info {
    bool valid;
    bool edrx_cycle_support;
+   bool imsi_select_support;
+   uint16_t imsi_select;
    int16_t hpplmn_search_interval;
    int16_t imsi_interval;
    uint16_t imsi_counter;
@@ -109,6 +111,7 @@ typedef struct lte_network_statistic {
 enum lte_state_type {
 	LTE_STATE_REGISTRATION,
 	LTE_STATE_READY,
+	LTE_STATE_READY_1S,
 	LTE_STATE_CONNECTED,
 	LTE_STATE_SLEEPING,
 	LTE_STATE_LOW_VOLTAGE
@@ -128,6 +131,14 @@ enum preference_mode {
    LTE_M_PREFERENCE,
 };
 
+enum lte_power_state {
+	LTE_POWER_STATE_SLEEPING,
+	LTE_POWER_STATE_IDLE,
+	LTE_POWER_STATE_ACTIVE,
+	LTE_POWER_STATE_LOW_VOLTAGE,
+};
+
+
 #ifdef CONFIG_AS_RAI_ON
 #define CONFIG_UDP_USE_CONNECT 1
 #endif
@@ -141,6 +152,10 @@ int modem_start(const k_timeout_t timeout, bool save);
 int modem_start_search(void);
 
 int modem_wait_ready(const k_timeout_t timeout);
+
+void modem_interrupt_wait(void);
+
+int modem_get_power_state(enum lte_power_state* state);
 
 bool modem_set_preference(enum preference_mode mode);
 

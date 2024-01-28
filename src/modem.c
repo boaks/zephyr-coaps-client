@@ -827,7 +827,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
             work_submit_to_io_queue(&modem_low_voltage_callback_work);
             k_mutex_lock(&lte_mutex, K_FOREVER);
             ++lte_low_voltage;
-            lte_low_power= true;
+            lte_low_power = true;
             k_mutex_unlock(&lte_mutex);
          } else if (evt->modem_evt == LTE_LC_MODEM_EVT_OVERHEATED) {
             LOG_INF("LTE modem Overheated!");
@@ -1460,6 +1460,26 @@ int modem_start_search(void)
    LOG_INF("Modem starts search.");
    modem_init_rai();
    return modem_at_cmd(NULL, 0, NULL, "AT%PERIODICSEARCHCONF=3");
+}
+
+int modem_get_power_state(enum lte_power_state *state)
+{
+   int res = 0;
+
+   if (state) {
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      if (lte_low_power) {
+         *state = LTE_POWER_STATE_LOW_VOLTAGE;
+      } else if (network_info.sleeping) {
+         *state = LTE_POWER_STATE_SLEEPING;
+      } else if (network_info.rrc_active) {
+         *state = LTE_POWER_STATE_ACTIVE;
+      } else {
+         *state = LTE_POWER_STATE_IDLE;
+      }
+      k_mutex_unlock(&lte_mutex);
+   }
+   return res;
 }
 
 int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx)
@@ -2182,11 +2202,12 @@ int modem_set_edrx(int16_t edrx_time_s)
       LOG_INF("eDRX off");
       res = modem_at_cmd(NULL, 0, NULL, "AT+CEDRXS=0");
       if (res >= 0) {
+         // switching of eDRX swichtes off the notifications
          k_mutex_lock(&lte_mutex, K_FOREVER);
          edrx_status.mode = LTE_LC_LTE_MODE_NONE;
          k_mutex_unlock(&lte_mutex);
       }
-      return res;
+      return res < 0 ? res : 0;
    } else if (edrx_time_s < 6) {
       edrx_code = 0;
    } else if (edrx_time_s < 11) {
@@ -2242,7 +2263,7 @@ int modem_set_edrx(int16_t edrx_time_s)
    if (res2 < 0) {
       return res2;
    }
-   return res;
+   return res < 0 ? res : 0;
 }
 
 void modem_lock_psm(bool on)

@@ -550,7 +550,7 @@ static void modem_cmd_rai_help(void)
 
 static int modem_cmd_edrx(const char *config)
 {
-   int res = 0;
+   int res = 1;
    unsigned int edrx_time = 0;
    const char *cur = config;
    char value[5];
@@ -567,12 +567,19 @@ static int modem_cmd_edrx(const char *config)
             LOG_INF("eDRX %.2fs, ptw %.2fs", edrx_cfg.edrx, edrx_cfg.ptw);
          }
       }
-   } else if (!stricmp("off", value)) {
-      res = modem_set_edrx(0);
    } else {
-      res = sscanf(config, "%u", &edrx_time);
+      if (stricmp("off", value)) {
+         res = sscanf(config, "%u", &edrx_time);
+      }
       if (res == 1) {
          res = modem_set_edrx(edrx_time);
+         if (!res && edrx_time > 0) {
+            enum lte_power_state state;
+            modem_get_power_state(&state);
+            if (state == LTE_POWER_STATE_SLEEPING) {
+               LOG_INF("Sleeping, sent eDRX to network with next connection.");
+            }
+         }
       } else {
          res = -EINVAL;
       }
