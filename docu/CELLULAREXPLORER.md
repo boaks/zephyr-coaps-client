@@ -14,7 +14,7 @@
 In the wild, the Bluetooth Low Energy interface is really very comfortable. If your device has only USB, that works also well, but is less comfortable.
 For some more sophisticated tests, e.g. adapting some lists on the SIM card, it may be easier to use a PC via a USB serial as well.
 
-In order to enable this function, the [at-cmd-prj.conf](../at-cmd-prj.conf) must be used to build the app.
+In order to enable this function, the [uart-prj.conf](../uart-prj.conf) must be used to build the app.
 
 ## Enable Bluetooth Low Energy on a Thingy:91
 
@@ -62,7 +62,7 @@ The most [nRF9160 AT-commands](https://infocenter.nordicsemi.com/pdf/nrf9160_at_
 
 ![help](./serial_bluetooth_terminal_help.jpg)
 
-(The screenshot shows only the list of commands in August 2023, the current list may contain more commands.)
+(The screenshot shows only the list of commands in August 2023, the [current list](SHCMDSLIST.md) contains the current list of commands.)
 
 If the smart phone App offers macros, add you favorite AT-commands or commands as macro.
 

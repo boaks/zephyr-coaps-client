@@ -17,7 +17,7 @@
 
 #ifdef CONFIG_USE_IO_JOB_QUEUE
 
-#define IO_JOB_QUEUE_STACK_SIZE 4096
+#define IO_JOB_QUEUE_STACK_SIZE 2048
 #define IO_JOB_QUEUE_PRIORITY 5
 
 struct k_work_q io_job_queue;

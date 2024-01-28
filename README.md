@@ -4,14 +4,14 @@
 
 ## Reliable - Efficient - Encrypted
 
-Version 0.8.0 - Novemberr 2023
+Version 0.9.0 - January 2024
 
 This [zephyr](https://www.zephyrproject.org/) client demonstrates to use coaps ([CoAP](https://tools.ietf.org/html/rfc7252) over [DTLS 1.2](https://tools.ietf.org/html/rfc6347)) with the [Eclipse/TinyDtls Library](https://github.com/eclipse/tinydtls). In combination with [Eclipse/Californium](https://github.com/eclipse/californium) as Cloud-Server, it enables a device to use [DTLS 1.2 Connection ID](https://tools.ietf.org/html/rfc9146), which obsolete the commonly used frequently DTLS handshakes and eliminates that expensive overhead.
 Reducing the messages exchange mostly down to two ip-messages (one request, one response), it enables your device for
 
-- reliable, 
-- efficient, and 
-- end-to-end encrypted
+- **reliable**, 
+- **efficient**, and 
+- **end-to-end encrypted**
 
 communication for messages up to a few hundred bytes.
 In combination with LTE-M/NB-IoT, CoAP / DTLS 1.2 CID enables to build mobile applications with 
@@ -23,7 +23,7 @@ The demo client itself is in development stage. In "good and normal weather", th
 
 The demo client is intended as groundwork for your own ideas. "Out-of-the-box" this application is useful to easily check, if mobile IoT works at the locations and environment you want to use it. The demo reports also some details about the mobile networks functions. 
 To build products and applications on this protocol stack requires to implement a production client and to adapt the coap-server for your function. The demo targets therefore people, which are already common with [zephyr](https://www.zephyrproject.org/), or, even better, common with the development for the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) itself.
-Without that knowledge it will be more time consuming to make benefit out of this demo.
+Without that knowledge it will be time consuming to make benefit out of this demo.
 
 **Note:**
 The demo client is considered to use CoAP/DTLS 1.2 CID. Without server-side support for DTLS 1.2 CID, it will not work proper. Please ensure, that your server supports that.
@@ -38,9 +38,9 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160) based devic
 | [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/)<br>Requires additional batteries, antennas, and closures to work in the "wild". The design of the feather allows to easily add custom sensors. | ![nRF9160-feather-v5](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
 | [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. The design allows to easily add custom sensors. | ![nRF9160-DK](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK.png) |
 
-The demo works with [ncs-2.5.0](https://github.com/nrfconnect/sdk-nrf/tree/v2.5.0).
+The demo works with [ncs-2.5.1](https://github.com/nrfconnect/sdk-nrf/tree/v2.5.1).
 
-To benefit from the newer modem features, please consider to use the modem firmware [1.3.5](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.5.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
+To benefit from the newer modem features, please consider to use the modem firmware [1.3.6](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.6.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
 Maybe other modems and devices gets supported over the time as well. For some of the nRF9160 based devices porting should not be too hard.
 
@@ -50,7 +50,7 @@ Maybe other modems and devices gets supported over the time as well. For some of
 | [Icarus IoT Board v2](https://www.actinius.com/icarus)<br>Includes a eSIM.| ![Icarus IoT Board v2](https://www.actinius.com/images/icarus-nrf9160-feather-v2-front-sm-p-500.png) |
 | [Conexio Stratus](https://www.crowdsupply.com/conexio/stratus)<br>Built-in energy harvesting capability for autonomous operation. Includes a SIM card with 500MB in 10 years. | ![Conexio Stratus](https://www.crowdsupply.com/img/9c62/side.png) |
 | [Fanstel LN60E](https://www.fanstel.com/buy/bt840f-v1-nrf52840-bluetooth-5-thread-zigbee-module-by45z-8ypje)<br>Reduced to the minimum. Unfortunately the current version uses a LDO with 50µA quiescent current.| ![Fanstel LN60E](https://images.squarespace-cdn.com/content/v1/561459a2e4b0b39f5cefa12e/1600900228634-0AGSVRBYZKC1MD9Q5YDA/LN60E.png) |
-| [MIKROE LTE IoT 4 Click](https://www.mikroe.com/lte-iot-4-click)<br>Even less, but with power LED and B0 (old nRF9160 revision).| ![MIKROE LTE IoT 4 Click](https://cdn1-shop.mikroe.com/img/product/lte-iot-4-click/lte-iot-4-click-large_default-1.jpg) |
+| [MIKROE LTE IoT 4 Click](https://www.mikroe.com/lte-iot-4-click)<br>Even less, but with power LED. If you want to use it, remove the LED or cut the connects to the ground-plane next the LED. | ![MIKROE LTE IoT 4 Click](https://cdn1-shop.mikroe.com/img/product/lte-iot-4-click/lte-iot-4-click-large_default-1.jpg) |
 
 
 ## Required HW-Tools for Thingy:91
@@ -145,7 +145,7 @@ west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git zephyr-c
 ```
 
 from a toolchain-manager-installation, fails with an error message, that a workspace already exists.
-In order to add just this coaps-demo-app and the tinydtls module library to a workspace, open the workspace (for ncs the "ncs" installation folder and change to "v2.5.0" folder there). Here you find a ".west" folder, that contains the west-configuration for the workspace. Rename that ".west" folder into ".west.org" in order to replace that west-configuration by the one from this example. Now execute 
+In order to add just this coaps-demo-app and the tinydtls module library to a workspace, open the workspace (for ncs the "ncs" installation folder and change to "v2.5.1" folder there). Here you find a ".west" folder, that contains the west-configuration for the workspace. Rename that ".west" folder into ".west.org" in order to replace that west-configuration by the one from this example. Now execute 
 
 ```sh
 west init --mr main -m https://github.com/boaks/zephyr-coaps-client.git
@@ -196,25 +196,26 @@ The demo client exchanges encrypted messages with the coap-server. These message
 Demo message:
 
 ```
-4-02:00:11 [d-hh:mm:ss], Thingy:91 v0.7.0+0 (2.4.2), 0*97, 1*1, 2*0, 3*0, failures 0
-HW: B1A, MFW: 1.3.5, IMEI: ???????????????
-!4127 mV 93% (71 days left) battery
-Last code: 2023-09-17T11:32:29Z reboot cmd
-ICCID: ????????????????????, eDRX cycle: off, HPPLMN interval: 10 [h]
-IMSI: ???????????????
-Network: CAT-M1,roaming,Band 20,PLMN 26202,TAC 47490,Cell 52262913,EARFCN 6300
-PDN: ???.???,???.??.??.???,rate-limit 256,86400 s
-PSM: TAU 90000 [s], Act 0 [s], AS-RAI, Released: 1926 ms
-!CE: down: 1, up: 1, RSRP: -119 dBm, CINR: -1 dB, SNR: 0 dB
-Stat: tx 83 kB, rx 7 kB, max 862 B, avg 445 B
-Cell updates 24, Network searchs 2 (12 s), PSM delays 0 (0 s), Restarts 0
-Wakeups 98, 252 s, connected 317 s, asleep 54 s
-!34.74 C
-!48.00 %H
-!973 hPa
+1-01:52:49 [d-hh:mm:ss], Thingy:91 v0.9.101+4, 0*25, 1*1, 2*0, 3*0, failures 0
+NCS: 2.5.1, HW: B0A, MFW: 1.3.6, IMEI: 352656100985434
+!4154 mV 96% (168 days left) battery
+Restart: Reboot
+ICCID: 8935711001078444905F, eDRX cycle: off, HPPLMN interval: 10 [h]
+IMSI: 278773000008810
+Network: CAT-M1,roaming,Band 20,PLMN 26202,TAC 47490,Cell 52470017,EARFCN 6300
+PDN: flolive.net,100.64.153.239,rate-limit 256,86400 s
+PSM: TAU 90000 [s], Act 0 [s], AS-RAI, Released: 2021 ms
+!CE: down: 1, up: 1, RSRP: -108 dBm, CINR: 0 dB, SNR: 1 dB
+Stat: tx 21 kB, rx 2 kB, max 872 B, avg 401 B
+Cell updates 17, Network searchs 3 (326 s), PSM delays 0 (0 s)
+Modem Restarts 0, Sockets 3, DTLS handshakes 1
+Wakeups 25, 93 s, connected 150 s, asleep 0 s
+!22.81 C
+!46.36 %H
+!1002 hPa
 ```
 
-It starts with the up-time in the first line, followed by the label "Thingy:91" and the client's and NCS version. The sent statistic. "`0*97`" := 97 exchanges without retransmission, "`1*1`" := 1 exchange with 1 retransmission finishs that first line. The current exchange is not included in this statistic. The second line contains the harware version of the nRF9160 chip, the modem firmware version, and the IMEI.
+It starts with the up-time in the first line, followed by the label "Thingy:91" and the client's and NCS version. The sent statistic. "`0*25`" := 25 exchanges without retransmission, "`1*1`" := 1 exchange with 1 retransmission finishs that first line. The current exchange is not included in this statistic. The second line contains the harware version of the nRF9160 chip, the modem firmware version, and the IMEI.
 Followed by the line withs the battery status and the lines with information from the SIM-card. In some cases the network details are of interest and the next lines contains that. The last lines of technical informations before the sensor values contains several statistics, e.g. the amount of transfered data and modem restarts.
 
 The demo uses the "echo" resource of the plugtest-server, therefore the response contains just the same message.
