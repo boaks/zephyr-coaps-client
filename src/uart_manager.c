@@ -265,7 +265,6 @@ static void uart_tx_out_flush(void);
 static int uart_tx_out_buf(int c)
 {
 #ifdef CONFIG_LOG_MODE_IMMEDIATE
-   char x = (char)c;
    uart_poll_out(uart_dev, c);
 #else
 
