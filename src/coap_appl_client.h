@@ -44,7 +44,7 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags);
 
 int coap_appl_client_message(const uint8_t** buffer);
 
-enum dtls_retry_strategy coap_appl_client_retry_strategy(int counter, bool dtls);
+int coap_appl_client_retry_strategy(int counter, bool dtls);
 
 int coap_appl_client_init(const char *id);
 

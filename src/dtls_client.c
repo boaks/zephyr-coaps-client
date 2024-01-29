@@ -1397,31 +1397,29 @@ static int dtls_loop(session_t *dst, int flags)
       }
       f = dtls_coap_next_failures();
       if (f > 0) {
-         enum dtls_retry_strategy strategy = coap_appl_client_retry_strategy(f, flags & FLAG_TLS);
-         switch (strategy) {
-            case RETRY_NONE:
-               dtls_info("handle failure %d. new message", f);
-               break;
-            case RETRY_DTLS:
+         int strategy = coap_appl_client_retry_strategy(f, flags & FLAG_TLS);
+         if (strategy) {
+            if (strategy & DTLS_CLIENT_RETRY_STRATEGY_RESTARTS) {
+               dtls_info("Too many failures, reboot");
+               reboot(ERROR_CODE_TOO_MANY_FAILURES, false);
+            }
+            if (strategy & DTLS_CLIENT_RETRY_STRATEGY_DTLS_HANDSHAKE) {
                dtls_info("handle failure %d. new DTLS handshake.", f);
                app_data.dtls_pending = true;
                ++dtls_handshakes;
                dtls_trigger();
-               break;
-            case RETRY_OFFLINE:
-               dtls_info("handle failure %d. switch modem offline.", f);
-               restarting_modem_power_off = false;
-               restarting_modem = true;
-               break;
-            case RETRY_OFF:
+            }
+            if (strategy & DTLS_CLIENT_RETRY_STRATEGY_OFF) {
                dtls_info("handle failure %d. switch modem off.", f);
                restarting_modem_power_off = true;
                restarting_modem = true;
-               break;
-            case RETRY_RESTART:
-               dtls_info("Too many failures, reboot");
-               reboot(ERROR_CODE_TOO_MANY_FAILURES, false);
-               break;
+            } else if (strategy & DTLS_CLIENT_RETRY_STRATEGY_OFFLINE) {
+               dtls_info("handle failure %d. switch modem offline.", f);
+               restarting_modem_power_off = false;
+               restarting_modem = true;
+            }
+         } else {
+            dtls_info("handle failure %d. new message", f);
          }
          if (network_not_found) {
             restarting_modem_power_off = true;
