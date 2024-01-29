@@ -37,6 +37,7 @@
 #define FLAG_REBOOT_LOW_VOLTAGE 8
 #define FLAG_REBOOT 16
 #define FLAG_RESET 32
+#define FLAG_POWER_ON 64
 
 #define WATCHDOG_TIMEOUT_S (60 * 5)
 

@@ -153,6 +153,15 @@ uint32_t appl_reset_cause(int *flags)
       reset_error = hwinfo_get_reset_cause(&cause);
       if (!reset_error) {
          hwinfo_clear_reset_cause();
+         if (!cause) {
+            // the nRF9160 uses 0 (no reset cause) to indicate POR
+            uint32_t supported = 0;
+            hwinfo_get_supported_reset_cause(&supported);
+            if (!(supported & RESET_POR)) {
+               LOG_INF("nRF9160 no reset cause, add POR");
+               cause = RESET_POR;
+            }
+         }
          reset_cause = cause;
       }
    }
@@ -185,6 +194,12 @@ uint32_t appl_reset_cause(int *flags)
             }
          }
       }
+      if (reset_cause & RESET_POR) {
+         LOG_INF("Power-On");
+         if (flags) {
+            *flags |= FLAG_POWER_ON;
+         }
+      }
       if (reset_cause & RESET_WATCHDOG) {
          LOG_INF("WATCHDOG");
       }
@@ -198,9 +213,53 @@ uint32_t appl_reset_cause(int *flags)
          LOG_INF("CPU");
       }
    } else {
-      LOG_INF("No reset cause available.");
+      LOG_INF("none");
    }
    return reset_cause;
+}
+
+static void appl_cause_description_append(uint32_t bit, const char *desc, uint32_t *cause, int *index, char *buf, size_t len)
+{
+   if (cause && *cause & bit) {
+      *cause &= ~bit;
+      *index += snprintf(buf + *index, len - *index, "%s, ", desc);
+   }
+}
+
+static int appl_cause_description(uint32_t cause, char *buf, size_t len)
+{
+   int index = 0;
+
+   if (cause) {
+      appl_cause_description_append(RESET_PIN, "Reset", &cause, &index, buf, len);
+      appl_cause_description_append(RESET_SOFTWARE, "Reboot", &cause, &index, buf, len);
+      appl_cause_description_append(RESET_BROWNOUT, "Brownout", &cause, &index, buf, len);
+      appl_cause_description_append(RESET_POR, "Power-On", &cause, &index, buf, len);
+      appl_cause_description_append(RESET_WATCHDOG, "Watchdog", &cause, &index, buf, len);
+      appl_cause_description_append(RESET_DEBUG, "Debug", &cause, &index, buf, len);
+      appl_cause_description_append(RESET_SECURITY, "Security", &cause, &index, buf, len);
+      appl_cause_description_append(RESET_LOW_POWER_WAKE, "Low-Power", &cause, &index, buf, len);
+      appl_cause_description_append(RESET_CPU_LOCKUP, "CPU", &cause, &index, buf, len);
+      appl_cause_description_append(RESET_PARITY, "Parity", &cause, &index, buf, len);
+      appl_cause_description_append(RESET_HARDWARE, "HW", &cause, &index, buf, len);
+      appl_cause_description_append(RESET_USER, "User", &cause, &index, buf, len);
+      appl_cause_description_append(RESET_TEMPERATURE, "Temperature", &cause, &index, buf, len);
+
+      if (((index - 2) > len) || (cause && (index + 8 > len))) {
+         // buffer overflow, reset output
+         cause = reset_cause;
+         index = 0;
+      }
+      if (cause) {
+         index += snprintf(buf + index, len - index, " 0x%04x", reset_cause);
+      } else if (index > 2) {
+         index -= 2;
+         buf[index] = 0;
+      }
+   } else {
+      index += snprintf(buf + index, len - index, "none");
+   }
+   return index;
 }
 
 int appl_reset_cause_description(char *buf, size_t len)
@@ -208,48 +267,11 @@ int appl_reset_cause_description(char *buf, size_t len)
    int index = 0;
 
    if (atomic_get(&read_reset_cause) && len > 8) {
-      uint32_t cause = reset_cause;
       int error = reset_error;
       if (error) {
          index += snprintf(buf + index, len - index, "%d (%s)", error, strerror(-error));
-      } else if (cause) {
-         if (cause & RESET_PIN) {
-            cause &= ~RESET_PIN;
-            index += snprintf(buf + index, len - index, "Reset, ");
-         }
-         if (cause & RESET_SOFTWARE && index < len) {
-            cause &= ~RESET_SOFTWARE;
-            index += snprintf(buf + index, len - index, "Reboot, ");
-         }
-         if (cause & RESET_WATCHDOG && index < len) {
-            cause &= ~RESET_WATCHDOG;
-            index += snprintf(buf + index, len - index, "Watchdog, ");
-         }
-         if (cause & RESET_DEBUG && index < len) {
-            cause &= ~RESET_DEBUG;
-            index += snprintf(buf + index, len - index, "Debug, ");
-         }
-         if (cause & RESET_LOW_POWER_WAKE && index < len) {
-            cause &= ~RESET_LOW_POWER_WAKE;
-            index += snprintf(buf + index, len - index, "Low-Power, ");
-         }
-         if (cause & RESET_CPU_LOCKUP && index < len) {
-            cause &= ~RESET_CPU_LOCKUP;
-            index += snprintf(buf + index, len - index, "CPU, ");
-         }
-         if (((index - 2) > len) || (cause && (index + 8 > len))) {
-            // buffer overflow, reset output
-            cause = reset_cause;
-            index = 0;
-         }
-         if (cause) {
-            index += snprintf(buf + index, len - index, " 0x%04x", reset_cause);
-         } else if (index > 2) {
-            index -= 2;
-            buf[index] = 0;
-         }
       } else {
-         index += snprintf(buf + index, len - index, "none");
+         index += appl_cause_description(reset_cause, buf, len);
       }
    }
    return index;
@@ -304,16 +326,16 @@ static int sh_cmd_read_restarts(const char *parameter)
 {
    ARG_UNUSED(parameter);
 
-#if 0
    uint32_t supported = 0;
+   int len = 0;
+   char buf[128];
+
+   memset(buf, 0, sizeof(buf));
    hwinfo_get_supported_reset_cause(&supported);
-   LOG_INF("Reset cause supported: %x", supported);
-#endif
+   len = appl_cause_description(supported, buf, sizeof(buf));
+   LOG_INF("Supported  : 0x%04x, %s", supported, buf);
 
    if (atomic_get(&read_reset_cause)) {
-      int len = 0;
-      char buf[128];
-
       memset(buf, 0, sizeof(buf));
       len = appl_reset_cause_description(buf, sizeof(buf));
       LOG_INF("Reset cause: %s", buf);
@@ -328,7 +350,7 @@ SH_CMD(reboot, NULL, "reboot device.", sh_cmd_reboot, NULL, 0);
 SH_CMD(reboots, NULL, "read reboot codes.", sh_cmd_read_reboots, NULL, 0);
 SH_CMD(restarts, NULL, "read restart reasons.", sh_cmd_read_restarts, NULL, 0);
 
-#if defined(CONFIG_ASSERT) && defined(CONFIG_DEBUG)
+#if defined(CONFIG_SH_TEST_CMD)
 static int sh_cmd_fail(const char *parameter)
 {
    ARG_UNUSED(parameter);
@@ -341,6 +363,22 @@ static int sh_cmd_fail(const char *parameter)
    return 0;
 }
 
+static int sh_cmd_kill_stack(const char *parameter)
+{
+   ARG_UNUSED(parameter);
+   char blob[8192];
+   char* p = blob;
+
+   LOG_INF("kill-stack %p", p);
+   k_sleep(K_MSEC(100));
+   memset(p, 0xaa, sizeof(blob));
+   p -= sizeof(blob);
+   LOG_INF("kill-stack %p", p);
+   k_sleep(K_MSEC(100));
+   memset(p, 0xaa, sizeof(blob));
+   return 0;
+}
+
 static int sh_cmd_oops(const char *parameter)
 {
    ARG_UNUSED(parameter);
@@ -348,17 +386,21 @@ static int sh_cmd_oops(const char *parameter)
    return 0;
 }
 
+SH_CMD(fail, NULL, "cause a failure (access *NULL).", sh_cmd_fail, NULL, 0);
+SH_CMD(kill, NULL, "cause a stack failure (corrupts stack).", sh_cmd_kill_stack, NULL, 0);
+SH_CMD(oops, NULL, "cause a k_oops().", sh_cmd_oops, NULL, 0);
+
+#ifdef CONFIG_ASSERT
 static int sh_cmd_assert(const char *parameter)
 {
    ARG_UNUSED(parameter);
    __ASSERT(sh_cmd_assert == NULL, "sh_cmd assert");
    return 0;
 }
-
-SH_CMD(fail, NULL, "cause a failure (access *NULL).", sh_cmd_fail, NULL, 0);
-SH_CMD(oops, NULL, "cause a k_oops().", sh_cmd_oops, NULL, 0);
 SH_CMD(assert, NULL, "cause an assert.", sh_cmd_assert, NULL, 0);
-#endif /* CONFIG_ASSERT && CONFIG_DEBUG */
+#endif
+
+#endif /* CONFIG_SH_TEST_CMD */
 #endif /* CONFIG_SH_CMD */
 
 static int appl_watchdog_init(void)

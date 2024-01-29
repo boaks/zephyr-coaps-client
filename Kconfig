@@ -319,6 +319,17 @@ menu "Extra Functions"
 config SH_CMD
     bool "Enable sh cmd support."
 	default y
+	help
+	  Enable support for sh commands. Provides simplified access to
+	  selected AT commands without using special characters. 
+
+config SH_TEST_CMD
+    bool "Enable sh cmd support."
+    depends on SH_CMD
+	default n
+	help
+	  Enable support for special sh test commands.
+	  Onyl used to test the debugging and fault reporting. 
 
 config UART_MANAGER
     bool "Use UART manager for sh-cmd console."
