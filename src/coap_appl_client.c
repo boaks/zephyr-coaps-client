@@ -244,7 +244,7 @@ int coap_appl_client_parse_data(uint8_t *data, size_t len)
          if (format == COAP_CONTENT_FORMAT_TEXT_PLAIN && payload_len < sizeof(appl_context.message_buf)) {
             memmove(appl_context.message_buf, payload, payload_len);
             appl_context.message_buf[payload_len] = 0;
-            dtls_info("===== %u bytes", (unsigned int) payload_len);
+            dtls_info("===== %u bytes", (unsigned int)payload_len);
             coap_appl_client_decode_text_payload(appl_context.message_buf);
             dtls_info("=====");
          } else {
@@ -440,8 +440,13 @@ int coap_appl_client_prepare_sim_info(char *buf, size_t len, int flags)
       dtls_info("%s", buf);
       start = index + 1;
       if (sim_info.imsi_select_support && sim_info.imsi_select != 0xffff) {
-         index += snprintf(buf + index, len - index, "\nMulti-IMSI: %s (imsi %u)",
-                           sim_info.imsi, sim_info.imsi_select & 0xff);
+         if (sim_info.imsi_select) {
+            index += snprintf(buf + index, len - index, "\nMulti-IMSI: %s (imsi %u)",
+                              sim_info.imsi, sim_info.imsi_select & 0xff);
+         } else {
+            index += snprintf(buf + index, len - index, "\nMulti-IMSI: %s (imsi %u, auto %d s)",
+                              sim_info.imsi, sim_info.imsi_select & 0xff, sim_info.imsi_interval);
+         }
       } else if (sim_info.prev_imsi[0]) {
          index += snprintf(buf + index, len - index, "\nMulti-IMSI: %s, %s, %d s",
                            sim_info.imsi, sim_info.prev_imsi, sim_info.imsi_interval);
