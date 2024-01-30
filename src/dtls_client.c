@@ -492,8 +492,6 @@ void dtls_cmd_trigger(bool led, int mode, const uint8_t *data, size_t len)
    }
 }
 
-#if CONFIG_COAP_SEND_INTERVAL > 0
-
 static void dtls_timer_trigger_fn(struct k_work *work);
 
 static K_WORK_DELAYABLE_DEFINE(dtls_timer_trigger_work, dtls_timer_trigger_fn);
@@ -509,7 +507,6 @@ static void dtls_timer_trigger_fn(struct k_work *work)
       work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(send_interval));
    }
 }
-#endif
 
 static int dtls_coap_inc_failures(void)
 {
