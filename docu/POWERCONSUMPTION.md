@@ -80,6 +80,12 @@ More details about PSM and other power saving functions can be found in:
 
 [In Compliance - Power Savings for Cellular IoT Devices](https://incompliancemag.com/article/power-savings-for-cellular-iot-devices/)
 
+[Haltian - NB-IoT 3GPP release 14. What are the new features?](https://haltian.com/resource/nb-iot-3gpp-release-14-what-are-the-new-features/)
+
+[EMnify - LTE-M vs NB-IoT: 5 Considerations for Your IoT Solutions](https://www.emnify.com/blog/lte-m-nb-iot)
+
+[Telecom Trainer - How does NB-IoT handle mobility of connected devices?](https://www.telecomtrainer.com/how-does-nb-iot-handle-mobility-of-connected-devices/)
+
 ## Summary:
 
 In my experiments, the first question is, which quiescent current does your device have itself. The second one will be, which self-discarging of the battery must be considered. Only if that sum is low enough, the consumption of the message exchanges builds the calculation base for the runtime.
