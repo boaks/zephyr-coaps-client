@@ -16,7 +16,7 @@ manifest:
     - name: ncs
       url-base: https://github.com/nrfconnect
     - name: eclipse
-      url-base: https://github.com/eclipse
+      url-base: https://github.com/boaks
   projects:
     - name: nrf
       repo-path: sdk-nrf
@@ -24,9 +24,10 @@ manifest:
       revision: v2.6.1
       import: true
     - name: tinydtls
+      submodules: true
       repo-path: tinydtls
       remote: eclipse
-      revision: feature/connection_id
+      revision: zephyr_cid_develop
       path: modules/lib/tinydtls
   self:
     path: coaps-client
