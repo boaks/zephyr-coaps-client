@@ -123,7 +123,7 @@ static int modem_sim_get_imsi_sel(unsigned int selected)
    }
 }
 
-static int modem_sim_read_imsi_sel(unsigned int *selected)
+static int modem_sim_read_imsi_sel(bool update, unsigned int *selected)
 {
    char buf[64];
 
@@ -138,7 +138,15 @@ static int modem_sim_read_imsi_sel(unsigned int *selected)
    }
    // SSSSUU 4 digits select, 2 digits used
    buf[res + 6] = 0;
-   return sscanf(buf + res, "%x", selected);
+   res = sscanf(buf + res, "%x", selected);
+   if (res == 1) {
+      k_mutex_lock(&sim_mutex, K_FOREVER);
+      if (sim_info.imsi_select_support) {
+         sim_info.imsi_select = *selected;
+      }
+      k_mutex_unlock(&sim_mutex);
+   }
+   return res;
 }
 
 static int modem_sim_write_imsi_sel(unsigned int select, bool restart, const char *action)
@@ -155,7 +163,7 @@ static int modem_sim_write_imsi_sel(unsigned int select, bool restart, const cha
       if (restart) {
          modem_at_push_off(false);
          modem_at_restore();
-         res = modem_sim_read_imsi_sel(&selected);
+         res = modem_sim_read_imsi_sel(true, &selected);
          if (res == 1) {
             if (select == 0) {
                LOG_INF("SIM %s auto select, imsi %u selected.", action, selected);
@@ -794,10 +802,7 @@ static void modem_sim_read(bool init)
 
    if (imsi_select) {
       unsigned int selected = 0;
-      if (modem_sim_read_imsi_sel(&selected) == 1) {
-         k_mutex_lock(&sim_mutex, K_FOREVER);
-         sim_info.imsi_select = selected;
-         k_mutex_unlock(&sim_mutex);
+      if (modem_sim_read_imsi_sel(true, &selected) == 1) {
          modem_sim_log_imsi_sel(selected);
       }
    }
@@ -907,7 +912,7 @@ int modem_sim_ready(void)
    k_mutex_unlock(&sim_mutex);
    if (0 <= sim_info_select) {
       unsigned int select = 0;
-      if (modem_sim_read_imsi_sel(&select) == 1) {
+      if (modem_sim_read_imsi_sel(false, &select) == 1) {
          int imsi = modem_sim_get_imsi_sel(select);
          int sim_info_imsi = modem_sim_get_imsi_sel(sim_info_select);
          if (0 <= imsi && imsi == sim_info_imsi) {
@@ -989,7 +994,7 @@ static int modem_cmd_imsi_sel(const char *parameter)
    const char *cur = parameter;
    char buf[64];
 
-   int res = modem_sim_read_imsi_sel(&selected);
+   int res = modem_sim_read_imsi_sel(false, &selected);
    if (res == 1) {
       int imsi = atomic_get(&imsi_success);
       cur = parse_next_text(cur, ' ', buf, sizeof(buf));
