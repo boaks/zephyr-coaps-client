@@ -38,9 +38,11 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160) based devic
 | [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/)<br>Requires additional batteries, antennas, and closures to work in the "wild". The design of the feather allows to easily add custom sensors. | ![nRF9160-feather-v5](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
 | [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. The design allows to easily add custom sensors. | ![nRF9160-DK](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK.png) |
 
-The demo works with [ncs-2.5.1](https://github.com/nrfconnect/sdk-nrf/tree/v2.5.1).
+The demo works with [ncs-2.6.0](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.0).
 
 To benefit from the newer modem features, please consider to use the modem firmware [1.3.6](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.6.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
+
+In the meantime it also supports the [nRF9161-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9161-DK) and the [mfw 2.0.0](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/dev-kits/nrf9161-dk/application-firmware/nrf9161dk_mfw-2-0-0_sdk-2-5-0.zip) for that.
 
 Maybe other modems and devices gets supported over the time as well. For some of the nRF9160 based devices porting should not be too hard.
 
@@ -103,7 +105,7 @@ In order to be able to build the demo-client, you need to install the developmen
 ### Install Tools and Tool-Chains
 
 Basically, this requires to follow [Developing with Zephyr](https://docs.zephyrproject.org/latest/develop/index.html).
-Though for now only the [Nordic Semiconductor Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) is supported, it may be easier to go through [Getting started with Thingy:91](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/ug_thingy91_gsg.html). This also required, if you want to update your modem firmware.
+Though for now only the [Nordic Semiconductor Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) is supported, it may be easier to go through [Getting started with Thingy:91](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/ug_thingy91_gsg.html). This is also required, if you want to update your modem firmware.
 
 Please check the proper installation of your tools building some of the provided samples there (e.g. [zephyr/samples/basic/blinky](https://github.com/zephyrproject-rtos/zephyr/tree/main/samples/basic/blinky) or/and [nrf/samples/nrf9160/udp](https://github.com/nrfconnect/sdk-nrf/tree/main/samples/nrf9160/udp)).
 
@@ -289,6 +291,11 @@ pip3 install --user -r bootloader/mcuboot/scripts/requirements.txt
 ```
 
 and retry `west build ... --pristine` again.
+
+### Manually Update the Zephyr SDK 
+
+In some case it may be required to also update the [Zephyr SDK](
+https://docs.zephyrproject.org/latest/develop/getting_started/index.html#install-the-zephyr-sdk). Follow the instructions there and test, if that fixes your issues when updating the NCS version. 
 
 ## Licenses
 

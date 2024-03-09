@@ -118,10 +118,10 @@ enum lte_state_type {
 };
 
 enum rai_mode {
-	RAI_OFF,
-	RAI_NOW, /* intended to uses a extra dummy message! */
-	RAI_LAST,
-	RAI_ONE_RESPONSE
+	RAI_MODE_OFF,
+	RAI_MODE_NOW, /* intended to uses a extra dummy message! */
+	RAI_MODE_LAST,
+	RAI_MODE_ONE_RESPONSE
 };
 
 enum preference_mode {

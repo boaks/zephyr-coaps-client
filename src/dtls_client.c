@@ -363,7 +363,7 @@ static bool restart_modem(bool power_off)
 static void close_socket(dtls_app_data_t *app)
 {
    if (app->fd >= 0) {
-      modem_set_rai_mode(RAI_OFF, app->fd);
+      modem_set_rai_mode(RAI_MODE_OFF, app->fd);
       (void)close(app->fd);
       app->fd = -1;
    }
@@ -396,7 +396,7 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
    // using SO_RAI_NO_DATA requires a destination, for what ever
    connect(app->fd, (struct sockaddr *)&app->destination->addr.sin, sizeof(struct sockaddr_in));
 #endif
-   modem_set_rai_mode(RAI_OFF, app->fd);
+   modem_set_rai_mode(RAI_MODE_OFF, app->fd);
    dtls_info("> %s, reopened socket.", loc);
    return true;
 }
@@ -734,9 +734,9 @@ static void prepare_socket(dtls_app_data_t *app)
 {
    atomic_clear_bit(&general_states, LTE_CONNECTED_SEND);
    if (!app->dtls_pending && !app->no_rai && !lte_power_on_off) {
-      modem_set_rai_mode(app->no_response ? RAI_LAST : RAI_ONE_RESPONSE, app->fd);
+      modem_set_rai_mode(app->no_response ? RAI_MODE_LAST : RAI_MODE_ONE_RESPONSE, app->fd);
    } else {
-      modem_set_rai_mode(RAI_OFF, app->fd);
+      modem_set_rai_mode(RAI_MODE_OFF, app->fd);
    }
 }
 
@@ -1697,7 +1697,7 @@ static int dtls_loop(session_t *dst, int flags)
             }
             if (!lte_power_on_off && !app_data.no_rai &&
                 (app_data.request_state == NONE || app_data.request_state == WAIT_SUSPEND)) {
-               modem_set_rai_mode(RAI_NOW, app_data.fd);
+               modem_set_rai_mode(RAI_MODE_NOW, app_data.fd);
             }
             if (app_data.request_state == NONE &&
                 (flags & FLAG_TLS) &&
@@ -1879,6 +1879,23 @@ SH_CMD(interval, NULL, "send interval.", sh_cmd_send_interval, sh_cmd_send_inter
 SH_CMD(restart, NULL, "restart device.", sh_cmd_restart, NULL, 0);
 #endif /* CONFIG_SH_CMD */
 
+#ifdef CONFIG_ALL_POWER_OFF
+int main(void)
+{
+   nrf_modem_lib_init();
+   lte_lc_power_off();
+   power_manager_init();
+#ifdef CONFIG_MOTION_SENSOR
+   accelerometer_init(NULL);
+#endif /* CONFIG_MOTION_SENSOR */
+   power_manager_suspend(true);
+   // power_manager_3v3(false);
+   // power_manager_1v8(false);
+   k_sleep(K_MSEC(1000));
+   NRF_REGULATORS->SYSTEMOFF = 1;
+   return 0;
+}
+#else /* CONFIG_ALL_POWER_OFF */
 int main(void)
 {
    int config = 0;
@@ -1999,15 +2016,4 @@ int main(void)
    dtls_loop(&dst, flags);
    return 0;
 }
-
-int main_(void)
-{
-   modem_power_off();
-   power_manager_init();
-   power_manager_suspend(true);
-   // power_manager_3v3(false);
-   // power_manager_1v8(false);
-   k_sleep(K_MSEC(1000));
-   NRF_REGULATORS->SYSTEMOFF = 1;
-   return 0;
-}
+#endif /* CONFIG_ALL_POWER_OFF */

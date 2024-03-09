@@ -28,6 +28,9 @@
 #include "parse.h"
 #include "ui.h"
 
+/* auto generated header file during west build */
+#include "ncs_version.h"
+
 LOG_MODULE_REGISTER(MODEM, CONFIG_MODEM_LOG_LEVEL);
 
 #if defined(CONFIG_NRF_MODEM_LIB)
@@ -97,7 +100,7 @@ static int64_t scan_time = 0;
 #define CP_RAI_MAX_DELAY 500
 #define AS_RAI_MAX_DELAY 3000
 
-static volatile enum rai_mode rai_current_mode = RAI_OFF;
+static volatile enum rai_mode rai_current_mode = RAI_MODE_OFF;
 static volatile int rai_time = -1;
 
 #define SUSPEND_DELAY_MILLIS 100
@@ -1082,12 +1085,18 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       if (err > 0) {
          LOG_INF("hw: %s", buf);
          int index = strstart(buf, "nRF9160 SICA ", true);
+         if (!index) {
+            index = strstart(buf, "nRF9161 LACA ", true);
+         }
          strncpy(modem_info.version, &buf[index], sizeof(modem_info.version) - 1);
       }
       err = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CGMR");
       if (err > 0) {
          LOG_INF("rev: %s", buf);
          int index = strstart(buf, "mfw_nrf9160_", true);
+         if (!index) {
+            index = strstart(buf, "mfw_nrf91x1_", true);
+         }
          strncpy(modem_info.firmware, &buf[index], sizeof(modem_info.firmware) - 1);
       }
       err = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CGSN");
@@ -1304,6 +1313,8 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 #endif
 #endif
 
+#if NCS_VERSION_NUMBER < 0x20600
+      /* deprecated with NCS 2.6.0 */
       err = lte_lc_init();
       if (err) {
          if (err == -EFAULT) {
@@ -1315,6 +1326,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          }
          return err;
       }
+#endif
 
 #ifdef CONFIG_SMS
       if (modem_sms_callback_id >= 0) {
@@ -2132,13 +2144,13 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
       int rai = -1;
       const char *desc = "";
       /** Control Plane Release Assistance Indication  */
-      if (mode == RAI_OFF) {
+      if (mode == RAI_MODE_OFF) {
          rai = 0;
          desc = "RAI disable";
-      } else if (mode == RAI_ONE_RESPONSE) {
+      } else if (mode == RAI_MODE_ONE_RESPONSE) {
          rai = 3;
          desc = "RAI one response";
-      } else if (mode == RAI_LAST) {
+      } else if (mode == RAI_MODE_LAST) {
          rai = 4;
          desc = "RAI no response";
       }
@@ -2157,22 +2169,25 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
    int option = -1;
    const char *desc = "";
 
+#if NCS_VERSION_NUMBER < 0x20600
+      /* deprecated with NCS 2.6.0 */
+
    switch (mode) {
-      case RAI_NOW:
+      case RAI_MODE_NOW:
 #ifdef CONFIG_UDP_USE_CONNECT
          option = SO_RAI_NO_DATA;
          desc = "now";
 #endif
          break;
-      case RAI_LAST:
+      case RAI_MODE_LAST:
          option = SO_RAI_LAST;
          desc = "last";
          break;
-      case RAI_ONE_RESPONSE:
+      case RAI_MODE_ONE_RESPONSE:
          option = SO_RAI_ONE_RESP;
          desc = "one response";
          break;
-      case RAI_OFF:
+      case RAI_MODE_OFF:
       default:
          if (rai_current_mode != SO_RAI_ONGOING) {
             option = SO_RAI_ONGOING;
@@ -2193,10 +2208,49 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
          }
       }
    }
-#else
+#else /* NCS since 2.6.0*/
+   switch (mode) {
+      case RAI_MODE_NOW:
+#ifdef CONFIG_UDP_USE_CONNECT
+         option = RAI_NO_DATA;
+         desc = "now";
+#endif
+         break;
+      case RAI_MODE_LAST:
+         option = RAI_LAST;
+         desc = "last";
+         break;
+      case RAI_MODE_ONE_RESPONSE:
+         option = RAI_ONE_RESP;
+         desc = "one response";
+         break;
+      case RAI_MODE_OFF:
+      default:
+         if (rai_current_mode != RAI_ONGOING) {
+            option = RAI_ONGOING;
+            desc = "off";
+         }
+         break;
+   }
+   if (option >= 0) {
+      if (socket < 0) {
+         err = -EIO;
+      } else {
+         err = setsockopt(socket, SOL_SOCKET, SO_RAI, &option, sizeof(option));
+         if (err) {
+            LOG_WRN("RAI sockopt %d/%s, error %d (%s)", option, desc, errno, strerror(errno));
+         } else {
+            LOG_INF("RAI sockopt %d/%s, success", option, desc);
+            rai_current_mode = option;
+         }
+      }
+   }
+
+#endif /* NCS 2.6.0 */
+#else /* !CONFIG_CP_RAI_ON && !CONFIG_AS_RAI_ON */
    (void)mode;
    LOG_INF("No AS nor CP RAI mode configured!");
-#endif
+#endif /* CONFIG_CP_RAI_ON || CONFIG_AS_RAI_ON */
    return err;
 }
 

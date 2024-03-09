@@ -532,7 +532,7 @@ static int modem_cmd_rai(const char *config)
    } else if (!stricmp("on", value)) {
       modem_lock_rai(false);
    } else if (!stricmp("off", value)) {
-      modem_set_rai_mode(RAI_OFF, -1);
+      modem_set_rai_mode(RAI_MODE_OFF, -1);
       modem_lock_rai(true);
    } else {
       res = -EINVAL;
