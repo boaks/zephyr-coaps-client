@@ -13,7 +13,7 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <zephyr/random/rand32.h>
+#include <zephyr/random/random.h>
 
 #include "coap_client.h"
 #include "dtls_debug.h"

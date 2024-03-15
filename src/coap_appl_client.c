@@ -13,7 +13,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <zephyr/random/rand32.h>
 
 /* auto generated header file during west build */
 #include "ncs_version.h"
