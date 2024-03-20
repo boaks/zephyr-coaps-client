@@ -13,7 +13,12 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <version.h>
+#if KERNELVERSION < 0x3050000
+#include <zephyr/random/rand32.h>
+#else
 #include <zephyr/random/random.h>
+#endif
 
 #include "coap_client.h"
 #include "dtls_debug.h"
