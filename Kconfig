@@ -651,6 +651,10 @@ config ENVIRONMENT_HISTORY_INTERVAL_S
 
 endif
 
+config DISTANCE_SENSOR
+    bool
+    default y if VL53L1X || VL53L0X
+
 config DISABLE_REALTIME_CLOCK
 	bool "Disable unused realtime clock (nRF9160 feather only!)"
 	default y

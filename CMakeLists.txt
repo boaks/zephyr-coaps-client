@@ -64,6 +64,11 @@ target_sources_ifdef(CONFIG_BATTERY_ADC app PRIVATE src/battery_adc.c)
 
 target_sources_ifdef(CONFIG_NAU7802_SCALE app PRIVATE src/nau7802.c)
 
+if (CONFIG_DISTANCE_SENSOR)
+        target_sources(app PRIVATE src/distance_sensor.c)
+#        target_compile_definitions(app PUBLIC USE_I2C_2V8)
+endif()
+
 if (CONFIG_BME680_BSEC)
         set(bsec_version "bsec_1-4-9-2_generic_release")
         set(bsec_dir "${ZEPHYR_NRF_MODULE_DIR}/ext/${bsec_version}")

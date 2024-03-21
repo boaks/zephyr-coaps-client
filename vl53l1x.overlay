@@ -1,0 +1,42 @@
+/*
+ * Copyright (c) 2024 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+
+/*
+ * Usage: 
+ *
+ * west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- \
+ *    -DOVERLAY_CONFIG="vl53l1x-prj.conf" -DDTC_OVERLAY_FILE="boards/nrf9160dk_nrf9160_ns.overlay;vl53l1x.overlay" 
+ *
+ * west build -d build_feather_nrf9160_ns -b circuitdojo_feather_nrf9160_ns --pristine -- \
+ *    -DOVERLAY_CONFIG="vl53l1x-prj.conf" -DDTC_OVERLAY_FILE="boards/nrf9160dk_nrf9160_ns.overlay;vl53l1x.overlay" 
+ */ 
+
+
+/ {
+	/* Map the devices to the aliases of the application. */ 
+	aliases {	
+
+		/* alias for sensor with SENSOR_CHAN_DISTANCE channel */
+		distance-sensor = &vl53l1x;
+	};
+	
+};
+
+&sensor_i2c {
+
+	vl53l1x: vl53l1x@29 {
+		compatible = "st,vl53l1x";
+		reg = <0x29>;
+ 		int-gpios = <&gpio0 20 0>;
+	};
+};
