@@ -181,6 +181,14 @@ west flash
 
 See also [Updating Firmware Through External Debug Probe](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/ug_thingy91_gsg.html#updating-firmware-through-external-debug-probe).
 
+In some case, e.g. a firmware update with an notebook in the wild, it may be easier to use
+
+```sh
+nrfjprog --program build/zephyr/merged.hex --chiperase --verify -r
+```
+
+without `west`.
+
 ## Run It
 
 After flashing, the `Thingy:91` starts to blink slow (purple) and after attaching to the mobile-network it switches to green. If the LED is switched off, the device is also connected with the plugtest-server of the [Eclipse/Californium Sandbox](https://github.com/eclipse-californium/californium#interop-server).

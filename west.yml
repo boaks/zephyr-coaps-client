@@ -21,7 +21,7 @@ manifest:
     - name: nrf
       repo-path: sdk-nrf
       remote: ncs
-      revision: v2.6.0
+      revision: v2.6.1
       import: true
     - name: tinydtls
       repo-path: tinydtls
