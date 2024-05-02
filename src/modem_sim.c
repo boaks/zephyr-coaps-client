@@ -425,7 +425,8 @@ static int modem_sim_read_forbidden_list(char *buf, size_t buf_len, char *plmns,
 #define SERVICE_42_BIT 2
 #define SERVICE_43_BIT 4
 #define SERVICE_71_BIT 8
-#define SERVICE_96_BIT 16
+#define SERVICE_74_BIT 16
+#define SERVICE_96_BIT 32
 
 static int modem_sim_read_with_retry(int retries, char *buf, size_t len, const char *skip, const char *cmd)
 {
@@ -637,6 +638,8 @@ static void modem_sim_read(bool init)
          service = check_service(service, SERVICE_43_BIT, table, res, 43);
          /* Equivalent Home PLMN */
          service = check_service(service, SERVICE_71_BIT, table, res, 71);
+         /* Last R(egistered)PLMN Selection Indication */
+         service = check_service(service, SERVICE_74_BIT, table, res, 74);
          /* Non Access Stratum Configuration */
          service = check_service(service, SERVICE_96_BIT, table, res, 96);
       }
@@ -750,6 +753,28 @@ static void modem_sim_read(bool init)
             }
          } else {
             LOG_INF("CRSM no operator plmn sel");
+         }
+      }
+   }
+   if (service & SERVICE_74_BIT) {
+      /* 0x6FDC, Serv. 74, Last RPLMN Selection Indication, 1 */
+      res = modem_at_cmd(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28636,0,0,1");
+      if (res < 0) {
+         LOG_INF("Failed to read CRSM last reg. plmn sel. ind.");
+         return;
+      } else {
+         LOG_DBG("CRSM last reg. plmn sel. ind.: %s", buf);
+         start = strstart(buf, CRSM_SUCCESS, false);
+         if (start) {
+            // successful read
+            int indication = (int)strtol(&buf[start], NULL, 16);
+            const char* desc = "unknown";
+            if (indication == 0) {
+               desc = "last registered plmn";
+            } else {
+               desc = "home of last registered plmn";
+            }
+            LOG_INF("CRSM last reg. plmn sel. ind.: %d\n => %s", indication, desc);
          }
       }
    }
@@ -1016,15 +1041,23 @@ static int modem_cmd_imsi_sel(const char *parameter)
                return -EINVAL;
             }
          }
-         if (stricmp(buf, "auto")) {
+         if (stricmp(buf, "auto") == 0) {
+            /* res is already 1 */
+            select = 0;
+         } else if (stricmp(buf, "next") == 0) {
+            /* res is already 1 */
+            select = 0xFE;
+         } else {
             res = sscanf(buf, "%u", &select);
+            if (res == 1) {
+               if (select > 10) {
+                  LOG_INF("imsi select %u is out of range [0..10].", select);
+                  return -EINVAL;
+               }
+            }
          }
-         /* if "auto" res is already 1 and select is 0 */
          if (res == 1) {
-            if (select > 255) {
-               LOG_INF("imsi select %u is out of range [0..255].", select);
-               return -EINVAL;
-            } else if (select == (selected >> 8)) {
+            if (select == (selected >> 8)) {
                LOG_INF("SIM imsi %u already selected.", select);
             } else {
                res = modem_sim_write_imsi_sel(select, true, force ? "force" : "test");
@@ -1054,7 +1087,8 @@ static void modem_cmd_imsi_sel_help(void)
    LOG_INF("> help imsi:");
    LOG_INF("  imsi           : show current IMSI selection.");
    LOG_INF("  imsi auto      : select IMSI automatically. Switching IMSI on timeout (300s).");
-   LOG_INF("  imsi <n>       : select IMSI. Values 0 to 255.");
+   LOG_INF("  imsi next      : select next IMSI.");
+   LOG_INF("  imsi <n>       : select IMSI. Values 0 to 10.");
    LOG_INF("  imsi 0         : select IMSI automatically. Switching IMSI on timeout (300s).");
    LOG_INF("  imsi 1         : select IMSI 1. Fallback to latest successful IMSI.");
    LOG_INF("  imsi n         : select IMSI. The largest value depends on the SIM card");
