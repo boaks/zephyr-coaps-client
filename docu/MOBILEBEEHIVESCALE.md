@@ -6,7 +6,7 @@
 
 # Mobile Beehive Scale 
 
-| ![Mobile-Beehive-Scale](./beehive.png) | ![Circuit Dojo, nRF9160 feather v5](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
+| ![Mobile-Beehive-Scale](./beehives.jpg) | ![Sendbox](./sendbox.jpg) |
 | :- | - |
 
 
