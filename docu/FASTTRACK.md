@@ -4,7 +4,7 @@
 
 # Fast Track
 
-It's not recommended, but you may start with using the [pre-build firmware images](../prebuild/). 
+If you only want to use for testing cellular coverage, you may start with using the [pre-build firmware images](../prebuild/). 
 
 ## Install 
 
@@ -20,4 +20,4 @@ Using [nRF Connect Programmer](https://infocenter.nordicsemi.com/index.jsp?topic
 
 ## Run It
 
-Go back to [README](../README.md#run-it).
+Go to [Build Track](./BUILDTRACK.md#run-it).
