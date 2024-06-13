@@ -13,6 +13,9 @@
 
 cmake_minimum_required(VERSION 3.20.0)
 
+# Partition Manager file
+set(PM_STATIC_YML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/configuration/pm_static.yml)
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 
 project(coaps-client)
@@ -226,6 +229,8 @@ set(BUILD_SUMUP10 "Modem Trace enabled.")
 else()
 set(BUILD_SUMUP10 "Modem Trace disabled.")
 endif()
+
+message(STATUS "PM_STATIC_YML_FILE: ${PM_STATIC_YML_FILE}")
 
 add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP1}"
