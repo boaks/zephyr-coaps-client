@@ -1074,7 +1074,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       lte_initial_config = config;
       lte_state_change_handler = state_handler;
       k_mutex_unlock(&lte_mutex);
-#ifdef CONFIG_NRF_MODEM_LIB_TRACE_ENABLED
+#ifdef CONFIG_NRF_MODEM_LIB_TRACE
       LOG_INF("Modem trace enabled");
 #else
       LOG_INF("Modem trace disabled");

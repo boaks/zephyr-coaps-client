@@ -221,6 +221,12 @@ else()
 set(BUILD_SUMUP9 "Build without UART manager.")
 endif()
 
+if (CONFIG_NRF_MODEM_LIB_TRACE)
+set(BUILD_SUMUP10 "Modem Trace enabled.")
+else()
+set(BUILD_SUMUP10 "Modem Trace disabled.")
+endif()
+
 add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP1}"
                    COMMAND echo "${BUILD_SUMUP2}"
@@ -231,6 +237,7 @@ add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP7}"
                    COMMAND echo "${BUILD_SUMUP8}"
                    COMMAND echo "${BUILD_SUMUP9}"
+                   COMMAND echo "${BUILD_SUMUP10}"
                    COMMAND echo "Build with network search timeout ${CONFIG_MODEM_SEARCH_TIMEOUT}s"
                    COMMAND echo "${CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION}"
                    )
