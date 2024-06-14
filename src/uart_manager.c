@@ -92,7 +92,7 @@ static K_WORK_DEFINE(uart_xmodem_ready_work, uart_xmodem_process_fn);
 
 static inline bool uart_update_pending(void)
 {
-   return atomic_test_bit(&uart_state, UART_PENDING);
+   return atomic_test_bit(&uart_state, UART_UPDATE);
 }
 
 #else /* CONFIG_UART_UPDATE */

@@ -235,6 +235,8 @@ For Android both [Serial Terminal 1.43](#android) from [Kai Morich](http://www.k
 
 For Microsoft Windows [Tera Term](https://ttssh2.osdn.jp/index.html.en) supports XMODEM, for Linux [gtkterm](https://github.com/Jeija/gtkterm) and the unix `sx` shell command will do it.
 
+#### Firmware update with Android
+
 The update is started using the `update` command.
 
 ![start update](./serial_bluetooth_terminal_update_start.jpg)
@@ -252,5 +254,43 @@ Select `Xmodem 1k` as protocol and the `app_update.bin` as file. Press `OK` and 
 Sometimes the 10 seconds are too short to select the file. Then just open the file dialog via the menu and "Upload File" submenu. Select the file at rest and choose the `Xmodem 1k` as protocol. Press `OK` and then `CANCEL` in the "Upload File" field, which appears at the top below the tools-line. That will set this values as default and the next time the file dialog is shown you may just press `OK`.   
 
 During the upload the [Serial Terminal 1.43](#android) shows some `^F` indicating the progress. Finally, when all succeeds, the device reboots to apply the update. The reboot will take a while copying the firmware from the download slot to the active slot and the old firmware to that download slot. After that the device continues to start the new application firmware. To prevent the device from being bricked, the device verifies the application firmware with the first successful data exchange. If the device reboots again before that, the old firmware is actived again. For that, don't apply a firmware update with low network coverage.
+
+#### Firmware update with Linux
+
+Updating the firmware with linux is tricky. It requires two applications, [gtkterm](https://github.com/Jeija/gtkterm) and the unix `sx` shell command. Both will access the serial device, e.g. "/dev/ttyACM0". 
+
+Connect the device via USB. Then start the `gtkterm` and open the "Configuration/Port" dialog.
+
+![gtkterm_serial_configuration](./gtkterm_serial_port_config.png)
+
+Select the serial port the device is connected to and also 115200 as "Baud Rate". Close the dialog again.
+Then select "Configuration/Local Echo" and "Configuration/CR-LF-Automatic". Test the configuration with the command "at" ot "dev".
+
+![gtkterm](./gtkterm.png)
+
+Then open a command shell on the linux PC. Prepare to start the `xmodem` application with:
+
+```
+sx -k build_nrf9160dk_nrf9160_ns/zephyr/app_update.bin < /dev/ttyACM0 > /dev/ttyACM0
+```
+
+`-k` enables to use blocks with 1024 bytes instead of 128 bytes. The path to the "app_update.bin" follows. To use the serial/USB connecion redirect stdout/stdin with `< /dev/ttyACM0 > /dev/ttyACM0`
+
+Once `sx` executes, the `gtkterm` must not be used, because that may cause conflicts on the serial device. Therefore first start the update on the device in the `gtkterm` with `update`:
+
+![gtkterm update](./gtkterm_update.png)
+
+and then within the 10s the `sx` command on the linux command shell.
+
+```
+sx -k build_nrf9160dk_nrf9160_ns/zephyr/app_update.bin < /dev/ttyACM0 > /dev/ttyACM0
+Sende build_nrf9160dk_nrf9160_ns/zephyr/app_update.bin, 2395 Blöcke:Starten Sie nun Ihr XMODEM-Empfangsprogramm.
+Ymodem Sektoren/Kilobytes gesendet: 1928/241k
+```
+
+When the transfer starts, `sx` will report the progress and also when finished. And the device will report "ready" as well. 
+
+![gtkterm update ready](./gtkterm_update_ready.png)
+
 
 ** !!! Under Construction !!! **
