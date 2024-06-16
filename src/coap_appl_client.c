@@ -28,6 +28,7 @@
 #include "power_manager.h"
 
 #include "appl_diagnose.h"
+#include "appl_settings.h"
 #include "appl_storage.h"
 #include "appl_storage_config.h"
 #include "appl_time.h"
@@ -60,7 +61,6 @@
 static COAP_CONTEXT(appl_context, 1280);
 
 static uint8_t coap_read_etag[COAP_TOKEN_MAX_LEN + 1];
-static const char *coap_client_id;
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
@@ -988,7 +988,7 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
    if (err < 0) {
       return err;
    }
-   err = coap_appl_client_add_uri_query_param(&request, "id", coap_client_id);
+   err = coap_appl_client_add_uri_query_param(&request, "id", dtls_get_psk_identity());
    if (err < 0) {
       return err;
    }
@@ -1107,12 +1107,6 @@ int coap_appl_client_retry_strategy(int counter, bool dtls)
    return DTLS_CLIENT_RETRY_STRATEGY_RESTARTS;
 }
 
-int coap_appl_client_init(const char *id)
-{
-   coap_client_id = id;
-   return id ? strlen(id) : 0;
-}
-
 #ifdef CONFIG_SH_CMD
 
 static char cmd_buf[512];
@@ -1137,10 +1131,6 @@ static int sh_cmd_env(const char *parameter)
 }
 
 SH_CMD(net, "", "read network info.", sh_cmd_net, NULL, 0);
-#ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_MODEM
-SH_CMD(dev, "", "read device info.", sh_cmd_dev, NULL, 0);
-#else
 SH_CMD(dev, NULL, "read device info.", sh_cmd_dev, NULL, 0);
-#endif
 SH_CMD(env, NULL, "read environment sensor.", sh_cmd_env, NULL, 0);
 #endif /* CONFIG_SH_CMD */
