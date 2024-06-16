@@ -46,6 +46,4 @@ int coap_appl_client_message(const uint8_t** buffer);
 
 int coap_appl_client_retry_strategy(int counter, bool dtls);
 
-int coap_appl_client_init(const char *id);
-
 #endif /* COAP_APPL_CLIENT_H */

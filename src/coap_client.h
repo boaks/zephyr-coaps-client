@@ -25,12 +25,12 @@ typedef enum { PARSE_NONE = 0,
                PARSE_RESPONSE,
                PARSE_CON_RESPONSE } parse_result_t;
 
-#define COAP_CONTEXT(N, S)    \
-   struct N ## _coap_context {      \
-      uint32_t token;         \
-      uint16_t mid;           \
-      uint16_t message_len;   \
-      uint8_t message_buf[S]; \
+#define COAP_CONTEXT(N, S)     \
+   struct N ## _coap_context { \
+      uint32_t token;          \
+      uint16_t mid;            \
+      uint16_t message_len;    \
+      uint8_t message_buf[S];  \
    } N = {0,0,0}
 
 int coap_client_decode_content_format(const struct coap_option *option);

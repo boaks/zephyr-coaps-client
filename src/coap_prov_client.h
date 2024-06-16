@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Achim Kraus CloudCoap.net
+ * Copyright (c) 2024 Achim Kraus CloudCoap.net
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -11,15 +11,15 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-#ifndef DTLS_CREDENTIALS_H
-#define DTLS_CREDENTIALS_H
+#ifndef COAP_PROV_CLIENT_H
+#define COAP_PROC_CLIENT_H
 
-#include "dtls.h"
+#include "coap_client.h"
 
-void dtls_credentials_init_psk(const char *imei);
+int coap_prov_client_parse_data(uint8_t *data, size_t len);
 
-void dtls_credentials_init_handler(dtls_handler_t* handler);
+int coap_prov_client_prepare_post(char *buf, size_t len);
 
-const char* dtls_credentials_get_psk_identity(void);
+int coap_prov_client_message(const uint8_t** buffer);
 
-#endif /* DTLS_CREDENTIALS_H */
+#endif /* COAP_PROV_CLIENT_H */

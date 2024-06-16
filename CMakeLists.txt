@@ -30,6 +30,7 @@ target_sources(app PRIVATE
 	src/io_job_queue.c
 	src/ui.c
 	src/appl_diagnose.c
+	src/appl_settings.c
 	src/appl_storage.c
 	src/appl_storage_config.c
 	src/appl_time.c
@@ -38,10 +39,11 @@ target_sources(app PRIVATE
 	src/modem_sim.c
 	src/modem_at.c
 	src/dtls_client.c
-	src/dtls_credentials.c
 	src/coap_client.c
 	src/coap_appl_client.c
 	)
+
+target_sources_ifdef(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING app PRIVATE src/coap_prov_client.c)
 
 target_sources_ifdef(CONFIG_SH_CMD app PRIVATE src/sh_cmd.c)
 

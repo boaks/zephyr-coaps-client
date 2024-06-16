@@ -26,17 +26,17 @@ struct sh_cmd_entry {
    const char *help;
    const sh_cmd_handler_t handler;
    const sh_cmd_help_handler_t help_handler;
-   int send;
+   int protect;
 };
 
-#define SH_CMD(command, _at, _text, _handler, _help, _send)              \
+#define SH_CMD(command, _at, _text, _handler, _help, _protect)           \
    static const STRUCT_SECTION_ITERABLE(sh_cmd_entry, cmd_##command) = { \
        .cmd = #command,                                                  \
        .at_cmd = _at,                                                    \
        .help = _text,                                                    \
        .handler = _handler,                                              \
        .help_handler = _help,                                            \
-       .send = _send,                                                    \
+       .protect = _protect,                                              \
    }
 
 #define BIT_SH_CMD_EXECUTING 0
@@ -53,12 +53,15 @@ int sh_cmd_schedule(const char *cmd, const k_timeout_t delay);
 int sh_cmd_append(const char *cmd, const k_timeout_t delay);
 
 int sh_busy(void);
+int sh_protected(void);
+
 #else
 
 #define sh_cmd_execute(cmd) 0
 #define sh_cmd_schedule(cmd, delay) 0
 #define sh_cmd_append(cmd, delay) 0;
 #define sh_busy() 0
+#define sh_protected() 0
 
 #endif
 

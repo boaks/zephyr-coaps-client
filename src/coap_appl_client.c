@@ -28,6 +28,7 @@
 #include "power_manager.h"
 
 #include "appl_diagnose.h"
+#include "appl_settings.h"
 #include "appl_storage.h"
 #include "appl_storage_config.h"
 #include "appl_time.h"
@@ -61,7 +62,6 @@
 static COAP_CONTEXT(appl_context, 1280);
 
 static uint8_t coap_read_etag[COAP_TOKEN_MAX_LEN + 1];
-static const char *coap_client_id;
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
@@ -266,9 +266,11 @@ int coap_appl_client_parse_data(uint8_t *data, size_t len)
    return res;
 }
 
+#ifdef CONFIG_COAP_QUERY_KEEP_ENABLE
+
 static int coap_appl_client_add_uri_query(struct coap_packet *request, const char *query)
 {
-   if (query && strlen(query) > 0) {
+   if (query && query[0]) {
       int err;
 
       err = coap_packet_append_option(request, COAP_OPTION_URI_QUERY,
@@ -284,7 +286,7 @@ static int coap_appl_client_add_uri_query(struct coap_packet *request, const cha
 
 static int coap_appl_client_add_uri_query_param(struct coap_packet *request, const char *query, const char *value)
 {
-   if (query && strlen(query) > 0 && value && strlen(value) > 0) {
+   if (query && query[0] && value && value[0]) {
       char buf[32];
       snprintf(buf, sizeof(buf), "%s=%s", query, value);
       return coap_appl_client_add_uri_query(request, buf);
@@ -292,16 +294,7 @@ static int coap_appl_client_add_uri_query_param(struct coap_packet *request, con
    return 0;
 }
 
-#if defined(CONFIG_COAP_QUERY_READ_SUBRESOURCE_ENABLE) || defined(CONFIG_COAP_QUERY_WRITE_SUBRESOURCE_ENABLE)
-static int coap_appl_client_add_uri_query_param_opt(struct coap_packet *request, const char *query, const char *value)
-{
-   if (value && strlen(value) > 0) {
-      return coap_appl_client_add_uri_query_param(request, query, value);
-   } else {
-      return coap_appl_client_add_uri_query(request, query);
-   }
-}
-#endif
+#endif /* CONFIG_COAP_QUERY_KEEP_ENABLE */
 
 int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
 {
@@ -872,13 +865,10 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
    int err;
    int index = 0;
    int start = 0;
+   bool read_etag = false;
    uint8_t *token = (uint8_t *)&appl_context.token;
+   char value[MAX_SETTINGS_VALUE_LENGTH];
    struct coap_packet request;
-
-#ifdef CONFIG_COAP_QUERY_DELAY_ENABLE
-   static int query_delay = 0;
-   char query[30];
-#endif
 
    appl_context.message_len = 0;
 
@@ -958,10 +948,12 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
       return err;
    }
 
-   err = coap_packet_set_path(&request, CONFIG_COAP_RESOURCE);
-   if (err < 0) {
-      dtls_warn("Failed to encode CoAP URI-PATH option, %d", err);
-      return err;
+   if (appl_settings_get_coap_path(value, sizeof(value))) {
+      err = coap_packet_set_path(&request, value);
+      if (err < 0) {
+         dtls_warn("Failed to encode CoAP URI-PATH '%s' option, %d", value, err);
+         return err;
+      }
    }
 
    err = coap_append_option_int(&request, COAP_OPTION_CONTENT_FORMAT,
@@ -971,74 +963,35 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
       return err;
    }
 
-#ifdef CONFIG_COAP_QUERY_DELAY_ENABLE
-   err = snprintf(query, sizeof(query), "delay=%d", query_delay);
-   dtls_info("CoAP request, %s", query);
+   if (appl_settings_get_coap_query(value, sizeof(value))) {
+      const char *read = NULL;
+      err = coap_packet_set_path(&request, value);
+      if (err < 0) {
+         dtls_warn("Failed to encode CoAP URI-QUERY '%s' option, %d", value, err);
+         return err;
+      }
+      read = strstr(value, "read");
+      if (read > value) {
+         char c = *(read - 1);
+         if (c == '?' || c == '&') {
+            c = *(read + 4);
+            read_etag = c == 0 || c == '&' || c == '=';
+         }
+      }
+   }
 
-   err = coap_packet_append_option(&request, COAP_OPTION_URI_QUERY,
-                                   (uint8_t *)query,
-                                   strlen(query));
-   if (err < 0) {
-      dtls_warn("Failed to encode CoAP URI-QUERY option '%s', %d", query, err);
-      return err;
-   }
-   if (query_delay > 30000) {
-      query_delay = 0;
-   } else {
-      query_delay += 2000;
-   }
-#endif /* CONFIG_COAP_QUERY_DELAY_ENABLE */
-
-#ifdef CONFIG_COAP_QUERY_RESPONSE_LENGTH
-   err = coap_appl_client_add_uri_query_param(&request, "rlen", CONFIG_COAP_QUERY_RESPONSE_LENGTH);
-   if (err < 0) {
-      return err;
-   }
-#endif /* CONFIG_COAP_QUERY_RESPONSE_LENGTH */
 #ifdef CONFIG_COAP_QUERY_KEEP_ENABLE
    err = coap_appl_client_add_uri_query(&request, "keep");
    if (err < 0) {
       return err;
    }
-   err = coap_appl_client_add_uri_query_param(&request, "id", coap_client_id);
-   if (err < 0) {
-      return err;
+   if (appl_settings_get_device_identity(value, sizeof(value))) {
+      err = coap_appl_client_add_uri_query_param(&request, "id", value);
+      if (err < 0) {
+         return err;
+      }
    }
 #endif /* CONFIG_COAP_QUERY_KEEP_ENABLE */
-#if CONFIG_COAP_QUERY_ACK_ENABLE
-   err = coap_appl_client_add_uri_query(&request, "ack");
-   if (err < 0) {
-      return err;
-   }
-#endif /* CONFIG_COAP_QUERY_ACK_ENABLE */
-
-#ifdef CONFIG_COAP_QUERY_SERIES_ENABLE
-   err = coap_appl_client_add_uri_query(&request, "series");
-   if (err < 0) {
-      return err;
-   }
-#endif /* CONFIG_COAP_QUERY_SERIES_ENABLE */
-
-#ifdef CONFIG_COAP_QUERY_FORWARD_ENABLE
-   err = coap_appl_client_add_uri_query(&request, "forward");
-   if (err < 0) {
-      return err;
-   }
-#endif /* CONFIG_COAP_QUERY_FORWARD_ENABLE */
-
-#ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE_ENABLE
-   err = coap_appl_client_add_uri_query_param_opt(&request, "read", CONFIG_COAP_QUERY_READ_SUBRESOURCE);
-   if (err < 0) {
-      return err;
-   }
-#endif /* CONFIG_COAP_QUERY_READ_SUBRESOURCE_ENABLE */
-
-#ifdef CONFIG_COAP_QUERY_WRITE_SUBRESOURCE_ENABLE
-   err = coap_appl_client_add_uri_query_param_opt(&request, "write", CONFIG_COAP_QUERY_WRITE_SUBRESOURCE);
-   if (err < 0) {
-      return err;
-   }
-#endif /* CONFIG_COAP_QUERY_WRITE_SUBRESOURCE_ENABLE */
 
    if (flags & COAP_SEND_FLAG_NO_RESPONSE) {
       err = coap_append_option_int(&request, COAP_OPTION_NO_RESPONSE,
@@ -1054,21 +1007,21 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
       return err;
    }
 
-#ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE_ENABLE
-   if (coap_read_etag[0]) {
-      err = coap_packet_append_option(&request, CUSTOM_COAP_OPTION_READ_ETAG,
-                                      &coap_read_etag[1],
-                                      coap_read_etag[0]);
-      if (err < 0) {
-         dtls_warn("Failed to encode CoAP read-etag option, %d", err);
-         return err;
+   if (read_etag) {
+      if (coap_read_etag[0]) {
+         err = coap_packet_append_option(&request, CUSTOM_COAP_OPTION_READ_ETAG,
+                                         &coap_read_etag[1],
+                                         coap_read_etag[0]);
+         if (err < 0) {
+            dtls_warn("Failed to encode CoAP read-etag option, %d", err);
+            return err;
+         } else {
+            dtls_info("Send CoAP read-etag option (%u bytes)", coap_read_etag[0]);
+         }
       } else {
-         dtls_info("Send CoAP read-etag option (%u bytes)", coap_read_etag[0]);
+         dtls_info("Send CoAP no read-etag option");
       }
-   } else {
-      dtls_info("Send CoAP no read-etag option");
    }
-#endif /* CONFIG_COAP_QUERY_READ_SUBRESOURCE_ENABLE */
 
    if (send_interval > 0) {
       err = coap_append_option_int(&request, CUSTOM_COAP_OPTION_INTERVAL,
@@ -1125,12 +1078,6 @@ int coap_appl_client_retry_strategy(int counter, bool dtls)
       }
    }
    return DTLS_CLIENT_RETRY_STRATEGY_RESTARTS;
-}
-
-int coap_appl_client_init(const char *id)
-{
-   coap_client_id = id;
-   return id ? strlen(id) : 0;
 }
 
 #ifdef CONFIG_SH_CMD

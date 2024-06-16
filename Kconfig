@@ -14,7 +14,11 @@
 config ALL_POWER_OFF
 	bool "Switchign off, only test quiescent current"
 
-menu "CoAP tinyDTLS Settings"
+config COAP_SERVICE
+	bool "Enable CoAP/DTLS 1.2 CID service settings for provisioning image"
+
+if (COAP_SERVICE)
+menu "CoAP/DTLS 1.2 CID Service"
 
 config COAP_SERVER_HOSTNAME
 	string "CoAP server hostname."
@@ -28,7 +32,7 @@ config COAP_SERVER_PORT
 	int "CoAP server port number (UDP/TCP)."
 	default "5683"
 
-config COAPS_SERVER_PORT
+config COAP_SERVER_SECURE_PORT
 	int "CoAP server port number (DTLS/TLS)."
 	default "5684"
 
@@ -43,22 +47,78 @@ config DTLS_PSK_IDENTITY
 	   Don't use this on production or other security
 	   relevant use-cases. 
 
+config DTLS_PSK_SECRET_GENERATE
+	bool "CoAP/DTLS generate PSK secret."
+	help
+	   Generate PSK secret. Requires provisioning
+	   of the generate secret, either manual or
+	   automatically.
+
 config DTLS_PSK_SECRET
 	string "CoAP/DTLS PSK secret."
-	default ".fornium"
+	default "'.fornium'"
+	depends on !DTLS_PSK_SECRET_GENERATE
 	help
-	   PSK secret. The default only work with 
-	   Californium's PlugTestServer, and the "cali.*"
-	   wildcard identity.
+	   PSK secret. Plain text in "''", hexadecimal with
+	   prefix ":0x", or base64 as "". 
+	   The default only works with Californium's 
+	   PlugTestServer, and the "cali.*" wildcard identity.
 	   Don't use this on production or other security
 	   relevant use-cases. 
 
-config DTLS_PSK_SECRET_HEX
-	bool "CoAP/DTLS PSK secret in hexadecimal."
+config DTLS_ECDSA_PRIVATE_KEY_GENERATE
+	bool "CoAP/DTLS generate ECDSA/SECP256R1 device key pair."
 	help
-	   Enable, if the PSK secret is hexadecimal encoded,
-	   e.g. "2E666F726E69756D" or "2E 66 6F 72 6E 69 75 6D"
-	   for ".fornium". 
+	   Generate ECDSA device key pair. Requires provisioning
+	   of the generate secret, either manual or automatically.
+
+config DTLS_ECDSA_PRIVATE_KEY
+	string "CoAP/DTLS ECDSA/SECP256R1 device private key."
+	depends on !DTLS_ECDSA_PRIVATE_KEY_GENERATE
+	help
+	   ECDSA device private key. Only SECP256R1 is supported.
+	   The private key is provided plain (32 bytes) without
+	   the algorithm ids. The public key is not provided, it
+	   will be derived from the private key. Hexadecimal 
+	   encoded with prefix ":0x", or base64 as "". 
+
+config DTLS_ECDSA_TRUSTED_PUBLIC_KEY
+	string "CoAP/DTLS ECDSA/SECP256R1 trusted server public key."
+	help
+	   ECDSA trusted server public key. concated public_x and public_y key.
+	   Either encoded as ASN.1 (including algorith id) or plain. Hexadecimal 
+	   encoded with prefix ":0x", or base64 as "". 
+
+config DTLS_PROVISIONING_GROUP
+	string "CoAP/DTLS provisioning group"
+	default "auto"
+	help
+	   Device group for provisioning. 
+
+config DTLS_PROVISIONING_DOMAIN
+	string "CoAP/DTLS provisioning domain"
+	help
+	   Domain for provisioning. 
+
+config DTLS_ECDSA_AUTO_PROVISIONING
+	bool "Enable auto provisioning."
+	help
+	   Enable device to execute auto provisioning. Uses 
+	   DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY to register
+	   the device credentials at the server. 
+
+config DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY
+	string "CoAP/DTLS ECDSA/SECP256R1 private key for auto provisioning."
+	depends on DTLS_ECDSA_AUTO_PROVISIONING
+	help
+	   ECDSA device private key for provisioning. 
+	   Only SECP256R1 is supported. Hexadecimal encoded with 
+	   prefix ":0x", or base64 as "".
+
+endmenu
+endif
+
+menu "CoAP/DTLS Settings"
 
 config DTLS_ALWAYS_HANDSHAKE
 	bool "Use a DTLS handshake for request."
@@ -111,43 +171,20 @@ config COAP_RESOURCE
 	string "CoAP resource - defaults to Californium's echo resource"
 	default "echo"
 
-config COAP_QUERY_DELAY_ENABLE
-	bool "Enable CoAP query - delay=%d (delay response)"
-	default n
-
-config COAP_QUERY_RESPONSE_LENGTH
-	string "Enable CoAP query - rlen=%d (response length)"
+config COAP_QUERY
+	string "CoAP query - enable parameter"
+	help
+		Supported:
+		delay=<n> (delay response by n sec.)
+		rlen=<n> (response length n bytes.)
+		ack (use separate response.)
+		series (enable series function of s3-proxy.)
+		forward (enable http-proxy forward.)
+		read[=<subpath>] (read sub-resource.)
+		write[=<subpath>] (write sub-resource.)
 
 config COAP_QUERY_KEEP_ENABLE
 	bool "Enable CoAP query - keep (keep payload)"
-	default y
-
-config COAP_QUERY_ACK_ENABLE
-	bool "Enable CoAP query - ack (request separate response)"
-	default n
-
-config COAP_QUERY_SERIES_ENABLE
-	bool "Enable CoAP query - series (keep payload series)"
-	default n
-
-config COAP_QUERY_READ_SUBRESOURCE_ENABLE
-	bool "Enable CoAP query - read sub-resource"
-	default n
-
-config COAP_QUERY_READ_SUBRESOURCE
-	string "Use CoAP query - read sub-resource"
-	depends on COAP_QUERY_READ_SUBRESOURCE_ENABLE
-
-config COAP_QUERY_WRITE_SUBRESOURCE_ENABLE
-	bool "Enable CoAP query - write sub-resource"
-	default n
-
-config COAP_QUERY_WRITE_SUBRESOURCE
-	string "Use CoAP query - write sub-resource"
-	depends on COAP_QUERY_WRITE_SUBRESOURCE_ENABLE
-
-config COAP_QUERY_FORWARD_ENABLE
-	bool "Enable CoAP query - (http) forward"
 	default n
 
 endmenu
@@ -321,8 +358,6 @@ endchoice # PROTOCOL_MODE
 
 endmenu
 
-menu "Extra Functions"
-
 config SH_CMD
     bool "Enable sh cmd support."
 	default y
@@ -337,6 +372,21 @@ config SH_TEST_CMD
 	help
 	  Enable support for special sh test commands.
 	  Onyl used to test the debugging and fault reporting. 
+
+config CMD_UNLOCK
+	bool "Enable unlock/protected cmd"
+    depends on SH_CMD
+	default y
+
+if (CMD_UNLOCK)
+
+config CMD_UNLOCK_PASSWORD
+	string "Unlock cmd password."
+	default "unlock"
+
+endif
+
+menu "Extra Functions"
 
 config UART_MANAGER
     bool "Use UART manager for sh-cmd console."

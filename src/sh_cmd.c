@@ -19,6 +19,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include "appl_settings.h"
 #include "dtls_client.h"
 #include "modem.h"
 #include "modem_at.h"
@@ -26,6 +27,8 @@
 #include "sh_cmd.h"
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
+
+#define CONFIG_SH_CMD_UNLOCK_SECONDS 60
 
 #define CONFIG_SH_CMD_THREAD_PRIO 10
 #define CONFIG_SH_CMD_MAX_LEN 512
@@ -50,8 +53,10 @@ static char sh_cmd_buf[CONFIG_SH_CMD_MAX_LEN];
 static char at_response_buf[CONFIG_SH_AT_RESPONSE_MAX_LEN];
 
 #define BIT_SH_CMD_QUEUED 3
+#define BIT_SH_CMD_PROTECTED 4
+#define SH_CMD_PROTECTED BIT(BIT_SH_CMD_PROTECTED)
 
-static atomic_t sh_cmd_state = ATOMIC_INIT(0);
+static atomic_t sh_cmd_state = ATOMIC_INIT(SH_CMD_PROTECTED);
 
 static K_WORK_DELAYABLE_DEFINE(sh_cmd_schedule_work, sh_cmd_execute_fn);
 static K_WORK_DEFINE(sh_cmd_execute_work, sh_cmd_execute_fn);
@@ -287,15 +292,25 @@ static int sh_cmd_help(const char *parameter)
    STRUCT_SECTION_FOREACH(sh_cmd_entry, e)
    {
       if (e->help) {
-         const char *details = "";
+         int index = 0;
+         char details[6] = "(";
+
          if (e->at_cmd) {
-            if (e->help_handler) {
-               details = "(*?)";
-            } else {
-               details = "(*)";
-            }
-         } else if (e->help_handler) {
-            details = "(?)";
+            details[++index] = '*';
+         }
+#ifdef CONFIG_CMD_UNLOCK
+         if (e->protect) {
+            details[++index] = '#';
+         }
+#endif /* CONFIG_CMD_UNLOCK */
+         if (e->help_handler) {
+            details[++index] = '?';
+         }
+         if (index) {
+            details[++index] = ')';
+            details[++index] = 0;
+         } else {
+            details[0] = 0;
          }
          LOG_INF("  %-*s: %s%s", sh_cmd_max_length, e->cmd, e->help, details);
          ++counter;
@@ -305,6 +320,9 @@ static int sh_cmd_help(const char *parameter)
       }
    }
    LOG_INF("  %-*s: AT-cmd is used, maybe busy.", sh_cmd_max_length, "*");
+#ifdef CONFIG_CMD_UNLOCK
+   LOG_INF("  %-*s: protected <cmd>, requires 'unlock' ahead.", sh_cmd_max_length, "#");
+#endif /* CONFIG_CMD_UNLOCK */
    LOG_INF("  %-*s: help <cmd> available.", sh_cmd_max_length, "?");
    if (full) {
       STRUCT_SECTION_FOREACH(sh_cmd_entry, e)
@@ -326,7 +344,42 @@ static void sh_cmd_help_help(void)
 
 SH_CMD(help, NULL, NULL, sh_cmd_help, sh_cmd_help_help, 0);
 
-static int sh_cmd(const char *cmd_buf)
+#ifdef CONFIG_CMD_UNLOCK
+
+static int64_t sh_cmd_unlocked = 0;
+
+static int sh_cmd_unlock(const char *parameter)
+{
+   if (appl_settings_unlock(parameter)) {
+      LOG_INF("unlocked for %ds.", CONFIG_SH_CMD_UNLOCK_SECONDS);
+      sh_cmd_unlocked = k_uptime_get() + (CONFIG_SH_CMD_UNLOCK_SECONDS * MSEC_PER_SEC);
+      atomic_clear_bit(&sh_cmd_state, BIT_SH_CMD_PROTECTED);
+   } else {
+      LOG_WRN("failed to unlock.");
+      sh_cmd_unlocked = 0;
+      atomic_set_bit(&sh_cmd_state, BIT_SH_CMD_PROTECTED);
+   }
+   return 0;
+}
+
+static void sh_cmd_unlock_help(void)
+{
+   LOG_INF("> help unlock:");
+   LOG_INF("  unlock <password>  : unlock protected cmds for %ds.", CONFIG_SH_CMD_UNLOCK_SECONDS);
+}
+
+static int sh_cmd_lock(const char *parameter)
+{
+   sh_cmd_unlocked = 0;
+   atomic_set_bit(&sh_cmd_state, BIT_SH_CMD_PROTECTED);
+   return 0;
+}
+
+SH_CMD(unlock, NULL, "unlock protected cmds.", sh_cmd_unlock, sh_cmd_unlock_help, 0);
+SH_CMD(lock, NULL, "lock protected cmds.", sh_cmd_lock, NULL, 0);
+#endif /* CONFIG_CMD_UNLOCK */
+
+static int sh_cmd(const char *cmd_buf, bool insecure)
 {
    int res = 0;
    int i;
@@ -342,6 +395,23 @@ static int sh_cmd(const char *cmd_buf)
          LOG_INF("%s doesn't support parameter '%s'!", cmd->cmd, &cmd_buf[i]);
          return 1;
       }
+#ifdef CONFIG_CMD_UNLOCK
+      {
+         int64_t now = k_uptime_get();
+         if (now > sh_cmd_unlocked) {
+            // expired
+            atomic_set_bit(&sh_cmd_state, BIT_SH_CMD_PROTECTED);
+            if (cmd->protect && insecure) {
+               LOG_INF("%s is protected!", cmd->cmd);
+               return 1;
+            }
+         } else {
+            // extend timeout
+            sh_cmd_unlocked = now + (CONFIG_SH_CMD_UNLOCK_SECONDS * MSEC_PER_SEC);
+         }
+      }
+#endif /* CONFIG_CMD_UNLOCK */
+
       if (cmd->at_cmd) {
          if (cmd->at_cmd[0] && !cmd->handler) {
             /* simple AT cmd*/
@@ -394,8 +464,10 @@ static void sh_cmd_execute_fn(struct k_work *work)
 
    if (&sh_cmd_schedule_work.work == work) {
       LOG_INF("...> %s", sh_cmd_buf);
+      res = sh_cmd(sh_cmd_buf, false);
+   } else {
+      res = sh_cmd(sh_cmd_buf, true);
    }
-   res = sh_cmd(sh_cmd_buf);
    sh_cmd_result(res);
 }
 
@@ -406,7 +478,7 @@ static void sh_cmd_wait_fn(struct k_work *work)
       if (sh_cmd) {
          uint32_t delay_ms = (uint32_t)k_ticks_to_ms_floor64(sh_cmd->delay.ticks);
          strncpy(sh_cmd_buf, sh_cmd->data, sizeof(sh_cmd_buf) - 1);
-         LOG_INF("Cmd '%s' scheduled (%u ms).", sh_cmd_buf, delay_ms);
+         LOG_INF("> cmd '%s' scheduled (%u ms).", sh_cmd_buf, delay_ms);
          k_work_reschedule_for_queue(&sh_cmd_work_q, &sh_cmd_schedule_work, sh_cmd->delay);
          k_heap_free(&sh_cmd_heap, sh_cmd);
       } else {
@@ -416,7 +488,7 @@ static void sh_cmd_wait_fn(struct k_work *work)
          atomic_clear_bit(&sh_cmd_state, BIT_SH_CMD_EXECUTING);
       }
    } else if (work) {
-      LOG_INF("Cmd busy, still waiting.");
+      LOG_INF("> cmd busy, still waiting.");
    }
 }
 
@@ -457,11 +529,11 @@ int sh_cmd_append(const char *cmd, const k_timeout_t delay)
       strcpy(item->data, cmd);
       k_fifo_put(&sh_cmd_fifo, item);
       atomic_set_bit(&sh_cmd_state, BIT_SH_CMD_QUEUED);
-      LOG_DBG("Cmd appended.");
+      LOG_DBG("> cmd appended.");
       sh_cmd_wait_fn(NULL);
       return 0;
    } else {
-      LOG_INF("Cmd-queue full, cmd dropped.");
+      LOG_INF("> cmd-queue full, cmd dropped.");
    }
    return -EBUSY;
 }
@@ -469,6 +541,15 @@ int sh_cmd_append(const char *cmd, const k_timeout_t delay)
 int sh_busy(void)
 {
    return atomic_get(&sh_cmd_state) & (SH_CMD_EXECUTING | AT_CMD_PENDING);
+}
+
+int sh_protected(void)
+{
+#ifdef CONFIG_CMD_UNLOCK
+   return atomic_get(&sh_cmd_state) & SH_CMD_PROTECTED;
+#else  /* CONFIG_CMD_UNLOCK */
+   return 0;
+#endif /* CONFIG_CMD_UNLOCK */
 }
 
 static int sh_cmd_init(void)
