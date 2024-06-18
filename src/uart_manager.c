@@ -95,7 +95,7 @@ static inline bool uart_update_pending(void)
    return atomic_test_bit(&uart_state, UART_UPDATE);
 }
 
-#else /* CONFIG_UART_UPDATE */
+#else  /* CONFIG_UART_UPDATE */
 static inline bool uart_update_pending(void)
 {
    return false;
@@ -103,7 +103,7 @@ static inline bool uart_update_pending(void)
 
 static inline void uart_xmodem_handler(const char *buffer, size_t len)
 {
-   // empty   
+   // empty
 }
 #endif /* CONFIG_UART_UPDATE */
 
@@ -260,21 +260,20 @@ static int uart_tx_out(uint8_t *data, size_t length)
    return length;
 }
 
-static void uart_tx_out_flush(void);
-
 static int uart_tx_out_buf(int c)
 {
 #ifdef CONFIG_LOG_MODE_IMMEDIATE
    uart_poll_out(uart_dev, c);
 #else
-
-   if (atomic_get(&uart_tx_buf_offset) == sizeof(uart_tx_buf)) {
-      uart_tx_out_flush();
-   }
    if (atomic_test_bit(&uart_state, UART_PANIC)) {
       uart_poll_out(uart_dev, c);
    } else {
       int idx = atomic_inc(&uart_tx_buf_offset);
+      if (idx == (sizeof(uart_tx_buf))) {
+         uart_tx_out(uart_tx_buf, idx);
+         atomic_set(&uart_tx_buf_offset, 1);
+         idx = 0;
+      }
       uart_tx_buf[idx] = (uint8_t)c;
    }
 #endif
