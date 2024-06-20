@@ -1176,7 +1176,7 @@ SH_CMD(sim, "", "read SIM-card info.", modem_cmd_sim, NULL, 0);
 SH_CMD(imsi, "", "select IMSI.", modem_cmd_imsi_sel, modem_cmd_imsi_sel_help, 0);
 SH_CMD(iccid, "", "read ICCID.", modem_cmd_iccid, NULL, 0);
 SH_CMD(banclr, "", "clear forbidden PLMN list (SIM-card).", modem_cmd_banclr, NULL, 0);
-SH_CMD(ban, "", "add PLMN to forbidden list (SIM-card).", modem_cmd_ban, modem_cmd_ban_help, 0);
+SH_CMD(ban, "", "set PLMNs to forbidden list (SIM-card).", modem_cmd_ban, modem_cmd_ban_help, 0);
 
 #endif /* CONFIG_SH_CMD */
 #endif /* CONFIG_NRF_MODEM_LIB */
