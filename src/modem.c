@@ -56,6 +56,8 @@ static int lte_initial_config = 0;
 static bool lte_mode_init = true;
 static enum lte_lc_system_mode lte_initial_mode = LTE_LC_SYSTEM_MODE_LTEM;
 
+static bool lte_mfw2 = false;
+
 static bool initialized = 0;
 
 static bool lte_signal_ready = false;
@@ -1090,6 +1092,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          }
          strncpy(modem_info.version, &buf[index], sizeof(modem_info.version) - 1);
       }
+      lte_mfw2 = false;
       err = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CGMR");
       if (err > 0) {
          LOG_INF("rev: %s", buf);
@@ -1098,6 +1101,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
             index = strstart(buf, "mfw_nrf91x1_", true);
          }
          strncpy(modem_info.firmware, &buf[index], sizeof(modem_info.firmware) - 1);
+         lte_mfw2 = modem_info.firmware[0] >= '2';
       }
       err = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CGSN");
       if (err < 0) {
@@ -1123,22 +1127,42 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       if (!lte_mode_init && !lte_force_lte_m && !lte_force_nb_iot) {
          lte_lc_system_mode_set(lte_initial_mode, CONFIG_LTE_MODE_PREFERENCE_VALUE);
       }
-#ifdef CONFIG_AS_RAI_ON
-      err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%REL14FEAT=0,1,0,0,0");
-      if (err > 0) {
-         LOG_INF("rel14feat AS RAI: %s", buf);
-      }
-#else
-      err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%REL14FEAT=0,0,0,0,0");
-      if (err > 0) {
-         LOG_INF("rel14feat none: %s", buf);
-      }
-#endif
-      err = modem_at_cmd(buf, sizeof(buf), "%REL14FEAT: ", "AT%REL14FEAT?");
-      if (err > 0) {
-         LOG_INF("rel14feat: %s", buf);
-      }
 
+      if (lte_mfw2) {
+         err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%FEACONF=0,1,1");
+         if (err > 0) {
+            LOG_INF("Set feaconv HPPLMN: %s", buf);
+         }
+         err = modem_at_cmd(buf, sizeof(buf), "%FEACONF: ", "AT%FEACONF=1,1");
+         if (err > 0) {
+            LOG_INF("Get feaconv HPPLMN: %s", buf);
+         }
+         err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%FEACONF=0,3,1");
+         if (err > 0) {
+            LOG_INF("Set feaconv PLMN sel: %s", buf);
+         }
+         err = modem_at_cmd(buf, sizeof(buf), "%FEACONF: ", "AT%FEACONF=1,3");
+         if (err > 0) {
+            LOG_INF("Get feaconv PLMN sel: %s", buf);
+         }
+      }
+      else {
+#ifdef CONFIG_AS_RAI_ON
+         err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%REL14FEAT=0,1,0,0,0");
+         if (err > 0) {
+            LOG_INF("rel14feat AS RAI: %s", buf);
+         }
+#else
+         err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%REL14FEAT=0,0,0,0,0");
+         if (err > 0) {
+            LOG_INF("rel14feat none: %s", buf);
+         }
+#endif
+         err = modem_at_cmd(buf, sizeof(buf), "%REL14FEAT: ", "AT%REL14FEAT?");
+         if (err > 0) {
+            LOG_INF("rel14feat: %s", buf);
+         }
+      }
       err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%XCONNSTAT=1");
       if (err > 0) {
          LOG_INF("stat: %s", buf);
@@ -1209,13 +1233,15 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       }
 #endif
 
-      err = modem_at_cmd(buf, sizeof(buf), "%XRAI: ", "AT%XRAI=0");
-      if (err < 0) {
-         LOG_WRN("Failed to disable control plane RAI, err %d", err);
-      } else {
+      if (!lte_mfw2) {
+         err = modem_at_cmd(buf, sizeof(buf), "%XRAI: ", "AT%XRAI=0");
+         if (err < 0) {
+            LOG_WRN("Failed to disable control plane RAI, err %d", err);
+         } else {
 #ifdef CONFIG_CP_RAI_ON
-         LOG_INF("Control plane RAI initial disabled");
+            LOG_INF("Control plane RAI initial disabled");
 #endif
+         }
       }
 
 #ifdef CONFIG_AS_RAI_ON
@@ -2170,7 +2196,7 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
    const char *desc = "";
 
 #if NCS_VERSION_NUMBER < 0x20600
-      /* deprecated with NCS 2.6.0 */
+   /* deprecated with NCS 2.6.0 */
 
    switch (mode) {
       case RAI_MODE_NOW:
@@ -2247,7 +2273,7 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
    }
 
 #endif /* NCS 2.6.0 */
-#else /* !CONFIG_CP_RAI_ON && !CONFIG_AS_RAI_ON */
+#else  /* !CONFIG_CP_RAI_ON && !CONFIG_AS_RAI_ON */
    (void)mode;
    LOG_INF("No AS nor CP RAI mode configured!");
 #endif /* CONFIG_CP_RAI_ON || CONFIG_AS_RAI_ON */

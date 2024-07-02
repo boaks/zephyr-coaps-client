@@ -38,6 +38,7 @@
 #include "global.h"
 #include "io_job_queue.h"
 #include "modem.h"
+#include "modem_at.h"
 #include "modem_sim.h"
 #include "parse.h"
 #include "power_manager.h"
@@ -262,20 +263,30 @@ static int dtls_low_voltage(const k_timeout_t timeout)
    return true;
 }
 
-static void reboot(int error, bool factoryReset)
+static void restart(int error, bool factoryReset)
 {
+   int res;
+
    // write error code, reboot in 120s
    appl_reboot(error, K_SECONDS(120));
 
    atomic_set_bit(&general_states, PM_PREVENT_SUSPEND);
    dtls_power_management();
    ui_led_op(LED_COLOR_RED, LED_BLINKING);
-   modem_sim_reset(false);
-   modem_power_off();
-   dtls_info("> modem off");
-   if (factoryReset) {
-      modem_factory_reset();
+
+   res = modem_at_lock_no_warn(K_MSEC(2000));
+   if (!res) {
+      modem_sim_reset(false);
+      modem_power_off();
+      if (factoryReset) {
+         modem_factory_reset();
+      }
+      dtls_info("> modem switched off-");
+      modem_at_unlock();
+   } else {
+      dtls_info("> modem busy, not switched off.");
    }
+
    ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    ui_led_op(LED_COLOR_RED, LED_SET);
@@ -292,18 +303,18 @@ static void reboot(int error, bool factoryReset)
    appl_reboot(error, K_NO_WAIT);
 }
 
-static void check_reboot(void)
+static void check_restart(void)
 {
    if (trigger_duration) {
-      // Thingy:91 and nRF9160 feather will reboot
-      // nRF9160-DK reboots with button2 also pressed
+      // Thingy:91 and nRF9160 feather will restart
+      // nRF9160-DK restart with button2 also pressed
       int ui = ui_config();
       if (ui < 0) {
-         dtls_info("> modem reboot / factory reset");
-         reboot(ERROR_CODE_MANUAL_TRIGGERED, true);
+         dtls_info("> modem restart / factory reset");
+         restart(ERROR_CODE_MANUAL_TRIGGERED, true);
       } else if (ui & 2) {
-         dtls_info("> modem reboot");
-         reboot(ERROR_CODE_MANUAL_TRIGGERED, false);
+         dtls_info("> modem restart");
+         restart(ERROR_CODE_MANUAL_TRIGGERED, false);
       }
       trigger_duration = 0;
    }
@@ -325,7 +336,7 @@ static int get_socket_error(dtls_app_data_t *app)
 static bool restart_modem(bool power_off)
 {
    watchdog_feed();
-   check_reboot();
+   check_restart();
 
    dtls_info("> modem restart");
    atomic_set_bit(&general_states, PM_PREVENT_SUSPEND);
@@ -341,7 +352,7 @@ static bool restart_modem(bool power_off)
    ui_led_op(LED_COLOR_ALL, LED_CLEAR);
    k_sleep(K_MSEC(2000));
    if (dtls_low_voltage(K_HOURS(24))) {
-      reboot(ERROR_CODE_LOW_VOLTAGE, false);
+      restart(ERROR_CODE_LOW_VOLTAGE, false);
    }
    dtls_info("> modem restarting ...");
    modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), false);
@@ -386,9 +397,9 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
 
    app->fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
    if (app->fd < 0) {
-      dtls_warn("> %s, reopen UDP socket failed, %d, errno %d (%s), reboot",
+      dtls_warn("> %s, reopen UDP socket failed, %d, errno %d (%s), restart",
                 loc, app->fd, errno, strerror(errno));
-      reboot(ERROR_CODE(ERROR_CODE_OPEN_SOCKET, errno), false);
+      restart(ERROR_CODE(ERROR_CODE_OPEN_SOCKET, errno), false);
    }
    ++sockets;
    modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
@@ -1170,7 +1181,7 @@ static int dtls_network_searching(const k_timeout_t timeout)
       if (time > timeout_ms) {
          if (atomic_test_bit(&general_states, LTE_LOW_VOLTAGE)) {
             if (dtls_low_voltage(K_NO_WAIT)) {
-               reboot(ERROR_CODE_LOW_VOLTAGE, false);
+               restart(ERROR_CODE_LOW_VOLTAGE, false);
             }
          }
          modem_read_network_info(&info.net_info, false);
@@ -1189,7 +1200,7 @@ static int dtls_network_searching(const k_timeout_t timeout)
       }
       if (atomic_test_bit(&general_states, LTE_LOW_VOLTAGE)) {
          if (dtls_low_voltage(timeout)) {
-            reboot(ERROR_CODE_LOW_VOLTAGE, false);
+            restart(ERROR_CODE_LOW_VOLTAGE, false);
          }
       }
       if (trigger != NO_SEARCH) {
@@ -1299,7 +1310,7 @@ static int dtls_loop(session_t *dst, int flags)
       dtls_context = dtls_new_context(&app_data);
       if (!dtls_context) {
          dtls_emerg("cannot create dtls context");
-         reboot(ERROR_CODE_INIT_NO_DTLS, false);
+         restart(ERROR_CODE_INIT_NO_DTLS, false);
       }
       dtls_credentials_init_handler(&cb);
       dtls_set_handler(dtls_context, &cb);
@@ -1347,7 +1358,7 @@ static int dtls_loop(session_t *dst, int flags)
          if (k_uptime_get() > ((flags & FLAG_REBOOT_1) ? (4 * MSEC_PER_HOUR) : MSEC_PER_DAY)) {
             // no initial_success for 4 hours / 1 day => reboot
             dtls_info("> No initial success, reboot%s", (flags & FLAG_REBOOT_1) ? " 1" : " N");
-            reboot(ERROR_CODE_INIT_NO_SUCCESS, true);
+            restart(ERROR_CODE_INIT_NO_SUCCESS, true);
          }
       }
 
@@ -1398,7 +1409,7 @@ static int dtls_loop(session_t *dst, int flags)
          if (strategy) {
             if (strategy & DTLS_CLIENT_RETRY_STRATEGY_RESTARTS) {
                dtls_info("Too many failures, reboot");
-               reboot(ERROR_CODE_TOO_MANY_FAILURES, false);
+               restart(ERROR_CODE_TOO_MANY_FAILURES, false);
             }
             if (strategy & DTLS_CLIENT_RETRY_STRATEGY_DTLS_HANDSHAKE) {
                dtls_info("handle failure %d. new DTLS handshake.", f);
@@ -1870,13 +1881,13 @@ static void sh_cmd_send_interval_help(void)
 static int sh_cmd_restart(const char *parameter)
 {
    ARG_UNUSED(parameter);
-   reboot(ERROR_CODE_CMD, true);
+   restart(ERROR_CODE_CMD, true);
    return 0;
 }
 
 SH_CMD(send, NULL, "send message.", sh_cmd_send, sh_cmd_send_help, 0);
 SH_CMD(interval, NULL, "send interval.", sh_cmd_send_interval, sh_cmd_send_interval_help, 0);
-SH_CMD(restart, NULL, "restart device.", sh_cmd_restart, NULL, 0);
+SH_CMD(restart, NULL, "try to switch off modem and restart.", sh_cmd_restart, NULL, 0);
 #endif /* CONFIG_SH_CMD */
 
 #ifdef CONFIG_ALL_POWER_OFF
@@ -1999,7 +2010,7 @@ int main(void)
    if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), true) != 0) {
       appl_ready = true;
       if (dtls_network_searching(K_MINUTES(CONFIG_MODEM_SEARCH_TIMEOUT_REBOOT))) {
-         reboot(ERROR_CODE_INIT_NO_LTE, false);
+         restart(ERROR_CODE_INIT_NO_LTE, false);
       }
    }
    appl_ready = true;

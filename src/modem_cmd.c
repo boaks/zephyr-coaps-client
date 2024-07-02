@@ -45,17 +45,32 @@ static bool modem_is_plmn(const char *value)
    return !value[len] && 5 <= len && len <= 6;
 }
 
+static void cmd_resp_callback(const char *at_response)
+{
+   LOG_INF("modem cmd =>> %s", at_response);
+}
+
+static void cmd_resp_callback_send(const char *at_response)
+{
+   LOG_INF("modem cmd =>> %s", at_response);
+   if (!strncmp(at_response, "OK", 2)) {
+      sh_cmd_append("send", K_MSEC(2000));
+   }
+}
+
 #define CFG_NB_IOT "nb"
 #define CFG_LTE_M "m1"
 
 static int modem_cmd_config(const char *config)
 {
+   const bool is_on = modem_at_is_on() == 1;
    int res;
    char buf[32];
    char value1[7];
    char value2[5];
    char value3[3];
    const char *cur = config;
+   modem_at_response_handler_t handler = is_on ? cmd_resp_callback_send : cmd_resp_callback;
 
    memset(value1, 0, sizeof(value1));
    memset(value2, 0, sizeof(value2));
@@ -111,7 +126,7 @@ static int modem_cmd_config(const char *config)
       modem_reinit();
       modem_at_restore();
       LOG_INF(">> cfg init ready");
-      return 1;
+      return is_on ? 1 : 0;
    }
    if (stricmp("auto", value1) && !modem_is_plmn(value1)) {
       LOG_INF("cfg %s", config);
@@ -206,12 +221,12 @@ static int modem_cmd_config(const char *config)
       }
    }
    if (!stricmp("auto", value1)) {
-      res = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS=0");
+      res = modem_at_cmd_async(handler, "+COPS: ", "AT+COPS=0");
       if (res >= 0) {
          modem_lock_plmn(false);
       }
    } else {
-      res = modem_at_cmdf(buf, sizeof(buf), "+COPS: ", "AT+COPS=1,2,\"%s\"", value1);
+      res = modem_at_cmdf_async(handler, "+COPS: ", "AT+COPS=1,2,\"%s\"", value1);
       if (res >= 0) {
          modem_lock_plmn(true);
       }
@@ -219,7 +234,7 @@ static int modem_cmd_config(const char *config)
    if (res < 0) {
       LOG_WRN("AT+COPS failed, err %d", res);
    } else {
-      res = 1;
+      res = 0;
    }
    if (value3[0]) {
       LOG_INF(">> cfg %s %s %s ready", value1, value2, value3);
@@ -253,6 +268,7 @@ static int modem_cmd_connect(const char *config)
    char value1[7];
    char value2[3];
    const char *cur = config;
+   modem_at_response_handler_t handler = modem_at_is_on() == 1 ? cmd_resp_callback_send : cmd_resp_callback;
 
    memset(value1, 0, sizeof(value1));
    memset(value2, 0, sizeof(value2));
@@ -287,12 +303,12 @@ static int modem_cmd_connect(const char *config)
          LOG_INF("mode %s is not supported for 'auto'.", value2);
          return -EINVAL;
       }
-      res = modem_at_cmd(NULL, 0, "+COPS: ", "AT+COPS=0");
+      res = modem_at_cmd_async(handler, "+COPS: ", "AT+COPS=0");
       if (res < 0) {
          LOG_WRN("AT+COPS=0 failed, err %d", res);
       } else {
-         res = 1;
          modem_lock_plmn(false);
+         res = 0;
       }
       LOG_INF(">> con auto ready");
       return res;
@@ -314,12 +330,12 @@ static int modem_cmd_connect(const char *config)
    } else {
       cur = "";
    }
-   res = modem_at_cmdf(NULL, 0, "+COPS: ", "AT+COPS=1,2,\"%s\"%s", value1, cur);
+   res = modem_at_cmdf_async(handler, "+COPS: ", "AT+COPS=1,2,\"%s\"%s", value1, cur);
    if (res < 0) {
       LOG_WRN("AT+COPS failed, err %d", res);
    } else {
-      res = 1;
       modem_lock_plmn(true);
+      res = 0;
    }
    if (value2[0]) {
       LOG_INF(">> con %s %s ready", value1, value2);
@@ -391,7 +407,7 @@ static void modem_cmd_scan_help(void)
    LOG_INF("  <n>         : maximum cells to list, values 2 to 15.");
 }
 
-#define ROUND_UP_TIME(T, D) (((T) + ((D)-1)) / (D))
+#define ROUND_UP_TIME(T, D) (((T) + ((D) - 1)) / (D))
 
 static int modem_cmd_psm(const char *config)
 {

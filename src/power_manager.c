@@ -646,7 +646,12 @@ int power_manager_voltage(uint16_t *voltage)
          LOG_DBG("ADC %u mV", internal_voltage);
 #else
          char buf[32];
-         rc = modem_at_cmd(buf, sizeof(buf), "%XVBAT: ", "AT%XVBAT");
+
+         rc = modem_at_lock_no_warn(K_NO_WAIT);
+         if (!rc) {
+            rc = modem_at_cmd(buf, sizeof(buf), "%XVBAT: ", "AT%XVBAT");
+            modem_at_unlock();
+         }
          if (rc < 0) {
             if (rc == -EBUSY) {
                LOG_WRN("Failed to read battery level from modem, modem is busy!");

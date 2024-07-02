@@ -599,7 +599,7 @@ static bool uart_receiver_handler(uint8_t character)
                   work_submit_to_io_queue(&uart_stop_pause_tx_work);
                   rc = sh_cmd_execute(uart_cmd_buf);
                   if (rc == -EBUSY) {
-                     LOG_INF("Modem busy \?\?\?");
+                     LOG_INF("sh busy \?\?\?");
                   }
                   return true;
                }

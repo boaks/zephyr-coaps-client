@@ -401,7 +401,7 @@ static void sh_cmd_execute_fn(struct k_work *work)
    int res = 0;
 
    if (&sh_cmd_schedule_work.work == work) {
-      LOG_INF("x>%s", sh_cmd_buf);
+      LOG_INF("...> %s", sh_cmd_buf);
    }
    res = sh_cmd(sh_cmd_buf);
    sh_cmd_result(res);

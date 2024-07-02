@@ -34,6 +34,8 @@ LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 
 #define INTERNAL_BUF_SIZE 256
 
+#define AT_MUTEX_TIMEOUT (K_MSEC(10000))
+
 static K_MUTEX_DEFINE(lte_at_mutex);
 static char lte_at_buf[INTERNAL_BUF_SIZE];
 
@@ -161,7 +163,7 @@ int modem_at_unlock(void)
 int modem_at_cmdf(char *buf, size_t len, const char *skip, const char *cmd, ...)
 {
    va_list ap;
-   int err = modem_at_lock(K_FOREVER);
+   int err = modem_at_lock(AT_MUTEX_TIMEOUT);
    if (err) {
       LOG_INF("Modem busy");
       return err;
@@ -199,7 +201,7 @@ int modem_at_cmdf_async(modem_at_response_handler_t handler, const char *skip, c
    va_list ap;
    int res = -EBUSY;
 
-   k_mutex_lock(&lte_at_mutex, K_FOREVER);
+   k_mutex_lock(&lte_at_mutex, AT_MUTEX_TIMEOUT);
    if (atomic_ptr_cas(&lte_at_response_handler, NULL, handler)) {
       lte_at_response_skip = skip;
       va_start(ap, cmd);
@@ -223,7 +225,7 @@ int modem_at_cmd_async(modem_at_response_handler_t handler, const char *skip, co
 {
    int res = -EBUSY;
 
-   k_mutex_lock(&lte_at_mutex, K_FOREVER);
+   k_mutex_lock(&lte_at_mutex, AT_MUTEX_TIMEOUT);
    if (atomic_ptr_cas(&lte_at_response_handler, NULL, handler)) {
       lte_at_response_skip = skip;
       res = nrf_modem_at_cmd_async(modem_at_cmd_async_response_handler, "%s", cmd);
@@ -245,6 +247,17 @@ static void modem_at_logging_switching_off_fn(struct k_work *work)
 }
 
 static K_WORK_DELAYABLE_DEFINE(modem_at_logging_switching_off_work, modem_at_logging_switching_off_fn);
+
+int modem_at_is_on(void)
+{
+   enum lte_lc_func_mode mode;
+   int res = lte_lc_func_mode_get(&mode);
+
+   if (!res) {
+      res = mode == LTE_LC_FUNC_MODE_NORMAL ? 1 : 0;
+   }
+   return res;
+}
 
 static atomic_t previous_mode = ATOMIC_INIT(-1);
 
