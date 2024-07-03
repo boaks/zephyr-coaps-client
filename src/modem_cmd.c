@@ -126,7 +126,10 @@ static int modem_cmd_config(const char *config)
       modem_reinit();
       modem_at_restore();
       LOG_INF(">> cfg init ready");
-      return is_on ? 1 : 0;
+      if (is_on) {
+         sh_cmd_append("send", K_MSEC(2000));
+      }
+      return 0;
    }
    if (stricmp("auto", value1) && !modem_is_plmn(value1)) {
       LOG_INF("cfg %s", config);
@@ -843,8 +846,8 @@ SH_CMD(limit, "", "read apn rate limit.", modem_cmd_rate_limit, NULL, 0);
 SH_CMD(on, "", "switch modem on.", modem_cmd_switch_on, NULL, 0);
 SH_CMD(state, "", "read modem state.", modem_cmd_state, NULL, 0);
 
-SH_CMD(cfg, "", "configure modem.", modem_cmd_config, modem_cmd_config_help, 3);
-SH_CMD(con, "", "connect modem.", modem_cmd_connect, modem_cmd_connect_help, 3);
+SH_CMD(cfg, "", "configure modem.", modem_cmd_config, modem_cmd_config_help, 0);
+SH_CMD(con, "", "connect modem.", modem_cmd_connect, modem_cmd_connect_help, 0);
 
 SH_CMD(scan, "AT%NCELLMEAS", "network scan.", modem_cmd_scan, modem_cmd_scan_help, 0);
 

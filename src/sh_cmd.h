@@ -39,8 +39,11 @@ struct sh_cmd_entry {
        .send = _send,                                                    \
    }
 
-#define SH_CMD_EXECUTING 1
-#define AT_CMD_PENDING 2
+#define BIT_SH_CMD_EXECUTING 0
+#define BIT_AT_CMD_PENDING 1
+
+#define SH_CMD_EXECUTING BIT(BIT_SH_CMD_EXECUTING)
+#define AT_CMD_PENDING BIT(BIT_AT_CMD_PENDING)
 
 #ifdef CONFIG_SH_CMD
 

@@ -49,7 +49,7 @@ static size_t sh_cmd_max_length = 0;
 static char sh_cmd_buf[CONFIG_SH_CMD_MAX_LEN];
 static char at_response_buf[CONFIG_SH_AT_RESPONSE_MAX_LEN];
 
-#define SH_CMD_QUEUED 4
+#define BIT_SH_CMD_QUEUED 3
 
 static atomic_t sh_cmd_state = ATOMIC_INIT(0);
 
@@ -78,7 +78,7 @@ static int line_length(const uint8_t *data, size_t length)
 
 static void sh_cmd_result(int res)
 {
-   bool finish = atomic_test_and_clear_bit(&sh_cmd_state, SH_CMD_EXECUTING);
+   bool finish = atomic_test_and_clear_bit(&sh_cmd_state, BIT_SH_CMD_EXECUTING);
    if (res > 0) {
       // noops
    } else {
@@ -205,7 +205,7 @@ static void at_coneval_result(const char *result)
 
 static void at_cmd_finish(void)
 {
-   if (atomic_test_and_clear_bit(&sh_cmd_state, AT_CMD_PENDING)) {
+   if (atomic_test_and_clear_bit(&sh_cmd_state, BIT_AT_CMD_PENDING)) {
       at_cmd_time = k_uptime_get() - at_cmd_time;
       if (at_cmd_time > 5000) {
          LOG_INF("%ld s", (long)((at_cmd_time + 500) / 1000));
@@ -349,21 +349,13 @@ static int sh_cmd(const char *cmd_buf)
             goto at_cmd_modem;
          } else {
             /* handler AT cmd*/
-            if (atomic_test_and_set_bit(&sh_cmd_state, AT_CMD_PENDING)) {
+            if (atomic_test_and_set_bit(&sh_cmd_state, BIT_AT_CMD_PENDING)) {
                LOG_INF("Modem pending ...");
                return 1;
             }
             at_cmd_time = k_uptime_get();
             res = cmd->handler(&cmd_buf[i]);
-            if (res == 1) {
-               if (cmd->send) {
-                  LOG_INF(">> (new %s) send", cmd->cmd);
-                  dtls_cmd_trigger(true, cmd->send, NULL, 0);
-               }
-               res = 0;
-            } else {
-               res = RESULT(res);
-            }
+            res = RESULT(res);
             at_cmd_finish();
          }
       } else {
@@ -381,7 +373,7 @@ at_cmd_modem:
       LOG_INF("> 'help' for available commands.");
       return -1;
    }
-   if (atomic_test_and_set_bit(&sh_cmd_state, AT_CMD_PENDING)) {
+   if (atomic_test_and_set_bit(&sh_cmd_state, BIT_AT_CMD_PENDING)) {
       LOG_INF("Modem pending ...");
       return 1;
    }
@@ -409,7 +401,7 @@ static void sh_cmd_execute_fn(struct k_work *work)
 
 static void sh_cmd_wait_fn(struct k_work *work)
 {
-   if (!atomic_test_and_set_bit(&sh_cmd_state, SH_CMD_EXECUTING)) {
+   if (!atomic_test_and_set_bit(&sh_cmd_state, BIT_SH_CMD_EXECUTING)) {
       struct sh_cmd_fifo *sh_cmd = k_fifo_get(&sh_cmd_fifo, K_NO_WAIT);
       if (sh_cmd) {
          uint32_t delay_ms = (uint32_t)k_ticks_to_ms_floor64(sh_cmd->delay.ticks);
@@ -417,10 +409,10 @@ static void sh_cmd_wait_fn(struct k_work *work)
          LOG_INF("Cmd '%s' scheduled (%u ms).", sh_cmd_buf, delay_ms);
          k_work_reschedule_for_queue(&sh_cmd_work_q, &sh_cmd_schedule_work, sh_cmd->delay);
       } else {
-         if (atomic_test_and_clear_bit(&sh_cmd_state, SH_CMD_QUEUED)) {
+         if (atomic_test_and_clear_bit(&sh_cmd_state, BIT_SH_CMD_QUEUED)) {
             LOG_INF("No cmd left.");
          }
-         atomic_clear_bit(&sh_cmd_state, SH_CMD_EXECUTING);
+         atomic_clear_bit(&sh_cmd_state, BIT_SH_CMD_EXECUTING);
       }
    } else if (work) {
       LOG_INF("Cmd busy, still waiting.");
@@ -433,7 +425,7 @@ int sh_cmd_execute(const char *cmd)
    if (len >= sizeof(sh_cmd_buf)) {
       return -EINVAL;
    }
-   if (!atomic_test_and_set_bit(&sh_cmd_state, SH_CMD_EXECUTING)) {
+   if (!atomic_test_and_set_bit(&sh_cmd_state, BIT_SH_CMD_EXECUTING)) {
       strncpy(sh_cmd_buf, cmd, sizeof(sh_cmd_buf) - 1);
       k_work_submit_to_queue(&sh_cmd_work_q, &sh_cmd_execute_work);
       return 0;
@@ -447,7 +439,7 @@ int sh_cmd_schedule(const char *cmd, const k_timeout_t delay)
    if (len >= sizeof(sh_cmd_buf)) {
       return -EINVAL;
    }
-   if (!atomic_test_and_set_bit(&sh_cmd_state, SH_CMD_EXECUTING)) {
+   if (!atomic_test_and_set_bit(&sh_cmd_state, BIT_SH_CMD_EXECUTING)) {
       strncpy(sh_cmd_buf, cmd, sizeof(sh_cmd_buf) - 1);
       k_work_reschedule_for_queue(&sh_cmd_work_q, &sh_cmd_schedule_work, delay);
       return 0;
@@ -463,7 +455,7 @@ int sh_cmd_append(const char *cmd, const k_timeout_t delay)
       item->delay = delay;
       strcpy(item->data, cmd);
       k_fifo_put(&sh_cmd_fifo, item);
-      atomic_set_bit(&sh_cmd_state, SH_CMD_QUEUED);
+      atomic_set_bit(&sh_cmd_state, BIT_SH_CMD_QUEUED);
       LOG_DBG("Cmd appended.");
       sh_cmd_wait_fn(NULL);
       return 0;
