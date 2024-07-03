@@ -654,9 +654,9 @@ int power_manager_voltage(uint16_t *voltage)
          }
          if (rc < 0) {
             if (rc == -EBUSY) {
-               LOG_WRN("Failed to read battery level from modem, modem is busy!");
+               LOG_DBG("Failed to read battery level from modem, modem is busy!");
             } else {
-               LOG_WRN("Failed to read battery level from modem! %d (%s)", rc, strerror(-rc));
+               LOG_DBG("Failed to read battery level from modem! %d (%s)", rc, strerror(-rc));
             }
          } else {
             internal_voltage = atoi(buf);
