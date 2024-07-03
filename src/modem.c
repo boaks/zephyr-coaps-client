@@ -1131,20 +1131,20 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       if (lte_mfw2) {
          err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%FEACONF=0,1,1");
          if (err > 0) {
-            LOG_INF("Set feaconv HPPLMN: %s", buf);
+            LOG_INF("Set feaconv skip HPPLMN: %s", buf);
          }
          err = modem_at_cmd(buf, sizeof(buf), "%FEACONF: ", "AT%FEACONF=1,1");
          if (err > 0) {
-            LOG_INF("Get feaconv HPPLMN: %s", buf);
+            LOG_INF("Get feaconv skip HPPLMN: %s", buf);
          }
          if (strcmp(modem_info.firmware, "2.0.1") >= 0) {
             err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%FEACONF=0,3,1");
             if (err > 0) {
-               LOG_INF("Set feaconv PLMN sel: %s", buf);
+               LOG_INF("Set feaconv PLMN opt.sel: %s", buf);
             }
             err = modem_at_cmd(buf, sizeof(buf), "%FEACONF: ", "AT%FEACONF=1,3");
             if (err > 0) {
-               LOG_INF("Get feaconv PLMN sel: %s", buf);
+               LOG_INF("Get feaconv PLMN opt.sel: %s", buf);
             }
          }
       } else {
@@ -1380,6 +1380,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 int modem_reinit(void)
 {
    initialized = false;
+   nrf_modem_lib_shutdown();
    return modem_init(lte_initial_config, lte_state_change_handler);
 }
 
