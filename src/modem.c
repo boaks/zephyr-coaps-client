@@ -1137,16 +1137,17 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          if (err > 0) {
             LOG_INF("Get feaconv HPPLMN: %s", buf);
          }
-         err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%FEACONF=0,3,1");
-         if (err > 0) {
-            LOG_INF("Set feaconv PLMN sel: %s", buf);
+         if (strcmp(modem_info.firmware, "2.0.1") >= 0) {
+            err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%FEACONF=0,3,1");
+            if (err > 0) {
+               LOG_INF("Set feaconv PLMN sel: %s", buf);
+            }
+            err = modem_at_cmd(buf, sizeof(buf), "%FEACONF: ", "AT%FEACONF=1,3");
+            if (err > 0) {
+               LOG_INF("Get feaconv PLMN sel: %s", buf);
+            }
          }
-         err = modem_at_cmd(buf, sizeof(buf), "%FEACONF: ", "AT%FEACONF=1,3");
-         if (err > 0) {
-            LOG_INF("Get feaconv PLMN sel: %s", buf);
-         }
-      }
-      else {
+      } else {
 #ifdef CONFIG_AS_RAI_ON
          err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%REL14FEAT=0,1,0,0,0");
          if (err > 0) {
