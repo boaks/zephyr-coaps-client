@@ -999,12 +999,20 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
       return err;
    }
 #endif /* CONFIG_COAP_QUERY_ACK_ENABLE */
+
 #ifdef CONFIG_COAP_QUERY_SERIES_ENABLE
    err = coap_appl_client_add_uri_query(&request, "series");
    if (err < 0) {
       return err;
    }
 #endif /* CONFIG_COAP_QUERY_SERIES_ENABLE */
+
+#ifdef CONFIG_COAP_QUERY_FORWARD_ENABLE
+   err = coap_appl_client_add_uri_query(&request, "forward");
+   if (err < 0) {
+      return err;
+   }
+#endif /* CONFIG_COAP_QUERY_FORWARD_ENABLE */
 
 #ifdef CONFIG_COAP_QUERY_READ_SUBRESOURCE_ENABLE
    err = coap_appl_client_add_uri_query_param_opt(&request, "read", CONFIG_COAP_QUERY_READ_SUBRESOURCE);

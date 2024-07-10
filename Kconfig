@@ -146,6 +146,10 @@ config COAP_QUERY_WRITE_SUBRESOURCE
 	string "Use CoAP query - write sub-resource"
 	depends on COAP_QUERY_WRITE_SUBRESOURCE_ENABLE
 
+config COAP_QUERY_FORWARD_ENABLE
+	bool "Enable CoAP query - (http) forward"
+	default n
+
 endmenu
 
 menu "Modem Settings"
