@@ -102,7 +102,8 @@ int coap_client_decode_content_format(const struct coap_option *option)
    return format;
 }
 
-bool coap_client_printable_content_format(int format) {
+bool coap_client_printable_content_format(int format)
+{
    bool res = false;
    switch (format) {
       case COAP_CONTENT_FORMAT_TEXT_PLAIN:
@@ -175,6 +176,18 @@ int coap_client_match(const struct coap_packet *reply, uint16_t expected_mid, ui
       return PARSE_CON_RESPONSE;
    }
    return PARSE_RESPONSE;
+}
+
+void coap_client_dump_payload(char *buf, size_t size, const char *payload, size_t len)
+{
+   const char *more = "";
+   if (len > size - 1) {
+      len = size - 1;
+      more = "...";
+   }
+   memmove(buf, payload, len);
+   buf[len] = 0;
+   dtls_info("  payload: '%s'%s", (const char *)buf, more);
 }
 
 int coap_client_prepare_ack(const struct coap_packet *reply)

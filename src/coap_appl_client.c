@@ -230,16 +230,14 @@ int coap_appl_client_parse_data(uint8_t *data, size_t len)
       }
    }
 
-   if (code == COAP_RESPONSE_CODE_CONTENT) {
+   err = coap_find_options(&reply, COAP_OPTION_CONTENT_FORMAT, &message_option, 1);
+   if (err == 1) {
+      format = coap_client_decode_content_format(&message_option);
+   }
 
-      err = coap_find_options(&reply, COAP_OPTION_CONTENT_FORMAT, &message_option, 1);
-      if (err == 1) {
-         format = coap_client_decode_content_format(&message_option);
-      }
-
-      payload = coap_packet_get_payload(&reply, &payload_len);
-
-      if (payload_len > 0) {
+   payload = coap_packet_get_payload(&reply, &payload_len);
+   if (payload_len > 0) {
+      if (code == COAP_RESPONSE_CODE_CONTENT) {
          if (format == COAP_CONTENT_FORMAT_TEXT_PLAIN && payload_len < sizeof(appl_context.message_buf)) {
             memmove(appl_context.message_buf, payload, payload_len);
             appl_context.message_buf[payload_len] = 0;
@@ -249,16 +247,12 @@ int coap_appl_client_parse_data(uint8_t *data, size_t len)
          } else {
             coap_appl_client_decode_payload(payload, payload_len);
             if (coap_client_printable_content_format(format)) {
-               const char *more = "";
-               if (payload_len > APP_COAP_LOG_PAYLOAD_SIZE) {
-                  payload_len = APP_COAP_LOG_PAYLOAD_SIZE;
-                  more = "...";
-               }
-               memmove(appl_context.message_buf, payload, payload_len);
-               appl_context.message_buf[payload_len] = 0;
-               dtls_info("  payload: '%s'%s", (const char *)appl_context.message_buf, more);
+               coap_client_dump_payload(appl_context.message_buf, APP_COAP_LOG_PAYLOAD_SIZE + 1, payload, payload_len);
             }
          }
+      } else if (coap_client_printable_content_format(format) ||
+                 (code >= COAP_RESPONSE_CODE_BAD_REQUEST && format == -1)) {
+         coap_client_dump_payload(appl_context.message_buf, APP_COAP_LOG_PAYLOAD_SIZE + 1, payload, payload_len);
       }
    }
    if (PARSE_CON_RESPONSE == res) {
@@ -1145,10 +1139,6 @@ static int sh_cmd_env(const char *parameter)
 }
 
 SH_CMD(net, "", "read network info.", sh_cmd_net, NULL, 0);
-#ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_MODEM
-SH_CMD(dev, "", "read device info.", sh_cmd_dev, NULL, 0);
-#else
 SH_CMD(dev, NULL, "read device info.", sh_cmd_dev, NULL, 0);
-#endif
 SH_CMD(env, NULL, "read environment sensor.", sh_cmd_env, NULL, 0);
 #endif /* CONFIG_SH_CMD */

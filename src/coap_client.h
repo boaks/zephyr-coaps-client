@@ -39,6 +39,8 @@ int coap_client_decode_etag(const struct coap_option *option, uint8_t *etag);
 
 bool coap_client_printable_content_format(int format);
 
+void coap_client_dump_payload(char* buf, size_t size, const char* payload, size_t len);
+
 int coap_client_match(const struct coap_packet *reply, uint16_t mid, uint32_t token);
 
 int coap_client_prepare_ack(const struct coap_packet *reply);
