@@ -156,6 +156,7 @@ unsigned int sockets = 0;
 unsigned int dtls_handshakes = 0;
 
 volatile uint32_t send_interval = CONFIG_COAP_SEND_INTERVAL;
+volatile uint32_t coap_timeout = COAP_ACK_TIMEOUT;
 
 static K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
 static K_SEM_DEFINE(dtls_trigger_search, 0, 1);
@@ -783,7 +784,7 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
       modem_set_transmission_time();
    }
    if (app->retransmission == 0) {
-      app->timeout = COAP_ACK_TIMEOUT;
+      app->timeout = coap_timeout;
    }
 #ifndef NDEBUG
    /* logging */
@@ -1318,7 +1319,7 @@ static int dtls_loop(session_t *dst, int flags)
       ++dtls_handshakes;
    }
 
-   app_data.timeout = COAP_ACK_TIMEOUT;
+   app_data.timeout = coap_timeout;
    app_data.request_state = NONE;
 
    while (1) {
@@ -1878,6 +1879,38 @@ static void sh_cmd_send_interval_help(void)
    LOG_INF("               <time>h : interval in hours.");
 }
 
+static int sh_cmd_coap_timeout(const char *parameter)
+{
+   int res = 0;
+   uint32_t timeout = coap_timeout;
+   const char *cur = parameter;
+   char value[10];
+
+   memset(value, 0, sizeof(value));
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+
+   if (value[0]) {
+      res = sscanf(value, "%u", &timeout);
+      if (res == 1) {
+         coap_timeout = timeout ? timeout : 1;
+         LOG_INF("set initial coap timeout %us", timeout);
+         res = 0;
+      } else {
+         res = -EINVAL;
+      }
+   } else {
+      LOG_INF("initial coap timeout %us", timeout);
+   }
+   return res;
+}
+
+static void sh_cmd_send_coap_timeout_help(void)
+{
+   LOG_INF("> help timeout:");
+   LOG_INF("  timeout        : read initial coap timeout.");
+   LOG_INF("  timeout <time> : set initial coap timeout in seconds.");
+}
+
 static int sh_cmd_restart(const char *parameter)
 {
    ARG_UNUSED(parameter);
@@ -1887,6 +1920,7 @@ static int sh_cmd_restart(const char *parameter)
 
 SH_CMD(send, NULL, "send message.", sh_cmd_send, sh_cmd_send_help, 0);
 SH_CMD(interval, NULL, "send interval.", sh_cmd_send_interval, sh_cmd_send_interval_help, 0);
+SH_CMD(timeout, NULL, "initial coap timeout.", sh_cmd_coap_timeout, sh_cmd_send_coap_timeout_help, 0);
 SH_CMD(restart, NULL, "try to switch off modem and restart.", sh_cmd_restart, NULL, 0);
 #endif /* CONFIG_SH_CMD */
 
