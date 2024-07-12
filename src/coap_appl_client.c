@@ -56,6 +56,7 @@
 #define CUSTOM_COAP_OPTION_READ_ETAG 0xfdec
 #define CUSTOM_COAP_OPTION_READ_RESPONSE_CODE 0xfdf0
 #define CUSTOM_COAP_OPTION_INTERVAL 0xfdf4
+#define CUSTOM_COAP_OPTION_FORWARD_RESPONSE_CODE 0xfdf8
 
 static COAP_CONTEXT(appl_context, 1280);
 
@@ -123,10 +124,10 @@ static void coap_appl_client_decode_read_etag(const struct coap_option *option)
    }
 }
 
-static uint8_t coap_appl_client_decode_read_response(const struct coap_option *option)
+static uint8_t coap_appl_client_decode_response_code(const char *description, const struct coap_option *option)
 {
    int code = coap_option_value_to_int(option);
-   dtls_info("Recv CoAP read response code %d.%02d", (code >> 5) & 7, code & 0x1f);
+   dtls_info("Recv CoAP %s response code %d.%02d", description, (code >> 5) & 7, code & 0x1f);
    return (uint8_t)code;
 }
 
@@ -222,12 +223,16 @@ int coap_appl_client_parse_data(uint8_t *data, size_t len)
    if (code == COAP_RESPONSE_CODE_CHANGED) {
       err = coap_find_options(&reply, CUSTOM_COAP_OPTION_READ_RESPONSE_CODE, &message_option, 1);
       if (err == 1) {
-         code = coap_appl_client_decode_read_response(&message_option);
+         code = coap_appl_client_decode_response_code("read", &message_option);
       }
       err = coap_find_options(&reply, CUSTOM_COAP_OPTION_READ_ETAG, &message_option, 1);
       if (err == 1) {
          coap_appl_client_decode_read_etag(&message_option);
       }
+   }
+   err = coap_find_options(&reply, CUSTOM_COAP_OPTION_FORWARD_RESPONSE_CODE, &message_option, 1);
+   if (err == 1) {
+      coap_appl_client_decode_response_code("forward", &message_option);
    }
 
    err = coap_find_options(&reply, COAP_OPTION_CONTENT_FORMAT, &message_option, 1);
