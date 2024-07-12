@@ -708,18 +708,18 @@ read_from_peer(dtls_app_data_t *app, session_t *session, uint8 *data, size_t len
       case PARSE_IGN:
          break;
       case PARSE_RST:
-         if (NONE != app->request_state) {
+         if (NONE != app->request_state && WAIT_SUSPEND != app->request_state) {
             response_time = (long)k_uptime_get();
             dtls_coap_failure(app, "rst");
          }
          break;
       case PARSE_ACK:
-         if (NONE != app->request_state) {
+         if (NONE != app->request_state && app->request_state < WAIT_RESPONSE) {
             app->request_state = WAIT_RESPONSE;
          }
          break;
       case PARSE_RESPONSE:
-         if (NONE != app->request_state) {
+         if (NONE != app->request_state && WAIT_SUSPEND != app->request_state) {
             response_time = (long)k_uptime_get();
             dtls_coap_success(app);
          }
@@ -760,7 +760,7 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
    const char *tag = app->dtls_pending ? (app->retransmission ? "hs_re" : "hs_") : (app->retransmission ? "re" : "");
 
    if (!lte_power_on_off) {
-      if (!app->retransmission) {
+      if (app->retransmission == 0) {
          connect_time = (long)k_uptime_get();
       }
       prepare_socket(app);
