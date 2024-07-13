@@ -345,6 +345,19 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
    start = index;
 
    if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
+      if (connect_time_ms > 0 || coap_rtt_ms > 0) {
+         index += snprintf(buf + index, len - index, "!Times: %u", retransmissions + 1);
+         if (coap_rtt_ms > 0) {
+            index += snprintf(buf + index, len - index, ", RTT: %u ms", coap_rtt_ms);
+         }
+         if (connect_time_ms > 0) {
+            index += snprintf(buf + index, len - index, ", CT: %u ms", connect_time_ms);
+         }
+         dtls_info("%s", buf + start);
+         buf[index++] = '\n';
+         start = index;
+      }
+
       memset(&modem_info, 0, sizeof(modem_info));
       if (!modem_get_modem_info(&modem_info)) {
          index += snprintf(buf + index, len - index, "NCS: %s, HW: %s, MFW: %s, IMEI: %s", NCS_VERSION_STRING, modem_info.version, modem_info.firmware, modem_info.imei);

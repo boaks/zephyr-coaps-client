@@ -179,6 +179,8 @@ int modem_get_imei(char* buf, size_t len);
 
 int modem_get_release_time(void);
 
+int modem_get_time_scale(void);
+
 void modem_set_transmission_time(void);
 
 void modem_set_scan_time(void);

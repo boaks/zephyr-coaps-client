@@ -1579,12 +1579,16 @@ int modem_get_rai_status(enum lte_network_rai *rai)
    enum lte_network_rai state = LTE_NETWORK_RAI_UNKNOWN;
    int res = 0;
    int time = -1;
+   int factor = modem_get_time_scale();
 
    k_mutex_lock(&lte_mutex, K_FOREVER);
    if (psm_status.active_time >= 0) {
       time = rai_time;
    }
    k_mutex_unlock(&lte_mutex);
+   if (factor > 100) {
+      time = (time * 100) / factor;
+   }
    if (time < 0) {
       res = -ENODATA;
    } else if (time < CP_RAI_MAX_DELAY) {
@@ -1603,6 +1607,26 @@ int modem_get_rai_status(enum lte_network_rai *rai)
 int modem_get_release_time(void)
 {
    return rai_time;
+}
+
+int modem_get_time_scale(void)
+{
+   int factor = 100;
+   struct lte_ce_info info;
+
+   if (modem_get_coverage_enhancement_info(&info) >= 0) {
+      if (info.rsrp < -110) {
+         factor = 150;
+         if (info.rsrp < -130) {
+            factor = 500;
+         } else if (info.rsrp < -125) {
+            factor = 350;
+         } else if (info.rsrp < -120) {
+            factor = 250;
+         }
+      }
+   }
+   return factor;
 }
 
 int modem_get_network_info(struct lte_network_info *info)
@@ -2014,6 +2038,23 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
          k_mutex_lock(&lte_mutex, K_FOREVER);
          if (err2 <= 0) {
             temp.snr = ce_info.snr;
+         }
+         if (network_info.rrc_active != LTE_NETWORK_STATE_ON) {
+            if (temp.downlink_repetition == 0) {
+               temp.downlink_repetition = ce_info.downlink_repetition;
+            }
+            if (temp.uplink_repetition == 0) {
+               temp.uplink_repetition = ce_info.uplink_repetition;
+            }
+            if (temp.rsrp == INVALID_SIGNAL_VALUE) {
+               temp.rsrp = ce_info.rsrp;
+            }
+            if (temp.cinr == INVALID_SIGNAL_VALUE) {
+               temp.cinr = ce_info.cinr;
+            }
+            if (temp.snr == INVALID_SIGNAL_VALUE) {
+               temp.snr = ce_info.snr;
+            }
          }
          ce_info = temp;
          k_mutex_unlock(&lte_mutex);

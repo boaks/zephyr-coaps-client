@@ -25,6 +25,9 @@
 #define DTLS_CLIENT_RETRY_STRATEGY_RESTARTS 8
 
 extern unsigned int transmissions[COAP_MAX_RETRANSMISSION + 1];
+extern unsigned int connect_time_ms;
+extern unsigned int coap_rtt_ms;
+extern unsigned int retransmissions;
 extern unsigned int failures;
 extern unsigned int sockets;
 extern unsigned int dtls_handshakes;

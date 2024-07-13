@@ -14,6 +14,7 @@
 #include "tinydtls.h"
 
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <zephyr/net/coap.h>
@@ -151,6 +152,9 @@ static volatile size_t appl_buffer_len = MAX_APPL_BUF;
 static unsigned int rtts[RTT_SLOTS + 2] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 unsigned int transmissions[COAP_MAX_RETRANSMISSION + 1];
+unsigned int connect_time_ms;
+unsigned int coap_rtt_ms;
+unsigned int retransmissions;
 unsigned int failures = 0;
 unsigned int sockets = 0;
 unsigned int dtls_handshakes = 0;
@@ -489,12 +493,12 @@ void dtls_cmd_trigger(bool led, int mode, const uint8_t *data, size_t len)
          ui_enable(led);
          dtls_trigger();
          if (!ready && !(mode & 2)) {
-            LOG_INF("No network ...");
+            dtls_info("No network ...");
          }
       } else if (ready) {
-         LOG_INF("Busy, request pending ... (state %d)", app_data.request_state);
+         dtls_info("Busy, request pending ... (state %d)", app_data.request_state);
       } else {
-         LOG_INF("Busy, searching network");
+         dtls_info("Busy, searching network");
       }
    }
    if (!ready && mode & 2) {
@@ -515,7 +519,7 @@ static void dtls_timer_trigger_fn(struct k_work *work)
       ui_enable(false);
       dtls_trigger();
    } else {
-      LOG_DBG("Busy, schedule again in %d s.", send_interval);
+      dtls_debug("Busy, schedule again in %d s.", send_interval);
       work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(send_interval));
    }
 }
@@ -601,19 +605,32 @@ static void dtls_coap_success(dtls_app_data_t *app)
    if (app->retransmission <= COAP_MAX_RETRANSMISSION) {
       transmissions[app->retransmission]++;
    }
-   if (app->retransmission == 0) {
-      modem_set_psm(0);
-   }
-   index = time2 / RTT_INTERVAL;
-   if (index < RTT_SLOTS) {
-      rtts[index]++;
-   } else {
-      rtts[RTT_SLOTS]++;
-      time2 /= MSEC_PER_SEC;
-      if (time2 > rtts[RTT_SLOTS + 1]) {
-         // new max. time
-         rtts[RTT_SLOTS + 1] = time2;
+   if (time2 >= 0) {
+      if (time1 > 0) {
+         connect_time_ms = time1;
+         coap_rtt_ms = time2 - time1;
+      } else {
+         connect_time_ms = 0;
+         coap_rtt_ms = time2;
       }
+      retransmissions = app->retransmission;
+      if (retransmissions == 0 && coap_rtt_ms < 4000) {
+         modem_set_psm(0);
+      }
+      index = time2 / RTT_INTERVAL;
+      if (index < RTT_SLOTS) {
+         rtts[index]++;
+      } else {
+         rtts[RTT_SLOTS]++;
+         time2 /= MSEC_PER_SEC;
+         if (time2 > rtts[RTT_SLOTS + 1]) {
+            // new max. time
+            rtts[RTT_SLOTS + 1] = time2;
+         }
+      }
+   } else {
+      connect_time_ms = 0;
+      coap_rtt_ms = 0;
    }
    if (time1 < 2000) {
       unsigned long sum = 0;
@@ -682,6 +699,30 @@ static void dtls_coap_failure(dtls_app_data_t *app, const char *cause)
    }
 #endif
    dtls_coap_next(app);
+}
+
+static uint32_t
+network_timeout_scale(uint32_t timeout)
+{
+   int factor = modem_get_time_scale();
+   if (factor > 100) {
+      return (timeout * factor) / 100;
+   } else {
+      return timeout;
+   }
+}
+
+static uint32_t
+network_additional_timeout(void)
+{
+   struct lte_lc_edrx_cfg edrx;
+
+   if (!atomic_test_bit(&general_states, LTE_CONNECTED) &&
+       modem_get_edrx_status(&edrx) >= 0 && edrx.mode != LTE_LC_LTE_MODE_NONE) {
+      return (uint32_t)ceil(edrx.edrx);
+   } else {
+      return ADD_ACK_TIMEOUT;
+   }
 }
 
 static int
@@ -784,7 +825,8 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
       modem_set_transmission_time();
    }
    if (app->retransmission == 0) {
-      app->timeout = coap_timeout;
+      app->timeout = network_timeout_scale(coap_timeout);
+      dtls_info("%sresponse timeout %d", tag, app->timeout);
    }
 #ifndef NDEBUG
    /* logging */
@@ -1610,7 +1652,7 @@ static int dtls_loop(session_t *dst, int flags)
          if (app_data.request_state == SEND) {
             if (atomic_test_bit(&general_states, LTE_CONNECTED_SEND)) {
                loops = 0;
-               time = (long)(connected_time - connect_time);
+               time = (long)(atomic_get(&connected_time) - connect_time);
                if (time < 0) {
                   time = -1;
                }
@@ -1638,7 +1680,7 @@ static int dtls_loop(session_t *dst, int flags)
                   // stop waiting ...
                   temp = loops - 1;
                } else {
-                  temp += ADD_ACK_TIMEOUT;
+                  temp += network_additional_timeout();
                }
             }
             dtls_log_state();
@@ -1652,6 +1694,7 @@ static int dtls_loop(session_t *dst, int flags)
                if (app_data.retransmission < COAP_MAX_RETRANSMISSION) {
                   if (app_data.retransmission == 0) {
                      modem_set_psm(CONFIG_UDP_PSM_RETRANS_RAT);
+                     app_data.timeout = network_timeout_scale(coap_timeout);
                   }
                   ++app_data.retransmission;
                   loops = 0;
@@ -1893,13 +1936,22 @@ static int sh_cmd_coap_timeout(const char *parameter)
       res = sscanf(value, "%u", &timeout);
       if (res == 1) {
          coap_timeout = timeout ? timeout : 1;
-         LOG_INF("set initial coap timeout %us", timeout);
          res = 0;
+         cur = "set ";
       } else {
          res = -EINVAL;
       }
    } else {
-      LOG_INF("initial coap timeout %us", timeout);
+      cur = "";
+   }
+   if (!res) {
+      uint32_t ntimeout = network_timeout_scale(coap_timeout);
+      uint32_t atimeout = network_additional_timeout();
+      if (coap_timeout != ntimeout) {
+         LOG_INF("%sinitial coap timeout %us(+%us, *rsrp %us)", cur, timeout, atimeout, ntimeout);
+      } else {
+         LOG_INF("%sinitial coap timeout %us(+%us)", cur, timeout, atimeout);
+      }
    }
    return res;
 }
