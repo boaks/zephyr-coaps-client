@@ -88,10 +88,20 @@ See also [Updating Firmware Through External Debug Probe](https://developer.nord
 In some case, e.g. a firmware update with an notebook in the wild, it may be easier to use
 
 ```sh
+nrfjprog --program build/zephyr/merged.hex --sectorerase --verify -r
+```
+
+without `west`. If it's the initial device setup and no update, use 
+
+```sh
 nrfjprog --program build/zephyr/merged.hex --chiperase --verify -r
 ```
 
-without `west`.
+If you want to protect the firmware from bein read via jlink, use
+
+```sh
+nrfjprog --rbp all
+```
 
 ## Run It
 
