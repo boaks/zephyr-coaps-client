@@ -408,6 +408,7 @@ static void sh_cmd_wait_fn(struct k_work *work)
          strncpy(sh_cmd_buf, sh_cmd->data, sizeof(sh_cmd_buf) - 1);
          LOG_INF("Cmd '%s' scheduled (%u ms).", sh_cmd_buf, delay_ms);
          k_work_reschedule_for_queue(&sh_cmd_work_q, &sh_cmd_schedule_work, sh_cmd->delay);
+         k_heap_free(&sh_cmd_heap, sh_cmd);
       } else {
          if (atomic_test_and_clear_bit(&sh_cmd_state, BIT_SH_CMD_QUEUED)) {
             LOG_INF("No cmd left.");
