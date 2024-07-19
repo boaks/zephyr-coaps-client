@@ -44,6 +44,7 @@ static K_MUTEX_DEFINE(sim_mutex);
 static atomic_t sim_status = ATOMIC_INIT(0);
 static atomic_t imsi_success = ATOMIC_INIT(-1);
 
+static int sim_service;
 static struct lte_sim_info sim_info;
 
 static int64_t imsi_time = 0;
@@ -88,14 +89,13 @@ static int flip_digits(char *buf, size_t len)
  * e.g. 262 02 = 0x62 0xF2 0x20
  */
 
-// #define CONFIG_USER_PLMN_SELECTOR "62F2204000"
-// #define CONFIG_FORBIDDEN_PLMN "62F240FFFFFFFFFFFFFFFFFF"
-
-// #define CONFIG_USER_PLMN_SELECTOR "FFFFFF0000"
-// #define CONFIG_FORBIDDEN_PLMN "FFFFFFFFFFFFFFFFFFFFFFFF"
+#define SIM_USER_HPPLMN_ID 28512
 
 #define CRSM_SUCCESS "144,0,\""
-#define CRSM_HEADER_SIZE 25
+/**
+ * AT+CRSM=214,28512,0,0,10,"<data>"\0
+ */
+#define CRSM_HEADER_SIZE 28
 
 static void modem_sim_log_imsi_sel(unsigned int selected)
 {
@@ -302,7 +302,7 @@ static uint8_t check_service(uint8_t service_mask, uint8_t bit, const char *serv
 
 #define MODEM_PLMN_SELECTOR_SIZE (MODEM_PLMN_SIZE + 4)
 
-static size_t find_plmns(const char *list, size_t len, char *plmn, size_t plmn_size)
+static size_t get_prio_plmns(const char *list, size_t len, char *plmn, size_t plmn_size)
 {
    size_t result = 0;
    int select = 0;
@@ -403,6 +403,43 @@ static int modem_sim_read_forbidden_list(char *buf, size_t buf_len, char *plmns,
             LOG_INF("CRSM forbidden plmn: %s", plmns);
          } else {
             LOG_INF("CRSM no forbidden plmn");
+         }
+      } else {
+         int skip = strstart(buf, CRSM_SUCCESS, false);
+         if (skip > 0) {
+            res -= (skip + 1);
+            memmove(buf, &buf[skip], res);
+            buf[res] = 0;
+         } else {
+            res = -EINVAL;
+         }
+      }
+   }
+   return res;
+}
+
+static int modem_sim_read_hpplm_list(const char *name, uint16_t id, char *buf, size_t buf_len, char *plmns, size_t plmns_len)
+{
+   int res = 0;
+   int plmn_bytes = MAX_PLMNS * 5;
+
+   if (CRSM_HEADER_SIZE + plmn_bytes * 2 > buf_len) {
+      plmn_bytes = (buf_len - CRSM_HEADER_SIZE) / 10;
+   }
+
+   memset(buf, 0, buf_len);
+   res = modem_at_cmdf(buf, buf_len, "+CRSM: ", "AT+CRSM=176,%u,0,0,%d", id, plmn_bytes);
+   if (res < 0) {
+      LOG_INF("Failed to read CRSM %s hpplmn.", name);
+   } else {
+      LOG_DBG("CRSM %s hpplmn: %s", name, buf);
+      if (plmns) {
+         memset(plmns, 0, plmns_len);
+         res = get_prio_plmns(buf, res, plmns, plmns_len);
+         if (res) {
+            LOG_INF("CRSM %s hpplmn: %s", name, plmns);
+         } else {
+            LOG_INF("CRSM no %s hpplmn.", name);
          }
       } else {
          int skip = strstart(buf, CRSM_SUCCESS, false);
@@ -642,6 +679,9 @@ static void modem_sim_read(bool init)
          service = check_service(service, SERVICE_74_BIT, table, res, 74);
          /* Non Access Stratum Configuration */
          service = check_service(service, SERVICE_96_BIT, table, res, 96);
+         k_mutex_lock(&sim_mutex, K_FOREVER);
+         sim_service = service;
+         k_mutex_unlock(&sim_mutex);
       }
    }
 
@@ -670,89 +710,38 @@ static void modem_sim_read(bool init)
        * 0x6F62, Serv. 43, H(ome)PLMN selector, 15*5,
        * only used to determine access technology for (Equivalent)H(ome)PLMN
        */
-      res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28514,0,0,%d", MAX_PLMNS * 5);
-      if (res < 0) {
-         LOG_INF("Failed to read CRSM home plmn sel.");
-         return;
-      } else {
-         LOG_DBG("CRSM home plmn sel: %s", buf);
-         res = find_plmns(buf, res, temp, sizeof(temp));
-         if (res) {
-            LOG_INF("CRSM home plmn sel: %s", temp);
-            if (!plmn[0]) {
-               copy_plmn(temp, plmn, sizeof(plmn), NULL);
-            }
-            if (!c_plmn[0] && mcc[0]) {
-               copy_plmn(temp, c_plmn, sizeof(c_plmn), mcc);
-            }
-         } else {
-            LOG_INF("CRSM no home plmn sel");
+      res = modem_sim_read_hpplm_list("home", 28514, buf, sizeof(buf), temp, sizeof(temp));
+      if (res > 0) {
+         if (!plmn[0]) {
+            copy_plmn(temp, plmn, sizeof(plmn), NULL);
+         }
+         if (!c_plmn[0] && mcc[0]) {
+            copy_plmn(temp, c_plmn, sizeof(c_plmn), mcc);
          }
       }
    }
    if (service & SERVICE_20_BIT) {
       /* 0x6F60, Serv. 20, User controlled PLMN selector, 15*5 */
-      res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28512,0,0,%d", MAX_PLMNS * 5);
-      if (res < 0) {
-         LOG_INF("Failed to read CRSM user plmn sel.");
-         return;
-      } else {
-         LOG_DBG("CRSM user plmn sel: %s", buf);
-#ifdef CONFIG_USER_PLMN_SELECTOR
-         start = strstart(buf, CRSM_SUCCESS, false);
-         if (start) {
-            int len = strlen(CONFIG_USER_PLMN_SELECTOR);
-            int comp_len = res - start - 1;
-            if (len < comp_len) {
-               comp_len = len;
-            }
-            if (strncmp(buf + start, CONFIG_USER_PLMN_SELECTOR, comp_len) != 0) {
-               res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=214,28512,0,0,%d,\"%s\"", len / 2, CONFIG_USER_PLMN_SELECTOR);
-               if (res >= 0) {
-                  if (strstart(buf, CRSM_SUCCESS, false)) {
-                     LOG_INF("CRSM user plmn sel written.");
-                  } else {
-                     LOG_WRN("CRSM user plmn sel not written.");
-                  }
-               }
-               res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28512,0,0,%d", MAX_PLMNS * 5);
-            }
+      res = modem_sim_read_hpplm_list("user", SIM_USER_HPPLMN_ID, buf, sizeof(buf), temp, sizeof(temp));
+      if (res > 0) {
+         if (!plmn[0]) {
+            copy_plmn(temp, plmn, sizeof(plmn), NULL);
          }
-#endif
-         res = find_plmns(buf, res, temp, sizeof(temp));
-         if (res) {
-            LOG_INF("CRSM user plmn sel: %s", temp);
-            if (!plmn[0]) {
-               copy_plmn(temp, plmn, sizeof(plmn), NULL);
-            }
-            if (!c_plmn[0] && mcc[0]) {
-               copy_plmn(temp, c_plmn, sizeof(c_plmn), mcc);
-            }
-         } else {
-            LOG_INF("CRSM no user plmn sel");
+         if (!c_plmn[0] && mcc[0]) {
+            copy_plmn(temp, c_plmn, sizeof(c_plmn), mcc);
          }
       }
    }
 
    if (service & SERVICE_42_BIT) {
       /* 0x6F61, Serv. 42, Operator controlled PLMN selector, 15*5 */
-      res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=176,28513,0,0,%d", MAX_PLMNS * 5);
-      if (res < 0) {
-         LOG_INF("Failed to read CRSM operator plmn sel.");
-         return;
-      } else {
-         LOG_DBG("CRSM operator plmn sel: %s", buf);
-         res = find_plmns(buf, res, temp, sizeof(temp));
-         if (res) {
-            LOG_INF("CRSM operator plmn sel: %s", temp);
-            if (!plmn[0]) {
-               copy_plmn(temp, plmn, sizeof(plmn), NULL);
-            }
-            if (!c_plmn[0] && mcc[0]) {
-               copy_plmn(temp, c_plmn, sizeof(c_plmn), mcc);
-            }
-         } else {
-            LOG_INF("CRSM no operator plmn sel");
+      res = modem_sim_read_hpplm_list("operator", 28513, buf, sizeof(buf), temp, sizeof(temp));
+      if (res > 0) {
+         if (!plmn[0]) {
+            copy_plmn(temp, plmn, sizeof(plmn), NULL);
+         }
+         if (!c_plmn[0] && mcc[0]) {
+            copy_plmn(temp, c_plmn, sizeof(c_plmn), mcc);
          }
       }
    }
@@ -768,7 +757,7 @@ static void modem_sim_read(bool init)
          if (start) {
             // successful read
             int indication = (int)strtol(&buf[start], NULL, 16);
-            const char* desc = "unknown";
+            const char *desc = "unknown";
             if (indication == 0) {
                desc = "last registered plmn";
             } else {
@@ -1095,18 +1084,30 @@ static void modem_cmd_imsi_sel_help(void)
    LOG_INF("  imsi force <n> : select IMSI. No fallback!");
 }
 
+#define PLMN_NONE "FFFFFF"
+
 static int modem_cmd_banclr(const char *parameter)
 {
    (void)parameter;
-   char buf[25 + (MAX_PLMNS * 6)];
+   char buf[CRSM_HEADER_SIZE + (MAX_PLMNS * 6)];
    size_t len = MAX_PLMNS * 6;
 
    int res = modem_sim_read_forbidden_list(buf, sizeof(buf), NULL, 0);
    if (0 < res) {
-      int l = strspn(buf, "F");
-      if (l == res) {
+      int l = (res + 5) / 6;
+      while (l) {
+         --l;
+         if (strncmp(&buf[l * 6], PLMN_NONE, 6)) {
+            break;
+         }
+      }
+      if (!strncmp(&buf[l * 6], PLMN_NONE, 6)) {
          LOG_INF("Forbidden PLMNs already cleared.");
          res = 0;
+      } else {
+         ++l;
+         LOG_INF("Forbidden PLMNs %d entries.", l);
+         res = l * 6;
       }
       len = res;
    }
@@ -1130,7 +1131,7 @@ static int modem_cmd_ban(const char *parameter)
 {
    const char *cur = parameter;
    char plmn[7];
-   char buf[25 + (MAX_PLMNS * 6)];
+   char buf[CRSM_HEADER_SIZE + (MAX_PLMNS * 6)];
    int res = 0;
 
    memset(buf, 0, sizeof(buf));
@@ -1148,9 +1149,9 @@ static int modem_cmd_ban(const char *parameter)
          res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=214,28539,0,0,%d,\"%s\"", len / 2, buf);
          if (res >= 0) {
             if (strstart(buf, CRSM_SUCCESS, false)) {
-               LOG_INF("Forbidden PLMN written (%d bytes).", len);
+               LOG_INF("Forbidden PLMNs written (%d bytes).", len);
             } else {
-               LOG_WRN("Forbidden PLMN not written (%d bytes).", len);
+               LOG_WRN("Forbidden PLMNs not written (%d bytes).", len);
             }
             res = 0;
          }
@@ -1172,11 +1173,131 @@ static void modem_cmd_ban_help(void)
    LOG_INF("  ban <plmn> [<plmn-2> ...] : set plmn(s) as ban-list.");
 }
 
+#define HPPLMN_SELECTOR_NONE "FFFFFF0000"
+
+static int modem_cmd_prioclr(const char *parameter)
+{
+   (void)parameter;
+   char buf[CRSM_HEADER_SIZE + (MAX_PLMNS * 10)];
+   size_t len = MAX_PLMNS * 10;
+   int res = 0;
+
+   k_mutex_lock(&sim_mutex, K_FOREVER);
+   res = (!(sim_service & SERVICE_20_BIT));
+   k_mutex_unlock(&sim_mutex);
+
+   if (res) {
+      LOG_INF("User HPPLMN list not supported by SIM.");
+      return 0;
+   }
+
+   res = modem_sim_read_hpplm_list("user", SIM_USER_HPPLMN_ID, buf, sizeof(buf), NULL, 0);
+   if (0 < res) {
+      int l = (res + 9) / 10;
+      while (l) {
+         --l;
+         if (strncmp(&buf[l * 10], HPPLMN_SELECTOR_NONE, 10)) {
+            break;
+         }
+      }
+      if (!strncmp(&buf[l * 10], HPPLMN_SELECTOR_NONE, 10)) {
+         LOG_INF("User HPPLMNs already cleared.");
+         res = 0;
+      } else {
+         ++l;
+         LOG_INF("User HPPLMNs %d entries.", l);
+         res = l * 10;
+      }
+      len = res;
+   }
+   if (len) {
+      int l = 0;
+      while ((l + 10) <= len) {
+         memcpy(&buf[l], HPPLMN_SELECTOR_NONE, 10);
+         l += 10;
+      }
+      buf[len] = 0;
+      LOG_INF("User HPPLMNs clear %d bytes.", len);
+      res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=214,%u,0,0,%d,\"%s\"", SIM_USER_HPPLMN_ID, len / 2, buf);
+      if (res >= 0) {
+         if (strstart(buf, CRSM_SUCCESS, false)) {
+            LOG_INF("User HPPLMNs cleared (%d bytes).", len);
+         } else {
+            LOG_WRN("User HPPLMNs not cleared (%d bytes).", len);
+         }
+         res = 0;
+      }
+   }
+   return res;
+}
+
+#define HPPLMN_SELECTOR_TECHNOLOGY "4000"
+
+static int modem_cmd_prio(const char *parameter)
+{
+   const char *cur = parameter;
+   char plmn[7];
+   char buf[CRSM_HEADER_SIZE + (MAX_PLMNS * 10)];
+   int res = 0;
+
+   k_mutex_lock(&sim_mutex, K_FOREVER);
+   res = (!(sim_service & SERVICE_20_BIT));
+   k_mutex_unlock(&sim_mutex);
+
+   if (res) {
+      LOG_INF("User HPPLMN list not supported by SIM.");
+      return 0;
+   }
+
+   memset(buf, 0, sizeof(buf));
+   memset(plmn, 0, sizeof(plmn));
+   cur = parse_next_text(cur, ' ', plmn, sizeof(plmn));
+
+   if (plmn[0]) {
+      size_t len = 0;
+      while (plmn[0] && len + 10 < sizeof(buf)) {
+         len += encode_plmn(plmn, &buf[len], sizeof(buf) - len);
+         memcpy(&buf[len], HPPLMN_SELECTOR_TECHNOLOGY, 4);
+         len += 4;
+         memset(plmn, 0, sizeof(plmn));
+         cur = parse_next_text(cur, ' ', plmn, sizeof(plmn));
+      }
+      if (len) {
+         res = modem_at_cmdf(buf, sizeof(buf), "+CRSM: ", "AT+CRSM=214,%u,0,0,%d,\"%s\"", SIM_USER_HPPLMN_ID, len / 2, buf);
+         if (res >= 0) {
+            if (strstart(buf, CRSM_SUCCESS, false)) {
+               LOG_INF("User HPPLMNs written (%d bytes).", len);
+            } else {
+               LOG_WRN("User HPPLMNs not written (%d bytes).", len);
+            }
+            res = 0;
+         }
+      }
+   } else {
+      char temp[MAX_PLMNS * MODEM_PLMN_SIZE];
+      res = modem_sim_read_hpplm_list("user", SIM_USER_HPPLMN_ID, buf, sizeof(buf), temp, sizeof(temp));
+      if (res > 0) {
+         res = 0;
+      }
+   }
+   return res;
+}
+
+static void modem_cmd_prio_help(void)
+{
+   LOG_INF("> help prio:");
+   LOG_INF("  prio                       : show user HPPLMN list.");
+   LOG_INF("  prio <plmn> [<plmn-2> ...] : set plmn(s) as user HPPLMN list.");
+}
+
 SH_CMD(sim, "", "read SIM-card info.", modem_cmd_sim, NULL, 0);
 SH_CMD(imsi, "", "select IMSI.", modem_cmd_imsi_sel, modem_cmd_imsi_sel_help, 0);
 SH_CMD(iccid, "", "read ICCID.", modem_cmd_iccid, NULL, 0);
 SH_CMD(banclr, "", "clear forbidden PLMN list (SIM-card).", modem_cmd_banclr, NULL, 0);
 SH_CMD(ban, "", "set PLMNs to forbidden list (SIM-card).", modem_cmd_ban, modem_cmd_ban_help, 0);
+
+SH_CMD(prioclr, "", "clear user HPPLMN list (SIM-card).", modem_cmd_prioclr, NULL, 0);
+SH_CMD(prio, "", "set PLMNs to user HP list (SIM-card).", modem_cmd_prio, modem_cmd_prio_help, 0);
 
 #endif /* CONFIG_SH_CMD */
 #endif /* CONFIG_NRF_MODEM_LIB */
