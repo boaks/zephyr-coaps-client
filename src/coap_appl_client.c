@@ -337,19 +337,7 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
    buf[index++] = '\n';
    start = index;
 
-   if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
-      if (connect_time_ms > 0 || coap_rtt_ms > 0) {
-         index += snprintf(buf + index, len - index, "!Times: %u", retransmissions + 1);
-         if (coap_rtt_ms > 0) {
-            index += snprintf(buf + index, len - index, ", RTT: %u ms", coap_rtt_ms);
-         }
-         if (connect_time_ms > 0) {
-            index += snprintf(buf + index, len - index, ", CT: %u ms", connect_time_ms);
-         }
-         dtls_info("%s", buf + start);
-         buf[index++] = '\n';
-         start = index;
-      }
+   if ((flags & COAP_SEND_FLAG_INITIAL) || !(flags & COAP_SEND_FLAG_MINIMAL)) {
 
       memset(&modem_info, 0, sizeof(modem_info));
       if (!modem_get_modem_info(&modem_info)) {
@@ -358,15 +346,16 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
          buf[index++] = '\n';
          start = index;
       }
-#ifdef CONFIG_COAP_UPDATE
-      index += appl_update_coap_status(buf + index, len - index);
-      if (index > start) {
-         dtls_info("%s", buf + start);
-         buf[index++] = '\n';
-         start = index;
-      }
-#endif
    }
+
+#ifdef CONFIG_COAP_UPDATE
+   index += appl_update_coap_status(buf + index, len - index);
+   if (index > start) {
+      dtls_info("%s", buf + start);
+      buf[index++] = '\n';
+      start = index;
+   }
+#endif
 
    err = power_manager_status_desc(&buf[index + 1], len - index - 1);
    if (err) {
@@ -385,41 +374,60 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
       start = index;
    }
 
-   memset(reboot_times, 0, sizeof(reboot_times));
-   memset(reboot_codes, 0, sizeof(reboot_codes));
-   err = appl_storage_read_int_items(REBOOT_CODE_ID, 0, reboot_times, reboot_codes, REBOOT_INFOS);
-   if (err > 0) {
-      index += snprintf(buf + index, len - index, "Last code: ");
-      if (reboot_times[0]) {
-         index += appl_format_time(reboot_times[0], buf + index, len - index);
-         index += snprintf(buf + index, len - index, " ");
+   if ((flags & COAP_SEND_FLAG_INITIAL) || !(flags & COAP_SEND_FLAG_MINIMAL)) {
+      memset(reboot_times, 0, sizeof(reboot_times));
+      memset(reboot_codes, 0, sizeof(reboot_codes));
+      err = appl_storage_read_int_items(REBOOT_CODE_ID, 0, reboot_times, reboot_codes, REBOOT_INFOS);
+      if (err > 0) {
+         index += snprintf(buf + index, len - index, "Last code: ");
+         if (reboot_times[0]) {
+            index += appl_format_time(reboot_times[0], buf + index, len - index);
+            index += snprintf(buf + index, len - index, " ");
+         }
+         index += snprintf(buf + index, len - index, "%s", appl_get_reboot_desciption(reboot_codes[0]));
+         dtls_info("%s", buf + start);
+         buf[index++] = '\n';
+         start = index;
+         // only to log
+         for (int i = 1; i < err; ++i) {
+            if (reboot_times[i]) {
+               index += appl_format_time(reboot_times[i], buf + index, len - index);
+               index += snprintf(buf + index, len - index, " ");
+            }
+            index += snprintf(buf + index, len - index, "%s", appl_get_reboot_desciption(reboot_codes[i]));
+            dtls_info("%s", buf + start);
+            // reset
+            index = start;
+         }
       }
-      index += snprintf(buf + index, len - index, "%s", appl_get_reboot_desciption(reboot_codes[0]));
+
+      start = index;
+      index += snprintf(buf + index, len - index, "Restart: ");
+      err = appl_reset_cause_description(buf + index, len - index);
+      if (err > 0) {
+         dtls_info("%s", buf + start);
+         index += err;
+      } else {
+         index = start - 1;
+      }
+
+      buf[index++] = '\n';
+      start = index;
+   }
+   if (connect_time_ms > 0 || coap_rtt_ms > 0) {
+      index += snprintf(buf + index, len - index, "!RETRANS: %u", retransmissions);
+      if (coap_rtt_ms > 0) {
+         index += snprintf(buf + index, len - index, ", RTT: %u ms", coap_rtt_ms);
+      }
+      if (connect_time_ms > 0) {
+         index += snprintf(buf + index, len - index, ", CT: %u ms", connect_time_ms);
+      }
       dtls_info("%s", buf + start);
       buf[index++] = '\n';
       start = index;
-      for (int i = 1; i < err; ++i) {
-         if (reboot_times[i]) {
-            index += appl_format_time(reboot_times[i], buf + index, len - index);
-            index += snprintf(buf + index, len - index, " ");
-         }
-         index += snprintf(buf + index, len - index, "%s", appl_get_reboot_desciption(reboot_codes[i]));
-         dtls_info("%s", buf + start);
-         index = start;
-      }
    }
 
-   start = index;
-   index += snprintf(buf + index, len - index, "Restart: ");
-   err = appl_reset_cause_description(buf + index, len - index);
-   if (err > 0) {
-      dtls_info("%s", buf + start);
-      index += err;
-   } else {
-      index = start - 1;
-   }
-
-   return index;
+   return index - 1;
 }
 
 int coap_appl_client_prepare_sim_info(char *buf, size_t len, int flags)
@@ -429,38 +437,43 @@ int coap_appl_client_prepare_sim_info(char *buf, size_t len, int flags)
    int index = 0;
    memset(&sim_info, 0, sizeof(sim_info));
    if (modem_sim_get_info(&sim_info) >= 0 && sim_info.valid) {
-      index += snprintf(buf, len, "ICCID: %s, eDRX cycle: %s",
-                        sim_info.iccid, sim_info.edrx_cycle_support ? "on" : "off");
-      if (sim_info.hpplmn_search_interval && sim_info.hpplmn[0]) {
-         index += snprintf(buf + index, len - index, ", HPPLMN %s interval: %d [h]",
-                           sim_info.hpplmn, sim_info.hpplmn_search_interval);
-      } else if (sim_info.hpplmn_search_interval) {
-         index += snprintf(buf + index, len - index, ", HPPLMN interval: %d [h]", sim_info.hpplmn_search_interval);
-      } else if (sim_info.hpplmn[0]) {
-         index += snprintf(buf + index, len - index, ", HPPLMN %s", sim_info.hpplmn);
-      } else {
-         index += snprintf(buf + index, len - index, ", no HPPLMN search");
+      if ((flags & COAP_SEND_FLAG_INITIAL) || !(flags & COAP_SEND_FLAG_MINIMAL)) {
+
+         index += snprintf(buf, len, "ICCID: %s, eDRX cycle: %s",
+                           sim_info.iccid, sim_info.edrx_cycle_support ? "on" : "off");
+         if (sim_info.hpplmn_search_interval && sim_info.hpplmn[0]) {
+            index += snprintf(buf + index, len - index, ", HPPLMN %s interval: %d [h]",
+                              sim_info.hpplmn, sim_info.hpplmn_search_interval);
+         } else if (sim_info.hpplmn_search_interval) {
+            index += snprintf(buf + index, len - index, ", HPPLMN interval: %d [h]", sim_info.hpplmn_search_interval);
+         } else if (sim_info.hpplmn[0]) {
+            index += snprintf(buf + index, len - index, ", HPPLMN %s", sim_info.hpplmn);
+         } else {
+            index += snprintf(buf + index, len - index, ", no HPPLMN search");
+         }
+         dtls_info("%s", buf);
+         buf[index++] = '\n';
+         start = index;
       }
-      dtls_info("%s", buf);
-      start = index + 1;
       if (sim_info.imsi_select_support && sim_info.imsi_select != 0xffff) {
          if (sim_info.imsi_select) {
-            index += snprintf(buf + index, len - index, "\nMulti-IMSI: %s (imsi %u)",
+            index += snprintf(buf + index, len - index, "Multi-IMSI: %s (imsi %u)",
                               sim_info.imsi, sim_info.imsi_select & 0xff);
          } else {
-            index += snprintf(buf + index, len - index, "\nMulti-IMSI: %s (imsi %u, auto %d s)",
+            index += snprintf(buf + index, len - index, "Multi-IMSI: %s (imsi %u, auto %d s)",
                               sim_info.imsi, sim_info.imsi_select & 0xff, sim_info.imsi_interval);
          }
       } else if (sim_info.prev_imsi[0]) {
-         index += snprintf(buf + index, len - index, "\nMulti-IMSI: %s, %s, %d s",
+         index += snprintf(buf + index, len - index, "Multi-IMSI: %s, %s, %d s",
                            sim_info.imsi, sim_info.prev_imsi, sim_info.imsi_interval);
       } else {
-         index += snprintf(buf + index, len - index, "\nIMSI: %s", sim_info.imsi);
+         index += snprintf(buf + index, len - index, "IMSI: %s", sim_info.imsi);
       }
       dtls_info("%s", buf + start);
       if (sim_info.forbidden[0]) {
-         start = index + 1;
-         index += snprintf(buf + index, len - index, "\nForbidden: %s",
+         buf[index++] = '\n';
+         start = index;
+         index += snprintf(buf + index, len - index, "Forbidden: %s",
                            sim_info.forbidden);
          dtls_info("%s", buf + start);
       }
@@ -502,75 +515,77 @@ int coap_appl_client_prepare_net_info(char *buf, size_t len, int flags)
    }
    dtls_info("%s", buf);
 
-   if (params.network_info.registered == LTE_NETWORK_STATE_ON) {
+   if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
+      if (params.network_info.registered == LTE_NETWORK_STATE_ON) {
+         if (index) {
+            buf[index++] = '\n';
+         }
+         start = index;
+         index += snprintf(buf + index, len - index, "PDN: %s,%s",
+                           params.network_info.apn, params.network_info.local_ip);
+         if (params.network_info.rate_limit) {
+            if (params.network_info.rate_limit_time) {
+               index += snprintf(buf + index, len - index, ",rate-limit %u exceeded,%u s left",
+                                 params.network_info.rate_limit, params.network_info.rate_limit_time);
+            } else {
+               index += snprintf(buf + index, len - index, ",rate-limit %u,%u s",
+                                 params.network_info.rate_limit, params.network_info.rate_limit_period);
+            }
+         }
+         dtls_info("%s", buf + start);
+      }
+
       if (index) {
          buf[index++] = '\n';
       }
       start = index;
-      index += snprintf(buf + index, len - index, "PDN: %s,%s",
-                        params.network_info.apn, params.network_info.local_ip);
-      if (params.network_info.rate_limit) {
-         if (params.network_info.rate_limit_time) {
-            index += snprintf(buf + index, len - index, ",rate-limit %u exceeded,%u s left",
-                              params.network_info.rate_limit, params.network_info.rate_limit_time);
+
+      memset(&params, 0, sizeof(params));
+      if (modem_get_psm_status(&params.psm) == 0) {
+         if (params.psm.active_time >= 0) {
+            index += snprintf(buf + index, len - index, "PSM: TAU %d [s], Act %d [s]", params.psm.tau, params.psm.active_time);
          } else {
-            index += snprintf(buf + index, len - index, ",rate-limit %u,%u s",
-                              params.network_info.rate_limit, params.network_info.rate_limit_period);
+            index += snprintf(buf + index, len - index, "PSM: n.a.");
          }
       }
-      dtls_info("%s", buf + start);
-   }
-
-   if (index) {
-      buf[index++] = '\n';
-   }
-   start = index;
-
-   memset(&params, 0, sizeof(params));
-   if (modem_get_psm_status(&params.psm) == 0) {
-      if (params.psm.active_time >= 0) {
-         index += snprintf(buf + index, len - index, "PSM: TAU %d [s], Act %d [s]", params.psm.tau, params.psm.active_time);
-      } else {
-         index += snprintf(buf + index, len - index, "PSM: n.a.");
+      time = modem_get_release_time();
+      if (time >= 0) {
+         if (index > start) {
+            index += snprintf(buf + index, len - index, ", ");
+         }
+         memset(&params, 0, sizeof(params));
+         if (modem_get_rai_status(&params.rai_info) == 0 && params.rai_info != LTE_NETWORK_RAI_UNKNOWN) {
+            index += snprintf(buf + index, len - index, "%s, ", modem_get_rai_description(params.rai_info));
+         }
+         index += snprintf(buf + index, len - index, "Released: %d ms", time);
       }
-   }
-   time = modem_get_release_time();
-   if (time >= 0) {
       if (index > start) {
-         index += snprintf(buf + index, len - index, ", ");
+         dtls_info("%s", buf + start);
+      } else {
+         index = start - 1;
       }
       memset(&params, 0, sizeof(params));
-      if (modem_get_rai_status(&params.rai_info) == 0 && params.rai_info != LTE_NETWORK_RAI_UNKNOWN) {
-         index += snprintf(buf + index, len - index, "%s, ", modem_get_rai_description(params.rai_info));
+      if (modem_get_edrx_status(&params.edrx) == 0) {
+         if (index) {
+            buf[index++] = '\n';
+         }
+         start = index;
+         switch (params.edrx.mode) {
+            case LTE_LC_LTE_MODE_NONE:
+               index += snprintf(buf + index, len - index, "eDRX: n.a.");
+               break;
+            case LTE_LC_LTE_MODE_LTEM:
+               index += snprintf(buf + index, len - index, "eDRX: LTE-M %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
+               break;
+            case LTE_LC_LTE_MODE_NBIOT:
+               index += snprintf(buf + index, len - index, "eDRX: NB-IoT %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
+               break;
+            default:
+               index += snprintf(buf + index, len - index, "eDRX: unknown");
+               break;
+         }
+         dtls_info("%s", buf + start);
       }
-      index += snprintf(buf + index, len - index, "Released: %d ms", time);
-   }
-   if (index > start) {
-      dtls_info("%s", buf + start);
-   } else {
-      index = start - 1;
-   }
-   memset(&params, 0, sizeof(params));
-   if (modem_get_edrx_status(&params.edrx) == 0) {
-      if (index) {
-         buf[index++] = '\n';
-      }
-      start = index;
-      switch (params.edrx.mode) {
-         case LTE_LC_LTE_MODE_NONE:
-            index += snprintf(buf + index, len - index, "eDRX: n.a.");
-            break;
-         case LTE_LC_LTE_MODE_LTEM:
-            index += snprintf(buf + index, len - index, "eDRX: LTE-M %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
-            break;
-         case LTE_LC_LTE_MODE_NBIOT:
-            index += snprintf(buf + index, len - index, "eDRX: NB-IoT %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
-            break;
-         default:
-            index += snprintf(buf + index, len - index, "eDRX: unknown");
-            break;
-      }
-      dtls_info("%s", buf + start);
    }
 
    return index;
@@ -590,6 +605,7 @@ int coap_appl_client_prepare_net_stats(char *buf, size_t len, int flags)
    memset(&params, 0, sizeof(params));
    if (modem_get_coverage_enhancement_info(&params.ce_info) >= 0) {
       if (params.ce_info.ce_supported) {
+
          index = snprintf(buf, len, "!CE: down: %u, up: %u",
                           params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
          if (params.ce_info.rsrp < INVALID_SIGNAL_VALUE) {
@@ -608,17 +624,18 @@ int coap_appl_client_prepare_net_stats(char *buf, size_t len, int flags)
       }
    }
 
-   memset(&params, 0, sizeof(params));
-   if (modem_read_statistic(&params.network_statistic) >= 0) {
-      if (index) {
-         buf[index++] = '\n';
-      }
-      start = index;
-      index += snprintf(buf + index, len - index, "Stat: tx %u kB, rx %u kB, max %u B, avg %u B",
-                        params.network_statistic.transmitted, params.network_statistic.received,
-                        params.network_statistic.max_packet_size, params.network_statistic.average_packet_size);
-      dtls_info("%s", buf + start);
-      if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
+   if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
+
+      memset(&params, 0, sizeof(params));
+      if (modem_read_statistic(&params.network_statistic) >= 0) {
+         if (index) {
+            buf[index++] = '\n';
+         }
+         start = index;
+         index += snprintf(buf + index, len - index, "Stat: tx %u kB, rx %u kB, max %u B, avg %u B",
+                           params.network_statistic.transmitted, params.network_statistic.received,
+                           params.network_statistic.max_packet_size, params.network_statistic.average_packet_size);
+         dtls_info("%s", buf + start);
          start = index + 1;
          index += snprintf(buf + index, len - index, "\nCell updates %u, Network searchs %u (%u s), PSM delays %u (%u s)",
                            params.network_statistic.cell_updates, params.network_statistic.searchs, params.network_statistic.search_time,
@@ -874,63 +891,78 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
 
    if (len && buf[0] == 0) {
 #ifdef CONFIG_COAP_SEND_MODEM_INFO
-      err = coap_appl_client_prepare_modem_info(buf, len, flags);
-      if (err > 0) {
-         index = start + err;
+      if (flags & COAP_SEND_FLAG_MODEM_INFO) {
+         err = coap_appl_client_prepare_modem_info(buf, len, flags);
+         if (err > 0) {
+            index = start + err;
+         }
       }
 #endif
 
 #ifdef CONFIG_COAP_SEND_SIM_INFO
-      buf[index] = '\n';
-      start = index + 1;
-      err = coap_appl_client_prepare_sim_info(buf + start, len - start, flags);
-      if (err > 0) {
-         index = start + err;
+      if (flags & COAP_SEND_FLAG_SIM_INFO) {
+         buf[index] = '\n';
+         start = index + 1;
+         err = coap_appl_client_prepare_sim_info(buf + start, len - start, flags);
+         if (err > 0) {
+            index = start + err;
+         }
       }
 #endif /* CONFIG_COAP_SEND_SIM_INFO */
 
 #if defined(CONFIG_COAP_SEND_NETWORK_INFO)
-      buf[index] = '\n';
-      start = index + 1;
-      err = coap_appl_client_prepare_net_info(buf + start, len - start, flags);
-      if (err > 0) {
-         index = start + err;
+      if (flags & COAP_SEND_FLAG_NET_INFO) {
+         buf[index] = '\n';
+         start = index + 1;
+         err = coap_appl_client_prepare_net_info(buf + start, len - start, flags);
+         if (err > 0) {
+            index = start + err;
+         }
       }
 #endif /* CONFIG_COAP_SEND_NETWORK_INFO */
 
 #if defined(CONFIG_COAP_SEND_STATISTIC_INFO)
-      buf[index] = '\n';
-      start = index + 1;
-      err = coap_appl_client_prepare_net_stats(buf + start, len - start, flags);
-      if (err > 0) {
-         index = start + err;
+      if (flags & COAP_SEND_FLAG_NET_STATS) {
+         buf[index] = '\n';
+         start = index + 1;
+         err = coap_appl_client_prepare_net_stats(buf + start, len - start, flags);
+         if (err > 0) {
+            index = start + err;
+         }
       }
 #endif /* CONFIG_COAP_SEND_STATISTIC_INFO */
 
 #ifdef CONFIG_LOCATION_ENABLE
-      buf[index] = '\n';
-      start = index + 1;
-      err = coap_appl_client_prepare_location_info(buf + start, len - start, flags);
-      if (err > 0) {
-         index = start + err;
+      if (flags & COAP_SEND_FLAG_LOCATION_INFO) {
+         buf[index] = '\n';
+         start = index + 1;
+         err = coap_appl_client_prepare_location_info(buf + start, len - start, flags);
+         if (err > 0) {
+            index = start + err;
+         }
       }
 #endif /* CONFIG_LOCATION_ENABLE */
 
-#ifdef CONFIG_ADC_SCALE
-      buf[index] = '\n';
-      start = index + 1;
-      err = scale_sample_desc(buf + start, len - start, true);
-      if (err > 0) {
-         index = start + err;
+      if (flags & COAP_SEND_FLAG_ENV_INFO) {
+         buf[index] = '\n';
+         start = index + 1;
+         err = coap_appl_client_prepare_env_info(buf + start, len - start, flags);
+         if (err > 0) {
+            index = start + err;
+         }
       }
-#endif
 
-      buf[index] = '\n';
-      start = index + 1;
-      err = coap_appl_client_prepare_env_info(buf + start, len - start, flags);
-      if (err > 0) {
-         index = start + err;
+#ifdef CONFIG_ADC_SCALE
+      if (flags & COAP_SEND_FLAG_SCALE_INFO) {
+         buf[index] = '\n';
+         start = index + 1;
+         err = scale_sample_desc(buf + start, len - start, true);
+         if (err > 0) {
+            index = start + err;
+         }
       }
+#endif /* CONFIG_ADC_SCALE */
+
    } else {
       index = len;
    }

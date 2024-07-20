@@ -168,8 +168,15 @@ unsigned int failures = 0;
 unsigned int sockets = 0;
 unsigned int dtls_handshakes = 0;
 
+#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
+#define COAP_SEND_FLAGS_ (COAP_SEND_FLAGS | COAP_SEND_FLAG_INITIAL | COAP_SEND_FLAG_NO_RESPONSE)
+#else
+#define COAP_SEND_FLAGS_ (COAP_SEND_FLAGS | COAP_SEND_FLAG_INITIAL)
+#endif
+
 volatile uint32_t send_interval = CONFIG_COAP_SEND_INTERVAL;
 volatile uint32_t coap_timeout = COAP_ACK_TIMEOUT;
+volatile int coap_send_flags = COAP_SEND_FLAGS_;
 
 static K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
 static K_SEM_DEFINE(dtls_trigger_search, 0, 1);
@@ -691,6 +698,9 @@ static void dtls_coap_success(dtls_app_data_t *app)
       }
    }
 #endif
+   else {
+      coap_send_flags &= ~COAP_SEND_FLAG_INITIAL;
+   }
    atomic_clear_bit(&general_states, APN_RATE_LIMIT);
    atomic_clear_bit(&general_states, APN_RATE_LIMIT_RESTART);
    if (interval) {
@@ -1425,7 +1435,6 @@ static int dtls_loop(int flags)
    const char *reopen_cause = NULL;
    int result;
    int loops = 0;
-   int coap_send_flags;
    long time;
    bool send_request = false;
    bool restarting_modem = false;
@@ -1445,9 +1454,7 @@ static int dtls_loop(int flags)
       dtls_info("Start CoAP/UDP");
    }
    app_data.fd = -1;
-#ifdef CONFIG_COAP_NO_RESPONSE_ENABLE
-   app_data.no_response = true;
-#endif
+
    if (flags & FLAG_TLS) {
       dtls_context = dtls_new_context(&app_data);
       if (!dtls_context) {
@@ -1723,15 +1730,16 @@ static int dtls_loop(int flags)
                }
                loops = 0;
                app_data.retransmission = 0;
-               coap_send_flags = COAP_SEND_FLAGS | (app_data.no_response ? COAP_SEND_FLAG_NO_RESPONSE : 0);
 #ifdef CONFIG_DTLS_ECDSA_AUTO_PROVISIONING
                if (appl_settings_is_provisioning()) {
                   app_data.provisioning = true;
                   res = coap_prov_client_prepare_post(appl_buffer, appl_buffer_len);
                } else
 #endif
+               {
+                  app_data.no_response = (coap_send_flags & COAP_SEND_FLAG_NO_RESPONSE);
                   res = coap_appl_client_prepare_post(appl_buffer, appl_buffer_len, coap_send_flags);
-
+               }
                if (res < 0) {
                   dtls_coap_failure(&app_data, "prepare post");
                } else if (app_data.dtls_pending) {
@@ -2066,6 +2074,31 @@ static void sh_cmd_send_coap_timeout_help(void)
    LOG_INF("  timeout <time> : set initial coap timeout in seconds.");
 }
 
+static int sh_cmd_coap_sendflags(const char *parameter)
+{
+   int res = 0;
+   long flags = coap_send_flags;
+   const char *cur = parameter;
+
+   cur = parse_next_long_text(cur, ' ', 0, &flags);
+
+   if (cur != parameter) {
+      coap_send_flags = (int)flags;
+      res = 0;
+      LOG_INF("set coap sendflags %d/0x%x", coap_send_flags, coap_send_flags);
+   } else {
+      LOG_INF("coap sendflags %d/0x%x", coap_send_flags, coap_send_flags);
+   }
+   return res;
+}
+
+static void sh_cmd_send_coap_sendflags_help(void)
+{
+   LOG_INF("> help sendflags:");
+   LOG_INF("  sendflags         : read coap sendflags.");
+   LOG_INF("  sendflags <flags> : set coap sendflags.");
+}
+
 static int sh_cmd_restart(const char *parameter)
 {
    ARG_UNUSED(parameter);
@@ -2100,6 +2133,7 @@ static int sh_cmd_dtls(const char *parameter)
 SH_CMD(send, NULL, "send message.", sh_cmd_send, sh_cmd_send_help, 0);
 SH_CMD(interval, NULL, "send interval.", sh_cmd_send_interval, sh_cmd_send_interval_help, 0);
 SH_CMD(timeout, NULL, "initial coap timeout.", sh_cmd_coap_timeout, sh_cmd_send_coap_timeout_help, 0);
+SH_CMD(sendflags, NULL, "sendflags.", sh_cmd_coap_sendflags, sh_cmd_send_coap_sendflags_help, 0);
 SH_CMD(restart, NULL, "try to switch off the modem and restart device.", sh_cmd_restart, NULL, 0);
 SH_CMD(dest, NULL, "show destination.", sh_cmd_destination, NULL, 0);
 SH_CMD(time, NULL, "show system time.", sh_cmd_time, NULL, 0);
