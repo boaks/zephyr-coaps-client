@@ -93,11 +93,13 @@ typedef struct dtls_app_data_t {
    session_t *destination;
    int fd;
    bool dtls_pending;
+   bool dtls_next_flight;
    bool no_response;
    bool no_rai;
    bool download;
    uint16_t download_progress;
    uint8_t retransmission;
+   uint8_t dtls_flight;
    request_state_t request_state;
    uint16_t timeout;
    int64_t start_time;
@@ -796,12 +798,13 @@ static void prepare_socket(dtls_app_data_t *app)
 static int
 send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size_t len)
 {
+   bool first = !app->dtls_pending || app->dtls_next_flight;
    bool connected;
    int result = 0;
    const char *tag = app->dtls_pending ? (app->retransmission ? "hs_re" : "hs_") : (app->retransmission ? "re" : "");
 
    if (!lte_power_on_off) {
-      if (app->retransmission == 0) {
+      if (first && app->retransmission == 0) {
          connect_time = (long)k_uptime_get();
       }
       prepare_socket(app);
@@ -824,13 +827,10 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
    if (connected) {
       modem_set_transmission_time();
    }
-   if (app->retransmission == 0) {
-      app->timeout = network_timeout_scale(coap_timeout);
-      dtls_info("%sresponse timeout %d", tag, app->timeout);
-   }
+
 #ifndef NDEBUG
    /* logging */
-   if (SEND == app->request_state) {
+   if (SEND == app->request_state || app->dtls_pending) {
       if (connected) {
          dtls_info("%ssent_to_peer %d", tag, result);
       } else {
@@ -844,6 +844,17 @@ send_to_peer(dtls_app_data_t *app, session_t *session, const uint8_t *data, size
       }
    }
 #endif
+
+   if (app->dtls_next_flight) {
+      // 1. messages in flight
+      app->dtls_next_flight = false;
+      dtls_info("hs_flight %d", app->dtls_flight);
+      app->dtls_flight += 2;
+   }
+   if (first && app->retransmission == 0) {
+      app->timeout = network_timeout_scale(coap_timeout);
+      dtls_info("%sresponse timeout %d s", tag, app->timeout);
+   }
    return result;
 }
 
@@ -851,22 +862,12 @@ static int
 dtls_send_to_peer(dtls_context_t *ctx,
                   session_t *session, uint8 *data, size_t len)
 {
-   int result;
    dtls_app_data_t *app = dtls_get_app_data(ctx);
-   if (app->dtls_pending &&
-       (app->request_state == RECEIVE || app->request_state == NONE)) {
-      app->request_state = SEND;
-   }
-   result = send_to_peer(app, session, data, len);
-   if (app->dtls_pending) {
-      if (app->request_state == SEND) {
-         app->request_state = RECEIVE;
-      }
-      if (result < 0) {
-         /* don't forward send errors,
-            the dtls state machine will suffer */
-         result = len;
-      }
+   int result = send_to_peer(app, session, data, len);
+   if (app->dtls_pending && result < 0) {
+      /* don't forward send errors,
+         the dtls state machine will suffer */
+      result = len;
    }
    return result;
 }
@@ -875,14 +876,19 @@ static int
 dtls_handle_event(dtls_context_t *ctx, session_t *session,
                   dtls_alert_level_t level, unsigned short code)
 {
+   dtls_app_data_t *app = NULL;
+
    if (appl_reboots()) {
       return 0;
    }
+   app = dtls_get_app_data(ctx);
 
    if (DTLS_EVENT_CONNECTED == code) {
       dtls_info("dtls connected.");
-      app_data.dtls_pending = false;
-      app_data.request_state = NONE;
+      app->dtls_pending = false;
+      app->dtls_next_flight = false;
+      app->dtls_flight = 0;
+      app->request_state = NONE;
       ui_led_op(LED_COLOR_RED, LED_CLEAR);
       ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
       ui_led_op(LED_DTLS, LED_SET);
@@ -921,9 +927,13 @@ recvfrom_peer(dtls_app_data_t *app, dtls_context_t *ctx)
    dtls_info("received_from_peer %d bytes", result);
    if (ctx) {
       if (app->dtls_pending) {
-         app->retransmission = 0;
+         app->dtls_next_flight = true;
       }
-      return dtls_handle_message(ctx, &session, appl_buffer, result);
+      result = dtls_handle_message(ctx, &session, appl_buffer, result);
+      if (app->dtls_pending) {
+         app->request_state = RECEIVE;
+      }
+      return result;
    } else {
       return read_from_peer(app, &session, appl_buffer, result);
    }
@@ -995,6 +1005,8 @@ dtls_start_connect(struct dtls_context_t *ctx, session_t *dst)
    dtls_app_data_t *app = dtls_get_app_data(ctx);
    dtls_info("Start DTLS 1.2 handshake.");
    app->retransmission = 0;
+   app->dtls_next_flight = true;
+   app->dtls_flight = 1;
    app->request_state = SEND;
    return dtls_connect(ctx, dst);
 }
@@ -1703,6 +1715,7 @@ static int dtls_loop(session_t *dst, int flags)
 
                   dtls_info("%s resend, timeout %d s", type, app_data.timeout);
                   if (app_data.dtls_pending) {
+                     app_data.dtls_next_flight = false;
                      dtls_check_retransmit(dtls_context, NULL);
                   } else {
                      sendto_peer(&app_data, dst, dtls_context);
@@ -1736,7 +1749,11 @@ static int dtls_loop(session_t *dst, int flags)
          }
       } else { /* ok */
          if (udp_poll.revents & POLLIN) {
+            uint8_t flight = app_data.dtls_flight;
             recvfrom_peer(&app_data, dtls_context);
+            if (flight && flight < app_data.dtls_flight) {
+               loops = 0;
+            }
             if (app_data.request_state == SEND_ACK) {
                int64_t temp_time = connect_time;
                sendto_peer(&app_data, dst, dtls_context);
