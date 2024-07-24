@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/settings/settings.h>
 
 #include "parse.h"
 
@@ -47,14 +48,16 @@ static bool modem_is_plmn(const char *value)
 
 static void cmd_resp_callback(const char *at_response)
 {
-   LOG_INF("modem cmd =>> %s", at_response);
+   LOG_INF("modem cmd => %s", at_response);
 }
 
 static void cmd_resp_callback_send(const char *at_response)
 {
-   LOG_INF("modem cmd =>> %s", at_response);
    if (!strncmp(at_response, "OK", 2)) {
+      LOG_INF("modem cmd => OK, send ...");
       sh_cmd_append("send", K_MSEC(2000));
+   } else {
+      LOG_INF("modem cmd => %s", at_response);
    }
 }
 
@@ -359,6 +362,65 @@ static void modem_cmd_connect_help(void)
    LOG_INF("              : " CFG_NB_IOT " := NB-IoT");
    LOG_INF("              : " CFG_LTE_M " := LTE-M");
    LOG_INF("  con auto    : automatic network selection.");
+}
+
+static int modem_cmd_apn(const char *config)
+{
+   int res = 0;
+   int len = strlen(config);
+
+   if (len) {
+      res = settings_runtime_set("csrv/apn", config, len);
+      if (!res) {
+         res = settings_save_one("csrv/apn", config, len);
+      }
+      if (res) {
+         LOG_INF("Set APN: '%s' failed!", config);
+      } else {
+         if (!modem_at_push_off(false)) {
+            modem_at_restore();
+         }
+         LOG_INF("Set APN: '%s'", config);
+      }
+   } else {
+      char value[MODEM_APN_SIZE];
+      memset(value, 0, sizeof(value));
+      len = settings_runtime_get("csrv/apn", value, sizeof(value) - 1);
+      if (0 <= len && len < sizeof(value)) {
+         value[len] = 0;
+      }
+      if (len > 0) {
+         LOG_INF("APN: '%s'", value);
+      } else {
+         LOG_INF("APN: not set");
+      }
+   }
+
+   return res;
+}
+
+static void modem_cmd_apn_help(void)
+{
+   LOG_INF("> help apn:");
+   LOG_INF("  apn <apn>  : set and active APN.");
+   LOG_INF("  apn        : show current APN.");
+}
+
+static int modem_cmd_apnclr(const char *config)
+{
+   (void)config;
+
+   int res = settings_delete("csrv/apn");
+   settings_runtime_set("csrv/apn", NULL, 0);
+   if (res) {
+      LOG_INF("Clear APN failed!");
+   } else {
+      if (!modem_at_push_off(false)) {
+         modem_at_restore();
+      }
+      LOG_INF("Cleared APN.");
+   }
+   return res;
 }
 
 static int modem_cmd_scan(const char *config)
@@ -787,6 +849,12 @@ static int modem_cmd_switch_on(const char *parameter)
    return modem_set_normal();
 }
 
+static int modem_cmd_switch_off(const char *parameter)
+{
+   (void)parameter;
+   return modem_power_off();
+}
+
 static int modem_cmd_state(const char *parameter)
 {
    (void)parameter;
@@ -837,7 +905,7 @@ SH_CMD(sms, "", "send SMS.", modem_cmd_sms, modem_cmd_sms_help, 0);
 #endif
 
 SH_CMD(eval, "AT%CONEVAL", "evaluate connection.", NULL, NULL, 0);
-SH_CMD(off, "AT+CFUN=0", "switch modem off.", NULL, NULL, 0);
+SH_CMD(off, "", "switch modem off.", modem_cmd_switch_off, NULL, 0);
 SH_CMD(offline, "AT+CFUN=4", "switch modem offline.", NULL, NULL, 0);
 SH_CMD(reset, "AT%XFACTORYRESET=0", "modem factory reset.", NULL, NULL, 0);
 SH_CMD(search, "AT+COPS=?", "network search.", NULL, NULL, 0);
@@ -848,6 +916,8 @@ SH_CMD(state, "", "read modem state.", modem_cmd_state, NULL, 0);
 
 SH_CMD(cfg, "", "configure modem.", modem_cmd_config, modem_cmd_config_help, 0);
 SH_CMD(con, "", "connect modem.", modem_cmd_connect, modem_cmd_connect_help, 0);
+SH_CMD(apn, "", "modem APN.", modem_cmd_apn, modem_cmd_apn_help, 0);
+SH_CMD(apnclr, "", "clear modem APN.", modem_cmd_apnclr, NULL, 0);
 
 SH_CMD(scan, "AT%NCELLMEAS", "network scan.", modem_cmd_scan, modem_cmd_scan_help, 0);
 

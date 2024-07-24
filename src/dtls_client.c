@@ -2129,7 +2129,6 @@ static void init(int config, int protocol)
    char imei[MODEM_ID_SIZE];
 
    memset(&imei, 0, sizeof(imei));
-   modem_init(config, dtls_lte_state_handler);
    modem_get_imei(imei, sizeof(imei) - 1);
 
    if (protocol == 0) {
@@ -2138,6 +2137,7 @@ static void init(int config, int protocol)
    } else {
       appl_settings_init(imei, NULL);
    }
+   modem_init(config, dtls_lte_state_handler);
 }
 
 int main(void)

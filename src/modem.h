@@ -22,6 +22,7 @@
 
 #define MODEM_ID_SIZE 24
 #define MODEM_PLMN_SIZE 7
+#define MODEM_APN_SIZE 32
 
 typedef struct lte_modem_info {
    char version[MODEM_ID_SIZE];
@@ -74,7 +75,7 @@ typedef struct lte_network_info {
    uint16_t tac;
    uint32_t cell;
    uint32_t earfcn;
-   char apn[32];
+   char apn[MODEM_APN_SIZE];
    char local_ip[16];
 } lte_network_info_t;
 

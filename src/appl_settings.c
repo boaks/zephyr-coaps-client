@@ -43,6 +43,7 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #define SETTINGS_KEY_ID "id"
 #define SETTINGS_KEY_COAP_PATH "path"
 #define SETTINGS_KEY_COAP_QUERY "query"
+#define SETTINGS_KEY_APN "apn"
 
 #define SETTINGS_KEY_PSK_ID "psk_id"
 #define SETTINGS_KEY_PSK_KEY "psk_key"
@@ -56,6 +57,7 @@ static K_MUTEX_DEFINE(settings_mutex);
 
 static uint8_t settings_initialized = 0;
 
+static char apn[MAX_SETTINGS_VALUE_LENGTH] = {0};
 static char destination[MAX_SETTINGS_VALUE_LENGTH] = DEFAUL_COAP_SERVER;
 static uint16_t destination_port = DEFAUL_COAP_SERVER_PORT;
 static uint16_t destination_secure_port = DEFAUL_COAP_SERVER_SECURE_PORT;
@@ -414,6 +416,16 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
 
       memset(buf, 0, sizeof(buf));
 
+      if (appl_settings_key_match(name, SETTINGS_KEY_APN, name_len)) {
+         res = read_cb(cb_arg, &buf, sizeof(apn) - 1);
+         k_mutex_lock(&settings_mutex, K_FOREVER);
+         memcpy(apn, buf, sizeof(apn));
+         k_mutex_unlock(&settings_mutex);
+         if (res > 0) {
+            LOG_INF("apn: '%s'", buf);
+         }
+         return 0;
+      }
       if (appl_settings_key_match(name, SETTINGS_KEY_DESTINATION, name_len)) {
          res = read_cb(cb_arg, &buf, sizeof(destination) - 1);
          k_mutex_lock(&settings_mutex, K_FOREVER);
@@ -558,6 +570,7 @@ static int appl_settings_handle_export(int (*cb)(const char *name,
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_DESTINATION, destination, strlen(destination));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_COAP_PATH, coap_path, strlen(coap_path));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_COAP_QUERY, coap_query, strlen(coap_query));
+   (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_APN, apn, strlen(apn));
 #ifdef CONFIG_CMD_UNLOCK
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_UNLOCK, unlock_password, strlen(unlock_password));
 #endif
@@ -669,6 +682,14 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
          memmove(val, &destination_secure_port, res);
          LOG_DBG("secure port: %u", destination_secure_port);
          k_mutex_unlock(&settings_mutex);
+         return res;
+      }
+
+      if (appl_settings_key_match(name, SETTINGS_KEY_APN, name_len)) {
+         res = appl_settings_copy(apn, val, val_len_max);
+         if (res >= 0) {
+            LOG_DBG("apn: '%s'", val);
+         }
          return res;
       }
 
@@ -1090,6 +1111,11 @@ void appl_settings_init(const char *imei, dtls_handler_t *handler)
       k_mutex_unlock(&settings_mutex);
 #endif /* DTLS_ECC */
    }
+}
+
+int appl_settings_get_apn(char *buf, size_t len)
+{
+   return appl_settings_copy(apn, buf, len);
 }
 
 int appl_settings_get_device_identity(char *buf, size_t len)

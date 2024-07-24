@@ -58,7 +58,7 @@ static enum lte_lc_system_mode lte_initial_mode = LTE_LC_SYSTEM_MODE_LTEM;
 
 static bool lte_mfw2 = false;
 
-static bool initialized = 0;
+static bool initialized = false;
 
 static bool lte_signal_ready = false;
 static bool lte_ready = false;
@@ -871,6 +871,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
 
 #ifdef CONFIG_PDN
 
+#include "appl_settings.h"
 #include <modem/pdn.h>
 
 static void lte_pdn_status_set(bool pdn_active)
@@ -933,7 +934,18 @@ static void pdn_handler(uint8_t cid, enum pdn_event event,
          break;
    }
 }
-#endif
+
+static void modem_apply_apn(void)
+{
+   char apn[MODEM_APN_SIZE];
+   if (appl_settings_get_apn(apn, sizeof(apn))) {
+      int err = pdn_ctx_configure(0, apn, PDN_FAM_IPV4V6, NULL);
+      if (err) {
+         LOG_WRN("Failed to set PDN '%s': %d (%s)", apn, err, strerror(err));
+      }
+   }
+}
+#endif /* CONFIG_PDN */
 
 #ifdef CONFIG_SMS
 
@@ -993,7 +1005,13 @@ static void modem_on_cfun(enum lte_lc_func_mode mode, void *ctx)
       ++lte_starts;
       lte_low_power = false;
       modem_read_network_info(NULL, true);
+      return;
    }
+#ifdef CONFIG_PDN
+   if (mode == LTE_LC_FUNC_MODE_POWER_OFF) {
+      modem_apply_apn();
+   }
+#endif
 }
 #endif /* CONFIG_LTE_LINK_CONTROL */
 
@@ -1333,12 +1351,13 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 
 #ifdef CONFIG_PDN
       pdn_default_ctx_cb_reg(pdn_handler);
+      modem_apply_apn();
 #if defined(CONFIG_PDN_LEGACY_PCO)
       LOG_INF("Legacy ePCO=0 used");
-#else
+#else  /* CONFIG_PDN_LEGACY_PCO */
       LOG_INF("ePCO=1 used");
-#endif
-#endif
+#endif /* CONFIG_PDN_LEGACY_PCO */
+#endif /* CONFIG_PDN */
 
 #if NCS_VERSION_NUMBER < 0x20600
       /* deprecated with NCS 2.6.0 */
@@ -1669,10 +1688,35 @@ int modem_get_modem_info(struct lte_modem_info *info)
 
 int modem_get_imei(char *buf, size_t len)
 {
-   if (buf) {
-      strncpy(buf, modem_info.imei, len);
+   int err = 0;
+
+   if (!initialized) {
+      char temp[64];
+
+      nrf_modem_lib_init();
+      err = modem_at_cmd(temp, sizeof(temp), NULL, "AT+CGSN");
+      if (err < 0) {
+         LOG_INF("Failed to read IMEI.");
+      } else {
+         LOG_INF("imei: %s", modem_info.imei);
+         if (buf) {
+            --len;
+            strncpy(buf, temp, len);
+            buf[len] = 0;
+         }
+      }
+      nrf_modem_lib_shutdown();
+   } else {
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      if (buf) {
+         --len;
+         strncpy(buf, modem_info.imei, len);
+         buf[len] = 0;
+      }
+      err = strlen(modem_info.imei);
+      k_mutex_unlock(&lte_mutex);
    }
-   return strlen(modem_info.imei);
+   return err;
 }
 
 void modem_set_transmission_time(void)
