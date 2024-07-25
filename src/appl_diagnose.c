@@ -32,6 +32,7 @@
 #include "appl_storage.h"
 #include "appl_storage_config.h"
 #include "appl_time.h"
+#include "parse.h"
 #include "sh_cmd.h"
 
 #define MSEC_PER_HOUR (MSEC_PER_SEC * 60 * 60)
@@ -281,14 +282,32 @@ int appl_reset_cause_description(char *buf, size_t len)
 
 static int sh_cmd_reboot(const char *parameter)
 {
-   ARG_UNUSED(parameter);
    if (appl_reboots()) {
       LOG_INF(">> device already reboots!");
    } else {
-      LOG_INF(">> device reboot ...");
-      appl_reboot(ERROR_CODE_CMD, K_MSEC(2000));
+      long id = 0;
+      uint16_t reboot_code = 0;
+      bool force = (parameter == parse_next_long(parameter, 10, &id));
+      appl_storage_read_int_items(REBOOT_CODE_ID, 0, NULL, &reboot_code, 1);
+      if (force) {
+         if (ERROR_CLASS(reboot_code) == ERROR_CODE_CMD) {
+            id = ERROR_DETAIL(reboot_code);
+         }
+      } else if (reboot_code == ERROR_CODE(ERROR_CODE_CMD, id)) {
+         LOG_INF("device already rebooted %u", (uint16_t)id);
+         return 0;
+      }
+      appl_reboot(ERROR_CODE(ERROR_CODE_CMD, id), K_MSEC(2000));
+      LOG_INF(">> device reboot %u ...", (uint16_t)id);
    }
    return 0;
+}
+
+static void sh_cmd_reboot_help(void)
+{
+   LOG_INF("> help reboot:");
+   LOG_INF("  reboot     : reboot device <last> (forced).");
+   LOG_INF("  reboot <n> : reboot device <n>, if <last> was not the same <n>.");
 }
 
 #define REBOOT_INFOS 4
@@ -346,7 +365,7 @@ static int sh_cmd_read_restarts(const char *parameter)
    return 0;
 }
 
-SH_CMD(reboot, NULL, "reboot device.", sh_cmd_reboot, NULL, 0);
+SH_CMD(reboot, NULL, "reboot device.", sh_cmd_reboot, sh_cmd_reboot_help, 0);
 SH_CMD(reboots, NULL, "read reboot codes.", sh_cmd_read_reboots, NULL, 0);
 SH_CMD(restarts, NULL, "read restart reasons.", sh_cmd_read_restarts, NULL, 0);
 
@@ -367,7 +386,7 @@ static int sh_cmd_kill_stack(const char *parameter)
 {
    ARG_UNUSED(parameter);
    char blob[8192];
-   char* p = blob;
+   char *p = blob;
 
    LOG_INF("kill-stack %p", p);
    k_sleep(K_MSEC(100));

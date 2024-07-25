@@ -30,6 +30,7 @@
 
 #define ERROR_CODE(BASE, ERR) ((BASE & 0xf000) | (ERR & 0xfff))
 #define ERROR_CLASS(ERR) (ERR & 0xf000)
+#define ERROR_DETAIL(ERR) (ERR & 0xfff)
 
 #define FLAG_TLS 1
 #define FLAG_KEEP_CONNECTION 2
@@ -47,6 +48,7 @@ void watchdog_feed(void);
 
 void appl_reboot(int error, const k_timeout_t delay);
 bool appl_reboots(void);
+
 const char* appl_get_reboot_desciption(int error);
 
 uint32_t appl_reset_cause(int *flags);
