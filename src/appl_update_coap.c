@@ -25,6 +25,7 @@
 #include "io_job_queue.h"
 #include "parse.h"
 #include "sh_cmd.h"
+#include "modem.h"
 
 #ifdef CONFIG_MCUBOOT_IMAGE_VERSION
 #define IMAGE_VERSION CONFIG_MCUBOOT_IMAGE_VERSION
@@ -78,10 +79,17 @@ static void appl_update_coap_erase_fn(struct k_work *work)
    k_sleep(K_MSEC(200));
 
    if (!appl_update_erase()) {
+      enum coap_block_size block_size = COAP_BLOCK_1024;
+      int scale = modem_get_time_scale();
+      if (scale >= 350) {
+         block_size = COAP_BLOCK_256;
+      } else if (scale >= 250) {
+         block_size = COAP_BLOCK_512;
+      }
       LOG_INF("Download, erase flash done.");
       k_mutex_lock(&appl_update_coap_mutex, K_FOREVER);
       if (coap_download) {
-         coap_block_transfer_init(&coap_block_context, COAP_BLOCK_1024, 0);
+         coap_block_transfer_init(&coap_block_context, block_size, 0);
          coap_download_request = true;
          coap_current_block = 0;
       }
