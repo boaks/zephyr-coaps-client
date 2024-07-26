@@ -244,6 +244,32 @@ It takes about 22s, with an average current of 8.6mA at 4.1V. That results in 0.
 
 We will see, how large the  self-discarge is and how many bugs will prevent proofing that timespan ;-).
 
+## Antenna Performance - Thingy:91
+
+According [Thingy:91 - Antenna performance](https://infocenter.nordicsemi.com/topic/ug_thingy91/UG/thingy91/hw_description/hw_antenna_performance.html) the antenna performance depends on the frequency.
+
+| Technical features | 698–748 MHz | 746–803 MHz | 791–849 MHz | 824–894 MHz | 880–960 MHz | 1575 MHz |	1710–2220 MHz |
+| - | - | - | - | - | - | - | - |
+| Average efficiency | 9.2% | 12.6% | 15.8% | 18.5% | 11.1% | 39.8% | 47.4% |
+| LTE-bands | 12,17,28 | 13,14 | 20 | 5,6,18,19 | 8 | 11,21 | 1,2,3,4,9,10 |
+
+## Antenna Performance - nRF9160-feather-v5
+
+According [unictron - H2B4MH1F2F0100](https://www.unictron.com/wp-content/uploads/datasheet/H2B4MH1F2F0100.pdf) the antenna performance depends on the frequency.
+
+| Technical features | 698–960 MHz | 1710–2170 MHz | 2300–2400 MHz | 2490–2690 MHz |
+| - | - | - | - | - |
+| Average efficiency | 62.8% | 67.6% | 65.3% | 51.0% |
+| LTE-bands | 5,6,8,12,13,14,17,18,19,20,28 | 1,2,3,4,9,10 | | |
+
+## Antenna Performance - nRF9160-DK
+
+According [nRF9160-DK - Antenna performance](https://infocenter.nordicsemi.com/topic/ug_nrf91_dk/UG/nrf91_DK/radiated_performance.html) the antenna performance depends on the LTE-band.
+
+| LTE-Band | 3 | 4 | 13 | 20 |
+| - | - | - | - | - |
+| Average efficiency | 62% | 47.1% | 58.5% | 73.8% |
+
 ## Disclaimer
 
 Other studies have other results. There are studies, which demonstrates the effect of the amount of data, there are studies, which use always a DTLS handshake for each couple of bytes. Using DTLS 1.2 CID doesn't require that handshake and my measurements shows a larger influence of the moving to RRC connected mode than the amount of bytes.

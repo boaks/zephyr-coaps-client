@@ -17,6 +17,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "coap_client.h"
+
 bool appl_update_coap_pending(void);
 bool appl_update_coap_reboot(void);
 int appl_update_coap_status(uint8_t *data, size_t len);
@@ -26,5 +28,7 @@ int appl_update_coap_parse_data(uint8_t *data, size_t len);
 bool appl_update_coap_pending_next(void);
 int appl_update_coap_next(void);
 int appl_update_coap_message(const uint8_t** buffer);
+
+extern coap_handler_t coap_update_client_handler;
 
 #endif /* APPL_UPDATE_COAP_H */

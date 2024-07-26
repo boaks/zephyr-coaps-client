@@ -76,18 +76,25 @@ const char *parse_next_long(const char *value, int base, long *result)
 
 const char *parse_next_long_text(const char *value, char sep, int base, long *result)
 {
+   const char *v = value;
    char *t = NULL;
-   if (*value == sep) {
-      ++value;
+
+   if (*v == sep) {
+      ++v;
    }
-   long l = strtol(value, &t, base);
-   if (value != t && result) {
-      *result = l;
+   long l = strtol(v, &t, base);
+   if (v != t) {
+      if (result) {
+         *result = l;
+      }
+      v = t;
+      if (*v == sep) {
+         ++v;
+      }
+   } else {
+      v = value;
    }
-   if (*t == sep) {
-      ++t;
-   }
-   return t;
+   return v;
 }
 
 const char *parse_next_long_qtext(const char *value, char sep, int base, long *result)

@@ -146,6 +146,10 @@ The demo uses the "echo" resource of the plugtest-server, therefore the response
 
 If you want to see, what your `Thingy:91` has sent to the server, see [cf-browser](./CFBROWSER.md).
 
+## Provisioning
+
+
+
 ## Configuration
 
 The application comes with a [KConfig](../blob/main/Kconfig) to configure some functions. Use

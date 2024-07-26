@@ -124,7 +124,7 @@ int appl_update_cmd(const char *config)
    int rc = 0;
    bool close = false;
    const char *cur = config;
-   char value[9];
+   char value[10];
 
    if (appl_reboots()) {
       return -ESHUTDOWN;
@@ -189,6 +189,8 @@ int appl_update_cmd(const char *config)
    return rc;
 }
 
+#ifdef CONFIG_SH_CMD
+
 void appl_update_cmd_help(void)
 {
    LOG_INF("> help update:");
@@ -199,6 +201,8 @@ void appl_update_cmd_help(void)
    LOG_INF("  update revert   : revert last update.");
    LOG_INF("  update reboot   : reboot to apply update.");
 }
+
+#endif
 
 bool appl_update_pending(void)
 {
@@ -349,7 +353,9 @@ int appl_update_request_upgrade(void)
       return -ESHUTDOWN;
    }
    rc = boot_request_upgrade(BOOT_UPGRADE_TEST);
-   if (!rc) {
+   if (rc) {
+      LOG_INF("Request test update failed %d (%s)!", rc, strerror(-rc));
+   } else {
       appl_update_swap_type(false);
    }
    return rc;

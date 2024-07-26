@@ -625,6 +625,58 @@ static inline int lte_lc_cell_quality(const struct lte_lc_cell *gci_cell)
 
 #define MIN_QUALITY_DELTA 15
 
+static size_t modem_last_neighbor_cell_meas_len = 0;
+static char modem_last_neighbor_cell_meas[800];
+
+int modem_get_last_neighbor_cell_meas(char *buf, size_t len)
+{
+   int res = 0;
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (modem_last_neighbor_cell_meas_len) {
+      res = MIN(modem_last_neighbor_cell_meas_len, len - 1);
+      if (buf) {
+         memcpy(buf, modem_last_neighbor_cell_meas, res);
+      }
+   }
+   k_mutex_unlock(&lte_mutex);
+   if (buf) {
+      buf[res] = 0;
+   }
+   return res;
+}
+
+int modem_clear_last_neighbor_cell_meas(void)
+{
+   int res = 0;
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   modem_last_neighbor_cell_meas_len = 0;
+   k_mutex_unlock(&lte_mutex);
+   return res;
+}
+
+#define RSRP(X) ((X) - 140)
+#define RSRQ(X) (((X) - 39) / 2)
+
+static int append_result(char *buf, size_t idx, size_t len, const char *line)
+{
+   LOG_INF("%s", line);
+   if (idx < len) {
+      size_t line_len = strlen(line);
+      size_t left = len - idx;
+      len = MIN(left - 1, line_len);
+      if (len > 0) {
+         memmove(&buf[idx], line, len);
+         idx += len;
+         buf[idx++] = '\n';
+         if (idx == len) {
+            --idx;
+         }
+         buf[idx] = 0;
+      }
+   }
+   return idx;
+}
+
 static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
 {
    static unsigned int scans = 0;
@@ -632,12 +684,12 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
    static int64_t all_scan_time = 0;
    int64_t now = k_uptime_get();
    int64_t all = 0;
-
    int current_cell;
-
-   LOG_INF("LTE neighbor cell measurements %d/%d", cells_info->ncells_count, cells_info->gci_cells_count);
+   size_t idx = 0;
+   char line[128];
 
    k_mutex_lock(&lte_mutex, K_FOREVER);
+   modem_last_neighbor_cell_meas_len = 0;
    current_cell = network_info.cell;
    if (scan_time) {
       now -= scan_time;
@@ -651,12 +703,16 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
    }
    k_mutex_unlock(&lte_mutex);
 
+   snprintf(line, sizeof(line), "LTE neighbor cell measurements %d/%d", cells_info->ncells_count, cells_info->gci_cells_count);
+   idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
+
    if (cells_info->current_cell.id != LTE_LC_CELL_EUTRAN_ID_INVALID) {
       const struct lte_lc_cell *gci_cells = &(cells_info->current_cell);
-      LOG_INF("[*]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB",
-              gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
-              gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
-              gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
+      snprintf(line, sizeof(line), "[*]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %d, pid %d, rsrp %d dBm, rsrq %d dB",
+               gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
+               gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
+               RSRP(gci_cells->rsrp), RSRQ(gci_cells->rsrq));
+      idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
    }
    if (cells_info->gci_cells_count) {
       int quality;
@@ -681,6 +737,8 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
          ++gci_cells;
       }
       ++scans;
+      snprintf(line, sizeof(line), "  %*c :  plmn   tac     cell    earfnc pid rsrp/q dB(m)", w, '#');
+      idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
       for (int index = 0; index < cells_info->gci_cells_count; ++index) {
          gci_cells = gci_cells_sorted[index];
          if (current_cell == gci_cells->id) {
@@ -688,21 +746,24 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
                ++hits;
             }
          }
-         LOG_INF("[%c%*d]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB",
-                 current_cell == gci_cells->id ? '*' : ' ', w, index,
-                 gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
-                 gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
-                 gci_cells->rsrp - 140, (gci_cells->rsrq - 39) / 2);
+         snprintf(line, sizeof(line), "[%c%*d]: %3d%02d 0x%04x 0x%08X %5d  %3d  %4d/%3d",
+                  current_cell == gci_cells->id ? '*' : ' ', w, index,
+                  gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
+                  gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
+                  RSRP(gci_cells->rsrp), RSRQ(gci_cells->rsrq));
+         idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
       }
       if (now) {
-         LOG_INF("Scans %u, improves %u, %lu s, overall %lu s", scans, hits,
-                 (unsigned long)MSEC_TO_SEC(now),
-                 (unsigned long)MSEC_TO_SEC(all));
+         snprintf(line, sizeof(line), "Scans %u, improves %u, %lu s, overall %lu s", scans, hits,
+                  (unsigned long)MSEC_TO_SEC(now),
+                  (unsigned long)MSEC_TO_SEC(all));
+         idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
       }
    } else {
       if (cells_info->ncells_count > 0) {
          const struct lte_lc_ncell *neighbor_cells = cells_info->neighbor_cells;
          const struct lte_lc_ncell *neighbor_cells_sorted[cells_info->ncells_count];
+         int w = cells_info->ncells_count > 9 ? 2 : 1;
          for (int index = 0; index < cells_info->ncells_count; ++index) {
             int quality = lte_lc_ncell_quality(neighbor_cells);
             neighbor_cells_sorted[index] = neighbor_cells;
@@ -715,19 +776,24 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
             }
             ++neighbor_cells;
          }
-         int w = cells_info->ncells_count > 9 ? 2 : 1;
+         snprintf(line, sizeof(line), " %*s : earfnc pid rsrp/q dB(m)", w, "#");
+         idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
          for (int index = 0; index < cells_info->ncells_count; ++index) {
             neighbor_cells = neighbor_cells_sorted[index];
-            LOG_INF("[%*d]: earfnc %5d, pid %3d, rsrp %4d dBm, rsrq %3d dB", w,
-                    index, neighbor_cells->earfcn, neighbor_cells->phys_cell_id,
-                    neighbor_cells->rsrp - 140, (neighbor_cells->rsrq - 39) / 2);
-            ++neighbor_cells;
+            snprintf(line, sizeof(line), "[%*d]: %5d  %3d  %4d/%3d", w,
+                     index, neighbor_cells->earfcn, neighbor_cells->phys_cell_id,
+                     RSRP(neighbor_cells->rsrp), RSRQ(neighbor_cells->rsrq));
+            idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
          }
       }
       if (now) {
-         LOG_INF("Scan %lu s", (unsigned long)MSEC_TO_SEC(now));
+         snprintf(line, sizeof(line), "Scan %lu s", (unsigned long)MSEC_TO_SEC(now));
+         idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
       }
    }
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   modem_last_neighbor_cell_meas_len = idx;
+   k_mutex_unlock(&lte_mutex);
 }
 
 static void lte_handler(const struct lte_lc_evt *const evt)
@@ -1547,12 +1613,14 @@ int modem_get_power_state(enum lte_power_state *state)
       k_mutex_lock(&lte_mutex, K_FOREVER);
       if (lte_low_power) {
          *state = LTE_POWER_STATE_LOW_VOLTAGE;
-      } else if (network_info.sleeping) {
+      } else if (network_info.sleeping == LTE_NETWORK_STATE_ON) {
          *state = LTE_POWER_STATE_SLEEPING;
-      } else if (network_info.rrc_active) {
+      } else if (network_info.rrc_active == LTE_NETWORK_STATE_ON) {
          *state = LTE_POWER_STATE_ACTIVE;
-      } else {
+      } else if (network_info.rrc_active == LTE_NETWORK_STATE_OFF) {
          *state = LTE_POWER_STATE_IDLE;
+      } else {
+         res = -ENODATA;
       }
       k_mutex_unlock(&lte_mutex);
    }
@@ -2521,11 +2589,6 @@ int modem_start(const k_timeout_t timeout)
 {
    (void)timeout;
    return 0;
-}
-
-const char *modem_get_network_mode(void)
-{
-   return "n.a.";
 }
 
 int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx)

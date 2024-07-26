@@ -29,16 +29,51 @@
 #define COAP_SEND_FLAG_LOCATION_INFO 256
 #define COAP_SEND_FLAG_ENV_INFO 512
 #define COAP_SEND_FLAG_SCALE_INFO 1024
+#define COAP_SEND_FLAG_NET_SCAN_INFO 2048
 
-#define COAP_SEND_FLAGS_ALL (COAP_SEND_FLAG_MODEM_INFO|COAP_SEND_FLAG_SIM_INFO| \
-                            COAP_SEND_FLAG_NET_INFO|COAP_SEND_FLAG_NET_STATS| \
-                            COAP_SEND_FLAG_LOCATION_INFO|COAP_SEND_FLAG_ENV_INFO| \
-                            COAP_SEND_FLAG_SCALE_INFO)
+#ifdef CONFIG_COAP_SEND_MODEM_INFO
+#define COAP_SEND_FLAG_MODEM_INFO_ COAP_SEND_FLAG_MODEM_INFO
+#else
+#define COAP_SEND_FLAG_MODEM_INFO_ 0
+#endif
+
+#ifdef CONFIG_COAP_SEND_SIM_INFO
+#define COAP_SEND_FLAG_SIM_INFO_ COAP_SEND_FLAG_SIM_INFO
+#else
+#define COAP_SEND_FLAG_SIM_INFO_ 0
+#endif
+
+#ifdef CONFIG_COAP_SEND_NETWORK_INFO
+#define COAP_SEND_FLAG_NET_INFO_ COAP_SEND_FLAG_NET_INFO
+#else
+#define COAP_SEND_FLAG_NET_INFO_ 0
+#endif
+
+#ifdef CONFIG_COAP_SEND_STATISTIC_INFO
+#define COAP_SEND_FLAG_NET_STATS_ COAP_SEND_FLAG_NET_STATS
+#else
+#define COAP_SEND_FLAG_NET_STATS_ 0
+#endif
+
+#ifdef CONFIG_LOCATION_ENABLE
+#define COAP_SEND_FLAG_LOCATION_INFO_ COAP_SEND_FLAG_LOCATION_INFO
+#else
+#define COAP_SEND_FLAG_LOCATION_INFO_ 0
+#endif
+
+#ifdef CONFIG_ADC_SCALE
+#define COAP_SEND_FLAG_SCALE_INFO_ COAP_SEND_FLAG_SCALE_INFO
+#else
+#define COAP_SEND_FLAG_SCALE_INFO_ 0
+#endif
+
+#define COAP_SEND_FLAGS_ALL (COAP_SEND_FLAG_MODEM_INFO_ | COAP_SEND_FLAG_SIM_INFO_ |    \
+                             COAP_SEND_FLAG_NET_INFO_ | COAP_SEND_FLAG_NET_STATS_ |     \
+                             COAP_SEND_FLAG_LOCATION_INFO_ | COAP_SEND_FLAG_ENV_INFO | \
+                             COAP_SEND_FLAG_SCALE_INFO_)
 
 #ifdef CONFIG_COAP_SEND_MINIMAL
 #define COAP_SEND_FLAGS (COAP_SEND_FLAG_MINIMAL | COAP_SEND_FLAGS_ALL)
-#elif CONFIG_COAP_SEND_FLAGS > 0
-#define COAP_SEND_FLAGS CONFIG_COAP_SEND_FLAGS
 #else
 #define COAP_SEND_FLAGS COAP_SEND_FLAGS_ALL
 #endif
@@ -51,16 +86,18 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags);
 
 int coap_appl_client_prepare_sim_info(char *buf, size_t len, int flags);
 
-int coap_appl_client_prepare_net_info(char* buf, size_t len, int flags);
+int coap_appl_client_prepare_net_info(char *buf, size_t len, int flags);
 
-int coap_appl_client_prepare_net_stats(char* buf, size_t len, int flags);
+int coap_appl_client_prepare_net_stats(char *buf, size_t len, int flags);
 
 int coap_appl_client_prepare_env_info(char *buf, size_t len, int flags);
 
 int coap_appl_client_prepare_post(char *buf, size_t len, int flags);
 
-int coap_appl_client_message(const uint8_t** buffer);
+int coap_appl_client_message(const uint8_t **buffer);
 
 int coap_appl_client_retry_strategy(int counter, bool dtls);
+
+extern coap_handler_t coap_appl_client_handler;
 
 #endif /* COAP_APPL_CLIENT_H */

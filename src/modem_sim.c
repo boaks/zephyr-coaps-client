@@ -1130,7 +1130,7 @@ static int modem_cmd_banclr(const char *parameter)
 static int modem_cmd_ban(const char *parameter)
 {
    const char *cur = parameter;
-   char plmn[7];
+   char plmn[8];
    char buf[CRSM_HEADER_SIZE + (MAX_PLMNS * 6)];
    int res = 0;
 
@@ -1169,8 +1169,8 @@ static int modem_cmd_ban(const char *parameter)
 static void modem_cmd_ban_help(void)
 {
    LOG_INF("> help ban:");
-   LOG_INF("  ban                       : show ban-list.");
-   LOG_INF("  ban <plmn> [<plmn-2> ...] : set plmn(s) as ban-list.");
+   LOG_INF("  ban                      : show ban-list.");
+   LOG_INF("  ban <plmn> [<plmn2> ...] : set plmn(s) as ban-list.");
 }
 
 #define HPPLMN_SELECTOR_NONE "FFFFFF0000"
@@ -1236,7 +1236,7 @@ static int modem_cmd_prioclr(const char *parameter)
 static int modem_cmd_prio(const char *parameter)
 {
    const char *cur = parameter;
-   char plmn[7];
+   char plmn[8];
    char buf[CRSM_HEADER_SIZE + (MAX_PLMNS * 10)];
    int res = 0;
 
@@ -1286,8 +1286,8 @@ static int modem_cmd_prio(const char *parameter)
 static void modem_cmd_prio_help(void)
 {
    LOG_INF("> help prio:");
-   LOG_INF("  prio                       : show user HPPLMN list.");
-   LOG_INF("  prio <plmn> [<plmn-2> ...] : set plmn(s) as user HPPLMN list.");
+   LOG_INF("  prio                      : show user HPPLMN list.");
+   LOG_INF("  prio <plmn> [<plmn2> ...] : set plmn(s) as user HPPLMN list.");
 }
 
 SH_CMD(sim, "", "read SIM-card info.", modem_cmd_sim, NULL, 0);

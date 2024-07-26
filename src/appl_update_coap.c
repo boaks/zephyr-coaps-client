@@ -23,6 +23,7 @@
 #include "appl_update_coap.h"
 #include "coap_client.h"
 #include "io_job_queue.h"
+#include "modem.h"
 #include "parse.h"
 #include "sh_cmd.h"
 #include "modem.h"
@@ -116,6 +117,7 @@ static int appl_update_coap_cancel_download(bool cancel, enum cancel_reason reas
    memset(coap_etag, 0, sizeof(coap_etag));
    if (canceled && cancel) {
       coap_download_cancel_reason = reason;
+      update_context.message_len = 0;
    }
    k_mutex_unlock(&appl_update_coap_mutex);
    if (canceled && cancel) {
@@ -500,10 +502,6 @@ int appl_update_coap_parse_data(uint8_t *data, size_t len)
    }
    k_mutex_unlock(&appl_update_coap_mutex);
 
-   if (ready) {
-      return PARSE_NONE;
-   }
-
    res = coap_packet_parse(&reply, data, len, NULL, 0);
    if (res < 0) {
       LOG_DBG("Malformed response received: %d", res);
@@ -516,7 +514,9 @@ int appl_update_coap_parse_data(uint8_t *data, size_t len)
       return res;
    }
 
-   appl_update_coap_resonse(&reply, &block_context, current);
+   if (!ready) {
+      appl_update_coap_resonse(&reply, &block_context, current);
+   }
 
    if (PARSE_CON_RESPONSE == res) {
       res = coap_client_prepare_ack(&reply);
@@ -619,6 +619,11 @@ int appl_update_coap_message(const uint8_t **buffer)
    }
    return update_context.message_len;
 }
+
+coap_handler_t coap_update_client_handler = {
+    .get_message = appl_update_coap_message,
+    .parse_data = appl_update_coap_parse_data,
+};
 
 #ifdef CONFIG_SH_CMD
 

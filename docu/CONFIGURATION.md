@@ -38,19 +38,37 @@ The usage of the sensors also reduces that time. Consider to measure less freque
 
 ## Basic
 
-- **APPL_MODEL**, application model, used to select the firmware variant for the hardware when downloading via CoAP. The resulting CoAP resource path will be `fw`/`<model>`/`<version>`, e.g. "fw/dk/0.7.108+2".
+- **APPL_MODEL**, application model, used to select the firmware variant for the hardware when downloading via CoAP. The resulting CoAP resource path will be `fw`/`<model>`/`<version>`, e.g. "fw/dk/0.10.0+0".
 
--- **APPL_MODEL_DESCRIPTION**, application description to include in reported version.
+    - **APPL_MODEL_DESCRIPTION**, application description to include in reported version.
 
 - **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox at `californium.eclipseprojects.io`.
 
 - **COAP_SERVER_ADDRESS_STATIC**, static ip-address of the coap/dtls 1.2 cid server. Fallback, if DNS isn't setup.
 
-- **COAP_SERVER_PORT**, static ip-address of the coap/dtls 1.2 cid server. Fallback, if DNS isn't setup. Default `5684`.
+- **COAP_SERVER_PORT**, service port for none secure communication. Default `5683`.
 
-- **DTLS_PSK_IDENTITY**, the PSK identiy. Default `cali.${imei}`, e.g. "cali.352656100985434".
+- **COAP_SERVER_SECURE_PORT**, service port for secure communication. Default `5684`.
 
-- **DTLS_PSK_SECRET**, the PSK secret (ASCII). Default `.fornium`. The sandbox uses this secret for the a wildcard identity "cali.*". This is only intended to easy access the sandbox, don't use it on your own test setup.
+- **DEVICE_IDENTITY**, the device identiy. `${imei}` will be replaced by the IMEI of the device. Default `cali.${imei}`, e.g. "cali.352656100985434".
+
+- **PROVISIONING_GROUP**, device group for provisioning. Default "Auto". 
+
+- **DTLS_PSK_IDENTITY**, the PSK identiy. `${imei}` will be replaced by the IMEI of the device. May differ from the `DEVICE_IDENTITY`. Default `cali.${imei}`, e.g. "cali.352656100985434".
+
+- **DTLS_PSK_SECRET_GENERATE**, initially generate the PSK secret.
+
+- **DTLS_PSK_SECRET**, the PSK secret. In base 64 as text `"base64"`, ASCII as text with additional single quotes `"'ascii'"`, or hexadecimal as text with `":0x"` prefix, e.g. `":0x1234abcd"`. Default `"'.fornium'"`, the sandbox uses this secret for the a wildcard identity "cali.*". This is only intended to easy access the sandbox, don't use it on your own test setup.
+
+- **DTLS_ECDSA_PRIVATE_KEY_GENERATE**, initially generate the ECDSA key-pair.
+
+- **DTLS_ECDSA_PRIVATE_KEY**, ECDSA device private key. Only SECP256R1 is supported. The private key is provided plain (32 bytes) without the algorithm ids of in ASN.1 encoding with algorithm header. The public key is not provided, it will be derived from the private key. Hexadecimal encoded with prefix ":0x", or base64 as "". 
+
+- **DTLS_ECDSA_TRUSTED_PUBLIC_KEY**, ECDSA trusted server public key. Only SECP256R1 is supported. Either encoded as ASN.1 (including algorith header) or plain concated public_x and public_y key (64 bytes). Hexadecimal encoded with prefix ":0x", or base64 as "". 
+
+- **DTLS_ECDSA_AUTO_PROVISIONING** enable auto provisioning using ECDSA provisioning key-pair.
+
+- **DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY**, ECDSA provisioning device private key. Only SECP256R1 is supported. The private key is provided plain (32 bytes) without the algorithm ids of in ASN.1 encoding with algorithm header. The public key is not provided, it will be derived from the private key. Hexadecimal encoded with prefix ":0x", or base64 as "". 
 
 - **DTLS_ALWAYS_HANDSHAKE**, enables to use a DTLS handshake for each request. Using DTLS 1.2 Connection ID obsoletes such frequent handshakes.
 
@@ -60,7 +78,8 @@ The usage of the sensors also reduces that time. Consider to measure less freque
 
 - **COAP_FAILURE_SEND_INTERVAL**, coap send interval after failures in seconds. 0 to use send interval.
 
-- **COAP_SEND_MODEM_INFO**, include information from the modem.
+
+- **COAP_SEND_MODEM_INFO**, include information from the modem (`send_flag` 0x10).
 
 ```
 108 [s], Thingy:91 v0.7.108+1 (2.4.2), 0*1, 1*0, 2*0, 3*0, failures 0
@@ -69,14 +88,14 @@ HW: B1A, MFW: 1.3.5, IMEI: ???????????????
 Last code: 2023-09-20T11:08:36Z reboot cmd
 ```
 
-- **COAP_SEND_SIM_INFO**, include information from the SIM-card.
+- **COAP_SEND_SIM_INFO**, include information from the SIM-card (`send_flag` 0x20).
 
 ```
 ICCID: ????????????????????, eDRX cycle: off, HPPLMN interval: 10 [h]
 IMSI: ???????????????
 ```
 
-- **COAP_SEND_NETWORK_INFO**, include network information
+- **COAP_SEND_NETWORK_INFO**, include network information (`send_flag` 0x40).
 
 ```
 Network: CAT-M1,roaming,Band 20,#PLMN 26202,TAC 47490,Cell ????????,EARFCN 6300
@@ -84,7 +103,7 @@ PDN: ???.?????.??,???.???.???.???,rate-limit 256,86400 s
 PSM: TAU 90000 [s], Act 0 [s], AS-RAI, Released: 2032 ms
 ```
 
-- **COAP_SEND_STATISTIC_INFO**, include statistic information. e.g. transmissions and network searchs.
+- **COAP_SEND_STATISTIC_INFO**, include statistic information. e.g. transmissions and network searchs (`send_flag` 0x80).
 
 ```
 !CE: down: 8, up: 1, RSRP: -114 dBm, CINR: -1 dB, SNR: 0 dB
@@ -93,33 +112,28 @@ Cell updates 1, Network searchs 1 (3 s), PSM delays 0 (0 s), Restarts 0
 Wakeups 1, 1 s, connected 7 s, asleep 0 s
 ```
 
-- **COAP_SEND_MINIMAL**, reduce information in all topics above.
+- **COAP_SEND_MINIMAL**, dynamically reduce information in all topics above.
 
 - **COAP_NO_RESPONSE_ENABLE**, send one-way coap message (request without response).
 
-- **COAP_RESOURCE**, resource name of request. Default "echo".
+- **COAP_RESOURCE**, resource name of request. `${imei}` will be replaced by the IMEI of the device.Default "echo".
+
+- **COAP_QUERY**, query of request. Must start with `?`. `${imei}` will be replaced by the IMEI of the device.
 
 ## URI query parameter
 
-Configure used URI query parameter. Please note, that these query parameter must be supported by the server's resource implementation. 
+### Supported on Californium Sandbox:
+- **delay=<n>**, delay response by n sec.
+- **rlen=<n>**, response length n bytes.
+- **ack**,  use separate response.
+- **keep** keep request on server.
+- **id=<device-id>** device id, if PSK is not used.
 
-- **COAP_QUERY_DELAY_ENABLE**, request the server to respond delayed (use URI query parameter "delay=%d"). Only for NAT testing. Must also be enabled on server side.
-
-- **COAP_QUERY_RESPONSE_LENGTH**, request the server to respond with a specific payload length (use URI query parameter "rlen=%d"). Large values may require blockwise transfer, which is not supported.
-
-- **COAP_QUERY_KEEP_ENABLE**, request the server to keep the request (use URI query parameter "keep).
-
-- **COAP_QUERY_ACK_ENABLE**, request the server to use a separate empty ACK (use URI query parameter "ack).
-
-- **COAP_QUERY_SERIES_ENABLE**, request the server to append some of the data to a "series" (use URI query parameter "series). Currently only supported for text-payload. Lines starting with "!" are appended to the resource "series".
-
-- **COAP_QUERY_READ_SUBRESOURCE_ENABLE**, request the server to read a sub-resource (use URI query parameter "read").
-
-- **COAP_QUERY_READ_SUBRESOURCE**, name of the sub-resource. Default "config".
-
-- **COAP_QUERY_WRITE_SUBRESOURCE_ENABLE**, request the server to write to a sub-resource (use URI query parameter "write").
-
-- **COAP_QUERY_WRITE_SUBRESOURCE**, name of the sub-resource. Default "${now}".
+### Supported on Californium CoAP-S3-Proxy:
+- **series**,  enable series function of s3-proxy.
+- **forward**, enable http-proxy forward.
+- **read[=<subpath>]**, read sub-resource. Default subpath is "config".
+- **write[=<subpath>]** write sub-resource. Default subpath is "${now}".
 
 ## Extensions
 
@@ -172,6 +186,12 @@ Configure used URI query parameter. Please note, that these query parameter must
 - **UART_UPDATE**, enable firmware update using UART and XMODEM.
 
 - **COAP_UPDATE**, enable firmware update using CoAP.
+
+- **SH_CMD**, enable sh-cmds.
+
+- **SH_CMD_UNLOCK**, enable protected sh-cmds.
+
+- **SH_CMD_UNLOCK_PASSWORD**, password to unlock protected sh-cmds.
 
 ### Power Saving
 

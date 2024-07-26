@@ -56,6 +56,8 @@ Install the App and connect the `Thingy:91`.
  
 If you want to use a PC to communicate with the device via the USB serial interface, you will need a serial terminal to do so. For Microsoft Windows [Tera Term](https://ttssh2.osdn.jp/index.html.en) works well, for Linux [gtkterm](https://github.com/Jeija/gtkterm) is a good choice.
 
+Both applications requires a proper configuration. Generally select the right serial port (or test both), a baudrate of 115200, 8 data bits, no parity, 1 stop bit.
+
 ## Usage
 
 The most [nRF9160 AT-commands](https://infocenter.nordicsemi.com/pdf/nrf9160_at_commands_v2.3.pdf) are supported. Additionally some shortcuts and extra functions are available as custom commands. For simple usage, these custom commands uses simple characters and digits, instead of control characters as '+', '%' or '='. Type `help` and press the "send button" ![arrow](./serial_bluetooth_terminal_send_small.jpg):
@@ -274,7 +276,11 @@ Then open a command shell on the linux PC. Prepare to start the `xmodem` applica
 sx -k build_nrf9160dk_nrf9160_ns/zephyr/app_update.bin < /dev/ttyACM0 > /dev/ttyACM0
 ```
 
-`-k` enables to use blocks with 1024 bytes instead of 128 bytes. The path to the "app_update.bin" follows. To use the serial/USB connecion redirect stdout/stdin with `< /dev/ttyACM0 > /dev/ttyACM0`
+`-k` enables to use blocks with 1024 bytes instead of 128 bytes. The path to the "app_update.bin" follows. To use the serial/USB connecion redirect stdout/stdin with `< /dev/ttyACM0 > /dev/ttyACM0`. For other device a different serial interface may be required, e.g. `/dev/ttyUSB0` for a nRF9160 feather.
+
+```
+sx -k build_feather_nrf9160_ns/zephyr/app_update.bin < /dev/ttyUSB0 > /dev/ttyUSB0
+```
 
 Once `sx` executes, the `gtkterm` must not be used, because that may cause conflicts on the serial device. Therefore first start the update on the device in the `gtkterm` with `update`:
 
@@ -291,6 +297,36 @@ Ymodem Sektoren/Kilobytes gesendet: 1928/241k
 When the transfer starts, `sx` will report the progress and also when finished. And the device will report "ready" as well. 
 
 ![gtkterm update ready](./gtkterm_update_ready.png)
+
+#### Firmware update with Microsoft Windows
+
+For Microsoft Windows [Tera Term](https://ttssh2.osdn.jp/index.html.en) works well for comands and updates. First configure the "Serial port", select the menu "Setup" and "Serial port ..." there.
+
+![teraterm menu "Setup" -> "Serial port ..."](./teraterm.png)
+
+The serial port setup dialog appears. Select 115200 as baudrate and the COM port ( you may test both to see which is the right one).
+
+![teraterm "Serial port"](./teraterm-config.png)
+
+Test the serial communication by typing "at" and `<return>`.
+
+![teraterm test](./teraterm-test.png)
+
+If the device responds with ">at OK" as above, the communication works. If none of both COM port works, you may check the "Terminal setup" and select "Local echo" and adapt the "New-line" settings. 
+
+![teraterm "Serial port"](./teraterm-terminal.png)
+
+If that works, it's recommended to prepare for the XMODEM file transfer before actually executing the update. Select in the menu "File", "Transfer", "XMOMDEM" and "Send ...".
+
+![teraterm transfer](./teraterm-xmodem.png)
+
+The file select dialog appears. Check the "1K" Option and select the file to update. You will need the "build/zephyr/app_update.bin" file. Chose that and "cancel". 
+
+![teraterm file dialog](./teraterm-file.png)
+
+Now type "update" in the terminal, the device will report that the update  will start in 10s. Chose again "File", "Transfer", "XMOMDEM" and "Send ...", select the "app_update.bin" and start the transfer pressing "open. A progress dialog appears and when the transfer finished, the device will reboot and apply the update.
+
+![teraterm file transfer](./teraterm-file-transfer.png)
 
 
 ** !!! Under Construction !!! **

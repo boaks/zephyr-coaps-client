@@ -22,4 +22,6 @@ int coap_prov_client_prepare_post(char *buf, size_t len);
 
 int coap_prov_client_message(const uint8_t** buffer);
 
+extern coap_handler_t coap_prov_client_handler;
+
 #endif /* COAP_PROV_CLIENT_H */

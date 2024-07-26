@@ -22,7 +22,10 @@
 #define UPDATE_CMD_UPDATE 2
 
 int appl_update_cmd(const char *config);
+
+#ifdef CONFIG_SH_CMD
 void appl_update_cmd_help(void);
+#endif
 
 bool appl_update_pending(void);
 int appl_update_start(void);

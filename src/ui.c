@@ -17,7 +17,8 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-#include "appl_diagnose.h"
+#include "power_manager.h"
+// #include "appl_diagnose.h"
 #include "io_job_queue.h"
 #include "parse.h"
 #include "sh_cmd.h"
@@ -43,6 +44,9 @@ LOG_MODULE_REGISTER(UI, CONFIG_UI_LOG_LEVEL);
 #define BUTTON_DEBOUNCE_MS 50
 #define BUTTON_MIN_PAUSE_MS 1000
 
+#define LED_BLINK_MS 500
+#define LED_BLINKING_MS 300
+
 #if (!DT_NODE_HAS_STATUS(CALL_BUTTON_NODE, okay))
 /* A build error here means your board isn't set up to for sw0 (call button). */
 #error "Unsupported board: sw0 devicetree alias is not defined"
@@ -61,20 +65,17 @@ typedef struct gpio_device_ext {
    led_op_t op;
 } gpio_device_ext_t;
 
-#define GPIO_DEVICE_INIT(NODE)                 \
+#define GPIO_DEVICE_INIT(NODE) \
+   {                           \
+       "", GPIO_DT_SPEC_GET(NODE, gpios), false}
+
+#define GPIO_NAMED_DEVICE_INIT(NAME, NODE) \
+   {                                       \
+       NAME, GPIO_DT_SPEC_GET(NODE, gpios), false}
+
+#define GPIO_NAMED_DEVICE_INIT_EXT(NAME, NODE) \
    {                                           \
-      "", GPIO_DT_SPEC_GET(NODE, gpios), false \
-   }
-
-#define GPIO_NAMED_DEVICE_INIT(NAME, NODE)       \
-   {                                             \
-      NAME, GPIO_DT_SPEC_GET(NODE, gpios), false \
-   }
-
-#define GPIO_NAMED_DEVICE_INIT_EXT(NAME, NODE)              \
-   {                                                        \
-      NAME, GPIO_DT_SPEC_GET(NODE, gpios), false, LED_CLEAR \
-   }
+       NAME, GPIO_DT_SPEC_GET(NODE, gpios), false, LED_CLEAR}
 
 #if DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_2, okay)
 static gpio_device_t config_button_1_spec = GPIO_DEVICE_INIT(CONFIG_BUTTON_NODE_1);
@@ -304,14 +305,14 @@ static void ui_op(gpio_device_ext_t *output_spec, led_op_t op, struct k_work_del
          case LED_BLINK:
             if (timer) {
                gpio_pin_set_dt(gpio_spec, 1);
-               work_reschedule_for_io_queue(timer, K_MSEC(500));
+               work_reschedule_for_io_queue(timer, K_MSEC(LED_BLINK_MS));
                LOG_DBG("UI: %sLED blink", output_spec->desc);
             }
             break;
          case LED_BLINKING:
             if (timer) {
                gpio_pin_set_dt(gpio_spec, 1);
-               work_reschedule_for_io_queue(timer, K_MSEC(300));
+               work_reschedule_for_io_queue(timer, K_MSEC(LED_BLINKING_MS));
                LOG_DBG("UI: %sLED start blinking", output_spec->desc);
             }
             break;
@@ -551,12 +552,21 @@ int ui_input(k_timeout_t timeout)
 
 #ifdef CONFIG_SH_CMD
 
+static void ui_finish_prio_fn(struct k_work *work)
+{
+   ui_led_op_prio(LED_COLOR_ALL, LED_CLEAR);
+   ui_prio_mode = false;
+}
+
+static K_WORK_DELAYABLE_DEFINE(ui_finish_prio_work, ui_finish_prio_fn);
+
 static int sh_cmd_led(const char *parameter)
 {
+   k_timeout_t timeout = K_NO_WAIT;
    led_t led = LED_NONE;
    led_op_t op = LED_CLEAR;
-   char value1[6];
-   char value2[6];
+   char value1[7];
+   char value2[10];
    const char *cur = parameter;
 
    memset(value1, 0, sizeof(value1));
@@ -580,18 +590,27 @@ static int sh_cmd_led(const char *parameter)
    }
    if (!stricmp("on", value2)) {
       op = LED_SET;
+      timeout = K_SECONDS(10);
    } else if (!stricmp("off", value2)) {
       op = LED_CLEAR;
    } else if (!stricmp("blink", value2)) {
       op = LED_BLINK;
+      timeout = K_MSEC(LED_BLINK_MS + 200);
    } else if (!stricmp("blinking", value2)) {
       op = LED_BLINKING;
+      timeout = K_MSEC(LED_BLINKING_MS * 21);
    } else {
       LOG_INF("led %s", parameter);
       LOG_INF("operation '%s' not supported!", value2);
       return -EINVAL;
    }
-   ui_led_op(led, op);
+   if (timeout.ticks) {
+      ui_prio_mode = true;
+      power_manager_pulse(timeout);
+      work_reschedule_for_io_queue(&ui_finish_prio_work, timeout);
+   }
+   ui_led_op_prio(led, op);
+
    return 0;
 }
 

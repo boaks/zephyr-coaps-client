@@ -19,8 +19,8 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include "appl_diagnose.h"
 #include "appl_settings.h"
-#include "dtls_client.h"
 #include "modem.h"
 #include "modem_at.h"
 #include "parse.h"
@@ -107,6 +107,9 @@ static void sh_cmd_result(int res)
                break;
             case -ENOTSUP:
                desc = "not supported";
+               break;
+            case -ETIME:
+               desc = "timeout";
                break;
             default:
                desc = strerror(-res);
@@ -286,7 +289,7 @@ static int sh_cmd_help(const char *parameter)
          return 0;
       }
    }
-   LOG_INF("> help:");
+   LOG_INF("> help: (%s)", appl_get_version());
    LOG_INF("  %-*s: generic modem at-cmd.(*)", sh_cmd_max_length, "at\?\?\?");
 
    STRUCT_SECTION_FOREACH(sh_cmd_entry, e)
@@ -298,11 +301,14 @@ static int sh_cmd_help(const char *parameter)
          if (e->at_cmd) {
             details[++index] = '*';
          }
-#ifdef CONFIG_CMD_UNLOCK
          if (e->protect) {
+#ifdef CONFIG_SH_CMD_UNLOCK
             details[++index] = '#';
+#else
+            // skip
+            continue;
+#endif /* CONFIG_SH_CMD_UNLOCK */
          }
-#endif /* CONFIG_CMD_UNLOCK */
          if (e->help_handler) {
             details[++index] = '?';
          }
@@ -320,14 +326,20 @@ static int sh_cmd_help(const char *parameter)
       }
    }
    LOG_INF("  %-*s: AT-cmd is used, maybe busy.", sh_cmd_max_length, "*");
-#ifdef CONFIG_CMD_UNLOCK
+#ifdef CONFIG_SH_CMD_UNLOCK
    LOG_INF("  %-*s: protected <cmd>, requires 'unlock' ahead.", sh_cmd_max_length, "#");
-#endif /* CONFIG_CMD_UNLOCK */
+#endif /* CONFIG_SH_CMD_UNLOCK */
    LOG_INF("  %-*s: help <cmd> available.", sh_cmd_max_length, "?");
    if (full) {
       STRUCT_SECTION_FOREACH(sh_cmd_entry, e)
       {
          if (e->help && e->help_handler) {
+            if (e->protect) {
+#ifndef CONFIG_SH_CMD_UNLOCK
+               // skip
+               continue;
+#endif /* CONFIG_SH_CMD_UNLOCK */
+            }
             LOG_INF("");
             k_sleep(K_MSEC(50));
             e->help_handler();
@@ -344,7 +356,7 @@ static void sh_cmd_help_help(void)
 
 SH_CMD(help, NULL, NULL, sh_cmd_help, sh_cmd_help_help, 0);
 
-#ifdef CONFIG_CMD_UNLOCK
+#ifdef CONFIG_SH_CMD_UNLOCK
 
 static int64_t sh_cmd_unlocked = 0;
 
@@ -377,7 +389,7 @@ static int sh_cmd_lock(const char *parameter)
 
 SH_CMD(unlock, NULL, "unlock protected cmds.", sh_cmd_unlock, sh_cmd_unlock_help, 0);
 SH_CMD(lock, NULL, "lock protected cmds.", sh_cmd_lock, NULL, 0);
-#endif /* CONFIG_CMD_UNLOCK */
+#endif /* CONFIG_SH_CMD_UNLOCK */
 
 static int sh_cmd(const char *cmd_buf, bool insecure)
 {
@@ -395,7 +407,7 @@ static int sh_cmd(const char *cmd_buf, bool insecure)
          LOG_INF("%s doesn't support parameter '%s'!", cmd->cmd, &cmd_buf[i]);
          return 1;
       }
-#ifdef CONFIG_CMD_UNLOCK
+#ifdef CONFIG_SH_CMD_UNLOCK
       {
          int64_t now = k_uptime_get();
          if (now > sh_cmd_unlocked) {
@@ -410,7 +422,11 @@ static int sh_cmd(const char *cmd_buf, bool insecure)
             sh_cmd_unlocked = now + (CONFIG_SH_CMD_UNLOCK_SECONDS * MSEC_PER_SEC);
          }
       }
-#endif /* CONFIG_CMD_UNLOCK */
+#else
+      if (cmd->protect && insecure) {
+         goto at_cmd_modem;
+      }
+#endif /* CONFIG_SH_CMD_UNLOCK */
 
       if (cmd->at_cmd) {
          if (cmd->at_cmd[0] && !cmd->handler) {
@@ -545,11 +561,11 @@ int sh_busy(void)
 
 int sh_protected(void)
 {
-#ifdef CONFIG_CMD_UNLOCK
+#ifdef CONFIG_SH_CMD_UNLOCK
    return atomic_get(&sh_cmd_state) & SH_CMD_PROTECTED;
-#else  /* CONFIG_CMD_UNLOCK */
-   return 0;
-#endif /* CONFIG_CMD_UNLOCK */
+#else  /* CONFIG_SH_CMD_UNLOCK */
+   return SH_CMD_PROTECTED;
+#endif /* CONFIG_SH_CMD_UNLOCK */
 }
 
 static int sh_cmd_init(void)

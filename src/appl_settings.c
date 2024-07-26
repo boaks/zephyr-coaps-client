@@ -67,9 +67,9 @@ static char device_id[DTLS_PSK_MAX_CLIENT_IDENTITY_LEN + 1] = {0};
 static char coap_path[MAX_SETTINGS_VALUE_LENGTH] = {0};
 static char coap_query[MAX_SETTINGS_VALUE_LENGTH] = {0};
 
-#ifdef CONFIG_CMD_UNLOCK
+#ifdef CONFIG_SH_CMD_UNLOCK
 static unsigned char unlock_password[DTLS_PSK_MAX_KEY_LEN + 1] = {0};
-#endif
+#endif /* CONFIG_SH_CMD_UNLOCK */
 
 #if defined(CONFIG_DTLS_PSK_SECRET) || defined(CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY) || defined(CONFIG_DTLS_ECDSA_PRIVATE_KEY) || defined(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY)
 
@@ -469,7 +469,7 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
       }
 
       if (appl_settings_key_match(name, SETTINGS_KEY_UNLOCK, name_len)) {
-#ifdef CONFIG_CMD_UNLOCK
+#ifdef CONFIG_SH_CMD_UNLOCK
          res = read_cb(cb_arg, &buf, sizeof(unlock_password) - 1);
          k_mutex_lock(&settings_mutex, K_FOREVER);
          if (res > 0) {
@@ -479,7 +479,7 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
          if (res > 0) {
             LOG_INF("unlock: %d bytes", res);
          }
-#endif
+#endif /* CONFIG_SH_CMD_UNLOCK */
          return 0;
       }
 
@@ -571,7 +571,7 @@ static int appl_settings_handle_export(int (*cb)(const char *name,
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_COAP_PATH, coap_path, strlen(coap_path));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_COAP_QUERY, coap_query, strlen(coap_query));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_APN, apn, strlen(apn));
-#ifdef CONFIG_CMD_UNLOCK
+#ifdef CONFIG_SH_CMD_UNLOCK
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_UNLOCK, unlock_password, strlen(unlock_password));
 #endif
 
@@ -607,6 +607,9 @@ static int appl_settings_copy(const char *value, char *buf, size_t len)
 {
    int res = 0;
 
+   if (buf) {
+      memset(buf, 0, len);
+   }
    k_mutex_lock(&settings_mutex, K_FOREVER);
    res = strlen(value) + 1;
    if (res > len) {
@@ -813,7 +816,7 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
       }
 
       if (appl_settings_key_match(name, SETTINGS_KEY_UNLOCK, name_len)) {
-#ifdef CONFIG_CMD_UNLOCK
+#ifdef CONFIG_SH_CMD_UNLOCK
          k_mutex_lock(&settings_mutex, K_FOREVER);
          res = unlock_password[0];
          k_mutex_unlock(&settings_mutex);
@@ -822,7 +825,7 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
          } else {
             LOG_DBG("Get: '%s' 0 bytes", name);
          }
-#endif
+#endif /* CONFIG_SH_CMD_UNLOCK */
          return 0;
       }
    }
@@ -885,7 +888,7 @@ static int appl_settings_init_provisioning(void)
 #define CONFIG_COAP_SERVER "californium.eclipseprojects.io"
 #endif
 
-#if defined(CONFIG_DEVICE_IDENTITY) || defined(CONFIG_DTLS_PSK_IDENTITY)
+#if defined(CONFIG_DEVICE_IDENTITY) || defined(CONFIG_DTLS_PSK_IDENTITY) || defined(CONFIG_COAP_RESOURCE) || defined(CONFIG_COAP_QUERY)
 static int appl_settings_expand_imei(char *buf, size_t size, const char *value)
 {
    char *cur;
@@ -906,7 +909,7 @@ static int appl_settings_expand_imei(char *buf, size_t size, const char *value)
    }
    return id_len;
 }
-#endif /* CONFIG_DEVICE_IDENTITY || CONFIG_DTLS_PSK_IDENTITY */
+#endif /* CONFIG_DEVICE_IDENTITY || CONFIG_DTLS_PSK_IDENTITY || CONFIG_COAP_RESOURCE || CONFIG_COAP_QUERY */
 
 static void appl_setting_factory_reset(int flags)
 {
@@ -935,10 +938,10 @@ static void appl_setting_factory_reset(int flags)
       LOG_INF("dest: %s:%u/%u", destination, destination_port, destination_secure_port);
 
 #ifdef CONFIG_COAP_RESOURCE
-      strncpy(coap_path, CONFIG_COAP_RESOURCE, sizeof(coap_path) - 1);
+      appl_settings_expand_imei(coap_path, sizeof(coap_path), CONFIG_COAP_RESOURCE);
 #endif
 #ifdef CONFIG_COAP_QUERY
-      strncpy(coap_query, CONFIG_COAP_QUERY, sizeof(coap_query) - 1);
+      appl_settings_expand_imei(coap_query, sizeof(coap_query), CONFIG_COAP_QUERY);
 #endif
       save = true;
    }
@@ -947,8 +950,6 @@ static void appl_setting_factory_reset(int flags)
       memset(device_id, 0, sizeof(device_id));
 #ifdef CONFIG_DEVICE_IDENTITY
       appl_settings_expand_imei(device_id, sizeof(device_id), CONFIG_DEVICE_IDENTITY);
-#elif defined(CONFIG_DTLS_PSK_IDENTITY)
-      appl_settings_expand_imei(device_id, sizeof(device_id), CONFIG_DTLS_PSK_IDENTITY);
 #endif /* CONFIG_DEVICE_IDENTITY */
       LOG_INF("device-id: %s", device_id);
       save = true;
@@ -1043,15 +1044,15 @@ static void appl_setting_factory_reset(int flags)
    }
 #endif /* DTLS_ECC */
 
-#ifdef CONFIG_CMD_UNLOCK
+#ifdef CONFIG_SH_CMD_UNLOCK
    if (flags & SETTINGS_RESET_UNLOCK) {
       memset(unlock_password, 0, sizeof(unlock_password));
-#ifdef CONFIG_CMD_UNLOCK_PASSWORD
-      strncpy(unlock_password, CONFIG_CMD_UNLOCK_PASSWORD, sizeof(unlock_password) - 1);
+#ifdef CONFIG_SH_CMD_UNLOCK_PASSWORD
+      strncpy(unlock_password, CONFIG_SH_CMD_UNLOCK_PASSWORD, sizeof(unlock_password) - 1);
 #endif
       save = true;
    }
-#endif /* CONFIG_CMD_UNLOCK */
+#endif /* CONFIG_SH_CMD_UNLOCK */
 
    if (save || !settings_initialized) {
       settings_initialized = 1;
@@ -1208,8 +1209,8 @@ int appl_settings_get_provisioning(char *buf, size_t len)
 
    k_mutex_lock(&settings_mutex, K_FOREVER);
 
-#ifdef CONFIG_DTLS_PROVISIONING_GROUP
-   index += snprintf(buf, len, "%s=%s", device_id, CONFIG_DTLS_PROVISIONING_GROUP);
+#ifdef CONFIG_PROVISIONING_GROUP
+   index += snprintf(buf, len, "%s=%s", device_id, CONFIG_PROVISIONING_GROUP);
 #else
    index += snprintf(buf, len, "%s=Auto", device_id);
 #endif
@@ -1333,15 +1334,15 @@ void appl_settings_provisioning_done(void)
 
 bool appl_settings_unlock(const char *value)
 {
-#ifdef CONFIG_CMD_UNLOCK
+#ifdef CONFIG_SH_CMD_UNLOCK
    int res = 0;
    k_mutex_lock(&settings_mutex, K_FOREVER);
    res = strcmp(unlock_password, value);
    k_mutex_unlock(&settings_mutex);
    return res == 0;
-#else
+#else  /* CONFIG_SH_CMD_UNLOCK */
    return false;
-#endif
+#endif /* CONFIG_SH_CMD_UNLOCK */
 }
 
 #ifdef CONFIG_SH_CMD

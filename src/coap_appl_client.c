@@ -266,36 +266,6 @@ int coap_appl_client_parse_data(uint8_t *data, size_t len)
    return res;
 }
 
-#ifdef CONFIG_COAP_QUERY_KEEP_ENABLE
-
-static int coap_appl_client_add_uri_query(struct coap_packet *request, const char *query)
-{
-   if (query && query[0]) {
-      int err;
-
-      err = coap_packet_append_option(request, COAP_OPTION_URI_QUERY,
-                                      (uint8_t *)query,
-                                      strlen(query));
-      if (err < 0) {
-         dtls_warn("Failed to encode CoAP URI-QUERY option '%s', %d", query, err);
-         return err;
-      }
-   }
-   return 0;
-}
-
-static int coap_appl_client_add_uri_query_param(struct coap_packet *request, const char *query, const char *value)
-{
-   if (query && query[0] && value && value[0]) {
-      char buf[32];
-      snprintf(buf, sizeof(buf), "%s=%s", query, value);
-      return coap_appl_client_add_uri_query(request, buf);
-   }
-   return 0;
-}
-
-#endif /* CONFIG_COAP_QUERY_KEEP_ENABLE */
-
 int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
 {
    int64_t reboot_times[REBOOT_INFOS];
@@ -890,16 +860,13 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
    appl_context.message_len = 0;
 
    if (len && buf[0] == 0) {
-#ifdef CONFIG_COAP_SEND_MODEM_INFO
       if (flags & COAP_SEND_FLAG_MODEM_INFO) {
          err = coap_appl_client_prepare_modem_info(buf, len, flags);
          if (err > 0) {
             index = start + err;
          }
       }
-#endif
 
-#ifdef CONFIG_COAP_SEND_SIM_INFO
       if (flags & COAP_SEND_FLAG_SIM_INFO) {
          buf[index] = '\n';
          start = index + 1;
@@ -908,9 +875,7 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
             index = start + err;
          }
       }
-#endif /* CONFIG_COAP_SEND_SIM_INFO */
 
-#if defined(CONFIG_COAP_SEND_NETWORK_INFO)
       if (flags & COAP_SEND_FLAG_NET_INFO) {
          buf[index] = '\n';
          start = index + 1;
@@ -919,9 +884,7 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
             index = start + err;
          }
       }
-#endif /* CONFIG_COAP_SEND_NETWORK_INFO */
 
-#if defined(CONFIG_COAP_SEND_STATISTIC_INFO)
       if (flags & COAP_SEND_FLAG_NET_STATS) {
          buf[index] = '\n';
          start = index + 1;
@@ -930,7 +893,6 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
             index = start + err;
          }
       }
-#endif /* CONFIG_COAP_SEND_STATISTIC_INFO */
 
 #ifdef CONFIG_LOCATION_ENABLE
       if (flags & COAP_SEND_FLAG_LOCATION_INFO) {
@@ -962,6 +924,15 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
          }
       }
 #endif /* CONFIG_ADC_SCALE */
+
+      if (flags & COAP_SEND_FLAG_NET_SCAN_INFO) {
+         buf[index] = '\n';
+         start = index + 1;
+         err = modem_get_last_neighbor_cell_meas(buf + start, len - start);
+         if (err > 0) {
+            index = start + err;
+         }
+      }
 
    } else {
       index = len;
@@ -1012,19 +983,6 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
       }
    }
 
-#ifdef CONFIG_COAP_QUERY_KEEP_ENABLE
-   err = coap_appl_client_add_uri_query(&request, "keep");
-   if (err < 0) {
-      return err;
-   }
-   if (appl_settings_get_device_identity(value, sizeof(value))) {
-      err = coap_appl_client_add_uri_query_param(&request, "id", value);
-      if (err < 0) {
-         return err;
-      }
-   }
-#endif /* CONFIG_COAP_QUERY_KEEP_ENABLE */
-
    if (flags & COAP_SEND_FLAG_NO_RESPONSE) {
       err = coap_append_option_int(&request, COAP_OPTION_NO_RESPONSE,
                                    COAP_NO_RESPONSE_IGNORE_ALL);
@@ -1055,9 +1013,9 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
       }
    }
 
-   if (send_interval > 0) {
-      err = coap_append_option_int(&request, CUSTOM_COAP_OPTION_INTERVAL,
-                                   send_interval);
+   err = get_send_interval();
+   if (err > 0) {
+      err = coap_append_option_int(&request, CUSTOM_COAP_OPTION_INTERVAL, err);
       if (err < 0) {
          dtls_warn("Failed to encode CoAP interval option, %d", err);
          return err;
@@ -1111,6 +1069,11 @@ int coap_appl_client_retry_strategy(int counter, bool dtls)
    }
    return DTLS_CLIENT_RETRY_STRATEGY_RESTARTS;
 }
+
+coap_handler_t coap_appl_client_handler = {
+    .get_message = coap_appl_client_message,
+    .parse_data = coap_appl_client_parse_data,
+};
 
 #ifdef CONFIG_SH_CMD
 

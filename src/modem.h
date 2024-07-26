@@ -214,6 +214,10 @@ void modem_lock_rai(bool on);
 
 void modem_lock_plmn(bool on);
 
+int modem_get_last_neighbor_cell_meas(char* buf, size_t len);
+
+int modem_clear_last_neighbor_cell_meas(void);
+
 int modem_set_offline(void);
 
 int modem_set_lte_offline(void);

@@ -69,9 +69,9 @@ static int modem_cmd_config(const char *config)
    const bool is_on = modem_at_is_on() == 1;
    int res;
    char buf[32];
-   char value1[7];
-   char value2[5];
-   char value3[3];
+   char value1[8];
+   char value2[6];
+   char value3[4];
    const char *cur = config;
    modem_at_response_handler_t handler = is_on ? cmd_resp_callback_send : cmd_resp_callback;
 
@@ -271,8 +271,8 @@ static void modem_cmd_config_help(void)
 static int modem_cmd_connect(const char *config)
 {
    int res;
-   char value1[7];
-   char value2[3];
+   char value1[8];
+   char value2[4];
    const char *cur = config;
    modem_at_response_handler_t handler = modem_at_is_on() == 1 ? cmd_resp_callback_send : cmd_resp_callback;
 
@@ -459,17 +459,80 @@ static int modem_cmd_scan(const char *config)
    return lte_lc_neighbor_cell_measurement(&params);
 }
 
+static void modem_cmd_scan_help_details(const char *cmd)
+{
+   LOG_INF("  %s        : repeat previous network scan.", cmd);
+   LOG_INF("  %s 0      : displays neighbor cell history", cmd);
+   LOG_INF("  %s 1      : start neighbor cell search", cmd);
+   LOG_INF("  %s 2      : start neighbor cell search, all bands", cmd);
+   LOG_INF("  %s 3 <n>  : displays cell history", cmd);
+   LOG_INF("  %s 4 <n>  : start cell search", cmd);
+   LOG_INF("  %s 5 <n>  : start cell search, all bands", cmd);
+   LOG_INF("  <n>         : maximum cells to list, values 2 to 15.");
+}
+
 static void modem_cmd_scan_help(void)
 {
-   LOG_INF("> help scan:");
-   LOG_INF("  scan        : repeat previous network scan.");
-   LOG_INF("  scan 0      : displays neighbor cell history");
-   LOG_INF("  scan 1      : start neighbor cell search");
-   LOG_INF("  scan 2      : start neighbor cell search, all bands");
-   LOG_INF("  scan 3 <n>  : displays cell history");
-   LOG_INF("  scan 4 <n>  : start cell search");
-   LOG_INF("  scan 5 <n>  : start cell search, all bands");
-   LOG_INF("  <n>         : maximum cells to list, values 2 to 15.");
+   LOG_INF("> help scan: start network scan");
+   modem_cmd_scan_help_details("scan");
+}
+
+static int modem_wait_sleeping(int timeout)
+{
+   enum lte_power_state state = LTE_POWER_STATE_IDLE;
+
+   while (timeout > 0) {
+      if (modem_get_power_state(&state) == 0 && state == LTE_POWER_STATE_SLEEPING) {
+         break;
+      }
+      --timeout;
+      if (timeout > 0) {
+         k_sleep(K_MSEC(1000));
+      }
+   }
+   return timeout;
+}
+
+static int modem_wait_scan_result(int timeout)
+{
+   while (timeout > 0) {
+      if (modem_get_last_neighbor_cell_meas(NULL, 2)) {
+         break;
+      }
+      --timeout;
+      if (timeout > 0) {
+         k_sleep(K_MSEC(1000));
+      }
+   }
+   return timeout;
+}
+
+static int modem_cmd_rscan(const char *config)
+{
+   int res = -ETIME;
+
+   modem_clear_last_neighbor_cell_meas();
+   if (modem_wait_sleeping(60)) {
+      k_sleep(K_MSEC(1000));
+      res = modem_cmd_scan(config);
+      if (res >= 0) {
+         LOG_INF(">network scan waiting for result ...");
+         k_sleep(K_MSEC(1000));
+         if (modem_wait_scan_result(300)) {
+            res = sh_cmd_append("sendresult", K_MSEC(2000));
+         } else {
+            res = -ETIME;
+         }
+      }
+   }
+
+   return res;
+}
+
+static void modem_cmd_rscan_help(void)
+{
+   LOG_INF("> help rscan: remote network scan");
+   modem_cmd_scan_help_details("rscan");
 }
 
 #define ROUND_UP_TIME(T, D) (((T) + ((D) - 1)) / (D))
@@ -705,7 +768,7 @@ static int modem_cmd_band(const char *config)
 {
    int res;
    char buf[128];
-   char value[4];
+   char value[5];
    const char *cur = config;
 
    cur = parse_next_text(cur, ' ', value, sizeof(value));
@@ -872,6 +935,56 @@ static int modem_cmd_rate_limit(const char *parameter)
    return res;
 }
 
+static int modem_cmd_deepsearch(const char *config)
+{
+   int res = 0;
+   const char *cur = config;
+   char value[5];
+   char buf[128];
+
+   memset(value, 0, sizeof(value));
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+   if (!value[0]) {
+      res = modem_at_cmd(buf, sizeof(buf), "%XDEEPSEARCH: ", "AT%XDEEPSEARCH?");
+      if (res > 0) {
+         if (buf[0] == '1') {
+            LOG_INF("deep-search: on");
+         } else if (buf[0] == '0') {
+            LOG_INF("deep-search: off");
+         } else {
+            LOG_INF("deep-search: %s", buf);
+         }
+      }
+   } else {
+      int mode = 0;
+      if (!stricmp("off", value)) {
+      } else if (!stricmp("0", value)) {
+      } else if (!stricmp("on", value)) {
+         mode = 1;
+      } else if (!stricmp("1", value)) {
+         mode = 1;
+      } else {
+         res = -EINVAL;
+      }
+      if (!res) {
+         res = modem_at_cmdf(buf, sizeof(buf), NULL, "AT%%XDEEPSEARCH=%d", mode);
+         if (res > 0) {
+            LOG_INF("deep-search: %s => %s", mode ? "on" : "off", buf);
+         }
+      }
+   }
+
+   return res;
+}
+
+static void modem_cmd_deepsearch_help(void)
+{
+   LOG_INF("> help deep:");
+   LOG_INF("  deep (on|1)  : enable deep-search.");
+   LOG_INF("  deep (off|0) : disable deep-search.");
+   LOG_INF("  deep         : show deep-search status.");
+}
+
 #ifdef CONFIG_SMS
 
 #include <modem/sms.h>
@@ -920,6 +1033,7 @@ SH_CMD(apn, "", "modem APN.", modem_cmd_apn, modem_cmd_apn_help, 0);
 SH_CMD(apnclr, "", "clear modem APN.", modem_cmd_apnclr, NULL, 0);
 
 SH_CMD(scan, "AT%NCELLMEAS", "network scan.", modem_cmd_scan, modem_cmd_scan_help, 0);
+SH_CMD(rscan, "", "remote network scan.", modem_cmd_rscan, modem_cmd_rscan_help, 0);
 
 SH_CMD(band, "", "configure bands.", modem_cmd_band, modem_cmd_band_help, 0);
 SH_CMD(edrx, "", "configure eDRX.", modem_cmd_edrx, modem_cmd_edrx_help, 0);
@@ -928,5 +1042,6 @@ SH_CMD(rai, "", "configure RAI.", modem_cmd_rai, modem_cmd_rai_help, 0);
 
 SH_CMD(remo, "", "reduced mobility.", modem_cmd_reduced_mobility, modem_cmd_reduced_mobility_help, 0);
 SH_CMD(power, "", "configure power level.", modem_cmd_power_level, modem_cmd_power_level_help, 0);
+SH_CMD(deep, "AT%XDEEPSEARCH", "network deep-search mode.", modem_cmd_deepsearch, modem_cmd_deepsearch_help, 0);
 
 #endif

@@ -16,6 +16,7 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include <zephyr/sys_clock.h>
 
 typedef enum {
    POWER_UNKNOWN,
@@ -33,6 +34,8 @@ int power_manager_add_device(const struct device *dev);
 int power_manager_suspend_device(const struct device *dev);
 
 int power_manager_suspend(bool enable);
+
+int power_manager_pulse(k_timeout_t time);
 
 int power_manager_3v3(bool enable);
 

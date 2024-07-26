@@ -36,9 +36,21 @@ config COAP_SERVER_SECURE_PORT
 	int "CoAP server port number (DTLS/TLS)."
 	default "5684"
 
+config DEVICE_IDENTITY
+	string "CoAP/device identity."
+	default "cali.${imei}"
+	help
+	   "${imei}" is replaced by the modem's IMEI.
+
+config PROVISIONING_GROUP
+	string "CoAP/DTLS provisioning group"
+	default "Auto"
+	help
+	   Device group for provisioning. 
+
 config DTLS_PSK_IDENTITY
 	string "CoAP/DTLS PSK identity."
-	default "cali.${imei}"
+	default DEVICE_IDENTITY
 	help
 	   "${imei}" is replaced by the modem's IMEI.
 	   This only work with Californium's PlugTestServer,
@@ -78,22 +90,18 @@ config DTLS_ECDSA_PRIVATE_KEY
 	help
 	   ECDSA device private key. Only SECP256R1 is supported.
 	   The private key is provided plain (32 bytes) without
-	   the algorithm ids. The public key is not provided, it
-	   will be derived from the private key. Hexadecimal 
-	   encoded with prefix ":0x", or base64 as "". 
+	   the algorithm ids or in ASN.1 encoding with algorithm
+	   header. The public key is not provided, it will be 
+	   derived from the private key. Hexadecimal encoded with 
+	   prefix ":0x", or base64 as "". 
 
 config DTLS_ECDSA_TRUSTED_PUBLIC_KEY
 	string "CoAP/DTLS ECDSA/SECP256R1 trusted server public key."
 	help
-	   ECDSA trusted server public key. concated public_x and public_y key.
-	   Either encoded as ASN.1 (including algorith id) or plain. Hexadecimal 
+	   ECDSA trusted server public key. Only SECP256R1 is supported.
+	   Either encoded as ASN.1 (including algorith header) or plain
+	   concated public_x and public_y key (64 bytes). Hexadecimal
 	   encoded with prefix ":0x", or base64 as "". 
-
-config DTLS_PROVISIONING_GROUP
-	string "CoAP/DTLS provisioning group"
-	default "auto"
-	help
-	   Device group for provisioning. 
 
 config DTLS_PROVISIONING_DOMAIN
 	string "CoAP/DTLS provisioning domain"
@@ -160,7 +168,7 @@ config COAP_SEND_STATISTIC_INFO
 	default y
 
 config COAP_SEND_MINIMAL
-	bool "Reduce infos in message."
+	bool "reduce infos in message."
 	default n
 
 config COAP_NO_RESPONSE_ENABLE
@@ -170,22 +178,24 @@ config COAP_NO_RESPONSE_ENABLE
 config COAP_RESOURCE
 	string "CoAP resource - defaults to Californium's echo resource"
 	default "echo"
+	help
+	   "${imei}" is replaced by the modem's IMEI.
 
 config COAP_QUERY
 	string "CoAP query - enable parameter"
 	help
-		Supported:
+	   "${imei}" is replaced by the modem's IMEI.
+		Supported (sandbox):
 		delay=<n> (delay response by n sec.)
 		rlen=<n> (response length n bytes.)
 		ack (use separate response.)
+		keep (enable echo keep function.)
+		id=<n> (device id, if PSK is not used.)
+		Supported (clouddemo, s3-proxy):
 		series (enable series function of s3-proxy.)
 		forward (enable http-proxy forward.)
-		read[=<subpath>] (read sub-resource.)
-		write[=<subpath>] (write sub-resource.)
-
-config COAP_QUERY_KEEP_ENABLE
-	bool "Enable CoAP query - keep (keep payload)"
-	default n
+		read[=<subpath>] (read sub-resource. Default subpath is "config".)
+		write[=<subpath>] (write sub-resource. Default subpath is "${now}".)
 
 endmenu
 
@@ -373,17 +383,19 @@ config SH_TEST_CMD
 	  Enable support for special sh test commands.
 	  Onyl used to test the debugging and fault reporting. 
 
-config CMD_UNLOCK
+config SH_CMD_UNLOCK
 	bool "Enable unlock/protected cmd"
     depends on SH_CMD
-	default y
+	default y	  
 
-if (CMD_UNLOCK)
+if (SH_CMD_UNLOCK)
 
-config CMD_UNLOCK_PASSWORD
-	string "Unlock cmd password."
-	default "unlock"
-
+config SH_CMD_UNLOCK_PASSWORD
+    string "Unlock cmd password."
+    default "unlock"
+    help
+        Must be replaced by secret password!
+	   
 endif
 
 menu "Extra Functions"

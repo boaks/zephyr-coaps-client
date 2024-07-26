@@ -35,7 +35,6 @@
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
-static K_MUTEX_DEFINE(pm_mutex);
 typedef const struct device *t_devptr;
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay) && defined(CONFIG_DISABLE_REALTIME_CLOCK)
@@ -66,6 +65,11 @@ static inline void power_manager_suspend_realtime_clock()
 
 #define VOLTAGE_MIN_INTERVAL_MILLIS 10000
 #define MAX_PM_DEVICES 10
+
+static K_MUTEX_DEFINE(pm_mutex);
+static k_ticks_t pm_pluse_end = 0;
+static bool pm_suspend = false;
+static bool pm_suspended = false;
 
 static volatile bool pm_init = false;
 static int pm_dev_counter = 0;
@@ -586,34 +590,72 @@ int power_manager_suspend_device(const struct device *dev)
    return 0;
 }
 
-int power_manager_suspend(bool enable)
+static int power_manager_apply(void)
 {
+   bool suspend = pm_suspend && (pm_pluse_end - sys_clock_tick_get()) < 0;
+
+   if (pm_suspended != suspend) {
+      pm_suspended = suspend;
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
 #ifdef CONFIG_SUSPEND_3V3
 #ifndef CONFIG_SUSPEND_UART
-   if (enable) {
-      LOG_INF("Suspend 3.3V");
-   } else {
-      LOG_INF("Resume 3.3V");
-   }
+      if (suspend) {
+         LOG_INF("Suspend 3.3V");
+      } else {
+         LOG_INF("Resume 3.3V");
+      }
 #endif
 #endif
 #endif
-   k_mutex_lock(&pm_mutex, K_FOREVER);
 #ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADC
-   if (enable) {
-      battery_measure_enable(false);
-   }
+      if (suspend) {
+         battery_measure_enable(false);
+      }
 #endif
-   suspend_devices(enable);
+      suspend_devices(suspend);
 #ifdef CONFIG_SUSPEND_UART
-   suspend_uart(enable);
+      suspend_uart(suspend);
 #endif
 #ifdef CONFIG_SUSPEND_3V3
-   power_manager_3v3(!enable);
+      power_manager_3v3(!suspend);
 #endif
-   k_mutex_unlock(&pm_mutex);
+   }
    return 0;
+}
+
+int power_manager_suspend(bool enable)
+{
+   int res = 0;
+
+   k_mutex_lock(&pm_mutex, K_FOREVER);
+   pm_suspend = enable;
+   res = power_manager_apply();
+   k_mutex_unlock(&pm_mutex);
+
+   return res;
+}
+
+static void power_management_suspend_fn(struct k_work *work)
+{
+   k_mutex_lock(&pm_mutex, K_FOREVER);
+   power_manager_apply();
+   k_mutex_unlock(&pm_mutex);
+}
+
+static K_WORK_DELAYABLE_DEFINE(power_management_suspend_work, power_management_suspend_fn);
+
+int power_manager_pulse(k_timeout_t time)
+{
+   int res = 0;
+   k_ticks_t end = time.ticks + sys_clock_tick_get() - K_MSEC(50).ticks;
+   k_mutex_lock(&pm_mutex, K_FOREVER);
+   if ((end - pm_pluse_end) > 0) {
+      pm_pluse_end = end;
+      work_reschedule_for_io_queue(&power_management_suspend_work, time);
+   }
+   res = power_manager_apply();
+   k_mutex_unlock(&pm_mutex);
+   return res;
 }
 
 int power_manager_voltage(uint16_t *voltage)

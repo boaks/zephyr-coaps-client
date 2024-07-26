@@ -142,3 +142,8 @@ int coap_prov_client_message(const uint8_t **buffer)
    }
    return appl_context.message_len;
 }
+
+coap_handler_t coap_prov_client_handler = {
+   .get_message = coap_prov_client_message,
+   .parse_data = coap_prov_client_parse_data,
+};
