@@ -20,6 +20,10 @@ config COAP_SERVICE
 if (COAP_SERVICE)
 menu "CoAP/DTLS 1.2 CID Service"
 
+config COAP_SCHEME
+	string "CoAP server scheme."
+	default "coaps"
+
 config COAP_SERVER_HOSTNAME
 	string "CoAP server hostname."
 	default "californium.eclipseprojects.io"

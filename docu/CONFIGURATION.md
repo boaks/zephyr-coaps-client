@@ -32,7 +32,7 @@ The application enables per default to suspend the UART and the 3.3V.
 
 Depending on the SIM-Card, the HPPLMN (automatic search for higher priorized PLMN) consumes quite a lot energy. e.g. a HPPLMN interval of 2h and an average searchtime of 60s ends up at a power consumption comparable with 10 message exchanges every hour. So check your SIM-card (enable COAP_SEND_SIM_INFO), not that you get surprised!
 
-The modem firmware versions 1.3.2 to 1.3.4 are also applying HPPLMN searchs for global IMSIs (starting with 9), which consumes a lot of energy. This behavior is disabled again with version 1.3.5. Please update to 1.3.5 when using such global SIM cards. 
+The modem firmware versions 1.3.2 to 1.3.4 are also applying HPPLMN searchs for global IMSIs (starting with 9), which consumes a lot of energy. This behavior is disabled again with version 1.3.5. Please update to 1.3.5 or newer when using such global SIM cards. 
 
 The usage of the sensors also reduces that time. Consider to measure less frequent, e.g. every 10 minutes instead of every couple of seconds.
 
@@ -41,6 +41,8 @@ The usage of the sensors also reduces that time. Consider to measure less freque
 - **APPL_MODEL**, application model, used to select the firmware variant for the hardware when downloading via CoAP. The resulting CoAP resource path will be `fw`/`<model>`/`<version>`, e.g. "fw/dk/0.10.0+0".
 
     - **APPL_MODEL_DESCRIPTION**, application description to include in reported version.
+
+- **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox 
 
 - **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox at `californium.eclipseprojects.io`.
 

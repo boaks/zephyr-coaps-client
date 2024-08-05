@@ -37,6 +37,7 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #define DEFAUL_COAP_SERVER_SECURE_PORT 5684
 
 #define SETTINGS_KEY_INIT "init"
+#define SETTINGS_KEY_SCHEME "scheme"
 #define SETTINGS_KEY_DESTINATION "dest"
 #define SETTINGS_KEY_PORT "port"
 #define SETTINGS_KEY_SECURE_PORT "sport"
@@ -60,6 +61,7 @@ static uint8_t settings_initialized = 0;
 static uint8 battery_profile = CONFIG_BATTERY_TYPE_DEFAULT;
 
 static char apn[MAX_SETTINGS_VALUE_LENGTH] = {0};
+static char scheme[12] = "coaps";
 static char destination[MAX_SETTINGS_VALUE_LENGTH] = DEFAUL_COAP_SERVER;
 static uint16_t destination_port = DEFAUL_COAP_SERVER_PORT;
 static uint16_t destination_secure_port = DEFAUL_COAP_SERVER_SECURE_PORT;
@@ -440,6 +442,16 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
          }
          return 0;
       }
+      if (appl_settings_key_match(name, SETTINGS_KEY_SCHEME, name_len)) {
+         res = read_cb(cb_arg, &buf, sizeof(scheme) - 1);
+         k_mutex_lock(&settings_mutex, K_FOREVER);
+         memcpy(scheme, buf, sizeof(scheme));
+         k_mutex_unlock(&settings_mutex);
+         if (res > 0) {
+            LOG_INF("scheme: '%s'", buf);
+         }
+         return 0;
+      }
       if (appl_settings_key_match(name, SETTINGS_KEY_DESTINATION, name_len)) {
          res = read_cb(cb_arg, &buf, sizeof(destination) - 1);
          k_mutex_lock(&settings_mutex, K_FOREVER);
@@ -581,6 +593,7 @@ static int appl_settings_handle_export(int (*cb)(const char *name,
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_PORT, &destination_port, sizeof(destination_port));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_SECURE_PORT, &destination_secure_port, sizeof(destination_secure_port));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_ID, device_id, strlen(device_id));
+   (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_SCHEME, scheme, strlen(scheme));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_DESTINATION, destination, strlen(destination));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_COAP_PATH, coap_path, strlen(coap_path));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_COAP_QUERY, coap_query, strlen(coap_query));
@@ -719,6 +732,14 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
          res = appl_settings_copy(apn, val, val_len_max);
          if (res >= 0) {
             LOG_DBG("apn: '%s'", val);
+         }
+         return res;
+      }
+
+      if (appl_settings_key_match(name, SETTINGS_KEY_SCHEME, name_len)) {
+         res = appl_settings_copy(scheme, val, val_len_max);
+         if (res >= 0) {
+            LOG_DBG("scheme: '%s'", val);
          }
          return res;
       }
@@ -945,6 +966,7 @@ static void appl_setting_factory_reset(int flags)
 
    k_mutex_lock(&settings_mutex, K_FOREVER);
    if (flags & SETTINGS_RESET_DEST) {
+      memset(scheme, 0, sizeof(scheme));
       memset(destination, 0, sizeof(destination));
       memset(coap_path, 0, sizeof(coap_path));
       memset(coap_query, 0, sizeof(coap_query));
@@ -962,7 +984,12 @@ static void appl_setting_factory_reset(int flags)
 #ifdef CONFIG_COAP_SERVER_SECURE_PORT
       destination_secure_port = CONFIG_COAP_SERVER_SECURE_PORT;
 #endif /* CONFIG_COAP_SERVER_SECURE_PORT */
-      LOG_INF("dest: %s:%u/%u", destination, destination_port, destination_secure_port);
+#ifdef CONFIG_COAP_SCHEME
+      strncpy(scheme, CONFIG_COAP_SCHEME, sizeof(scheme) - 1);
+#else
+      strncpy(scheme, "coaps", sizeof(scheme) - 1);
+#endif      
+      LOG_INF("dest: %s://%s:%u/%u", scheme, destination, destination_port, destination_secure_port);
 
 #ifdef CONFIG_COAP_RESOURCE
       appl_settings_expand_imei(coap_path, sizeof(coap_path), CONFIG_COAP_RESOURCE);
@@ -1150,6 +1177,11 @@ int appl_settings_get_apn(char *buf, size_t len)
 int appl_settings_get_device_identity(char *buf, size_t len)
 {
    return appl_settings_copy(device_id, buf, len);
+}
+
+int appl_settings_get_scheme(char *buf, size_t len)
+{
+   return appl_settings_copy(scheme, buf, len);
 }
 
 int appl_settings_get_destination(char *buf, size_t len)
