@@ -22,7 +22,7 @@
 #include <zephyr/logging/log_ctrl.h>
 #include <zephyr/pm/device.h>
 
-#include "appl_diagnose.h"
+#include "appl_settings.h"
 #include "io_job_queue.h"
 #include "modem_at.h"
 #include "power_manager.h"
@@ -172,34 +172,14 @@ static void suspend_uart(bool suspend)
 #endif /* CONFIG_SUSPEND_UART */
 
 /** A discharge curve specific to the power source. */
-static const struct transform_curve curve = {
-#ifdef CONFIG_BATTERY_TYPE_LIPO_2000_MAH
-    /* nRF9160 feather */
-    .points = 8,
-    .curve = {
-        {4180, 10000},
-        {4136, 9900},
-        {4068, 9500},
-        {4022, 9000},
-        {4000, 7700},
-        {3800, 4500},
-        {3420, 500},
-        {3350, 0},
-    }
-#elif defined(CONFIG_BATTERY_TYPE_ENELOOP_2000_MAH)
-    /* nRF9160 feather */
-    .points = 8,
-    .curve = {
-        {4350, 10000}, /* requires external charger */
-        {4024, 9265},
-        {3886, 7746},
-        {3784, 3380},
-        {3696, 1830},
-        {3540, 845},
-        {3430, 422},
-        {3300, 0},
-    }
-#elif defined(CONFIG_BATTERY_TYPE_LIPO_1350_MAH)
+
+struct battery_profile {
+   const char *name;
+   const struct transform_curve *curve;
+};
+
+#ifdef CONFIG_BATTERY_TYPE_LIPO_1350_MAH
+static const struct transform_curve curve_lipo_1350 = {
     /* Thingy:91 */
     .points = 9,
     .curve = {
@@ -212,14 +192,91 @@ static const struct transform_curve curve = {
         {3637, 1470},
         {3474, 440},
         {3200, 0},
-    }
-#else
+    }};
+
+static const struct battery_profile profile_lipo_1350 = {
+    .name = NULL,
+    .curve = &curve_lipo_1350};
+#endif
+
+#ifdef CONFIG_BATTERY_TYPE_LIPO_2000_MAH
+static const struct transform_curve curve_lipo_2000 = {
+    /* nRF9160 feather */
+    .points = 8,
+    .curve = {
+        {4180, 10000},
+        {4136, 9900},
+        {4068, 9500},
+        {4022, 9000},
+        {4000, 7700},
+        {3800, 4500},
+        {3420, 500},
+        {3350, 0},
+    }};
+
+static const struct battery_profile profile_lipo_2000 = {
+    .name = "LiPo",
+    .curve = &curve_lipo_2000};
+#endif
+
+#ifdef CONFIG_BATTERY_TYPE_NMH_2000_MAH
+static const struct transform_curve curve_nmh_2000 = {
+    /* nRF9160 feather */
+    .points = 8,
+    .curve = {
+        {4350, 10000}, /* requires external charger */
+        {4024, 9265},
+        {3886, 7746},
+        {3784, 3380},
+        {3696, 1830},
+        {3540, 845},
+        {3430, 422},
+        {3300, 0},
+    }};
+static const struct battery_profile profile_nmh_2000 = {
+    .name = "NMH",
+    .curve = &curve_nmh_2000};
+#endif
+
+static const struct transform_curve curve_no_bat = {
     /* no battery */
     .points = 1,
     .curve = {
-        {0, -1}}
+        {0, -1}}};
+
+static const struct battery_profile profile_no_bat = {
+    .name = NULL,
+    .curve = &curve_no_bat};
+
+static const struct battery_profile *battery_profiles[] = {
+    &profile_no_bat,
+#ifdef CONFIG_BATTERY_TYPE_LIPO_1350_MAH
+    &profile_lipo_1350,
+#else
+    NULL,
+#endif
+#ifdef CONFIG_BATTERY_TYPE_LIPO_2000_MAH
+    &profile_lipo_2000,
+#else
+    NULL,
+#endif
+#ifdef CONFIG_BATTERY_TYPE_NMH_2000_MAH
+    &profile_nmh_2000,
+#else
+    NULL,
 #endif
 };
+
+static const struct battery_profile *pm_get_battery_profile(void)
+{
+   int profile = appl_settings_get_battery_profile();
+   if (profile < 0 ||
+       (sizeof(battery_profiles) / sizeof(struct battery_profiles *)) <= profile ||
+       !battery_profiles[profile]) {
+      profile = 0;
+   }
+   return battery_profiles[profile];
+}
 
 /*
  * first_battery_level is set, when the first complete
@@ -752,7 +809,7 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
          adp536x_power_manager_read_status(&internal_status);
          internal_status_forecast = internal_status;
 #endif
-         internal_level = transform_curve(internal_voltage, &curve);
+         internal_level = transform_curve(internal_voltage, pm_get_battery_profile()->curve);
          days = calculate_forecast(&now, internal_level, internal_status_forecast);
          if (internal_level < 25500) {
             internal_level /= 100;
@@ -795,10 +852,21 @@ int power_manager_status_desc(char *buf, size_t len)
       if (battery_level < 0xff) {
          index += snprintf(buf + index, len - index, " %u%%", battery_level);
       }
-      if (battery_forecast > 1 || battery_forecast == 0) {
-         index += snprintf(buf + index, len - index, " (%u days left)", battery_forecast);
-      } else if (battery_forecast == 1) {
-         index += snprintf(buf + index, len - index, " (1 day left)");
+      const struct battery_profile *profile = pm_get_battery_profile();
+      if (profile->name || battery_forecast >= 0) {
+         index += snprintf(buf + index, len - index, " (");
+         if (profile->name) {
+            index += snprintf(buf + index, len - index, "%s", profile->name);
+            if (battery_forecast >= 0) {
+               index += snprintf(buf + index, len - index, ", ");
+            }
+         }
+         if (battery_forecast > 1 || battery_forecast == 0) {
+            index += snprintf(buf + index, len - index, "%u days left", battery_forecast);
+         } else if (battery_forecast == 1) {
+            index += snprintf(buf + index, len - index, "1 day left");
+         }
+         index += snprintf(buf + index, len - index, ")");
       }
       const char *msg = "";
       switch (battery_status) {

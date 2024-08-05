@@ -139,7 +139,8 @@ int appl_update_cmd(const char *config)
       return UPDATE_CMD_DOWNLOAD;
    }
 
-   if (stricmp("info", value) && stricmp("erase", value) && stricmp("revert", value) && stricmp("reboot", value)) {
+   if (stricmp("info", value) && stricmp("erase", value) && stricmp("revert", value) &&
+       stricmp("reboot", value) && stricmp("verify", value)) {
       LOG_INF("update '%s' not supported!", config);
       return -EINVAL;
    }
@@ -180,6 +181,8 @@ int appl_update_cmd(const char *config)
       } else {
          appl_update_reboot();
       }
+   } else if (!stricmp("verify", value)) {
+      rc = appl_update_image_verified();
    }
 
    if (close) {
@@ -200,6 +203,7 @@ void appl_update_cmd_help(void)
    LOG_INF("  update erase    : erase current update.");
    LOG_INF("  update revert   : revert last update.");
    LOG_INF("  update reboot   : reboot to apply update.");
+   LOG_INF("  update verify   : mark image as verified.");
 }
 
 #endif
@@ -367,6 +371,7 @@ int appl_update_image_verified(void)
       return -ESHUTDOWN;
    }
    if (boot_is_img_confirmed()) {
+      LOG_INF("Image already confirmed.");
       return 1;
    } else {
       LOG_INF("Update confirm image.");

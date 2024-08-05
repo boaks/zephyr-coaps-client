@@ -268,8 +268,8 @@ int coap_appl_client_parse_data(uint8_t *data, size_t len)
 
 int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
 {
-   int64_t reboot_times[REBOOT_INFOS];
-   uint16_t reboot_codes[REBOOT_INFOS];
+   int64_t reboot_time = 0;
+   uint16_t reboot_code = 0;
    uint16_t battery_voltage = 0xffff;
    struct lte_modem_info modem_info;
    int64_t uptime;
@@ -345,30 +345,21 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
    }
 
    if ((flags & COAP_SEND_FLAG_INITIAL) || !(flags & COAP_SEND_FLAG_MINIMAL)) {
-      memset(reboot_times, 0, sizeof(reboot_times));
-      memset(reboot_codes, 0, sizeof(reboot_codes));
-      err = appl_storage_read_int_items(REBOOT_CODE_ID, 0, reboot_times, reboot_codes, REBOOT_INFOS);
+      err = appl_storage_read_int_items(REBOOT_CODE_ID, 0, &reboot_time, &reboot_code, 1);
       if (err > 0) {
          index += snprintf(buf + index, len - index, "Last code: ");
-         if (reboot_times[0]) {
-            index += appl_format_time(reboot_times[0], buf + index, len - index);
+         if (reboot_time) {
+            index += appl_format_time(reboot_time, buf + index, len - index);
             index += snprintf(buf + index, len - index, " ");
          }
-         index += snprintf(buf + index, len - index, "%s", appl_get_reboot_desciption(reboot_codes[0]));
+         index += snprintf(buf + index, len - index, "%s", appl_get_reboot_desciption(reboot_code));
+         reboot_code = ERROR_DETAIL(reboot_code);
+         if (reboot_code) {
+            index += snprintf(buf + index, len - index, " %d", reboot_code);
+         }
          dtls_info("%s", buf + start);
          buf[index++] = '\n';
          start = index;
-         // only to log
-         for (int i = 1; i < err; ++i) {
-            if (reboot_times[i]) {
-               index += appl_format_time(reboot_times[i], buf + index, len - index);
-               index += snprintf(buf + index, len - index, " ");
-            }
-            index += snprintf(buf + index, len - index, "%s", appl_get_reboot_desciption(reboot_codes[i]));
-            dtls_info("%s", buf + start);
-            // reset
-            index = start;
-         }
       }
 
       start = index;

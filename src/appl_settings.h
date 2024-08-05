@@ -30,6 +30,8 @@ int appl_settings_get_coap_query(char* buf, size_t len);
 
 uint16_t appl_settings_get_destination_port(bool secure);
 
+int appl_settings_get_battery_profile(void);
+
 int appl_settings_get_provisioning(char *buf, size_t len);
 bool appl_settings_is_provisioning(void);
 void appl_settings_provisioning_done(void);

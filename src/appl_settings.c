@@ -44,6 +44,7 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #define SETTINGS_KEY_COAP_PATH "path"
 #define SETTINGS_KEY_COAP_QUERY "query"
 #define SETTINGS_KEY_APN "apn"
+#define SETTINGS_KEY_BATTERY_PROFILE "bat"
 
 #define SETTINGS_KEY_PSK_ID "psk_id"
 #define SETTINGS_KEY_PSK_KEY "psk_key"
@@ -56,6 +57,7 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 static K_MUTEX_DEFINE(settings_mutex);
 
 static uint8_t settings_initialized = 0;
+static uint8 battery_profile = CONFIG_BATTERY_TYPE_DEFAULT;
 
 static char apn[MAX_SETTINGS_VALUE_LENGTH] = {0};
 static char destination[MAX_SETTINGS_VALUE_LENGTH] = DEFAUL_COAP_SERVER;
@@ -63,7 +65,6 @@ static uint16_t destination_port = DEFAUL_COAP_SERVER_PORT;
 static uint16_t destination_secure_port = DEFAUL_COAP_SERVER_SECURE_PORT;
 static char device_imei[DTLS_PSK_MAX_CLIENT_IDENTITY_LEN + 1] = {0};
 static char device_id[DTLS_PSK_MAX_CLIENT_IDENTITY_LEN + 1] = {0};
-
 static char coap_path[MAX_SETTINGS_VALUE_LENGTH] = {0};
 static char coap_query[MAX_SETTINGS_VALUE_LENGTH] = {0};
 
@@ -396,6 +397,19 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
          return 0;
       }
 
+      if (appl_settings_key_match(name, SETTINGS_KEY_BATTERY_PROFILE, name_len)) {
+         res = read_cb(cb_arg, &buf, sizeof(battery_profile));
+         k_mutex_lock(&settings_mutex, K_FOREVER);
+         if (res == sizeof(battery_profile)) {
+            memcpy(&battery_profile, buf, sizeof(battery_profile));
+         } else {
+            battery_profile = CONFIG_BATTERY_TYPE_DEFAULT;
+         }
+         k_mutex_unlock(&settings_mutex);
+         LOG_INF("bat: %u", (uint8_t)buf[0]);
+         return 0;
+      }
+
       if (appl_settings_key_match(name, SETTINGS_KEY_PORT, name_len)) {
          res = read_cb(cb_arg, &value, sizeof(destination_port));
          k_mutex_lock(&settings_mutex, K_FOREVER);
@@ -563,14 +577,15 @@ static int appl_settings_handle_export(int (*cb)(const char *name,
 {
    LOG_INF("export <" SETTINGS_SERVICE_NAME ">\n");
    k_mutex_lock(&settings_mutex, K_FOREVER);
-   (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_ID, device_id, strlen(device_id));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_INIT, &settings_initialized, sizeof(settings_initialized));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_PORT, &destination_port, sizeof(destination_port));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_SECURE_PORT, &destination_secure_port, sizeof(destination_secure_port));
+   (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_ID, device_id, strlen(device_id));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_DESTINATION, destination, strlen(destination));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_COAP_PATH, coap_path, strlen(coap_path));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_COAP_QUERY, coap_query, strlen(coap_query));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_APN, apn, strlen(apn));
+   (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_BATTERY_PROFILE, &battery_profile, sizeof(battery_profile));
 #ifdef CONFIG_SH_CMD_UNLOCK
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_UNLOCK, unlock_password, strlen(unlock_password));
 #endif
@@ -661,6 +676,18 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
          LOG_DBG("provisioning: %u", ecdsa_provisioning_enabled);
          k_mutex_unlock(&settings_mutex);
 #endif /* DTLS_ECC && CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
+         return res;
+      }
+
+      if (appl_settings_key_match(name, SETTINGS_KEY_BATTERY_PROFILE, name_len)) {
+         res = sizeof(battery_profile);
+         if (res > val_len_max) {
+            return -EINVAL;
+         }
+         k_mutex_lock(&settings_mutex, K_FOREVER);
+         memmove(val, &battery_profile, res);
+         LOG_DBG("init: %u", battery_profile);
+         k_mutex_unlock(&settings_mutex);
          return res;
       }
 
@@ -952,6 +979,7 @@ static void appl_setting_factory_reset(int flags)
       appl_settings_expand_imei(device_id, sizeof(device_id), CONFIG_DEVICE_IDENTITY);
 #endif /* CONFIG_DEVICE_IDENTITY */
       LOG_INF("device-id: %s", device_id);
+      battery_profile = CONFIG_BATTERY_TYPE_DEFAULT;
       save = true;
    }
 
@@ -1148,6 +1176,11 @@ uint16_t appl_settings_get_destination_port(bool secure)
    k_mutex_unlock(&settings_mutex);
 
    return port;
+}
+
+int appl_settings_get_battery_profile(void)
+{
+   return battery_profile;
 }
 
 #if defined(DTLS_ECC)
@@ -1501,7 +1534,7 @@ static int sh_cmd_settings_sethex(const char *parameter)
 static void sh_cmd_settings_sethex_help(void)
 {
    LOG_INF("> help sethex:");
-   LOG_INF("  set <key> <hex-value>    : set hexadecimal value for key.");
+   LOG_INF("  set <key> <hex-value> : set hexadecimal value for key.");
 }
 
 static int sh_cmd_settings_del(const char *parameter)

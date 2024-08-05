@@ -78,8 +78,6 @@
 #define COAP_SEND_FLAGS COAP_SEND_FLAGS_ALL
 #endif
 
-#define REBOOT_INFOS 4
-
 int coap_appl_client_parse_data(uint8_t *data, size_t len);
 
 int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags);

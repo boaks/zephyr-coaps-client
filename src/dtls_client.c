@@ -1968,8 +1968,12 @@ static void dump_destination(const char *host, const session_t *destination)
       inet_ntop(AF_INET, &destination->addr.sin.sin_addr.s_addr, ipv4_addr,
                 sizeof(ipv4_addr));
       dtls_info("Destination: '%s'", host);
-      if (strcmp(host, ipv4_addr)) {
-         dtls_info("IPv4 Address found %s", ipv4_addr);
+      if (destination->size) {
+         if (strcmp(host, ipv4_addr)) {
+            dtls_info("IPv4 Address found %s", ipv4_addr);
+         }
+      } else {
+         dtls_info("DNS lookup pending ...");
       }
       dtls_info("Port       : %u", ntohs(destination->addr.sin.sin_port));
       if (appl_settings_get_coap_path(value, sizeof(value))) {
@@ -1985,8 +1989,10 @@ static int init_destination(session_t *destination, int protocol)
 {
    int err = 0;
    int rc = -ENOENT;
+   uint16_t port = htons(appl_settings_get_destination_port(!(protocol & 1)));
 
    appl_settings_get_destination(app_data.host, sizeof(app_data.host));
+   destination->addr.sin.sin_port = port;
 
    if (app_data.host[0]) {
       int count = 0;
@@ -2020,7 +2026,7 @@ static int init_destination(session_t *destination, int protocol)
    if (rc) {
       return rc;
    }
-   destination->addr.sin.sin_port = htons(appl_settings_get_destination_port(!(protocol & 1)));
+   destination->addr.sin.sin_port = port;
    destination->size = sizeof(struct sockaddr_in);
    dump_destination(app_data.host, destination);
    return 0;
