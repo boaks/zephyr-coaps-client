@@ -146,9 +146,30 @@ The demo uses the "echo" resource of the plugtest-server, therefore the response
 
 If you want to see, what your `Thingy:91` has sent to the server, see [cf-browser](./CFBROWSER.md).
 
-## Provisioning
+## Settings And Provisioning
 
+Starting with 0.10.0 the [SETTINGS](https://docs.zephyrproject.org/latest/services/settings/index.html) service is used to store device specific data as credentials. Without that using different credentials in the firmware per device would cause to use also an firmware image per device. Now this projects provides two variants of images:
 
+- image with initial settings. To be applied at "end of line", means once after production. 
+- image without settings. To be applied for firmware updates, e.g. FOTA.
+
+The initial image will only apply the settings on the first start after flashing it with `--chiperase`
+
+```sh
+nrfjprog --program build/zephyr/merged.hex --chiperase --verify -r
+```
+
+When this image is applied afterwards with `--sectorerase`
+
+```sh
+nrfjprog --program build/zephyr/merged.hex --sectorerase --verify -r
+```
+
+then the settings are unchanged.
+
+The update image must not be applied with `--chiperase`, it must always be applied after an initial image and as any update with `--sectorerase`.
+
+The solves only a part of the issue with the credentials. If the credentials are included in the initial image, this would require to build images for each device with different credentials. Otherwise it would be required to set the credentials after the inital image is applied. That is also possible using the [sh-cmds](./SHCMDSLIST.md) via a terminal, but is not that comfortable. To optimize this process, the firmware has an additional "auto-provisioning" feature. With that, the device creates either a `Raw Public Key ECDSA key pair` (preferred) or/and a random `PSK secret`. It uses then the include auto-provisioning-credentials and executes an provisioning request. After success, the device switches to the generated credentials and executes a new handshake. Ready to send data to the cloud server.
 
 ## Configuration
 
@@ -221,4 +242,3 @@ and retry `west build ... --pristine` again.
 
 In some case it may be required to also update the [Zephyr SDK](
 https://docs.zephyrproject.org/latest/develop/getting_started/index.html#install-the-zephyr-sdk). Follow the instructions there and test, if that fixes your issues when updating the NCS version. 
-

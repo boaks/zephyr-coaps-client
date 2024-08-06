@@ -15,10 +15,14 @@ config ALL_POWER_OFF
 	bool "Switchign off, only test quiescent current"
 
 config COAP_SERVICE
-	bool "Enable CoAP/DTLS 1.2 CID service settings for provisioning image"
+	bool "Initialize CoAP/DTLS 1.2 CID Service Settings"
+    help
+	  The settings are only initialized the first time
+	  the application access the settings after flasing
+	  with --chiperase.
 
 if (COAP_SERVICE)
-menu "CoAP/DTLS 1.2 CID Service"
+menu "CoAP/DTLS 1.2 CID Service Settings"
 
 config COAP_SCHEME
 	string "CoAP server scheme."

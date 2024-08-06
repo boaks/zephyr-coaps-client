@@ -40,37 +40,39 @@ The usage of the sensors also reduces that time. Consider to measure less freque
 
 - **APPL_MODEL**, application model, used to select the firmware variant for the hardware when downloading via CoAP. The resulting CoAP resource path will be `fw`/`<model>`/`<version>`, e.g. "fw/dk/0.10.0+0".
 
-    - **APPL_MODEL_DESCRIPTION**, application description to include in reported version.
+- **APPL_MODEL_DESCRIPTION**, application description to include in reported version.
 
-- **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox 
+- **COAP_SERVICE**, include configuration values for initial settings. Only applied on the first start after flashing the app with `--chiperase` (see nrfjprog).
 
-- **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox at `californium.eclipseprojects.io`.
+- **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox. Only provided, if **COAP_SERVICE** is enabled. 
 
-- **COAP_SERVER_ADDRESS_STATIC**, static ip-address of the coap/dtls 1.2 cid server. Fallback, if DNS isn't setup.
+- **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox at `californium.eclipseprojects.io`. Only provided, if **COAP_SERVICE** is enabled.
 
-- **COAP_SERVER_PORT**, service port for none secure communication. Default `5683`.
+- **COAP_SERVER_ADDRESS_STATIC**, static ip-address of the coap/dtls 1.2 cid server. Fallback, if DNS isn't setup. Only provided, if **COAP_SERVICE** is enabled.
 
-- **COAP_SERVER_SECURE_PORT**, service port for secure communication. Default `5684`.
+- **COAP_SERVER_PORT**, service port for none secure communication. Default `5683`. Only provided, if **COAP_SERVICE** is enabled.
 
-- **DEVICE_IDENTITY**, the device identiy. `${imei}` will be replaced by the IMEI of the device. Default `cali.${imei}`, e.g. "cali.352656100985434".
+- **COAP_SERVER_SECURE_PORT**, service port for secure communication. Default `5684`. Only provided, if **COAP_SERVICE** is enabled.
 
-- **PROVISIONING_GROUP**, device group for provisioning. Default "Auto". 
+- **DEVICE_IDENTITY**, the device identiy. `${imei}` will be replaced by the IMEI of the device. Default `cali.${imei}`, e.g. "cali.352656100985434". Only provided, if **COAP_SERVICE** is enabled.
 
-- **DTLS_PSK_IDENTITY**, the PSK identiy. `${imei}` will be replaced by the IMEI of the device. May differ from the `DEVICE_IDENTITY`. Default `cali.${imei}`, e.g. "cali.352656100985434".
+- **PROVISIONING_GROUP**, device group for provisioning. Default "Auto". Only provided, if **COAP_SERVICE** is enabled.
 
-- **DTLS_PSK_SECRET_GENERATE**, initially generate the PSK secret.
+- **DTLS_PSK_IDENTITY**, the PSK identiy. `${imei}` will be replaced by the IMEI of the device. May differ from the `DEVICE_IDENTITY`. Default `cali.${imei}`, e.g. "cali.352656100985434". Only provided, if **COAP_SERVICE** is enabled.
 
-- **DTLS_PSK_SECRET**, the PSK secret. In base 64 as text `"base64"`, ASCII as text with additional single quotes `"'ascii'"`, or hexadecimal as text with `":0x"` prefix, e.g. `":0x1234abcd"`. Default `"'.fornium'"`, the sandbox uses this secret for the a wildcard identity "cali.*". This is only intended to easy access the sandbox, don't use it on your own test setup.
+- **DTLS_PSK_SECRET_GENERATE**, initially generate the PSK secret. Only provided, if **COAP_SERVICE** is enabled.
 
-- **DTLS_ECDSA_PRIVATE_KEY_GENERATE**, initially generate the ECDSA key-pair.
+- **DTLS_PSK_SECRET**, the PSK secret. In base 64 as text `"base64"`, ASCII as text with additional single quotes `"'ascii'"`, or hexadecimal as text with `":0x"` prefix, e.g. `":0x1234abcd"`. Default `"'.fornium'"`, the sandbox uses this secret for the a wildcard identity "cali.*". This is only intended to easy access the sandbox, don't use it on your own test setup. Only provided, if **COAP_SERVICE** is enabled.
 
-- **DTLS_ECDSA_PRIVATE_KEY**, ECDSA device private key. Only SECP256R1 is supported. The private key is provided plain (32 bytes) without the algorithm ids of in ASN.1 encoding with algorithm header. The public key is not provided, it will be derived from the private key. Hexadecimal encoded with prefix ":0x", or base64 as "". 
+- **DTLS_ECDSA_PRIVATE_KEY_GENERATE**, initially generate the ECDSA key-pair. Only provided, if **COAP_SERVICE** is enabled.
 
-- **DTLS_ECDSA_TRUSTED_PUBLIC_KEY**, ECDSA trusted server public key. Only SECP256R1 is supported. Either encoded as ASN.1 (including algorith header) or plain concated public_x and public_y key (64 bytes). Hexadecimal encoded with prefix ":0x", or base64 as "". 
+- **DTLS_ECDSA_PRIVATE_KEY**, ECDSA device private key. Only SECP256R1 is supported. The private key is provided plain (32 bytes) without the algorithm ids of in ASN.1 encoding with algorithm header. The public key is not provided, it will be derived from the private key. Hexadecimal encoded with prefix ":0x", or base64 as "". Only provided, if **COAP_SERVICE** is enabled.
 
-- **DTLS_ECDSA_AUTO_PROVISIONING** enable auto provisioning using ECDSA provisioning key-pair.
+- **DTLS_ECDSA_TRUSTED_PUBLIC_KEY**, ECDSA trusted server public key. Only SECP256R1 is supported. Either encoded as ASN.1 (including algorith header) or plain concated public_x and public_y key (64 bytes). Hexadecimal encoded with prefix ":0x", or base64 as "". Only provided, if **COAP_SERVICE** is enabled.
 
-- **DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY**, ECDSA provisioning device private key. Only SECP256R1 is supported. The private key is provided plain (32 bytes) without the algorithm ids of in ASN.1 encoding with algorithm header. The public key is not provided, it will be derived from the private key. Hexadecimal encoded with prefix ":0x", or base64 as "". 
+- **DTLS_ECDSA_AUTO_PROVISIONING** enable auto provisioning using ECDSA provisioning key-pair. Only provided, if **COAP_SERVICE** is enabled.
+
+- **DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY**, ECDSA provisioning device private key. Only SECP256R1 is supported. The private key is provided plain (32 bytes) without the algorithm ids of in ASN.1 encoding with algorithm header. The public key is not provided, it will be derived from the private key. Hexadecimal encoded with prefix ":0x", or base64 as "". Only provided, if **COAP_SERVICE** is enabled.
 
 - **DTLS_ALWAYS_HANDSHAKE**, enables to use a DTLS handshake for each request. Using DTLS 1.2 Connection ID obsoletes such frequent handshakes.
 
