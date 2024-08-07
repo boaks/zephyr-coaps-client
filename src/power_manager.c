@@ -219,8 +219,8 @@ static const struct battery_profile profile_lipo_2000 = {
     .curve = &curve_lipo_2000};
 #endif
 
-#ifdef CONFIG_BATTERY_TYPE_NMH_2000_MAH
-static const struct transform_curve curve_nmh_2000 = {
+#ifdef CONFIG_BATTERY_TYPE_NIMH_2000_MAH
+static const struct transform_curve curve_nimh_2000 = {
     /* nRF9160 feather */
     .points = 8,
     .curve = {
@@ -233,9 +233,9 @@ static const struct transform_curve curve_nmh_2000 = {
         {3430, 422},
         {3300, 0},
     }};
-static const struct battery_profile profile_nmh_2000 = {
-    .name = "NMH",
-    .curve = &curve_nmh_2000};
+static const struct battery_profile profile_nimh_2000 = {
+    .name = "NiMH",
+    .curve = &curve_nimh_2000};
 #endif
 
 static const struct transform_curve curve_no_bat = {
@@ -260,8 +260,8 @@ static const struct battery_profile *battery_profiles[] = {
 #else
     NULL,
 #endif
-#ifdef CONFIG_BATTERY_TYPE_NMH_2000_MAH
-    &profile_nmh_2000,
+#ifdef CONFIG_BATTERY_TYPE_NIMH_2000_MAH
+    &profile_nimh_2000,
 #else
     NULL,
 #endif

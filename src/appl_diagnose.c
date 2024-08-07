@@ -147,7 +147,7 @@ const char *appl_get_reboot_desciption(int error)
    return "\?\?\?";
 }
 
-uint32_t appl_reset_cause(int *flags)
+uint32_t appl_reset_cause(int *flags, uint16_t *reboot_code)
 {
    uint32_t cause = 0;
    if (atomic_cas(&read_reset_cause, 0, 1)) {
@@ -176,14 +176,24 @@ uint32_t appl_reset_cause(int *flags)
          }
       }
       if (reset_cause & RESET_SOFTWARE) {
-         uint16_t reboot_code = 0;
-         int rc = appl_storage_read_int_items(REBOOT_CODE_ID, 0, NULL, &reboot_code, 1);
-         if (!rc && reboot_code == ERROR_CODE_TOO_MANY_FAILURES) {
+         uint16_t code = 0;
+         int rc = appl_storage_read_int_items(REBOOT_CODE_ID, 0, NULL, &code, 1);
+         int reboot = ERROR_CLASS(code);
+         int detail = ERROR_DETAIL(code);
+         if (rc > 0 && reboot == ERROR_CODE_TOO_MANY_FAILURES) {
             LOG_INF("Reboot 1.");
-            if (flags) {
-               *flags |= FLAG_REBOOT_1;
+            if (!detail) {
+               code = ERROR_CODE(ERROR_CODE_TOO_MANY_FAILURES, 1);
             }
-         } else if (!rc && reboot_code == ERROR_CODE_LOW_VOLTAGE) {
+            if (flags) {
+               *flags |= FLAG_REBOOT_RETRY;
+            }
+         } else if (rc > 0 && reboot == ERROR_CODE_INIT_NO_SUCCESS) {
+            LOG_INF("Reboot %u.", detail);
+            if (flags) {
+               *flags |= FLAG_REBOOT_RETRY;
+            }
+         } else if (rc > 0 && reboot == ERROR_CODE_LOW_VOLTAGE) {
             LOG_INF("Reboot low voltage.");
             if (flags) {
                *flags |= FLAG_REBOOT_LOW_VOLTAGE;
@@ -193,6 +203,9 @@ uint32_t appl_reset_cause(int *flags)
             if (flags) {
                *flags |= FLAG_REBOOT;
             }
+         }
+         if (rc > 0 && reboot_code) {
+            *reboot_code = code;
          }
       }
       if (reset_cause & RESET_POR) {

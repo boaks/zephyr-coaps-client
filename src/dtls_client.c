@@ -103,6 +103,7 @@ typedef struct dtls_app_data_t {
    dtls_app_result_handler result_handler;
    int fd;
    int protocol;
+   uint8_t keep_connection : 1;
    uint8_t send_request_pending : 1;
    uint8_t dtls_pending : 1;
    uint8_t dtls_next_flight : 1;
@@ -544,7 +545,7 @@ static void dtls_manual_trigger(int duration)
    }
 }
 
-void dtls_cmd_trigger(bool led, int mode, const uint8_t *data, size_t len)
+static void dtls_cmd_trigger(bool led, int mode, const uint8_t *data, size_t len)
 {
    bool ready = atomic_test_bit(&general_states, LTE_READY);
    if (mode & 1) {
@@ -626,7 +627,7 @@ static void dtls_coap_clear_failures(void)
 
 static bool dtls_pending(dtls_app_data_t *app)
 {
-   if (app->protocol == 0) {
+   if (app->protocol == PROTOCOL_COAP_DTLS) {
       app->dtls_pending = 1;
    }
    return app->dtls_pending;
@@ -1494,7 +1495,7 @@ static int dtls_network_searching(const k_timeout_t timeout)
    return true;
 }
 
-static int dtls_loop(dtls_app_data_t *app, int flags)
+static int dtls_loop(dtls_app_data_t *app, int reset_cause, uint16_t reboot_cause)
 {
    struct pollfd udp_poll;
    dtls_context_t *dtls_context = NULL;
@@ -1513,14 +1514,14 @@ static int dtls_loop(dtls_app_data_t *app, int flags)
    bool location_init = true;
 #endif
 
-   if (flags & FLAG_TLS) {
+   if (app->protocol == PROTOCOL_COAP_DTLS) {
       dtls_info("Start CoAP/DTLS 1.2");
    } else {
       dtls_info("Start CoAP/UDP");
    }
    app->fd = -1;
 
-   if (flags & FLAG_TLS) {
+   if (app->protocol == PROTOCOL_COAP_DTLS) {
       dtls_context = dtls_new_context(app);
       if (!dtls_context) {
          dtls_emerg("cannot create dtls context");
@@ -1567,10 +1568,12 @@ static int dtls_loop(dtls_app_data_t *app, int flags)
       watchdog_feed();
 
       if (!initial_success) {
-         if (k_uptime_get() > ((flags & FLAG_REBOOT_1) ? (4 * MSEC_PER_HOUR) : MSEC_PER_DAY)) {
+         int reboot = (reset_cause & FLAG_REBOOT_RETRY) ? ERROR_DETAIL(reboot_cause) : 0;
+         if (k_uptime_get() > ((reboot == 1) ? (4 * MSEC_PER_HOUR) : MSEC_PER_DAY)) {
             // no initial_success for 4 hours / 1 day => reboot
-            dtls_info("> No initial success, reboot%s", (flags & FLAG_REBOOT_1) ? " 1" : " N");
-            restart(ERROR_CODE_INIT_NO_SUCCESS, true);
+            ++reboot;
+            dtls_info("> No initial success, reboot %d.", reboot);
+            restart(ERROR_CODE(ERROR_CODE_INIT_NO_SUCCESS, reboot), true);
          }
       }
 
@@ -1617,7 +1620,7 @@ static int dtls_loop(dtls_app_data_t *app, int flags)
       }
       f = dtls_coap_next_failures();
       if (f > 0) {
-         int strategy = coap_appl_client_retry_strategy(f, flags & FLAG_TLS);
+         int strategy = coap_appl_client_retry_strategy(f, app->protocol == PROTOCOL_COAP_DTLS);
          if (strategy) {
             if (strategy & DTLS_CLIENT_RETRY_STRATEGY_RESTARTS) {
                dtls_info("Too many failures, reboot");
@@ -1939,8 +1942,8 @@ static int dtls_loop(dtls_app_data_t *app, int flags)
                modem_set_rai_mode(RAI_MODE_NOW, app->fd);
             }
             if (app->request_state == NONE &&
-                (flags & FLAG_TLS) &&
-                !(flags & FLAG_KEEP_CONNECTION) &&
+                app->protocol == PROTOCOL_COAP_DTLS &&
+                !app->keep_connection &&
                 !app->dtls_pending) {
                dtls_pending(app);
                ui_led_op(LED_DTLS, LED_CLEAR);
@@ -1968,17 +1971,11 @@ static void dump_destination(const dtls_app_data_t *app)
    inet_ntop(AF_INET, &app->destination.addr.sin.sin_addr.s_addr, ipv4_addr,
              sizeof(ipv4_addr));
    switch (app->protocol) {
-      case 0:
+      case PROTOCOL_COAP_DTLS:
          scheme = "coaps ";
          break;
-      case 1:
+      case PROTOCOL_COAP_UDP:
          scheme = "coap ";
-         break;
-      case 2:
-         scheme = "coaps+tcp ";
-         break;
-      case 3:
-         scheme = "coap+tcp ";
          break;
    }
    dtls_info("Destination: %s'%s'", scheme, app->host);
@@ -2002,7 +1999,7 @@ static int init_destination(dtls_app_data_t *app)
 {
    int err = 0;
    int rc = -ENOENT;
-   uint16_t port = htons(appl_settings_get_destination_port(!(app->protocol & 1)));
+   uint16_t port = htons(appl_settings_get_destination_port(app->protocol == PROTOCOL_COAP_DTLS));
 
    appl_settings_get_destination(app->host, sizeof(app->host));
    app->destination.addr.sin.sin_port = port;
@@ -2389,9 +2386,9 @@ static void init(int config, int *protocol)
    if (protocol) {
       appl_settings_get_scheme(scheme, sizeof(scheme));
       if (!stricmp(scheme, "coaps")) {
-         *protocol = 0;
+         *protocol = PROTOCOL_COAP_DTLS;
       } else if (!stricmp(scheme, "coap")) {
-         *protocol = 1;
+         *protocol = PROTOCOL_COAP_UDP;
       }
    }
 }
@@ -2399,7 +2396,8 @@ static void init(int config, int *protocol)
 int main(void)
 {
    int config = 0;
-   int flags = 0;
+   int reset_cause = 0;
+   uint16_t reboot_cause = 0;
 
    memset(&app_data_context, 0, sizeof(app_data_context));
    memset(transmissions, 0, sizeof(transmissions));
@@ -2408,7 +2406,7 @@ int main(void)
    app_data_context.protocol = -1;
 
    LOG_INF("CoAP/DTLS 1.2 CID sample %s has started", appl_get_version());
-   appl_reset_cause(&flags);
+   appl_reset_cause(&reset_cause, &reboot_cause);
 
    dtls_set_log_level(DTLS_LOG_INFO);
 
@@ -2429,42 +2427,37 @@ int main(void)
    }
 #elif CONFIG_PROTOCOL_CONFIG_SWITCH
    if (config >= 0) {
-      app_data_context.protocol = config >> 3;
+      app_data_context.protocol = config >> 2;
    }
 #endif
    if (app_data_context.protocol < 0) {
 #ifdef CONFIG_PROTOCOL_MODE_UDP
-      app_data_context.protocol = 1;
+      app_data_context.protocol = PROTOCOL_COAP_UDP;
 #elif CONFIG_PROTOCOL_MODE_DTLS
-      app_data_context.protocol = 0;
+      app_data_context.protocol = PROTOCOL_COAP_DTLS;
 #else
-      app_data_context.protocol = 0;
+      app_data_context.protocol = PROTOCOL_COAP_DTLS;
 #endif
    }
 
-#if (defined CONFIG_DTLS_ALWAYS_HANDSHAKE)
-   dtls_always_handshake = true;
-#endif
    if (config < 0) {
       config = 0;
    }
 
    init(config, &app_data_context.protocol);
    switch (app_data_context.protocol) {
-      case 0:
-         flags |= FLAG_KEEP_CONNECTION;
+      case PROTOCOL_COAP_DTLS:
+         app_data_context.keep_connection = 1;
          dtls_info("CoAP/DTLS 1.2 CID");
          break;
-      case 1:
+      case PROTOCOL_COAP_UDP:
          dtls_info("CoAP/UDP");
          break;
-      case 2:
-         dtls_info("CoAP/TLS");
-         break;
-      case 3:
-         dtls_info("CoAP/TCP");
-         break;
    }
+
+#ifdef CONFIG_DTLS_ALWAYS_HANDSHAKE
+   app_data_context.keep_connection = 0;
+#endif
 
    power_manager_init();
 
@@ -2505,12 +2498,9 @@ int main(void)
 
    init_destination(&app_data_context);
 
-   if (!(app_data_context.protocol & 1)) {
-      flags |= FLAG_TLS;
-   }
-
    dtls_trigger("initial message");
-   dtls_loop(&app_data_context, flags);
+   dtls_loop(&app_data_context, reset_cause, reboot_cause);
+
    return 0;
 }
 #endif /* CONFIG_ALL_POWER_OFF */

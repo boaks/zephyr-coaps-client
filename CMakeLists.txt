@@ -121,18 +121,27 @@ zephyr_library_link_libraries(tinydtls)
 
 # APP END
 
-if (COPY_PREBUILDS)
-   # Enable west build -b ... -- -DCOPY_PREBUILDS=On
+if (COPY_PREBUILDS_FULL)
+   # Enable west build -b ... -- -DCOPY_PREBUILDS_FULL=On
    # Copies the .hex files before the build!
    # Therefore build it first without,
-   # and a second time with -DCOPY_PREBUILDS=On
+   # and a second time with -DCOPY_PREBUILDS_FULL=On
 
-   message(NOTICE "copy prebuild binaries into ${CMAKE_BINARY_DIR}/../prebuild")
+   message(NOTICE "copy prebuild full binaries into ${CMAKE_BINARY_DIR}/../prebuild")
    if (EXISTS "${CMAKE_BINARY_DIR}/zephyr/merged.hex")
       file(COPY_FILE ${CMAKE_BINARY_DIR}/zephyr/merged.hex ${CMAKE_BINARY_DIR}/../prebuild/${BOARD}_full.hex)
    else()
       message(NOTICE "missing ${CMAKE_BINARY_DIR}/zephyr/merged.hex")
    endif()
+endif()
+
+if (COPY_PREBUILDS_UPDATE)
+   # Enable west build -b ... -- -DCOPY_PREBUILDS_UPDATE=On
+   # Copies the .hex files before the build!
+   # Therefore build it first without,
+   # and a second time with -DCOPY_PREBUILDS_UPDATE=On
+
+   message(NOTICE "copy prebuild update binaries into ${CMAKE_BINARY_DIR}/../prebuild")
    if (EXISTS "${CMAKE_BINARY_DIR}/zephyr/app_update.bin")
       file(COPY_FILE ${CMAKE_BINARY_DIR}/zephyr/app_update.bin ${CMAKE_BINARY_DIR}/../prebuild/${BOARD}_app_update.bin)
    else()
@@ -212,8 +221,8 @@ if (CONFIG_BATTERY_TYPE_LIPO_1350_MAH)
 set(BUILD_SUMUP8 "Build for 1350 mAh LiPo")
 elseif (CONFIG_BATTERY_TYPE_LIPO_2000_MAH)
 set(BUILD_SUMUP8 "Build for 2000 mAh LiPo")
-elseif (CONFIG_BATTERY_TYPE_ENELOOP_2000_MAH)
-set(BUILD_SUMUP8 "Build for 2000 mAh Eneloop")
+elseif (CONFIG_BATTERY_TYPE_NIMH_2000_MAH)
+set(BUILD_SUMUP8 "Build for 2000 mAh NiMH")
 else()
 set(BUILD_SUMUP8 "Build without battery.")
 endif()
@@ -227,9 +236,15 @@ set(BUILD_SUMUP9 "Build without UART manager.")
 endif()
 
 if (CONFIG_NRF_MODEM_LIB_TRACE)
-set(BUILD_SUMUP10 "Modem Trace enabled.")
+set(BUILD_SUMUP10 "Build modem trace enabled.")
 else()
-set(BUILD_SUMUP10 "Modem Trace disabled.")
+set(BUILD_SUMUP10 "Build modem trace disabled.")
+endif()
+
+if (CONFIG_INIT_SETTINGS)
+set(BUILD_SUMUP11 "Build with initial settings.")
+else()
+set(BUILD_SUMUP11 "Build without initial settings.")
 endif()
 
 message(STATUS "PM_STATIC_YML_FILE: ${PM_STATIC_YML_FILE}")
@@ -245,6 +260,7 @@ add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP8}"
                    COMMAND echo "${BUILD_SUMUP9}"
                    COMMAND echo "${BUILD_SUMUP10}"
+                   COMMAND echo "${BUILD_SUMUP11}"
                    COMMAND echo "Build with network search timeout ${CONFIG_MODEM_SEARCH_TIMEOUT}s"
                    COMMAND echo "${CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION}"
                    )

@@ -24,6 +24,9 @@
 #define DTLS_CLIENT_RETRY_STRATEGY_OFF 4
 #define DTLS_CLIENT_RETRY_STRATEGY_RESTARTS 8
 
+#define PROTOCOL_COAP_DTLS 0
+#define PROTOCOL_COAP_UDP 1
+
 extern unsigned int transmissions[COAP_MAX_RETRANSMISSION + 1];
 extern unsigned int connect_time_ms;
 extern unsigned int coap_rtt_ms;
@@ -32,7 +35,6 @@ extern unsigned int failures;
 extern unsigned int sockets;
 extern unsigned int dtls_handshakes;
 
-void dtls_cmd_trigger(bool led, int mode, const uint8_t* data, size_t len);
 int get_send_interval(void);
 
 #endif /* DTLS_CLIENT_H */

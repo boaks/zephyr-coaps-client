@@ -148,7 +148,7 @@ If you want to see, what your `Thingy:91` has sent to the server, see [cf-browse
 
 ## Settings And Provisioning
 
-Starting with 0.10.0 the [SETTINGS](https://docs.zephyrproject.org/latest/services/settings/index.html) service is used to store device specific data as credentials. Without that using different credentials in the firmware per device would cause to use also an firmware image per device. Now this projects provides two variants of images:
+Starting with version 0.10.0 the [SETTINGS](https://docs.zephyrproject.org/latest/services/settings/index.html) service is used to store device specific data as credentials. Without that using different credentials in the firmware per device would cause to use also an firmware image per device. Therefore this projects provides now two variants of images:
 
 - image with initial settings. To be applied at "end of line", means once after production. 
 - image without settings. To be applied for firmware updates, e.g. FOTA.
@@ -169,11 +169,13 @@ then the settings are unchanged.
 
 The update image must not be applied with `--chiperase`, it must always be applied after an initial image and as any update with `--sectorerase`.
 
-The solves only a part of the issue with the credentials. If the credentials are included in the initial image, this would require to build images for each device with different credentials. Otherwise it would be required to set the credentials after the inital image is applied. That is also possible using the [sh-cmds](./SHCMDSLIST.md) via a terminal, but is not that comfortable. To optimize this process, the firmware has an additional "auto-provisioning" feature. With that, the device creates either a `Raw Public Key ECDSA key pair` (preferred) or/and a random `PSK secret`. It uses then the include auto-provisioning-credentials and executes an provisioning request. After success, the device switches to the generated credentials and executes a new handshake. Ready to send data to the cloud server.
+The solves only a part of the issue with the credentials. If the credentials are included in the initial image, this would require to build images for each device with different credentials. Otherwise it would be required to set the credentials after the inital image is applied. That is also possible using the [sh-cmds](./SHCMDSLIST.md) via a terminal, but is not that comfortable. To optimize this process, the firmware has an additional "auto-provisioning" feature. With that, the device creates either a `Raw Public Key ECDSA key pair` (preferred) or/and a random `PSK secret`. It uses then the included auto-provisioning-credentials and executes an provisioning request. After success, the device switches to the generated credentials and executes a new handshake. Ready to send data to the cloud server.
+
+[prov-prj.conv](../prov-prj.conv) to see the configuration value, which are supported by the settings service. 
 
 ## Configuration
 
-The application comes with a [KConfig](../blob/main/Kconfig) to configure some functions. Use
+The application comes with a [KConfig](../Kconfig) to configure some functions. Use
 
 ```
 west build -b thingy91_nrf9160_ns -t menuconfig

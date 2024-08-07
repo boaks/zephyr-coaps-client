@@ -32,9 +32,17 @@
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
-#define DEFAUL_COAP_SERVER "californium.eclipseprojects.io"
+#ifdef CONFIG_COAP_SERVER_PORT
+#define DEFAUL_COAP_SERVER_PORT CONFIG_COAP_SERVER_PORT
+#else
 #define DEFAUL_COAP_SERVER_PORT 5683
+#endif
+
+#ifdef CONFIG_COAP_SERVER_SECURE_PORT
+#define DEFAUL_COAP_SERVER_SECURE_PORT CONFIG_COAP_SERVER_SECURE_PORT
+#else
 #define DEFAUL_COAP_SERVER_SECURE_PORT 5684
+#endif
 
 #define SETTINGS_KEY_INIT "init"
 #define SETTINGS_KEY_SCHEME "scheme"
@@ -58,11 +66,18 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 static K_MUTEX_DEFINE(settings_mutex);
 
 static uint8_t settings_initialized = 0;
-static uint8 battery_profile = CONFIG_BATTERY_TYPE_DEFAULT;
+
+#ifdef CONFIG_BATTERY_TYPE_DEFAULT
+#define BATTERY_TYPE_DEFAULT CONFIG_BATTERY_TYPE_DEFAULT
+#else
+#define BATTERY_TYPE_DEFAULT 0
+#endif
+
+static uint8 battery_profile = BATTERY_TYPE_DEFAULT;
 
 static char apn[MAX_SETTINGS_VALUE_LENGTH] = {0};
 static char scheme[12] = "coaps";
-static char destination[MAX_SETTINGS_VALUE_LENGTH] = DEFAUL_COAP_SERVER;
+static char destination[MAX_SETTINGS_VALUE_LENGTH] = "";
 static uint16_t destination_port = DEFAUL_COAP_SERVER_PORT;
 static uint16_t destination_secure_port = DEFAUL_COAP_SERVER_SECURE_PORT;
 static char device_imei[DTLS_PSK_MAX_CLIENT_IDENTITY_LEN + 1] = {0};
@@ -380,7 +395,7 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
             settings_initialized = 0;
          }
          k_mutex_unlock(&settings_mutex);
-         LOG_INF("init: %u", (uint8_t)buf[0]);
+         LOG_INF("init: %u", settings_initialized);
          return 0;
       }
 
@@ -405,10 +420,10 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
          if (res == sizeof(battery_profile)) {
             memcpy(&battery_profile, buf, sizeof(battery_profile));
          } else {
-            battery_profile = CONFIG_BATTERY_TYPE_DEFAULT;
+            battery_profile = BATTERY_TYPE_DEFAULT;
          }
          k_mutex_unlock(&settings_mutex);
-         LOG_INF("bat: %u", (uint8_t)buf[0]);
+         LOG_INF("bat: %u", battery_profile);
          return 0;
       }
 
@@ -988,7 +1003,7 @@ static void appl_setting_factory_reset(int flags)
       strncpy(scheme, CONFIG_COAP_SCHEME, sizeof(scheme) - 1);
 #else
       strncpy(scheme, "coaps", sizeof(scheme) - 1);
-#endif      
+#endif
       LOG_INF("dest: %s://%s:%u/%u", scheme, destination, destination_port, destination_secure_port);
 
 #ifdef CONFIG_COAP_RESOURCE
@@ -1006,7 +1021,7 @@ static void appl_setting_factory_reset(int flags)
       appl_settings_expand_imei(device_id, sizeof(device_id), CONFIG_DEVICE_IDENTITY);
 #endif /* CONFIG_DEVICE_IDENTITY */
       LOG_INF("device-id: %s", device_id);
-      battery_profile = CONFIG_BATTERY_TYPE_DEFAULT;
+      battery_profile = BATTERY_TYPE_DEFAULT;
       save = true;
    }
 
@@ -1400,10 +1415,12 @@ void appl_settings_provisioning_done(void)
 bool appl_settings_unlock(const char *value)
 {
 #ifdef CONFIG_SH_CMD_UNLOCK
-   int res = 0;
-   k_mutex_lock(&settings_mutex, K_FOREVER);
-   res = strcmp(unlock_password, value);
-   k_mutex_unlock(&settings_mutex);
+   int res = 1;
+   if (strlen(value)) {
+      k_mutex_lock(&settings_mutex, K_FOREVER);
+      res = strcmp(unlock_password, value);
+      k_mutex_unlock(&settings_mutex);
+   }
    return res == 0;
 #else  /* CONFIG_SH_CMD_UNLOCK */
    return false;

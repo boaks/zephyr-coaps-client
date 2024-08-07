@@ -14,14 +14,14 @@
 config ALL_POWER_OFF
 	bool "Switchign off, only test quiescent current"
 
-config COAP_SERVICE
-	bool "Initialize CoAP/DTLS 1.2 CID Service Settings"
+config INIT_SETTINGS
+	bool "Initialize settings, including CoAP/DTLS 1.2 CID Service"
     help
 	  The settings are only initialized the first time
 	  the application access the settings after flasing
 	  with --chiperase.
 
-if (COAP_SERVICE)
+if (INIT_SETTINGS)
 menu "CoAP/DTLS 1.2 CID Service Settings"
 
 config COAP_SCHEME
@@ -183,6 +183,7 @@ config COAP_NO_RESPONSE_ENABLE
 	bool "Use CoAP NO_RESPONSE option for one-way message"
 	default n
 
+if (INIT_SETTINGS)
 config COAP_RESOURCE
 	string "CoAP resource - defaults to Californium's echo resource"
 	default "echo"
@@ -204,7 +205,7 @@ config COAP_QUERY
 		forward (enable http-proxy forward.)
 		read[=<subpath>] (read sub-resource. Default subpath is "config".)
 		write[=<subpath>] (write sub-resource. Default subpath is "${now}".)
-
+endif
 endmenu
 
 menu "Modem Settings"
@@ -396,7 +397,7 @@ config SH_CMD_UNLOCK
     depends on SH_CMD
 	default y	  
 
-if (SH_CMD_UNLOCK)
+if (SH_CMD_UNLOCK && INIT_SETTINGS) 
 
 config SH_CMD_UNLOCK_PASSWORD
     string "Unlock cmd password."
@@ -517,21 +518,23 @@ config BATTERY_TYPE_LIPO_2000_MAH
 	bool "LiPo 2000 mAh"
 	default y if (BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS || BOARD_CIRCUITDOJO_FEATHER_NRF9160)
 
-config BATTERY_TYPE_NMH_2000_MAH
-	bool "NMH 2000 mAh"
+config BATTERY_TYPE_NIMH_2000_MAH
+	bool "NiMH 2000 mAh"
 	default y if (BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS || BOARD_CIRCUITDOJO_FEATHER_NRF9160)
 
+if (INIT_SETTINGS)
 config BATTERY_TYPE_DEFAULT
 	int "Default battery profile."
 	default 1 if (BATTERY_TYPE_LIPO_1350_MAH)
 	default 2 if (BATTERY_TYPE_LIPO_2000_MAH)
-	default 3 if (BATTERY_TYPE_NMH_2000_MAH)
+	default 3 if (BATTERY_TYPE_NIMH_2000_MAH)
 	default 0 
 	help
 	  0 := no battery
 	  1 := LiPO 1350 mAh (Thingy:91)
 	  2 := LiPO 2000 mAh (nRF9160 feather)
-	  3 := NMH 2000 mAh (nRF9160 feather)
+	  3 := NiMH 2000 mAh (nRF9160 feather)
+endif
 
 config NAU7802_SCALE
 	bool "Enable NAU7802 scale"

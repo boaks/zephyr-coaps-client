@@ -682,13 +682,16 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
    static unsigned int scans = 0;
    static unsigned int hits = 0;
    static int64_t all_scan_time = 0;
+
    int64_t now = k_uptime_get();
    int64_t all = 0;
    int current_cell;
+   enum lte_lc_lte_mode mode;
    size_t idx = 0;
    char line[128];
 
    k_mutex_lock(&lte_mutex, K_FOREVER);
+   mode = network_info.mode;
    modem_last_neighbor_cell_meas_len = 0;
    current_cell = network_info.cell;
    if (scan_time) {
@@ -703,7 +706,9 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
    }
    k_mutex_unlock(&lte_mutex);
 
-   snprintf(line, sizeof(line), "LTE neighbor cell measurements %d/%d", cells_info->ncells_count, cells_info->gci_cells_count);
+   snprintf(line, sizeof(line), "%s neighbor cell measurements %d/%d",
+            modem_get_network_mode_description(mode),
+            cells_info->ncells_count, cells_info->gci_cells_count);
    idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
 
    if (cells_info->current_cell.id != LTE_LC_CELL_EUTRAN_ID_INVALID) {

@@ -42,37 +42,37 @@ The usage of the sensors also reduces that time. Consider to measure less freque
 
 - **APPL_MODEL_DESCRIPTION**, application description to include in reported version.
 
-- **COAP_SERVICE**, include configuration values for initial settings. Only applied on the first start after flashing the app with `--chiperase` (see nrfjprog).
+- **INIT_SETTINGS**, include configuration values for initial settings. Only applied on the first start after flashing the app with `--chiperase` (see nrfjprog).
 
-- **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox. Only provided, if **COAP_SERVICE** is enabled. 
+- **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox. Only provided, if **INIT_SETTINGS** is enabled. 
 
-- **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox at `californium.eclipseprojects.io`. Only provided, if **COAP_SERVICE** is enabled.
+- **COAP_SERVER_HOSTNAME**, hostname of the coap/dtls 1.2 cid server. Default is the Californium's sandbox at `californium.eclipseprojects.io`. Only provided, if **INIT_SETTINGS** is enabled.
 
-- **COAP_SERVER_ADDRESS_STATIC**, static ip-address of the coap/dtls 1.2 cid server. Fallback, if DNS isn't setup. Only provided, if **COAP_SERVICE** is enabled.
+- **COAP_SERVER_ADDRESS_STATIC**, static ip-address of the coap/dtls 1.2 cid server. Fallback, if DNS isn't setup. Only provided, if **INIT_SETTINGS** is enabled.
 
-- **COAP_SERVER_PORT**, service port for none secure communication. Default `5683`. Only provided, if **COAP_SERVICE** is enabled.
+- **COAP_SERVER_PORT**, service port for none secure communication. Default `5683`. Only provided, if **INIT_SETTINGS** is enabled.
 
-- **COAP_SERVER_SECURE_PORT**, service port for secure communication. Default `5684`. Only provided, if **COAP_SERVICE** is enabled.
+- **COAP_SERVER_SECURE_PORT**, service port for secure communication. Default `5684`. Only provided, if **INIT_SETTINGS** is enabled.
 
-- **DEVICE_IDENTITY**, the device identiy. `${imei}` will be replaced by the IMEI of the device. Default `cali.${imei}`, e.g. "cali.352656100985434". Only provided, if **COAP_SERVICE** is enabled.
+- **DEVICE_IDENTITY**, the device identiy. `${imei}` will be replaced by the IMEI of the device. Default `cali.${imei}`, e.g. "cali.352656100985434". Only provided, if **INIT_SETTINGS** is enabled.
 
-- **PROVISIONING_GROUP**, device group for provisioning. Default "Auto". Only provided, if **COAP_SERVICE** is enabled.
+- **PROVISIONING_GROUP**, device group for provisioning. Default "Auto". Only provided, if **INIT_SETTINGS** is enabled.
 
-- **DTLS_PSK_IDENTITY**, the PSK identiy. `${imei}` will be replaced by the IMEI of the device. May differ from the `DEVICE_IDENTITY`. Default `cali.${imei}`, e.g. "cali.352656100985434". Only provided, if **COAP_SERVICE** is enabled.
+- **DTLS_PSK_IDENTITY**, the PSK identiy. `${imei}` will be replaced by the IMEI of the device. May differ from the `DEVICE_IDENTITY`. Default `cali.${imei}`, e.g. "cali.352656100985434". Only provided, if **INIT_SETTINGS** is enabled.
 
-- **DTLS_PSK_SECRET_GENERATE**, initially generate the PSK secret. Only provided, if **COAP_SERVICE** is enabled.
+- **DTLS_PSK_SECRET_GENERATE**, initially generate the PSK secret. Only provided, if **INIT_SETTINGS** is enabled.
 
-- **DTLS_PSK_SECRET**, the PSK secret. In base 64 as text `"base64"`, ASCII as text with additional single quotes `"'ascii'"`, or hexadecimal as text with `":0x"` prefix, e.g. `":0x1234abcd"`. Default `"'.fornium'"`, the sandbox uses this secret for the a wildcard identity "cali.*". This is only intended to easy access the sandbox, don't use it on your own test setup. Only provided, if **COAP_SERVICE** is enabled.
+- **DTLS_PSK_SECRET**, the PSK secret. In base 64 as text `"base64"`, ASCII as text with additional single quotes `"'ascii'"`, or hexadecimal as text with `":0x"` prefix, e.g. `":0x1234abcd"`. Default `"'.fornium'"`, the sandbox uses this secret for the a wildcard identity "cali.*". This is only intended to easy access the sandbox, don't use it on your own test setup. Only provided, if **INIT_SETTINGS** is enabled.
 
-- **DTLS_ECDSA_PRIVATE_KEY_GENERATE**, initially generate the ECDSA key-pair. Only provided, if **COAP_SERVICE** is enabled.
+- **DTLS_ECDSA_PRIVATE_KEY_GENERATE**, initially generate the ECDSA key-pair. Only provided, if **INIT_SETTINGS** is enabled.
 
-- **DTLS_ECDSA_PRIVATE_KEY**, ECDSA device private key. Only SECP256R1 is supported. The private key is provided plain (32 bytes) without the algorithm ids of in ASN.1 encoding with algorithm header. The public key is not provided, it will be derived from the private key. Hexadecimal encoded with prefix ":0x", or base64 as "". Only provided, if **COAP_SERVICE** is enabled.
+- **DTLS_ECDSA_PRIVATE_KEY**, ECDSA device private key. Only SECP256R1 is supported. The private key is provided plain (32 bytes) without the algorithm ids of in ASN.1 encoding with algorithm header. The public key is not provided, it will be derived from the private key. Hexadecimal encoded with prefix ":0x", or base64 as "". Only provided, if **INIT_SETTINGS** is enabled.
 
-- **DTLS_ECDSA_TRUSTED_PUBLIC_KEY**, ECDSA trusted server public key. Only SECP256R1 is supported. Either encoded as ASN.1 (including algorith header) or plain concated public_x and public_y key (64 bytes). Hexadecimal encoded with prefix ":0x", or base64 as "". Only provided, if **COAP_SERVICE** is enabled.
+- **DTLS_ECDSA_TRUSTED_PUBLIC_KEY**, ECDSA trusted server public key. Only SECP256R1 is supported. Either encoded as ASN.1 (including algorith header) or plain concated public_x and public_y key (64 bytes). Hexadecimal encoded with prefix ":0x", or base64 as "". Only provided, if **INIT_SETTINGS** is enabled.
 
 - **DTLS_ECDSA_AUTO_PROVISIONING** enable auto provisioning using ECDSA provisioning key-pair. Only provided, if **COAP_SERVICE** is enabled.
 
-- **DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY**, ECDSA provisioning device private key. Only SECP256R1 is supported. The private key is provided plain (32 bytes) without the algorithm ids of in ASN.1 encoding with algorithm header. The public key is not provided, it will be derived from the private key. Hexadecimal encoded with prefix ":0x", or base64 as "". Only provided, if **COAP_SERVICE** is enabled.
+- **DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY**, ECDSA provisioning device private key. Only SECP256R1 is supported. The private key is provided plain (32 bytes) without the algorithm ids of in ASN.1 encoding with algorithm header. The public key is not provided, it will be derived from the private key. Hexadecimal encoded with prefix ":0x", or base64 as "". Only provided, if **INIT_SETTINGS** is enabled.
 
 - **DTLS_ALWAYS_HANDSHAKE**, enables to use a DTLS handshake for each request. Using DTLS 1.2 Connection ID obsoletes such frequent handshakes.
 
@@ -120,9 +120,9 @@ Wakeups 1, 1 s, connected 7 s, asleep 0 s
 
 - **COAP_NO_RESPONSE_ENABLE**, send one-way coap message (request without response).
 
-- **COAP_RESOURCE**, resource name of request. `${imei}` will be replaced by the IMEI of the device.Default "echo".
+- **COAP_RESOURCE**, resource name of request. `${imei}` will be replaced by the IMEI of the device.Default "echo". Only provided, if **INIT_SETTINGS** is enabled.
 
-- **COAP_QUERY**, query of request. Must start with `?`. `${imei}` will be replaced by the IMEI of the device.
+- **COAP_QUERY**, query of request. Must start with `?`. `${imei}` will be replaced by the IMEI of the device. Only provided, if **INIT_SETTINGS** is enabled.
 
 ## URI query parameter
 
@@ -195,7 +195,7 @@ Wakeups 1, 1 s, connected 7 s, asleep 0 s
 
 - **SH_CMD_UNLOCK**, enable protected sh-cmds.
 
-- **SH_CMD_UNLOCK_PASSWORD**, password to unlock protected sh-cmds.
+- **SH_CMD_UNLOCK_PASSWORD**, password to unlock protected sh-cmds. Only provided, if **INIT_SETTINGS** is enabled.
 
 ### Power Saving
 
@@ -223,13 +223,13 @@ Wakeups 1, 1 s, connected 7 s, asleep 0 s
 
 - **EXT_BATTERY_ADC**, enable external ADC battery voltage measurement. Monitors a second external battery. Requires [vbatt2.overlay](../vbatt2.overlay).
 
-- **BATTERY_TYPE**, select battery type. LiPo 1350mAh, LiPo 2000mAh, and NiMh 2000 mAh are supported.
+- **BATTERY_TYPE_LIPO_1350_MAH**, include LiPo 1350mAh profile, Thingy:91 internal.
 
--    **BATTERY_TYPE_LIPO_1350_MAH**, LiPo 1350mAh, Thingy:91 internal.
+- **BATTERY_TYPE_LIPO_2000_MAH**, include LiPo 2000mAh profile.
 
--    **BATTERY_TYPE_LIPO_2000_MAH**, LiPO 2000mAh.
+- **BATTERY_TYPE_NIMH_2000_MAH**, include NiMh 2000 mAh (Eneloop) profile.
 
--    **BATTERY_TYPE_ENELOOP_2000_MAH**, NiMh 2000 mAh (Eneloop).
+- **BATTERY_TYPE_DEFAULT**, set default battery type. 0 := no battery, 1 := LiPO 1350 mAh (Thingy:91), 2 := LiPO 2000 mAh (nRF9160 feather), 3 := NiMH 2000 mAh (nRF9160 feather). Only provided, if **INIT_SETTINGS** is enabled.
 
 - **BATTERY_VOLTAGE_SOURCE**, select battery voltage source.
 
@@ -284,6 +284,8 @@ As mentioned above, overlays are files, which are used to configure a set of fea
 
 ## List of overlays
 
+[prov-prj.conf](../prov-prj.conf) prepares to generate an initial image including the setting values. 
+
 [bsec-prj.conf](../bsec-prj.conf) prepares to use **Bosch bme680 BSEC library**, see above. 
 
 [bme-prj.conf](../bme-prj.conf) prepares to use **Bosch bme680 Zephyr Sensor library**, see above. 
@@ -298,7 +300,7 @@ As mentioned above, overlays are files, which are used to configure a set of fea
 
 [60min-prj.conf](../60min-prj.conf) prepares to send a message every 60 minutes. Enables to use a environment history to store sensor data.
 
-[at-cmd-prj.conf](../at-cmd-prj.conf) prepares UART cmd shell. Supports a set of AT cmds and firmware update via XMODEM.
+[uart-prj.conf](../uart-prj.conf) prepares UART for firmware update via XMODEM.
 
 [hivescale-prj.conf](../hivescale-prj.conf) prepares to use the **NAU7802 I2C ADC**. Requires device tree overlay [hivescale-feather.overlay](../hivescale-feather.overlay) or [hivescale-dk.overlay](../hivescale-dk.overlay) additionally.
 

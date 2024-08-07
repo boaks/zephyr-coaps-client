@@ -32,13 +32,11 @@
 #define ERROR_CLASS(ERR) (ERR & 0xf000)
 #define ERROR_DETAIL(ERR) (ERR & 0xfff)
 
-#define FLAG_TLS 1
-#define FLAG_KEEP_CONNECTION 2
-#define FLAG_REBOOT_1 4
-#define FLAG_REBOOT_LOW_VOLTAGE 8
-#define FLAG_REBOOT 16
-#define FLAG_RESET 32
-#define FLAG_POWER_ON 64
+#define FLAG_REBOOT_RETRY 1
+#define FLAG_REBOOT_LOW_VOLTAGE 2
+#define FLAG_REBOOT 4
+#define FLAG_RESET 8
+#define FLAG_POWER_ON 16
 
 #define WATCHDOG_TIMEOUT_S (60 * 5)
 
@@ -51,7 +49,7 @@ bool appl_reboots(void);
 
 const char* appl_get_reboot_desciption(int error);
 
-uint32_t appl_reset_cause(int *flags);
+uint32_t appl_reset_cause(int *flags, uint16_t* reboot_code);
 int appl_reset_cause_description(char* buf, size_t len);
 
 #endif /* APPL_DIAGNOSE_H */
