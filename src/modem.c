@@ -1707,6 +1707,20 @@ int modem_get_time_scale(void)
    struct lte_ce_info info;
 
    if (modem_get_coverage_enhancement_info(&info) >= 0) {
+      uint8_t repetition = MAX(info.downlink_repetition, info.uplink_repetition);
+#if 1
+      if (repetition <= 8) {
+         // no scale
+      } else if (repetition <= 16) {
+            factor = 150;
+      } else if (repetition <= 32) {
+            factor = 250;
+      } else if (repetition <= 64) {
+            factor = 350;
+      } else if (repetition <= 128) {
+            factor = 500;
+      }
+#else      
       if (info.rsrp < -110) {
          factor = 150;
          if (info.rsrp < -130) {
@@ -1717,6 +1731,7 @@ int modem_get_time_scale(void)
             factor = 250;
          }
       }
+#endif      
    }
    return factor;
 }
