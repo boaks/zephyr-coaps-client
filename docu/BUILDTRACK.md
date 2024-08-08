@@ -171,7 +171,7 @@ The update image must not be applied with `--chiperase`, it must always be appli
 
 The solves only a part of the issue with the credentials. If the credentials are included in the initial image, this would require to build images for each device with different credentials. Otherwise it would be required to set the credentials after the inital image is applied. That is also possible using the [sh-cmds](./SHCMDSLIST.md) via a terminal, but is not that comfortable. To optimize this process, the firmware has an additional "auto-provisioning" feature. With that, the device creates either a `Raw Public Key ECDSA key pair` (preferred) or/and a random `PSK secret`. It uses then the included auto-provisioning-credentials and executes an provisioning request. After success, the device switches to the generated credentials and executes a new handshake. Ready to send data to the cloud server.
 
-[prov-prj.conv](../prov-prj.conv) to see the configuration value, which are supported by the settings service. 
+[prov-prj.conf](../prov-prj.conf) to see the configuration value, which are supported by the settings service. 
 
 ## Credentials
 
@@ -219,6 +219,9 @@ MDECAQEEIMjsiXRzR3OYtELs+9tWYHB4/nT9x3LAXFzA8ezR8iVLoAoGCCqGSM49
 AwEH
 -----END EC PRIVATE KEY-----
 ```
+
+https://github.com/boaks/zephyr-coaps-client/blob/main/docu/BUILDTRACK.md
+https://github.com/boaks/zephyr-coaps-client/blob/main/prov-prj.conf
 
 and copy again the base 64 part as single line into `CONFIG_DTLS_ECDSA_PRIVATE_KEY` value of the [prov-prj.conf](../prov-prj.conf) file. 
 
