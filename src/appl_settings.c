@@ -714,7 +714,7 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
          }
          k_mutex_lock(&settings_mutex, K_FOREVER);
          memmove(val, &battery_profile, res);
-         LOG_DBG("init: %u", battery_profile);
+         LOG_INF("bat: %u", battery_profile);
          k_mutex_unlock(&settings_mutex);
          return res;
       }
@@ -726,7 +726,7 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
          }
          k_mutex_lock(&settings_mutex, K_FOREVER);
          memmove(val, &destination_port, res);
-         LOG_DBG("port: %u", destination_port);
+         LOG_INF("port: %u", destination_port);
          k_mutex_unlock(&settings_mutex);
          return res;
       }
@@ -738,7 +738,7 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
          }
          k_mutex_lock(&settings_mutex, K_FOREVER);
          memmove(val, &destination_secure_port, res);
-         LOG_DBG("secure port: %u", destination_secure_port);
+         LOG_INF("secure port: %u", destination_secure_port);
          k_mutex_unlock(&settings_mutex);
          return res;
       }
@@ -1530,11 +1530,30 @@ static int sh_cmd_settings_set(const char *parameter)
    if (!key[0] || !*cur) {
       res = -EINVAL;
    } else {
-      int len = strlen(cur);
+      int len = 0;
+      const void *value = NULL;
+      char *t = NULL;
+      uint16_t val16 = 0;
+      uint8_t val8 = 0;
+
       appl_settings_expand_key(key, sizeof(key));
-      res = settings_runtime_set(key, cur, len);
+      if (!strcmp(key, SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_BATTERY_PROFILE)) {
+         val8 = strtol(cur, &t, 0);
+         value = &val8;
+         len = sizeof(val8);
+      } else if (!strcmp(key, SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_PORT) ||
+                 !strcmp(key, SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_SECURE_PORT)) {
+         val16 = strtol(cur, &t, 0);
+         value = &val16;
+         len = sizeof(val16);
+      } else {
+         value = cur;
+         len = strlen(cur);
+      }
+
+      res = settings_runtime_set(key, value, len);
       if (!res) {
-         res = settings_save_one(key, cur, len);
+         res = settings_save_one(key, value, len);
       }
       if (res < 0) {
          LOG_WRN("Settings set: fail (err %d, %s)\n", res, strerror(-res));
