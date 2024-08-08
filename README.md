@@ -4,7 +4,7 @@
 
 ## Reliable - Efficient - Encrypted
 
-Version 0.9.0 - January 2024
+Version 0.10.0 - August 2024
 
 This [zephyr](https://www.zephyrproject.org/) client demonstrates to use coaps ([CoAP](https://tools.ietf.org/html/rfc7252) over [DTLS 1.2](https://tools.ietf.org/html/rfc6347)) with the [Eclipse/TinyDtls Library](https://github.com/eclipse/tinydtls). In combination with [Eclipse/Californium](https://github.com/eclipse/californium) as Cloud-Server, it enables a device to use [DTLS 1.2 Connection ID](https://tools.ietf.org/html/rfc9146), which obsolete the commonly used frequently DTLS handshakes and eliminates that expensive overhead.
 Reducing the messages exchange mostly down to two ip-messages (one request, one response), it enables your device for
@@ -19,7 +19,7 @@ In combination with cellular LTE-M/NB-IoT technolopy, CoAP / DTLS 1.2 CID enable
 - zero-install and 
 - high cost-efficiency.
 
-The demo client itself is in development stage. In "good and normal weather", the `Thingy:91` runs from battery for 7 months and more, exchanging every hour a message. In "storm" it may require to be switched off and on again in very rare exceptions.
+The demo client itself is in development stage. In "good and normal weather", the `Thingy:91` runs from battery for 7-15 months, exchanging every hour a message. In "storm" it may require to be switched off and on again in very rare exceptions.
 
 The demo client is intended as groundwork for your own ideas. "Out-of-the-box" this application is useful to easily check, if cellular IoT works at the locations and environment you want to use it. The demo reports also some details about the cellular network functions. 
 To build products and applications on this protocol stack requires to implement a production client and to adapt the coap-server for your function. The demo targets therefore people, which are already common with [zephyr](https://www.zephyrproject.org/), or, even better, common with the development for the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) itself.

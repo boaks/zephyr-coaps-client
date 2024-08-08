@@ -173,6 +173,104 @@ The solves only a part of the issue with the credentials. If the credentials are
 
 [prov-prj.conv](../prov-prj.conv) to see the configuration value, which are supported by the settings service. 
 
+## Credentials
+
+Starting with version 0.10.0 ECDSA certificates are also supported. Not x509 certificates but the slim **R**aw **P**ublic **K**ey variant (see [RFC 7250](https://www.rfc-editor.org/rfc/rfc7250)). This requires also support on ther server-side (e.g. as with Californium).
+
+The RPK certificates are intended to be provisioned ahead. Usually a key pair is created with
+
+```sh
+openssl ecparam -genkey -name prime256v1 -noout -out privkey.pem
+```
+
+or
+
+```sh
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out privkey.pem
+```
+
+You will need one key pair for the server, and one key pair for each device. To make the device and server trust each other, they need to exchange their `public key`s ahead. Therefore extract the `public key` from the key pair using
+
+```sh
+openssl pkey -in privkey.pem -pubout
+
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENTGXGkhc7gL614R4HBOkXoESM98Y
+IXP3yts4VG7wpRlsIxYFFXVez3I3VE7oGaOpLlAMMhFa4Myq/4OIRMvauQ==
+-----END PUBLIC KEY-----
+```
+
+That prints the `public key` in ASN.1 (including the algorithm information) in base 64 encoding. for the device side, copy the base 64 part of the server's `public key` into a single line and paste that in the `CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY` value of the [prov-prj.conf](../prov-prj.conf) file.
+
+```
+CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY="MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENTGXGkhc7gL614R4HBOkXoESM98YIXP3yts4VG7wpRlsIxYFFXVez3I3VE7oGaOpLlAMMhFa4Myq/4OIRMvauQ=="
+```
+
+The device also requires it's own `key pair`, therefore extract the `private key` with
+
+
+```sh
+openssl ec -no_public -in privkey.pem 
+
+read EC key
+writing EC key
+-----BEGIN EC PRIVATE KEY-----
+MDECAQEEIMjsiXRzR3OYtELs+9tWYHB4/nT9x3LAXFzA8ezR8iVLoAoGCCqGSM49
+AwEH
+-----END EC PRIVATE KEY-----
+```
+
+and copy again the base 64 part as single line into `CONFIG_DTLS_ECDSA_PRIVATE_KEY` value of the [prov-prj.conf](../prov-prj.conf) file. 
+
+```
+CONFIG_DTLS_ECDSA_PRIVATE_KEY="MDECAQEEIMjsiXRzR3OYtELs+9tWYHB4/nT9x3LAXFzA8ezR8iVLoAoGCCqGSM49AwEH"
+```
+
+If you use the [cf-cloud-demo-server](https://github.com/eclipse-californium/californium/tree/main/demo-apps/cf-cloud-demo-server) or the [cf-s3-proxy-server](https://github.com/eclipse-californium/californium/tree/main/demo-apps/cf-s3-proxy-server) [Device Credentials](https://github.com/eclipse-californium/californium/tree/main/demo-apps/cf-cloud-demo-server#device-credentials) shows how to add the keys to the server side.
+
+### Credentials Auto Provisioning
+
+Though the above process requires a couple of manual steps, there is also an automated way to provide the device credentials to the server.
+
+This approach uses a special `auto-provisioning key pair` on the device to provide the generated credentials to the server. Create a `key pair` as above and extract the `private key` as also explained above. Instead of copy the base 64 part to `CONFIG_DTLS_ECDSA_PRIVATE_KEY`, copy it to `CONFIG_DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY` 
+
+```
+CONFIG_DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY="MDECAQEEIMjsiXRzR3OYtELs+9tWYHB4/nT9x3LAXFzA8ezR8iVLoAoGCCqGSM49AwEH"
+```
+
+Additional apply the configuration as follow:
+
+```
+# ECDSA credentials
+# ascii in 'ascii', hexadecimal with prefix ":0x", or base64
+CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY="<server's public key in base 64>"
+CONFIG_DTLS_ECDSA_PRIVATE_KEY_GENERATE=y
+# ascii in 'ascii', hexadecimal with prefix ":0x", or base64
+CONFIG_DTLS_ECDSA_PRIVATE_KEY=""
+
+# Auto provisioning
+CONFIG_PROVISIONING_GROUP="Demo"
+CONFIG_DTLS_ECDSA_AUTO_PROVISIONING=y
+# ascii in 'ascii', hexadecimal with prefix ":0x", or base64
+CONFIG_DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY="MDECAQEEIMjsiXRzR3OYtELs+9tWYHB4/nT9x3LAXFzA8ezR8iVLoAoGCCqGSM49AwEH"
+```
+
+- fill the server's `public key` in the field `CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY`
+- set `CONFIG_DTLS_ECDSA_PRIVATE_KEY_GENERATE` to `y`
+- clear `CONFIG_DTLS_ECDSA_PRIVATE_KEY`
+- set `CONFIG_DTLS_ECDSA_AUTO_PROVISIONING` to `y`
+- fill the `auto-provisioning private key` in the field `CONFIG_DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY`
+
+On the server side create a device entry with `public key` of the `auto-provisioning private key` and add the field `.prov=1` to indicate the "auto-provisioning" function for that entry.
+
+```
+Provisioning1=Admin
+.rpk=MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENTGXGkhc7gL614R4HBOkXoESM98YIXP3yts4VG7wpRlsIxYFFXVez3I3VE7oGaOpLlAMMhFa4Myq/4OIRMvauQ==
+.prov=1
+```
+
+You may now apply the same resulting "..._full.hex" image to a set of devices. Each will generate it's own `key pair` and will provide that to the server using the `auto-provisioning private key`. After that, the devices starts their communication using their own generated `key pair`.
+
 ## Configuration
 
 The application comes with a [KConfig](../Kconfig) to configure some functions. Use
