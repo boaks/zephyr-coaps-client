@@ -83,7 +83,7 @@ Starting with v0.10.0 that only builds an image for updates. For an initial imag
 west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="prov-prj.conf"
 ```
 
-and then flash that resulting firmware to your device
+to add the credentials for the [Eclipse/Californium Sandbox](https://github.com/eclipse-californium/californium/blob/main/README.md#interop-server) and then flash that resulting firmware to your device with
 
 ```sh
 west flash --erase

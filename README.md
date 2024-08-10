@@ -126,7 +126,9 @@ If you want to consider the power consumption in your idea, please see [Power Co
 
 Sometimes it is interesting, which mobile networks are available at some locations. [Thingy:91 - Cellular Explorer](./docu/CELLULAREXPLORER.md) helps here. It comes also with support for a firmware update using XMODEM and some additional function in order to test the features of the mobile network.
 
-A more elaborated example see [mobile-beehive-scale](./docu/MOBILEBEEHIVESCALE.md).
+The demo comes also with some functions for [Remote Control](./docu/REMOTECTRL.md) to configure the device remote from the server.
+
+For a more elaborated example see [mobile-beehive-scale](./docu/MOBILEBEEHIVESCALE.md).
 
 ## Licenses
 
