@@ -77,7 +77,19 @@ west build -b thingy91_nrf9160_ns
 
 (For the [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) use `west build -b nrf9160dk_nrf9160_ns`, and for the [nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/) use `west build -b circuitdojo_feather_nrf9160_ns`.)
 
+Starting with v0.10.0 that only builds an image for updates. For an initial image it's required to provide the used credentials with a project specific config file. Therefore use
+
+```sh
+west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="prov-prj.conf"
+```
+
 and then flash that resulting firmware to your device
+
+```sh
+west flash --erase
+```
+
+For update images (without "prov-prj.conf") use
 
 ```sh
 west flash
@@ -91,13 +103,13 @@ In some case, e.g. a firmware update with an notebook in the wild, it may be eas
 nrfjprog --program build/zephyr/merged.hex --sectorerase --verify -r
 ```
 
-without `west`. If it's the initial device setup and no update, use 
+without `west`. If it's the initial image with the device setup, use 
 
 ```sh
 nrfjprog --program build/zephyr/merged.hex --chiperase --verify -r
 ```
 
-If you want to protect the firmware from bein read via jlink, use
+If you want to protect the firmware from being read via jlink, use
 
 ```sh
 nrfjprog --rbp all
@@ -200,14 +212,13 @@ IXP3yts4VG7wpRlsIxYFFXVez3I3VE7oGaOpLlAMMhFa4Myq/4OIRMvauQ==
 -----END PUBLIC KEY-----
 ```
 
-That prints the `public key` in ASN.1 (including the algorithm information) in base 64 encoding. for the device side, copy the base 64 part of the server's `public key` into a single line and paste that in the `CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY` value of the [prov-prj.conf](../prov-prj.conf) file.
+That prints the `public key` in ASN.1 (including the algorithm information) in base 64 encoding. For the device side, copy the base 64 part of the server's `public key` into a single line and paste that in the `CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY` value of the [prov-prj.conf](../prov-prj.conf) file.
 
 ```
 CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY="MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENTGXGkhc7gL614R4HBOkXoESM98YIXP3yts4VG7wpRlsIxYFFXVez3I3VE7oGaOpLlAMMhFa4Myq/4OIRMvauQ=="
 ```
 
 The device also requires it's own `key pair`, therefore extract the `private key` with
-
 
 ```sh
 openssl ec -no_public -in privkey.pem 
@@ -223,11 +234,13 @@ AwEH
 https://github.com/boaks/zephyr-coaps-client/blob/main/docu/BUILDTRACK.md
 https://github.com/boaks/zephyr-coaps-client/blob/main/prov-prj.conf
 
-and copy again the base 64 part as single line into `CONFIG_DTLS_ECDSA_PRIVATE_KEY` value of the [prov-prj.conf](../prov-prj.conf) file. 
+and copy again the base 64 part as single line into the `CONFIG_DTLS_ECDSA_PRIVATE_KEY` value of the [prov-prj.conf](../prov-prj.conf) file.
 
 ```
 CONFIG_DTLS_ECDSA_PRIVATE_KEY="MDECAQEEIMjsiXRzR3OYtELs+9tWYHB4/nT9x3LAXFzA8ezR8iVLoAoGCCqGSM49AwEH"
 ```
+
+You will not need to provide the device's `public key`, because that is calculated from the provided `private key` by the device itself.
 
 If you use the [cf-cloud-demo-server](https://github.com/eclipse-californium/californium/tree/main/demo-apps/cf-cloud-demo-server) or the [cf-s3-proxy-server](https://github.com/eclipse-californium/californium/tree/main/demo-apps/cf-s3-proxy-server) [Device Credentials](https://github.com/eclipse-californium/californium/tree/main/demo-apps/cf-cloud-demo-server#device-credentials) shows how to add the keys to the server side.
 
@@ -235,13 +248,13 @@ If you use the [cf-cloud-demo-server](https://github.com/eclipse-californium/cal
 
 Though the above process requires a couple of manual steps, there is also an automated way to provide the device credentials to the server.
 
-This approach uses a special `auto-provisioning key pair` on the device to provide the generated credentials to the server. Create a `key pair` as above and extract the `private key` as also explained above. Instead of copy the base 64 part to `CONFIG_DTLS_ECDSA_PRIVATE_KEY`, copy it to `CONFIG_DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY` 
+This approach uses a special `auto-provisioning key pair` on the device to provide the generated credentials to the server. Create a `key pair` as above and extract the `private key` as also explained above. Instead of copy the base 64 part to the `CONFIG_DTLS_ECDSA_PRIVATE_KEY` value, copy it to the `CONFIG_DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY` value of the [prov-prj.conf](../prov-prj.conf) file.
 
 ```
 CONFIG_DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY="MDECAQEEIMjsiXRzR3OYtELs+9tWYHB4/nT9x3LAXFzA8ezR8iVLoAoGCCqGSM49AwEH"
 ```
 
-Additional apply the configuration as follow:
+Some onfiguration values must also be applied additionaliy, so apply:
 
 ```
 # ECDSA credentials
@@ -258,13 +271,15 @@ CONFIG_DTLS_ECDSA_AUTO_PROVISIONING=y
 CONFIG_DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY="MDECAQEEIMjsiXRzR3OYtELs+9tWYHB4/nT9x3LAXFzA8ezR8iVLoAoGCCqGSM49AwEH"
 ```
 
+to that [prov-prj.conf](../prov-prj.conf) file.
+
 - fill the server's `public key` in the field `CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY`
 - set `CONFIG_DTLS_ECDSA_PRIVATE_KEY_GENERATE` to `y`
 - clear `CONFIG_DTLS_ECDSA_PRIVATE_KEY`
 - set `CONFIG_DTLS_ECDSA_AUTO_PROVISIONING` to `y`
 - fill the `auto-provisioning private key` in the field `CONFIG_DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY`
 
-On the server side create a device entry with `public key` of the `auto-provisioning private key` and add the field `.prov=1` to indicate the "auto-provisioning" function for that entry.
+If you use the [cf-cloud-demo-server](https://github.com/eclipse-californium/californium/tree/main/demo-apps/cf-cloud-demo-server) or the [cf-s3-proxy-server](https://github.com/eclipse-californium/californium/tree/main/demo-apps/cf-s3-proxy-server) create a device entry with `public key` of the `auto-provisioning private key` and add the field `.prov=1` to indicate the "auto-provisioning" function for that entry.
 
 ```
 Provisioning1=Admin
@@ -272,7 +287,9 @@ Provisioning1=Admin
 .prov=1
 ```
 
-You may now apply the same resulting "..._full.hex" image to a set of devices. Each will generate it's own `key pair` and will provide that to the server using the `auto-provisioning private key`. After that, the devices starts their communication using their own generated `key pair`.
+You may now apply the same resulting "..._full.hex" image to a set of devices. Each will generate it's own `key pair` and will provide that to the server using the same `auto-provisioning key-pair`. After that, the devices starts their communication using their own generated `key pair`. With the next update, the `auto-provisioning key-pair` will be removed from the device's application flash. 
+
+**Note:** though the `auto-provisioning key-pair` is shared between a set of devices, it's recommended to exchange it frequently. That will cause devices, which are using old `auto-provisioning key-pair` for late "auto-provisioning" to fail. Though the intention is to execute the "auto-provisioning" at the "end-of-line" (production), that should not be an issue.  
 
 ## Configuration
 
