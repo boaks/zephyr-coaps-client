@@ -264,6 +264,12 @@ static const unsigned char ecdsa_priv_asn1_header[] = {
     0x04, 0x20,       /* OCTET STRING, length 32 bytes */
 };
 
+static const unsigned char ecdsa_priv_asn1_key[] = {
+    0x30, 0x31,       /* SEQUENCE, length 49 bytes */
+    0x02, 0x01, 0x01, /* INTEGER 1 */
+    0x04, 0x20,       /* OCTET STRING, length 32 bytes */
+};
+
 static int appl_settings_decode_private_key(const char *desc, const char *value, uint8_t *buf, size_t len)
 {
    int res = 0;
@@ -276,13 +282,22 @@ static int appl_settings_decode_private_key(const char *desc, const char *value,
       res = appl_settings_decode_value(desc, value, temp, sizeof(temp));
 
       if (res == sizeof(temp)) {
-         if (memcmp(temp, ecdsa_priv_asn1_header, sizeof(ecdsa_priv_asn1_header))) {
-            LOG_INF("%s: no SECP256R1 ASN.1 private key.", desc);
-         } else {
+         if (memcmp(temp, ecdsa_priv_asn1_header, sizeof(ecdsa_priv_asn1_header)) == 0) {
             res = DTLS_EC_KEY_SIZE;
             memmove(buf, &temp[sizeof(ecdsa_priv_asn1_header)], res);
             sprintf(temp, "%s (from ASN.1):", desc);
-            LOG_HEXDUMP_INF(buf, res, temp);
+            LOG_HEXDUMP_DBG(buf, res, temp);
+         } else {
+            LOG_INF("%s: no SECP256R1 ASN.1 private key.", desc);
+         }
+      } else if (res == (DTLS_EC_KEY_SIZE + sizeof(ecdsa_priv_asn1_key) + 12)) {
+         if (memcmp(temp, ecdsa_priv_asn1_key, sizeof(ecdsa_priv_asn1_key)) == 0) {
+            res = DTLS_EC_KEY_SIZE;
+            memmove(buf, &temp[sizeof(ecdsa_priv_asn1_key)], res);
+            sprintf(temp, "%s (from ASN.1):", desc);
+            LOG_HEXDUMP_DBG(buf, res, temp);
+         } else {
+            LOG_INF("%s: no SECP256R1 ASN.1 private key.", desc);
          }
       } else if (res == DTLS_EC_KEY_SIZE) {
          memmove(buf, temp, res);

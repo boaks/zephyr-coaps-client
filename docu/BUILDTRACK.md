@@ -231,10 +231,9 @@ AwEH
 -----END EC PRIVATE KEY-----
 ```
 
-https://github.com/boaks/zephyr-coaps-client/blob/main/docu/BUILDTRACK.md
-https://github.com/boaks/zephyr-coaps-client/blob/main/prov-prj.conf
-
 and copy again the base 64 part as single line into the `CONFIG_DTLS_ECDSA_PRIVATE_KEY` value of the [prov-prj.conf](../prov-prj.conf) file.
+
+(**Note**: the output format of `openssl ec -no_public` is different from the one used for v0.10.0. Please ensure, you're using the current sources of v0.10.1, which supports also this openssl encoding.)
 
 ```
 CONFIG_DTLS_ECDSA_PRIVATE_KEY="MDECAQEEIMjsiXRzR3OYtELs+9tWYHB4/nT9x3LAXFzA8ezR8iVLoAoGCCqGSM49AwEH"
