@@ -21,6 +21,18 @@ In combination with cellular LTE-M/NB-IoT technolopy, CoAP / DTLS 1.2 CID enable
 
 The demo client itself is in development stage. In "good and normal weather", the `Thingy:91` runs from battery for 7-15 months, exchanging every hour a message. In "storm" it may require to be switched off and on again in very rare exceptions.
 
+![Thingy:91 Chart](./docu/thingy91-chart.png)
+
+```
+179-22:26:04 [d-hh:mm:ss], Thingy:91 v0.9.0+0, 0*4499, 1*48, 2*0, 3*0, failures 4
+!3873 mV 63% (358 days left) battery
+!CE: down: 8, up: 1, RSRP: -95 dBm, CINR: 12 dB, SNR: 13 dB
+```
+
+- 180 days, about 4500 messages, some retransmissions, 1%% failures.
+- 63% battery left
+- quite good signal conditions.
+
 The demo client is intended as groundwork for your own ideas. "Out-of-the-box" this application is useful to easily check, if cellular IoT works at the locations and environment you want to use it. The demo reports also some details about the cellular network functions. 
 To build products and applications on this protocol stack requires to implement a production client and to adapt the coap-server for your function. The demo targets therefore people, which are already common with [zephyr](https://www.zephyrproject.org/), or, even better, common with the development for the [Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) itself.
 Without that knowledge it will be time consuming to make benefit out of this demo.
