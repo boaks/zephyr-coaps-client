@@ -38,4 +38,6 @@ const char *modem_get_state_type(enum lte_network_state_type state_type);
 
 const char *modem_get_emm_cause_description(int cause);
 
+int modem_get_band(int earfcn);
+
 #endif /* MODEM_DESC_H */

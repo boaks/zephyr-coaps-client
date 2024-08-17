@@ -713,9 +713,9 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
 
    if (cells_info->current_cell.id != LTE_LC_CELL_EUTRAN_ID_INVALID) {
       const struct lte_lc_cell *gci_cells = &(cells_info->current_cell);
-      snprintf(line, sizeof(line), "[*]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, earfnc %d, pid %d, rsrp %d dBm, rsrq %d dB",
-               gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
-               gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
+      snprintf(line, sizeof(line), "[*]: plmn %3d%02d, tac 0x%04x, cell 0x%08X, band %d, earfnc %d, pid %d, rsrp %d dBm, rsrq %d dB",
+               gci_cells->mcc, gci_cells->mnc, gci_cells->tac, gci_cells->id,
+               modem_get_band(gci_cells->earfcn), gci_cells->earfcn, gci_cells->phys_cell_id,
                RSRP(gci_cells->rsrp), RSRQ(gci_cells->rsrq));
       idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
    }
@@ -742,7 +742,7 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
          ++gci_cells;
       }
       ++scans;
-      snprintf(line, sizeof(line), "  %*c :  plmn   tac     cell    earfnc pid rsrp/q dB(m)", w, '#');
+      snprintf(line, sizeof(line), "  %*c :  plmn   tac      cell   bd earfnc pid rsrp/q dB(m)", w, '#');
       idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
       for (int index = 0; index < cells_info->gci_cells_count; ++index) {
          gci_cells = gci_cells_sorted[index];
@@ -751,10 +751,10 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
                ++hits;
             }
          }
-         snprintf(line, sizeof(line), "[%c%*d]: %3d%02d 0x%04x 0x%08X %5d  %3d  %4d/%3d",
+         snprintf(line, sizeof(line), "[%c%*d]: %3d%02d 0x%04x 0x%08X %2d %5d  %3d  %4d/%3d",
                   current_cell == gci_cells->id ? '*' : ' ', w, index,
-                  gci_cells->mcc, gci_cells->mnc, gci_cells->tac,
-                  gci_cells->id, gci_cells->earfcn, gci_cells->phys_cell_id,
+                  gci_cells->mcc, gci_cells->mnc, gci_cells->tac, gci_cells->id,
+                  modem_get_band(gci_cells->earfcn), gci_cells->earfcn, gci_cells->phys_cell_id,
                   RSRP(gci_cells->rsrp), RSRQ(gci_cells->rsrq));
          idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
       }
@@ -781,12 +781,12 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
             }
             ++neighbor_cells;
          }
-         snprintf(line, sizeof(line), " %*s : earfnc pid rsrp/q dB(m)", w, "#");
+         snprintf(line, sizeof(line), " %*s : bd earfnc pid rsrp/q dB(m)", w, "#");
          idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
          for (int index = 0; index < cells_info->ncells_count; ++index) {
             neighbor_cells = neighbor_cells_sorted[index];
-            snprintf(line, sizeof(line), "[%*d]: %5d  %3d  %4d/%3d", w,
-                     index, neighbor_cells->earfcn, neighbor_cells->phys_cell_id,
+            snprintf(line, sizeof(line), "[%*d]: %2d %5d  %3d  %4d/%3d", w,
+                     index, modem_get_band(neighbor_cells->earfcn), neighbor_cells->earfcn, neighbor_cells->phys_cell_id,
                      RSRP(neighbor_cells->rsrp), RSRQ(neighbor_cells->rsrq));
             idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
          }
