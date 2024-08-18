@@ -300,18 +300,23 @@ static int sh_cmd_reboot(const char *parameter)
    } else {
       long id = 0;
       uint16_t reboot_code = 0;
-      bool force = (parameter == parse_next_long(parameter, 10, &id));
-      appl_storage_read_int_items(REBOOT_CODE_ID, 0, NULL, &reboot_code, 1);
-      if (force) {
-         if (ERROR_CLASS(reboot_code) == ERROR_CODE_CMD) {
+      bool boot = (parameter == parse_next_long(parameter, 10, &id));
+      int err = appl_storage_read_int_items(REBOOT_CODE_ID, 0, NULL, &reboot_code, 1);
+      if (boot) {
+         if (err == 1 && ERROR_CLASS(reboot_code) == ERROR_CODE_CMD) {
             id = ERROR_DETAIL(reboot_code);
          }
-      } else if (reboot_code == ERROR_CODE(ERROR_CODE_CMD, id)) {
+      } else if (err == -EINVAL) {
+         LOG_INF("reboot codes not supported!");
+      } else if (err == 1 && reboot_code == ERROR_CODE(ERROR_CODE_CMD, id)) {
          LOG_INF("device already rebooted %u", (uint16_t)id);
-         return 0;
+      } else {
+         boot = true;
       }
-      appl_reboot(ERROR_CODE(ERROR_CODE_CMD, id), K_MSEC(2000));
-      LOG_INF(">> device reboot %u ...", (uint16_t)id);
+      if (boot) {
+         appl_reboot(ERROR_CODE(ERROR_CODE_CMD, id), K_MSEC(2000));
+         LOG_INF(">> device reboot %u ...", (uint16_t)id);
+      }
    }
    return 0;
 }
@@ -349,6 +354,11 @@ static int sh_cmd_read_reboots(const char *parameter)
          index += snprintf(buf + index, len - index, " %s (0x%04x)", appl_get_reboot_desciption(reboot_codes[i]), reboot_codes[i]);
          LOG_INF("%s", buf);
       }
+   } else if (err == 0) {
+      LOG_INF("Reboot codes not available.");
+   } else if (err == -EINVAL) {
+      LOG_INF("Reboot codes not supported.");
+      err = 0;
    }
 
    return err > 0 ? 0 : err;
