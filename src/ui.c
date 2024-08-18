@@ -48,8 +48,7 @@ LOG_MODULE_REGISTER(UI, CONFIG_UI_LOG_LEVEL);
 #define LED_BLINKING_MS 300
 
 #if (!DT_NODE_HAS_STATUS(CALL_BUTTON_NODE, okay))
-/* A build error here means your board isn't set up to for sw0 (call button). */
-#error "Unsupported board: sw0 devicetree alias is not defined"
+#warning "Board without call-button: sw0 alias is not defined in devicetree"
 #endif
 
 typedef struct gpio_device {
@@ -84,24 +83,37 @@ static gpio_device_t config_switch_2_spec = GPIO_DEVICE_INIT(CONFIG_SWITCH_NODE_
 #endif
 
 #if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
+#define UI_LED
 static gpio_device_ext_t led_red_spec = GPIO_NAMED_DEVICE_INIT_EXT("red ", LED_RED_NODE);
 #endif
 #if (DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
+#define UI_LED
 static gpio_device_ext_t led_green_spec = GPIO_NAMED_DEVICE_INIT_EXT("green ", LED_GREEN_NODE);
 #endif
 #if (DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
+#define UI_LED
 static gpio_device_ext_t led_blue_spec = GPIO_NAMED_DEVICE_INIT_EXT("blue ", LED_BLUE_NODE);
 #endif
+
+#ifndef UI_LED
+#warning "Board without LEDS: no led0, led1, nor led2 alias defined in devicetree"
+#endif
+
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_1, okay)
+#define UI_OUT
 static gpio_device_ext_t out_lte_1_spec = GPIO_NAMED_DEVICE_INIT_EXT("lte1 ", OUT_LTE_NODE_1);
 #endif
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_2, okay)
+#define UI_OUT
 static gpio_device_ext_t out_lte_2_spec = GPIO_NAMED_DEVICE_INIT_EXT("lte2 ", OUT_LTE_NODE_2);
 #endif
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_3, okay)
+#define UI_OUT
 static gpio_device_ext_t out_lte_3_spec = GPIO_NAMED_DEVICE_INIT_EXT("lte3 ", OUT_LTE_NODE_3);
 #endif
 
+#if (DT_NODE_HAS_STATUS(CALL_BUTTON_NODE, okay))
+#define UI_IN
 static gpio_device_t button_spec = GPIO_DEVICE_INIT(CALL_BUTTON_NODE);
 
 static struct gpio_callback button_cb_data;
@@ -109,13 +121,17 @@ static ui_callback_handler_t button_callback;
 static volatile int button_active;
 static volatile int button_counter;
 
-static void ui_led_timer_expiry_fn(struct k_work *work);
 static void ui_button_handle_fn(struct k_work *work);
 static void ui_button_enable_interrupt_fn(struct k_work *work);
 
 static K_WORK_DEFINE(button_work, ui_button_handle_fn);
 static K_WORK_DELAYABLE_DEFINE(button_timer_work, ui_button_handle_fn);
 static K_WORK_DELAYABLE_DEFINE(button_enable_interrupt_work, ui_button_enable_interrupt_fn);
+#endif
+
+#if defined(UI_LED)
+static void ui_led_timer_expiry_fn(struct k_work *work);
+#endif /* UI_LED */
 
 #if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
 static K_WORK_DELAYABLE_DEFINE(led_red_timer_work, ui_led_timer_expiry_fn);
@@ -127,12 +143,14 @@ static K_WORK_DELAYABLE_DEFINE(led_green_timer_work, ui_led_timer_expiry_fn);
 static K_WORK_DELAYABLE_DEFINE(led_blue_timer_work, ui_led_timer_expiry_fn);
 #endif
 
+static volatile bool ui_enabled = true;
+static volatile bool ui_prio_mode = false;
+
+#if (DT_NODE_HAS_STATUS(CALL_BUTTON_NODE, okay))
+
 static K_MUTEX_DEFINE(ui_mutex);
 static K_SEM_DEFINE(ui_input_trigger, 1, 1);
 static volatile int ui_input_duration = 0;
-
-static volatile bool ui_enabled = true;
-static volatile bool ui_prio_mode = false;
 
 struct ui_fifo {
    void *fifo_reserved;
@@ -243,7 +261,9 @@ static void ui_button_pressed(const struct device *dev, struct gpio_callback *cb
       LOG_WRN("UI button failed: %d", res);
    }
 }
+#endif
 
+#if (DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_2, okay)) || (DT_NODE_HAS_STATUS(CALL_BUTTON_NODE, okay))
 static int ui_init_input(gpio_device_t *input_spec)
 {
    int ret = -ENOTSUP;
@@ -255,7 +275,9 @@ static int ui_init_input(gpio_device_t *input_spec)
    }
    return ret;
 }
+#endif
 
+#if (DT_NODE_HAS_STATUS(CALL_BUTTON_NODE, okay))
 static int ui_init_button(void)
 {
    int ret = ui_init_input(&button_spec);
@@ -276,7 +298,9 @@ static int ui_init_button(void)
 
    return ret;
 }
+#endif
 
+#if defined(UI_LED) || defined(UI_OU)
 static void ui_op(gpio_device_ext_t *output_spec, led_op_t op, struct k_work_delayable *timer)
 {
    k_mutex_lock(&ui_mutex, K_FOREVER);
@@ -355,6 +379,20 @@ static void ui_led_timer_expiry_fn(struct k_work *work)
 #endif
 }
 
+static int ui_init_output(gpio_device_ext_t *output_spec)
+{
+   int ret = -ENOTSUP;
+   if (output_spec && device_is_ready(output_spec->gpio_spec.port)) {
+      ret = gpio_pin_configure_dt(&output_spec->gpio_spec, GPIO_OUTPUT_ACTIVE);
+      if (!ret) {
+         gpio_pin_set_dt(&output_spec->gpio_spec, 0);
+         output_spec->init = true;
+      }
+   }
+   return ret;
+}
+#endif /* UI_LED || UI_OU */
+
 int ui_led_op(led_t led, led_op_t op)
 {
    if (!ui_prio_mode) {
@@ -411,19 +449,6 @@ int ui_led_op_prio(led_t led, led_op_t op)
    return 0;
 }
 
-static int ui_init_output(gpio_device_ext_t *output_spec)
-{
-   int ret = -ENOTSUP;
-   if (output_spec && device_is_ready(output_spec->gpio_spec.port)) {
-      ret = gpio_pin_configure_dt(&output_spec->gpio_spec, GPIO_OUTPUT_ACTIVE);
-      if (!ret) {
-         gpio_pin_set_dt(&output_spec->gpio_spec, 0);
-         output_spec->init = true;
-      }
-   }
-   return ret;
-}
-
 int ui_init(ui_callback_handler_t button_handler)
 {
    int ret;
@@ -466,12 +491,16 @@ int ui_init(ui_callback_handler_t button_handler)
    }
 #endif
 
+#if (DT_NODE_HAS_STATUS(CALL_BUTTON_NODE, okay))
    button_callback = button_handler;
-
    ret = ui_init_button();
    if (ret) {
       LOG_INF("UI init: call button failed! %d", ret);
    }
+#else
+   (void)button_handler;
+   ret = 0;
+#endif
 
 #if DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_2, okay)
    ret = ui_init_input(&config_button_1_spec);
@@ -528,6 +557,7 @@ int ui_input(k_timeout_t timeout)
 {
    int rc = 0;
 
+#if (DT_NODE_HAS_STATUS(CALL_BUTTON_NODE, okay))
    ui_input_duration = 0;
    k_sem_reset(&ui_input_trigger);
 
@@ -547,6 +577,10 @@ int ui_input(k_timeout_t timeout)
       }
       LOG_INF("UI input continue");
    }
+#else
+   (void)timeout;
+#endif
+
    return rc;
 }
 
