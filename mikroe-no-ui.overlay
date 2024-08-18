@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Achim Kraus CloudCoap.net
+ * Copyright (c) 2024 Achim Kraus CloudCoap.net
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -15,7 +15,7 @@
  * Usage: 
  *
  * west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- \
- *    -DOVERLAY_CONFIG="60min0-prj.conf;mikroe-prj.conf" -DDTC_OVERLAY_FILE="mikroe.overlay"
+ *    -DOVERLAY_CONFIG="60min0-prj.conf;mikroe-prj.conf" -DDTC_OVERLAY_FILE="mikroe-no-ui.overlay"
  */
 
 #include "boards/nrf9160dk_nrf9160_ns.overlay"
@@ -50,21 +50,14 @@
 
 / {
 	leds {
-		compatible = "gpio-leds";
-		led0: led_0 {
-			/* SPI SCK */
-			gpios = <&gpio0 3 GPIO_ACTIVE_LOW>;
-		};
+		/delete-node/ led_0;
 		/delete-node/ led_1;
 		/delete-node/ led_2;
 		/delete-node/ led_3;
 	};
 
 	buttons {
-		button0: button_0 {
-			/* SPI CS */
-			gpios = <&gpio0 7 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
-		};
+		/delete-node/ button_0;
 		/delete-node/ button_1;
 		/delete-node/ button_2;
 		/delete-node/ button_3;
@@ -75,15 +68,18 @@
 		/delete-property/ spi-flash0;
 		/delete-property/ pwm-led0;
 		/delete-property/ led0;
+		/delete-property/ led1;
 		/delete-property/ led2;
 		/delete-property/ led3;
+		/delete-property/ sw0;
 		/delete-property/ sw1;
 		/delete-property/ sw2;
 		/delete-property/ sw3;
 		/delete-property/ out1;
 		/delete-property/ out2;
-		// redirect alias for green led (led1) to &led0 definition
-		led1 = &led0;
+		/delete-property/ bootloader-led0;
+		/delete-property/ mcuboot-button0;
+		/delete-property/ mcuboot-led0;
 	};
 
 };
