@@ -300,7 +300,9 @@ As mentioned above, overlays are files, which are used to configure a set of fea
 
 [60min-prj.conf](../60min-prj.conf) prepares to send a message every 60 minutes. Enables to use a environment history to store sensor data.
 
-[uart-prj.conf](../uart-prj.conf) prepares UART for firmware update via XMODEM.
+[uart-prj.conf](../uart-prj.conf) prepares UART for logging and firmware update via XMODEM.
+
+[nouart-prj.conf](../uart-prj.conf) disables loggnin and firmware update via XMODEM.
 
 [hivescale-prj.conf](../hivescale-prj.conf) prepares to use the **NAU7802 I2C ADC**. Requires device tree overlay [hivescale-feather.overlay](../hivescale-feather.overlay) or [hivescale-dk.overlay](../hivescale-dk.overlay) additionally.
 
