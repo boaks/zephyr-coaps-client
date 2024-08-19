@@ -49,6 +49,8 @@ bool appl_reboots(void);
 
 const char* appl_get_reboot_desciption(int error);
 
+int appl_reboot_cause_description(size_t index, int flags, char* buf, size_t len);
+
 uint32_t appl_reset_cause(int *flags, uint16_t* reboot_code);
 int appl_reset_cause_description(char* buf, size_t len);
 

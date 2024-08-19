@@ -136,15 +136,45 @@ const char *appl_get_reboot_desciption(int error)
       case ERROR_CODE_MODEM_FAULT:
          return "modem fault";
       case ERROR_CODE_CMD:
-         return "reboot cmd";
+         return "cmd reboot";
       case ERROR_CODE_MANUAL_TRIGGERED:
-         return "reboot triggered";
+         return "triggered reboot";
       case ERROR_CODE_UPDATE:
          return "update";
       case ERROR_CODE_LOW_VOLTAGE:
          return "low voltage";
    }
    return "\?\?\?";
+}
+
+int appl_reboot_cause_description(size_t index, int flags, char *buf, size_t len)
+{
+   int64_t reboot_time;
+   uint16_t reboot_code;
+
+   int err = appl_storage_read_int_items(REBOOT_CODE_ID, index, &reboot_time, &reboot_code, 1);
+   if (err > 0) {
+      int pos = 0;
+      if (index == 0) {
+         pos += snprintf(buf + pos, len - pos, "Last code: ");
+      }
+      if (reboot_time) {
+         pos += appl_format_time(reboot_time, buf + pos, len - pos);
+         pos += snprintf(buf + pos, len - pos, " ");
+      }
+      pos += snprintf(buf + pos, len - pos, "%s", appl_get_reboot_desciption(reboot_code));
+      if (flags) {
+         pos += snprintf(buf + pos, len - pos, " (0x%04x)", reboot_code);
+      } else {
+         reboot_code = ERROR_DETAIL(reboot_code);
+         if (reboot_code) {
+            pos += snprintf(buf + pos, len - pos, " %d", reboot_code);
+         }
+      }
+      err = pos;
+   }
+
+   return err;
 }
 
 uint32_t appl_reset_cause(int *flags, uint16_t *reboot_code)
@@ -333,32 +363,24 @@ static void sh_cmd_reboot_help(void)
 static int sh_cmd_read_reboots(const char *parameter)
 {
    ARG_UNUSED(parameter);
-   int64_t reboot_times[REBOOT_INFOS];
-   uint16_t reboot_codes[REBOOT_INFOS];
    char buf[128];
-   int len = sizeof(buf);
    int err = 0;
-   int index = 0;
 
-   memset(reboot_times, 0, sizeof(reboot_times));
-   memset(reboot_codes, 0, sizeof(reboot_codes));
-   err = appl_storage_read_int_items(REBOOT_CODE_ID, 0, reboot_times, reboot_codes, REBOOT_INFOS);
-   if (err > 0) {
-      index += snprintf(buf + index, len - index, "Last code: ");
-      index += appl_format_time(reboot_times[0], buf + index, len - index);
-      index += snprintf(buf + index, len - index, " %s (0x%04x)", appl_get_reboot_desciption(reboot_codes[0]), reboot_codes[0]);
-      LOG_INF("%s", buf);
-      for (int i = 1; i < err; ++i) {
-         index = 0;
-         index += appl_format_time(reboot_times[i], buf + index, len - index);
-         index += snprintf(buf + index, len - index, " %s (0x%04x)", appl_get_reboot_desciption(reboot_codes[i]), reboot_codes[i]);
+   for (size_t index = 0; index < REBOOT_INFOS; ++index) {
+      err = appl_reboot_cause_description(index, 1, buf, sizeof(buf));
+      if (err > 0) {
          LOG_INF("%s", buf);
+      } else {
+         if (index == 0) {
+            if (err == 0) {
+               LOG_INF("Reboot codes not available.");
+            } else if (err == -EINVAL) {
+               LOG_INF("Reboot codes not supported.");
+               err = 0;
+            }
+         }
+         break;
       }
-   } else if (err == 0) {
-      LOG_INF("Reboot codes not available.");
-   } else if (err == -EINVAL) {
-      LOG_INF("Reboot codes not supported.");
-      err = 0;
    }
 
    return err > 0 ? 0 : err;

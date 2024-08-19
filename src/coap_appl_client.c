@@ -29,8 +29,6 @@
 
 #include "appl_diagnose.h"
 #include "appl_settings.h"
-#include "appl_storage.h"
-#include "appl_storage_config.h"
 #include "appl_time.h"
 #include "environment_sensor.h"
 
@@ -268,8 +266,6 @@ int coap_appl_client_parse_data(uint8_t *data, size_t len)
 
 int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
 {
-   int64_t reboot_time = 0;
-   uint16_t reboot_code = 0;
    uint16_t battery_voltage = 0xffff;
    struct lte_modem_info modem_info;
    int64_t uptime;
@@ -345,35 +341,24 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
    }
 
    if ((flags & COAP_SEND_FLAG_INITIAL) || !(flags & COAP_SEND_FLAG_MINIMAL)) {
-      err = appl_storage_read_int_items(REBOOT_CODE_ID, 0, &reboot_time, &reboot_code, 1);
+      err = appl_reboot_cause_description(0, 0, buf + index, len - index);
       if (err > 0) {
-         index += snprintf(buf + index, len - index, "Last code: ");
-         if (reboot_time) {
-            index += appl_format_time(reboot_time, buf + index, len - index);
-            index += snprintf(buf + index, len - index, " ");
-         }
-         index += snprintf(buf + index, len - index, "%s", appl_get_reboot_desciption(reboot_code));
-         reboot_code = ERROR_DETAIL(reboot_code);
-         if (reboot_code) {
-            index += snprintf(buf + index, len - index, " %d", reboot_code);
-         }
          dtls_info("%s", buf + start);
+         index += err;
          buf[index++] = '\n';
          start = index;
       }
 
-      start = index;
       index += snprintf(buf + index, len - index, "Restart: ");
       err = appl_reset_cause_description(buf + index, len - index);
       if (err > 0) {
          dtls_info("%s", buf + start);
          index += err;
+         buf[index++] = '\n';
+         start = index;
       } else {
-         index = start - 1;
+         index = start;
       }
-
-      buf[index++] = '\n';
-      start = index;
    }
    if (connect_time_ms > 0 || coap_rtt_ms > 0) {
       index += snprintf(buf + index, len - index, "!RETRANS: %u", retransmissions);
