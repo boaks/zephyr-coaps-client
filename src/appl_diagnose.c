@@ -29,8 +29,7 @@
 #endif
 
 #include "appl_diagnose.h"
-#include "appl_storage.h"
-#include "appl_storage_config.h"
+#include "appl_settings.h"
 #include "appl_time.h"
 #include "parse.h"
 #include "sh_cmd.h"
@@ -84,7 +83,7 @@ static void appl_reboot_fn(void *p1, void *p2, void *p3)
 
    error = atomic_get(&reboot_cause);
    if (error >= 0) {
-      appl_storage_write_int_item(REBOOT_CODE_ID, (uint16_t)error);
+      appl_settings_add_reboot_code((uint16_t)error);
    }
 
    if (!shutdown_now) {
@@ -152,7 +151,7 @@ int appl_reboot_cause_description(size_t index, int flags, char *buf, size_t len
    int64_t reboot_time;
    uint16_t reboot_code;
 
-   int err = appl_storage_read_int_items(REBOOT_CODE_ID, index, &reboot_time, &reboot_code, 1);
+   int err = appl_settings_get_reboot_code(index, &reboot_time, &reboot_code);
    if (err > 0) {
       int pos = 0;
       if (index == 0) {
@@ -207,7 +206,7 @@ uint32_t appl_reset_cause(int *flags, uint16_t *reboot_code)
       }
       if (reset_cause & RESET_SOFTWARE) {
          uint16_t code = 0;
-         int rc = appl_storage_read_int_items(REBOOT_CODE_ID, 0, NULL, &code, 1);
+         int rc = appl_settings_get_reboot_code(0, NULL, &code);
          int reboot = ERROR_CLASS(code);
          int detail = ERROR_DETAIL(code);
          if (rc > 0 && reboot == ERROR_CODE_TOO_MANY_FAILURES) {
@@ -331,7 +330,7 @@ static int sh_cmd_reboot(const char *parameter)
       long id = 0;
       uint16_t reboot_code = 0;
       bool boot = (parameter == parse_next_long(parameter, 10, &id));
-      int err = appl_storage_read_int_items(REBOOT_CODE_ID, 0, NULL, &reboot_code, 1);
+      int err = appl_settings_get_reboot_code(0, NULL, &reboot_code);
       if (boot) {
          if (err == 1 && ERROR_CLASS(reboot_code) == ERROR_CODE_CMD) {
             id = ERROR_DETAIL(reboot_code);

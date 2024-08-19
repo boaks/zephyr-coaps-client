@@ -31,8 +31,6 @@ target_sources(app PRIVATE
 	src/ui.c
 	src/appl_diagnose.c
 	src/appl_settings.c
-	src/appl_storage.c
-	src/appl_storage_config.c
 	src/appl_time.c
 	src/modem.c
 	src/modem_desc.c
@@ -67,7 +65,7 @@ target_sources_ifdef(CONFIG_SHT21 app PRIVATE src/environment_sht21.c src/enviro
 
 target_sources_ifdef(CONFIG_BATTERY_ADC app PRIVATE src/battery_adc.c)
 
-target_sources_ifdef(CONFIG_NAU7802_SCALE app PRIVATE src/nau7802.c)
+target_sources_ifdef(CONFIG_NAU7802_SCALE app PRIVATE src/nau7802.c src/appl_storage.c src/appl_storage_config.c)
 
 if (CONFIG_BME680_BSEC)
         set(bsec_version "bsec_1-4-9-2_generic_release")

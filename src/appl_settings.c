@@ -22,6 +22,7 @@
 #include "sh_cmd.h"
 
 #include "appl_settings.h"
+#include "appl_time.h"
 
 #define STORAGE_PARTITION storage_partition
 #define STORAGE_PARTITION_ID FIXED_PARTITION_ID(STORAGE_PARTITION)
@@ -54,6 +55,7 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #define SETTINGS_KEY_COAP_QUERY "query"
 #define SETTINGS_KEY_APN "apn"
 #define SETTINGS_KEY_BATTERY_PROFILE "bat"
+#define SETTINGS_KEY_REBOOTS "reboots"
 
 #define SETTINGS_KEY_PSK_ID "psk_id"
 #define SETTINGS_KEY_PSK_KEY "psk_key"
@@ -84,6 +86,13 @@ static char device_imei[DTLS_PSK_MAX_CLIENT_IDENTITY_LEN + 1] = {0};
 static char device_id[DTLS_PSK_MAX_CLIENT_IDENTITY_LEN + 1] = {0};
 static char coap_path[MAX_SETTINGS_VALUE_LENGTH] = {0};
 static char coap_query[MAX_SETTINGS_VALUE_LENGTH] = {0};
+
+#define REBOOT_HISTORY 4
+#define REBOOT_TIME_SIZE 6
+#define REBOOT_CODE_SIZE sizeof(uint16_t)
+#define REBOOT_SIZE (REBOOT_TIME_SIZE + REBOOT_CODE_SIZE)
+
+static uint8_t reboot_codes[REBOOT_SIZE * REBOOT_HISTORY];
 
 #ifdef CONFIG_SH_CMD_UNLOCK
 static unsigned char unlock_password[DTLS_PSK_MAX_KEY_LEN + 1] = {0};
@@ -512,6 +521,16 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
          }
          return 0;
       }
+      if (appl_settings_key_match(name, SETTINGS_KEY_REBOOTS, name_len)) {
+         res = read_cb(cb_arg, &buf, sizeof(reboot_codes));
+         k_mutex_lock(&settings_mutex, K_FOREVER);
+         memcpy(reboot_codes, buf, sizeof(reboot_codes));
+         k_mutex_unlock(&settings_mutex);
+         if (res > 0) {
+            LOG_HEXDUMP_INF(buf, sizeof(reboot_codes), "reboot codes:");
+         }
+         return 0;
+      }
 
       if (appl_settings_key_match(name, SETTINGS_KEY_ID, name_len)) {
          res = read_cb(cb_arg, &buf, sizeof(device_id) - 1);
@@ -627,6 +646,7 @@ static int appl_settings_handle_export(int (*cb)(const char *name,
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_DESTINATION, destination, strlen(destination));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_COAP_PATH, coap_path, strlen(coap_path));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_COAP_QUERY, coap_query, strlen(coap_query));
+   (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_REBOOTS, reboot_codes, sizeof(reboot_codes));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_APN, apn, strlen(apn));
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_BATTERY_PROFILE, &battery_profile, sizeof(battery_profile));
 #ifdef CONFIG_SH_CMD_UNLOCK
@@ -794,6 +814,14 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
          res = appl_settings_copy(coap_query, val, val_len_max);
          if (res >= 0) {
             LOG_DBG("coap-query: '%s'", val);
+         }
+         return res;
+      }
+
+      if (appl_settings_key_match(name, SETTINGS_KEY_REBOOTS, name_len)) {
+         res = appl_settings_copy(reboot_codes, val, val_len_max);
+         if (res >= 0) {
+            LOG_HEXDUMP_DBG(val, res, "Reboot codes:");
          }
          return res;
       }
@@ -1243,6 +1271,50 @@ uint16_t appl_settings_get_destination_port(bool secure)
 int appl_settings_get_battery_profile(void)
 {
    return battery_profile;
+}
+
+int appl_settings_get_reboot_code(size_t index, int64_t *time, uint16_t *code)
+{
+   int res = 0;
+   uint8_t buf[sizeof(reboot_codes)];
+
+   index *= REBOOT_SIZE;
+   if (index + REBOOT_SIZE <= sizeof(buf)) {
+      k_mutex_lock(&settings_mutex, K_FOREVER);
+      memmove(buf, reboot_codes, sizeof(reboot_codes));
+      k_mutex_unlock(&settings_mutex);
+      if (sys_get_be48(&buf[index])) {
+         if (time) {
+            *time = sys_get_be48(&buf[index]) * MSEC_PER_SEC;
+         }
+         if (code) {
+            *code = sys_get_be16(&buf[index + REBOOT_TIME_SIZE]);
+         }
+         res = 1;
+      }
+   }
+
+   return res;
+}
+
+int appl_settings_add_reboot_code(uint16_t reboot_code)
+{
+   uint8_t buf[sizeof(reboot_codes)];
+   int64_t now = 0;
+
+   appl_get_now(&now);
+   now = (now / MSEC_PER_SEC) & 0xffffffffffffL;
+   if (!now) {
+      // in rare cases of now == 0, add 1 second
+      ++now;
+   }
+   sys_put_be48(now, buf);
+   sys_put_be16(reboot_code, &buf[REBOOT_TIME_SIZE]);
+   k_mutex_lock(&settings_mutex, K_FOREVER);
+   memmove(&buf[REBOOT_SIZE], reboot_codes, sizeof(reboot_codes) - (REBOOT_SIZE));
+   memmove(&reboot_codes, buf, sizeof(buf));
+   k_mutex_unlock(&settings_mutex);
+   return settings_save_one(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_REBOOTS, reboot_codes, sizeof(reboot_codes));
 }
 
 #if defined(DTLS_ECC)

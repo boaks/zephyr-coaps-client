@@ -22,8 +22,6 @@
 
 #include "appl_diagnose.h"
 #include "appl_settings.h"
-#include "appl_storage.h"
-#include "appl_storage_config.h"
 #include "appl_time.h"
 #ifdef CONFIG_UPDATE
 #include "appl_update.h"
