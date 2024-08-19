@@ -72,7 +72,7 @@
 
 
 	aliases {
-		/delete-property/ appl-storage-flash;
+//		/delete-property/ appl-storage-flash;
 		/delete-property/ spi-flash0;
 		/delete-property/ pwm_led0;
 		/delete-property/ led0;

@@ -55,7 +55,9 @@ enum storage_init_state {
 struct storage_setup {
    const struct storage_config *config;
    uint8_t header[HEADER_SIZE];
+   uint8_t erase_value;
    enum storage_init_state init_state;
+   size_t page_size;
    size_t item_size;
    off_t headers_offset;
    off_t start_offset;
@@ -132,6 +134,7 @@ static int appl_eeprom_storage_get_page_info_by_offs(off_t mem_addr, struct flas
    info->start_offset = info->index * EEPROM_BLOCK_SIZE;
    return 0;
 }
+
 #endif
 
 #if defined(CONFIG_FLASH_APPL_STORAGE)
@@ -140,7 +143,7 @@ static int appl_flash_storage_read_memory(const struct device *storage_device, o
 {
    int rc = flash_read(storage_device, mem_addr, data, num_bytes);
    if (rc) {
-      LOG_DBG("Storage: reading %d@0x%lx failed, %d", num_bytes, mem_addr, rc);
+      LOG_INF("Storage: reading %d@0x%lx failed, %d", num_bytes, mem_addr, rc);
    } else {
       LOG_DBG("Storage: read %d@0x%lx ", num_bytes, mem_addr);
    }
@@ -151,7 +154,7 @@ static int appl_flash_storage_write_memory(const struct device *storage_device, 
 {
    int rc = flash_write(storage_device, mem_addr, data, num_bytes);
    if (rc) {
-      LOG_DBG("Storage: writing %d@0x%lx failed, %d", num_bytes, mem_addr, rc);
+      LOG_INF("Storage: writing %d@0x%lx failed, %d", num_bytes, mem_addr, rc);
       k_sleep(K_MSEC(1000));
    } else {
       LOG_DBG("Storage: written %d@0x%lx ", num_bytes, mem_addr);
@@ -163,7 +166,7 @@ static int appl_flash_storage_erase_memory(const struct device *storage_device, 
 {
    int rc = flash_erase(storage_device, mem_addr, num_bytes);
    if (rc) {
-      LOG_DBG("Storage: erasing %d@0x%lx failed, %d", num_bytes, mem_addr, rc);
+      LOG_INF("Storage: erasing %d@0x%lx failed, %d", num_bytes, mem_addr, rc);
    } else {
       LOG_DBG("Storage: erased %d@0x%lx ", num_bytes, mem_addr);
    }
@@ -173,6 +176,16 @@ static int appl_flash_storage_erase_memory(const struct device *storage_device, 
 static int appl_flash_storage_get_page_info_by_offs(const struct device *storage_device, off_t mem_addr, struct flash_pages_info *info)
 {
    return flash_get_page_info_by_offs(storage_device, mem_addr, info);
+}
+
+static int appl_flash_storage_get_erase_value(const struct device *storage_device)
+{
+   int res = 0xff;
+   const struct flash_parameters *parameters = flash_get_parameters(storage_device);
+   if (parameters) {
+      res = parameters->erase_value;
+   }
+   return res;
 }
 #endif
 
@@ -240,10 +253,26 @@ static int appl_storage_get_page_info_by_offs(const struct storage_config *cfg, 
    return -ENOTSUP;
 }
 
-static bool only_ff(const uint8_t *data, size_t len)
+static int appl_storage_get_erase_value(const struct storage_config *cfg)
+{
+   if (device_is_ready(cfg->storage_device)) {
+      if (cfg->is_flash_device) {
+#if defined(CONFIG_FLASH_APPL_STORAGE)
+         return appl_flash_storage_get_erase_value(cfg->storage_device);
+#endif
+      } else {
+#if defined(CONFIG_EEPROM_APPL_STORAGE)
+         return 0xff;
+#endif
+      }
+   }
+   return -ENOTSUP;
+}
+
+static bool is_erased(const uint8_t *data, size_t len, uint8_t erase_value)
 {
    for (int index = 0; index < len; ++index) {
-      if (data[index] != 0xff) {
+      if (data[index] != erase_value) {
          return false;
       }
    }
@@ -291,7 +320,7 @@ static int appl_storage_init_offset(struct storage_setup *setup)
                for (int index = 0;
                     index < sizeof(data) && (addr + index) < setup->end_offset;
                     index += setup->item_size) {
-                  if (only_ff(&data[index], TIME_SIZE)) {
+                  if (is_erased(&data[index], TIME_SIZE, setup->erase_value)) {
                      setup->current_offset = addr + index;
                      k_mutex_unlock(&storage_mutex);
                      return rc;
@@ -352,6 +381,8 @@ static int appl_storage_init_setup(struct storage_setup *setup, const struct sto
    int rc = appl_storage_get_page_info_by_offs(config, end, &info);
    if (!rc) {
       setup->config = config;
+      setup->erase_value = appl_storage_get_erase_value(config);
+      setup->page_size = info.size;
       setup->item_size = (config->value_size + TIME_SIZE);
       size_t header_size = setup->item_size;
       while (header_size < HEADER_SIZE) {
@@ -415,7 +446,7 @@ int appl_storage_add(const struct storage_config *config)
 
       for (off_t addr = setup->headers_offset; addr < setup->end_offset; addr += sizeof(data)) {
          rc = appl_storage_read_memory(setup->config, addr, data, sizeof(data));
-         if (!rc && !only_ff(data, sizeof(data))) {
+         if (!rc && !is_erased(data, sizeof(data), setup->erase_value)) {
             char label[48];
             snprintf(label, sizeof(label), "Storage %s: @0x%lx", config->desc, addr);
             LOG_HEXDUMP_DBG(data, sizeof(data), label);
@@ -472,7 +503,7 @@ static int appl_storage_init(void)
       if (setup->init_state == STORAGE_INITIALIZED) {
          for (off_t addr = setup->headers_offset; addr < setup->end_offset; addr += sizeof(data)) {
             rc = appl_storage_read_memory(setup->config, addr, data, sizeof(data));
-            if (!rc && !only_ff(data, sizeof(data))) {
+            if (!rc && !is_erased(data, sizeof(data), setup->erase_value)) {
                char label[24];
                snprintf(label, sizeof(label), "Storage: @0x%lx", addr);
                LOG_HEXDUMP_DBG(data, sizeof(data), label);
@@ -504,7 +535,7 @@ static int appl_storage_write_item(struct storage_setup *setup, int64_t time, co
       rc = rc || appl_storage_read_memory(setup->config, next, &data[setup->item_size], 1);
    }
    if (!rc) {
-      if (data[setup->item_size] != 0xff) {
+      if (data[setup->item_size] != setup->erase_value) {
          if (setup->config->is_flash_device) {
             struct flash_pages_info info;
             rc = appl_storage_get_page_info_by_offs(setup->config, next, &info);
@@ -543,7 +574,7 @@ static int appl_storage_read_item(const struct storage_setup *setup, off_t *curr
    offset -= setup->item_size;
    rc = appl_storage_read_memory(setup->config, offset, data, setup->item_size);
    if (!rc) {
-      if (only_ff(data, TIME_SIZE)) {
+      if (is_erased(data, TIME_SIZE, setup->erase_value)) {
          rc = 0;
       } else {
          rc = setup->config->value_size;
@@ -660,10 +691,11 @@ static int appl_storage_list(const char *parameter)
    for (int index = 0; index < storage_setups_count; ++index) {
       const struct storage_setup *setup = &storage_setups[index];
       const struct storage_config *config = setup->config;
-      LOG_INF("Storage %s, ID %d at %d, %d bytes/value",
-              config->desc, config->id, index, config->value_size);
-      LOG_INF("Storage %s: 0x%lx-0x%lx, cur: 0x%lx",
-              config->desc, setup->headers_offset, setup->end_offset, setup->current_offset);
+      LOG_INF("Storage %s, ID %d at %d, %d bytes/value, %d bytes/pages",
+              config->desc, config->id, index, config->value_size, setup->page_size);
+      LOG_INF("Storage %s: 0x%lx-0x%lx, cur: 0x%lx (0x%02x erase-value)",
+              config->desc, setup->headers_offset, setup->end_offset,
+              setup->current_offset, setup->erase_value);
    }
 
    return 0;
@@ -679,8 +711,8 @@ static int appl_storage_clear(const char *parameter)
       struct storage_setup *setup = &storage_setups[index];
       const struct storage_config *config = setup->config;
       appl_storage_format(setup);
-      LOG_INF("Storage %s, ID %d at %d, %d bytes/values cleared.",
-              config->desc, config->id, index, config->value_size);
+      LOG_INF("Storage %s, ID %d at %d, %d bytes/values, %d bytes/pages cleared.",
+              config->desc, config->id, index, config->value_size, setup->page_size);
       LOG_INF("Storage %s: 0x%lx-0x%lx, cur: 0x%lx",
               config->desc, setup->headers_offset, setup->end_offset, setup->current_offset);
    }

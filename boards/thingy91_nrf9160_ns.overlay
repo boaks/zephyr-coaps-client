@@ -40,7 +40,7 @@
 		accelerometer-sensor = &adxl362;
 
 		/* alias for application eeprom */
-		appl-storage-eeprom = &eeprom0;
+//		appl-storage-eeprom = &eeprom0;
 
 		/* alias for watchdog */
 		watchdog0 = &wdt0;
@@ -60,6 +60,7 @@
 		pagesize = <32>;
 		address-width = <16>;
 		timeout = <5>;
+		status = "disabled";
 	};
     
 	pmic0: pmic@46 {};

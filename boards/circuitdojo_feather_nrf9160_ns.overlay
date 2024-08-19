@@ -40,10 +40,14 @@
 		/* alias for sensor with SENSOR_CHAN_ACCEL_XYZ channels */
 		accelerometer-sensor = &lis2dh;
 
-		appl-storage-flash = &w25q32jv;
+//		appl-storage-flash = &w25q32jv;
 
 	};
 
+};
+
+&w25q32jv {
+	status = "disabled";
 };
 
 /*

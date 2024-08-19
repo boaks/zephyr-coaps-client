@@ -44,7 +44,7 @@
 		out1 = &out1;
 		out2 = &out2;
 
-		appl-storage-flash = &mx25r64;
+//		appl-storage-flash = &mx25r64;
 	};
 
 };
@@ -54,7 +54,7 @@
 		   <&gpio0 25 GPIO_ACTIVE_LOW>;
 	mx25r64: mx25r6435f@1 {
 		compatible = "jedec,spi-nor";
-		status = "okay";
+		status = "disabled";
 		reg = <1>;
 		spi-max-frequency = <8000000>;
 		jedec-id = [c2 28 17];

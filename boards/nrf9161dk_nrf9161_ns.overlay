@@ -45,7 +45,7 @@
 		out1 = &out1;
 	/*  out2 = &out2; */
 
-		appl-storage-flash = &gd25wb256;
+//		appl-storage-flash = &gd25wb256;
 	};
 
 };
@@ -57,7 +57,7 @@
 };
 
 &gd25wb256 {
-	status = "okay";
+//	status = "okay";
 };
 
 sensor_i2c: &i2c2 {};
