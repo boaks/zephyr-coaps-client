@@ -97,7 +97,7 @@ west flash
 
 See also [Updating Firmware Through External Debug Probe](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/ug_thingy91_gsg.html#updating-firmware-through-external-debug-probe).
 
-In some case, e.g. a firmware update with an notebook in the wild, it may be easier to use
+In some case, e.g. a firmware update with an notebook in the wild, it may be easier to use the `nrfjprog` util of the [nRF Command Line Tools](https://www.nordicsemi.com/Products/Development-tools/nrf-command-line-tools/download).
 
 ```sh
 nrfjprog --program build/zephyr/merged.hex --sectorerase --verify -r
