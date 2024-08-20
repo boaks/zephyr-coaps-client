@@ -565,6 +565,7 @@ int appl_update_coap_next(void)
       uint8_t *token = (uint8_t *)&update_context.token;
       struct coap_packet request;
 
+      update_context.message_len = 0;
       update_context.token = coap_client_next_token();
       update_context.mid = coap_next_id();
 

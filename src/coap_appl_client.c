@@ -998,22 +998,23 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
       }
    }
 
-   err = coap_packet_append_payload_marker(&request);
-   if (err < 0) {
-      dtls_warn("Failed to encode CoAP payload-marker, %d", err);
-      return err;
-   }
+   if (index > 0) {
+      err = coap_packet_append_payload_marker(&request);
+      if (err < 0) {
+         dtls_warn("Failed to encode CoAP payload-marker, %d", err);
+         return err;
+      }
 
-   err = coap_packet_append_payload(&request, buf, index);
-   if (err < 0) {
-      dtls_warn("Failed to encode CoAP payload, %d", err);
-      return err;
+      err = coap_packet_append_payload(&request, buf, index);
+      if (err < 0) {
+         dtls_warn("Failed to encode CoAP payload, %d", err);
+         return err;
+      }
    }
-
    appl_context.message_len = request.offset;
    dtls_info("CoAP request prepared, token 0x%02x%02x%02x%02x, %u bytes", token[0], token[1], token[2], token[3], request.offset);
 
-   return request.offset;
+   return appl_context.message_len;
 }
 
 int coap_appl_client_message(const uint8_t **buffer)

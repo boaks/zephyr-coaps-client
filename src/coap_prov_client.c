@@ -90,49 +90,51 @@ int coap_prov_client_prepare_post(char *buf, size_t len)
 
    index = appl_settings_get_provisioning(buf, len);
 
-   appl_context.token = coap_client_next_token();
-   appl_context.mid = coap_next_id();
+   if (index > 0) {
+      appl_context.token = coap_client_next_token();
+      appl_context.mid = coap_next_id();
 
-   err = coap_packet_init(&request, appl_context.message_buf, sizeof(appl_context.message_buf),
-                          COAP_VERSION_1,
-                          COAP_TYPE_CON,
-                          sizeof(appl_context.token), token,
-                          COAP_METHOD_POST, appl_context.mid);
+      err = coap_packet_init(&request, appl_context.message_buf, sizeof(appl_context.message_buf),
+                             COAP_VERSION_1,
+                             COAP_TYPE_CON,
+                             sizeof(appl_context.token), token,
+                             COAP_METHOD_POST, appl_context.mid);
 
-   if (err < 0) {
-      dtls_warn("Failed to create CoAP request, %d", err);
-      return err;
+      if (err < 0) {
+         dtls_warn("Failed to create CoAP request, %d", err);
+         return err;
+      }
+
+      err = coap_packet_set_path(&request, "prov");
+      if (err < 0) {
+         dtls_warn("Failed to encode CoAP URI-PATH option, %d", err);
+         return err;
+      }
+
+      err = coap_append_option_int(&request, COAP_OPTION_CONTENT_FORMAT,
+                                   COAP_CONTENT_FORMAT_TEXT_PLAIN);
+      if (err < 0) {
+         dtls_warn("Failed to encode CoAP CONTENT_FORMAT option, %d", err);
+         return err;
+      }
+
+      err = coap_packet_append_payload_marker(&request);
+      if (err < 0) {
+         dtls_warn("Failed to encode CoAP payload-marker, %d", err);
+         return err;
+      }
+
+      err = coap_packet_append_payload(&request, buf, index);
+      if (err < 0) {
+         dtls_warn("Failed to encode CoAP payload, %d", err);
+         return err;
+      }
+
+      appl_context.message_len = request.offset;
+      dtls_info("CoAP request prepared, token 0x%02x%02x%02x%02x, %u bytes", token[0], token[1], token[2], token[3], request.offset);
    }
 
-   err = coap_packet_set_path(&request, "prov");
-   if (err < 0) {
-      dtls_warn("Failed to encode CoAP URI-PATH option, %d", err);
-      return err;
-   }
-
-   err = coap_append_option_int(&request, COAP_OPTION_CONTENT_FORMAT,
-                                COAP_CONTENT_FORMAT_TEXT_PLAIN);
-   if (err < 0) {
-      dtls_warn("Failed to encode CoAP CONTENT_FORMAT option, %d", err);
-      return err;
-   }
-
-   err = coap_packet_append_payload_marker(&request);
-   if (err < 0) {
-      dtls_warn("Failed to encode CoAP payload-marker, %d", err);
-      return err;
-   }
-
-   err = coap_packet_append_payload(&request, buf, index);
-   if (err < 0) {
-      dtls_warn("Failed to encode CoAP payload, %d", err);
-      return err;
-   }
-
-   appl_context.message_len = request.offset;
-   dtls_info("CoAP request prepared, token 0x%02x%02x%02x%02x, %u bytes", token[0], token[1], token[2], token[3], request.offset);
-
-   return request.offset;
+   return appl_context.message_len;
 }
 
 int coap_prov_client_message(const uint8_t **buffer)

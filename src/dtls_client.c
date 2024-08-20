@@ -1818,8 +1818,10 @@ static int dtls_loop(dtls_app_data_t *app, int reset_cause, uint16_t reboot_caus
                }
                if (res < 0) {
                   dtls_coap_failure(app, "prepare post");
-               } else {
+               } else if (res > 0) {
                   sendto_peer(app, dtls_context);
+               } else {
+                  dtls_coap_set_request_state("no payload", app, NONE);
                }
             }
          }
