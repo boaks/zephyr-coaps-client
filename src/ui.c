@@ -405,7 +405,10 @@ int ui_led_op(led_t led, led_op_t op)
 int ui_led_op_prio(led_t led, led_op_t op)
 {
    if (!ui_enabled) {
-      return -EACCES;
+      if (led == LED_COLOR_ALL || led == LED_COLOR_RED ||
+          led == LED_COLOR_BLUE || led == LED_COLOR_GREEN) {
+         return -EACCES;
+      }
    }
    switch (led) {
       case LED_NONE:
@@ -542,7 +545,9 @@ void ui_enable(bool enable)
 {
    if (ui_enabled != enable) {
       if (!enable) {
-         ui_led_op_prio(LED_COLOR_ALL, LED_CLEAR);
+         ui_led_op_prio(LED_COLOR_RED, LED_CLEAR);
+         ui_led_op_prio(LED_COLOR_BLUE, LED_CLEAR);
+         ui_led_op_prio(LED_COLOR_GREEN, LED_CLEAR);
       }
       ui_enabled = enable;
    }

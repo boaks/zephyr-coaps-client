@@ -207,7 +207,6 @@ static K_WORK_DEFINE(dtls_power_management_work, dtls_power_management_fn);
 static void dtls_power_management_suspend_fn(struct k_work *work)
 {
    atomic_clear_bit(&general_states, PM_PREVENT_SUSPEND);
-   ui_led_op(LED_COLOR_ALL, LED_CLEAR);
    dtls_power_management();
 }
 
@@ -274,7 +273,7 @@ static void dtls_power_management(void)
 
    if (previous != suspend) {
       if (suspend) {
-         ui_led_op(LED_COLOR_ALL, LED_CLEAR);
+         ui_enable(false);
       }
       power_manager_suspend(suspend);
    }
@@ -533,7 +532,6 @@ static void dtls_manual_trigger(int duration)
       trigger_duration = duration;
    }
    // LEDs for manual trigger
-   ui_enable(true);
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
    dtls_trigger("manual");
 
@@ -723,7 +721,10 @@ static void dtls_coap_success(dtls_app_data_t *app)
    if (time2 < 0) {
       time2 = -1;
    }
-   ui_led_op(LED_COLOR_ALL, LED_CLEAR);
+   if (!ui_led_op(LED_COLOR_ALL, LED_CLEAR)) {
+      ui_enable(false);
+   }
+
    dtls_info("%dms/%dms: success", time1, time2);
    if (app->retransmission <= COAP_MAX_RETRANSMISSION) {
       transmissions[app->retransmission]++;
@@ -803,11 +804,11 @@ static void dtls_coap_failure(dtls_app_data_t *app, const char *cause)
       time2 = -1;
    }
    if (!ui_led_op(LED_COLOR_RED, LED_SET)) {
+      ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
+      ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
       atomic_set_bit(&general_states, PM_PREVENT_SUSPEND);
       work_reschedule_for_io_queue(&dtls_power_management_suspend_work, K_SECONDS(10));
    }
-   ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-   ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    dtls_info("%dms/%dms: failure, %s", time1, time2, cause);
    failures++;
    if (initial_success) {

@@ -95,6 +95,7 @@ static void appl_update_coap_erase_fn(struct k_work *work)
          coap_current_block = 0;
       }
       k_mutex_unlock(&appl_update_coap_mutex);
+      sh_cmd_append("send", K_MSEC(2000));
    } else {
       appl_update_coap_cancel_download(true, REASON_NOT_AVAILABLE);
       appl_update_cmd("erase");
