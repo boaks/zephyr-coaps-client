@@ -1851,10 +1851,14 @@ static int dtls_loop(dtls_app_data_t *app, int reset_cause, uint16_t reboot_caus
                             time);
                }
                dtls_coap_set_request_state("lte connected", app, RECEIVE);
-            } else if (loops > 60) {
-               dtls_log_state();
-               dtls_info("%s send timeout %d s", type, loops);
-               dtls_coap_failure(app, "timeout");
+            } else {
+               if (loops > 60) {
+                  dtls_log_state();
+                  dtls_info("%s send timeout %d s", type, loops);
+                  dtls_coap_failure(app, "timeout");
+               } else if ((loops & 3) == 3) {
+                  dtls_info("%s waiting for lte connection, %d s", type, loops);
+               }
             }
          } else if (app->request_state == RECEIVE) {
             int temp = app->timeout;

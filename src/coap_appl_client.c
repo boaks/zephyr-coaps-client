@@ -516,20 +516,7 @@ int coap_appl_client_prepare_net_info(char *buf, size_t len, int flags)
             buf[index++] = '\n';
          }
          start = index;
-         switch (params.edrx.mode) {
-            case LTE_LC_LTE_MODE_NONE:
-               index += snprintf(buf + index, len - index, "eDRX: n.a.");
-               break;
-            case LTE_LC_LTE_MODE_LTEM:
-               index += snprintf(buf + index, len - index, "eDRX: LTE-M %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
-               break;
-            case LTE_LC_LTE_MODE_NBIOT:
-               index += snprintf(buf + index, len - index, "eDRX: NB-IoT %0.2f [s], page %0.2f [s]", params.edrx.edrx, params.edrx.ptw);
-               break;
-            default:
-               index += snprintf(buf + index, len - index, "eDRX: unknown");
-               break;
-         }
+         index += modem_print_edrx("", &params.edrx, buf + index, len - index);
          dtls_info("%s", buf + start);
       }
    }
@@ -1007,7 +994,7 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
 
       err = coap_packet_append_payload(&request, buf, index);
       if (err < 0) {
-         dtls_warn("Failed to encode CoAP payload, %d", err);
+         dtls_warn("Failed to encode %d bytes CoAP payload, %d", index, err);
          return err;
       }
    }

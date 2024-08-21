@@ -74,6 +74,7 @@ static int psm_rat = -1;
 #endif
 
 static int rai_lock = 0;
+static int16_t requested_edrx_time_s = 0;
 
 static uint32_t lte_starts = 0;
 static uint32_t lte_searchs = 0;
@@ -830,20 +831,14 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          break;
       case LTE_LC_EVT_EDRX_UPDATE:
          {
-            char log_buf[60];
-            ssize_t len;
             const char *mode = "none";
             if (evt->edrx_cfg.mode == LTE_LC_LTE_MODE_LTEM) {
                mode = "LTE-M";
             } else if (evt->edrx_cfg.mode == LTE_LC_LTE_MODE_NBIOT) {
                mode = "NB-IoT";
             }
-            len = snprintf(log_buf, sizeof(log_buf),
-                           "eDRX parameter update: %s, eDRX: %.2fs, PTW: %.2fs",
-                           mode, evt->edrx_cfg.edrx, evt->edrx_cfg.ptw);
-            if (len > 0) {
-               LOG_INF("%s", log_buf);
-            }
+            LOG_INF("eDRX cell update: %s, eDRX: %.2fs, PTW: %.2fs",
+                    mode, evt->edrx_cfg.edrx, evt->edrx_cfg.ptw);
             lte_set_edrx_status(&evt->edrx_cfg);
             break;
          }
@@ -1086,8 +1081,16 @@ static void modem_on_cfun(enum lte_lc_func_mode mode, void *ctx)
 {
    if (mode == LTE_LC_FUNC_MODE_NORMAL ||
        mode == LTE_LC_FUNC_MODE_ACTIVATE_LTE) {
+      int16_t edrx_time_s = 0;
+      k_mutex_lock(&lte_mutex, K_FOREVER);
       ++lte_starts;
       lte_low_power = false;
+      edrx_status.mode = LTE_LC_LTE_MODE_NONE;
+      edrx_time_s = requested_edrx_time_s;
+      k_mutex_unlock(&lte_mutex);
+      if (edrx_time_s) {
+         modem_set_edrx(edrx_time_s);
+      }
       modem_read_network_info(NULL, true);
       return;
    }
@@ -1725,15 +1728,15 @@ int modem_get_time_scale(void)
       if (repetition <= 8) {
          // no scale
       } else if (repetition <= 16) {
-            factor = 150;
+         factor = 150;
       } else if (repetition <= 32) {
-            factor = 250;
+         factor = 250;
       } else if (repetition <= 64) {
-            factor = 350;
+         factor = 350;
       } else if (repetition <= 128) {
-            factor = 500;
+         factor = 500;
       }
-#else      
+#else
       if (info.rsrp < -110) {
          factor = 150;
          if (info.rsrp < -130) {
@@ -1744,7 +1747,7 @@ int modem_get_time_scale(void)
             factor = 250;
          }
       }
-#endif      
+#endif
    }
    return factor;
 }
@@ -1985,8 +1988,11 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
          cur = n + 1;
          LOG_DBG("eDRX> %s", cur);
          edrx = cur;
-         t = &buf[edrx - buf];
+         t = &buf[edrx - buf]; // t = edrx
          n = parse_next_qtext(cur, '"', t, 5);
+         if (n == cur) {
+            edrx = NULL;
+         }
       }
       if (*n == ',') {
          // skip ,
@@ -2016,8 +2022,14 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
    }
 
    if (edrx) {
-      LOG_INF("eDRX: %s", edrx);
+      t = NULL;
+      int edrx_code = strtol(edrx, &t, 2);
+      if (t > edrx) {
+         float edrx_time = modem_get_edrx_multiplier(edrx_code) * 5.12F;
+         LOG_INF("eDRX net: %s => %0.2fs", edrx, edrx_time);
+      }
    }
+
    if (act && tau_ext && tau) {
       struct lte_lc_psm_cfg temp_psm_status = {0, -1};
       if (!parse_psm(act, tau_ext, tau, &temp_psm_status)) {
@@ -2471,76 +2483,80 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
 int modem_set_edrx(int16_t edrx_time_s)
 {
    int res = 0;
-   int res2 = 0;
-   int edrx_code = 0;
-   char edrx[5] = "0000";
-   int edrx_mul = 1;
    if (edrx_time_s == 0) {
       LOG_INF("eDRX off");
       res = modem_at_cmd(NULL, 0, NULL, "AT+CEDRXS=0");
       if (res >= 0) {
-         // switching of eDRX swichtes off the notifications
+         // switching off eDRX, switches also off the notifications
          k_mutex_lock(&lte_mutex, K_FOREVER);
          edrx_status.mode = LTE_LC_LTE_MODE_NONE;
+         requested_edrx_time_s = 0;
          k_mutex_unlock(&lte_mutex);
       }
-      return res < 0 ? res : 0;
-   } else if (edrx_time_s < 6) {
-      edrx_code = 0;
-   } else if (edrx_time_s < 11) {
-      edrx_code = 1;
-      edrx_mul = 2;
-   } else if (edrx_time_s < 21) {
-      edrx_code = 2;
-      edrx_mul = 4;
-   } else if (edrx_time_s < 41) {
-      edrx_code = 3;
-      edrx_mul = 8;
-   } else if (edrx_time_s < 62) {
-      edrx_code = 4;
-      edrx_mul = 12;
-   } else if (edrx_time_s < 82) {
-      edrx_code = 5;
-      edrx_mul = 16;
-   } else if (edrx_time_s < 103) {
-      edrx_code = 6;
-      edrx_mul = 20;
-   } else if (edrx_time_s < 123) {
-      edrx_code = 7;
-      edrx_mul = 24;
-   } else if (edrx_time_s < 144) {
-      edrx_code = 8;
-      edrx_mul = 28;
-   } else if (edrx_time_s < 164) {
-      edrx_code = 9;
-      edrx_mul = 32;
-   } else if (edrx_time_s < 328) {
-      edrx_code = 10;
-      edrx_mul = 64;
-   } else if (edrx_time_s < 656) {
-      edrx_code = 11;
-      edrx_mul = 128;
-   } else if (edrx_time_s < 1311) {
-      edrx_code = 12;
-      edrx_mul = 256;
-   } else if (edrx_time_s < 2622) {
-      edrx_code = 13;
-      edrx_mul = 512;
-   } else if (edrx_time_s < 5243) {
-      edrx_code = 14;
-      edrx_mul = 1024;
    } else {
-      edrx_code = 15;
-      edrx_mul = 2048;
-   }
-   print_bin(edrx, 4, edrx_code);
-   LOG_INF("eDRX enable, %.2f s", 5.12F * edrx_mul);
-   res2 = modem_at_cmdf(NULL, 0, NULL, "AT+CEDRXS=2,5,\"%s\"", edrx);
-   res = modem_at_cmdf(NULL, 0, NULL, "AT+CEDRXS=2,4,\"%s\"", edrx);
-   if (res2 < 0) {
-      return res2;
+      int res2 = 0;
+      int edrx_code = 0;
+      char edrx[5] = "0000";
+      float time = edrx_time_s;
+
+      for (edrx_code = 0; edrx_code < 15; ++edrx_code) {
+         if (time <= (modem_get_edrx_multiplier(edrx_code) * 5.12F)) {
+            break;
+         }
+      }
+      print_bin(edrx, 4, edrx_code);
+      LOG_INF("eDRX enable, %.2f s", (modem_get_edrx_multiplier(edrx_code) * 5.12F));
+      res2 = modem_at_cmdf(NULL, 0, NULL, "AT+CEDRXS=2,5,\"%s\"", edrx);
+      res = modem_at_cmdf(NULL, 0, NULL, "AT+CEDRXS=2,4,\"%s\"", edrx);
+      if (res2 < 0) {
+         return res2;
+      }
+      if (res >= 0) {
+         k_mutex_lock(&lte_mutex, K_FOREVER);
+         requested_edrx_time_s = edrx_time_s;
+         k_mutex_unlock(&lte_mutex);
+      }
    }
    return res < 0 ? res : 0;
+}
+
+static const uint16_t edrx_multiplier[16] = {1, 2, 4, 8, 12, 16, 20, 24, 28, 32, 64, 128, 256, 512, 1024, 2048};
+
+int modem_get_edrx_multiplier(int edrx_code)
+{
+   if (0 <= edrx_code && edrx_code < 16) {
+      return edrx_multiplier[edrx_code];
+   } else {
+      return 0;
+   }
+}
+
+int modem_print_edrx(const char *desc, struct lte_lc_edrx_cfg *edrx_cfg, char *buf, size_t len)
+{
+   const char *sep = (*desc == 0 || strend(desc, " ", false)) ? "" : " ";
+   const char *mode = NULL;
+   switch (edrx_cfg->mode) {
+      case LTE_LC_LTE_MODE_NONE:
+         return snprintf(buf, len, "eDRX %s%sdisabled.", desc, sep);
+      case LTE_LC_LTE_MODE_LTEM:
+         mode = "CAT-M1";
+         break;
+      case LTE_LC_LTE_MODE_NBIOT:
+         mode = "NB-IoT";
+         break;
+      default:
+         return snprintf(buf, len, "eDRX %s%sunknown.", desc, sep);
+   }
+   if (mode != NULL) {
+      if (edrx_cfg->edrx < 1.0F) {
+         return snprintf(buf, len, "eDRX %s%s%s disabled.", desc, sep, mode);
+      } else if (edrx_cfg->ptw < 1.0F) {
+         return snprintf(buf, len, "eDRX %s%s%s %.2fs", desc, sep, mode, edrx_cfg->edrx);
+      } else {
+         return snprintf(buf, len, "eDRX %s%s%s %.2fs, ptw %.2fs", desc, sep, mode, edrx_cfg->edrx, edrx_cfg->ptw);
+      }
+   }
+   return 0;
 }
 
 void modem_lock_psm(bool on)

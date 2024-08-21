@@ -218,6 +218,10 @@ int modem_get_last_neighbor_cell_meas(char* buf, size_t len);
 
 int modem_clear_last_neighbor_cell_meas(void);
 
+int modem_get_edrx_multiplier(int edrx_code);
+
+int modem_print_edrx(const char *desc, struct lte_lc_edrx_cfg *edrx_cfg, char* buf, size_t len);
+
 int modem_set_offline(void);
 
 int modem_set_lte_offline(void);

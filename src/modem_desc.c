@@ -277,7 +277,7 @@ const char *modem_get_emm_cause_description(int cause)
 }
 
 /* TS 36.101 version 14.3.0, page 107 */
-static int earfcn_to_band[] = {
+static const int earfcn_to_band[] = {
     0, 600, 1200, 1950, 2400, 2650, 2750, 3450, 3800, 4150, 4750,
     5010, 5180, 5280, 5380, 5480, 5730, 5850, 6000, 6150, 6450,
     6600, 7500, 7700, 8040, 8690, 9040, 9210, 9660, -1};

@@ -701,18 +701,70 @@ static int modem_cmd_edrx(const char *config)
    int res = 1;
    unsigned int edrx_time = 0;
    const char *cur = config;
-   char value[5];
+   char value[16];
 
    memset(value, 0, sizeof(value));
    cur = parse_next_text(cur, ' ', value, sizeof(value));
    if (!value[0]) {
-      struct lte_lc_edrx_cfg edrx_cfg;
-      res = lte_lc_edrx_get(&edrx_cfg);
-      if (!res) {
-         if (edrx_cfg.edrx < 1.0) {
-            LOG_INF("eDRX disabled.");
-         } else {
-            LOG_INF("eDRX %.2fs, ptw %.2fs", edrx_cfg.edrx, edrx_cfg.ptw);
+      struct lte_lc_edrx_cfg edrx_cfg_net;
+      struct lte_lc_edrx_cfg edrx_cfg_cell;
+      char buf[64];
+      char line[64];
+      long type = 0;
+      const char *cur = buf;
+
+      memset(line, 0, sizeof(line));
+      modem_get_edrx_status(&edrx_cfg_cell);
+      res = lte_lc_edrx_get(&edrx_cfg_net);
+      if (!res && (edrx_cfg_net.mode == edrx_cfg_cell.mode &&
+                   edrx_cfg_net.edrx == edrx_cfg_cell.edrx &&
+                   edrx_cfg_net.ptw == edrx_cfg_cell.ptw)) {
+         modem_print_edrx("cell/net", &edrx_cfg_net, line, sizeof(line) - 1);
+         LOG_INF("%s", line);
+      } else {
+         modem_print_edrx("cell", &edrx_cfg_cell, line, sizeof(line) - 1);
+         LOG_INF("%s", line);
+         if (!res) {
+            modem_print_edrx("net", &edrx_cfg_net, line, sizeof(line) - 1);
+            LOG_INF("%s", line);
+         }
+      }
+      memset(buf, 0, sizeof(buf));
+      res = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CEDRXS?");
+      while (res > 0) {
+         res = strstart(cur, "+CEDRXS: ", true);
+         if (res > 0) {
+            type = 0;
+            memset(value, 0, sizeof(value));
+            cur = parse_next_long(cur + res, 10, &type);
+            if (*cur == ',') {
+               ++cur;
+               cur = parse_next_qtext(cur, '"', value, sizeof(value));
+               long edrx_code = strtol(value, NULL, 2);
+               edrx_cfg_net.ptw = 0.0F;
+               edrx_cfg_net.edrx = modem_get_edrx_multiplier(edrx_code) * 5.12F;
+               edrx_cfg_net.mode = LTE_LC_LTE_MODE_NONE;
+               switch (type) {
+                  case 4:
+                     edrx_cfg_net.mode = LTE_LC_LTE_MODE_LTEM;
+                     break;
+                  case 5:
+                     edrx_cfg_net.mode = LTE_LC_LTE_MODE_NBIOT;
+                     break;
+               }
+               modem_print_edrx("req", &edrx_cfg_net, line, sizeof(line) - 1);
+               LOG_INF("%s", line);
+            } else {
+               // skip
+               res = strcspn(cur, "\n\r");
+               if (res > 0) {
+                  cur += res;
+               }
+            }
+            res = strspn(cur, "\n\r");
+            if (res > 0) {
+               cur += res;
+            }
          }
       }
    } else {

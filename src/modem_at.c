@@ -45,17 +45,18 @@ static volatile bool lte_at_warn = true;
 static const char *volatile lte_at_response_skip = NULL;
 static atomic_ptr_t lte_at_response_handler = ATOMIC_PTR_INIT(NULL);
 
-static size_t terminate_at_buffer(char *line, size_t len)
+static size_t terminate_at_buffer(char *line)
 {
-   char *current = line;
-   while (*current != 0 && *current != '\n' && *current != '\r' && len > 1) {
-      ++current;
-      --len;
+   size_t len = strlen(line);
+   size_t tail = strend(line, "\r\nOK\r\n", true);
+   if (tail == 0) {
+      tail = strend(line, "\r\n", false);
    }
-   if (*current != 0 && len > 0) {
-      *current = 0;
+   if (tail > 0) {
+      len -= tail;
+      line[len] = 0;
    }
-   return current - line;
+   return len;
 }
 
 int modem_at_cmd(char *buf, size_t len, const char *skip, const char *cmd)
@@ -69,7 +70,7 @@ int modem_at_cmd(char *buf, size_t len, const char *skip, const char *cmd)
       LOG_INF("Modem busy");
       return err;
    }
-   err = nrf_modem_at_cmd(lte_at_buf, sizeof(lte_at_buf), "%s", cmd);
+   err = nrf_modem_at_cmd(lte_at_buf, sizeof(lte_at_buf) - 1, "%s", cmd);
    if (err < 0) {
       if (lte_at_warn) {
          LOG_WRN(">> %s:", cmd);
@@ -102,7 +103,7 @@ int modem_at_cmd(char *buf, size_t len, const char *skip, const char *cmd)
          return -EBADMSG;
       }
    }
-   at_len = terminate_at_buffer(lte_at_buf, sizeof(lte_at_buf));
+   at_len = terminate_at_buffer(lte_at_buf);
    if (buf && len) {
       int skip_len = 0;
       if (skip) {
