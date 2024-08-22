@@ -562,6 +562,9 @@ static int modem_cmd_psm(const char *config)
    } else if (!stricmp("normal", value)) {
       modem_lock_psm(false);
       res = modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
+   } else if (!stricmp("off", value)) {
+      modem_lock_psm(true);
+      res = lte_lc_psm_req(false);
    } else {
       res = sscanf(config, "%u %u%c", &active_time, &tau_time, &tau_unit);
       if (res >= 2) {
@@ -656,6 +659,7 @@ static void modem_cmd_psm_help(void)
    LOG_INF("     <tau-time>    : tracking area update time in s.");
    LOG_INF("     <tau-time>h   : tracking area update time in h.");
    LOG_INF("  psm normal       : PSM handled by application.");
+   LOG_INF("  psm off          : disable PSM.");
    LOG_INF("  psm              : show current PSM status.");
 }
 
