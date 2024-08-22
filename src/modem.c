@@ -540,7 +540,8 @@ static void lte_network_sleeping_set(bool sleep)
 
 AT_MONITOR(modem_monitor, ANY, modem_monitor_handler);
 
-static const char *IGNORE_NOTIFY[] = {"%NCELLMEAS:", "%XMODEMSLEEP:", NULL};
+static const char *IGNORE_NOTIFY[] = {"%NCELLMEAS:", NULL};
+// static const char *IGNORE_NOTIFY[] = {"%NCELLMEAS:", "%XMODEMSLEEP:", NULL};
 
 static int modem_monitor_ignore_notify(const char *notif)
 {
@@ -894,6 +895,18 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          lte_update_cell(evt->cell.tac, evt->cell.id);
          break;
       case LTE_LC_EVT_MODEM_SLEEP_ENTER:
+         if (evt->modem_sleep.type == LTE_LC_MODEM_SLEEP_PSM) {
+         } else if (evt->modem_sleep.type == LTE_LC_MODEM_SLEEP_RF_INACTIVITY) {
+            LOG_INF("LTE modem sleeps rf inactive");
+            break;
+         } else if (evt->modem_sleep.type == LTE_LC_MODEM_SLEEP_LIMITED_SERVICE) {
+            LOG_INF("LTE modem sleeps limited service");
+            break;
+         } else if (evt->modem_sleep.type == LTE_LC_MODEM_SLEEP_FLIGHT_MODE) {
+            LOG_INF("LTE modem sleeps flight mode");
+            break;
+         } else if (evt->modem_sleep.type == LTE_LC_MODEM_SLEEP_PROPRIETARY_PSM) {
+         }
          if (phase == 3) {
             int64_t time = now - phase_start_time;
             lte_add_asleep(time);
