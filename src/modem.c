@@ -691,6 +691,7 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
    enum lte_lc_lte_mode mode;
    size_t idx = 0;
    char line[128];
+   char mnc[4];
 
    k_mutex_lock(&lte_mutex, K_FOREVER);
    mode = network_info.mode;
@@ -744,7 +745,7 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
          ++gci_cells;
       }
       ++scans;
-      snprintf(line, sizeof(line), "  %*c :  plmn   tac      cell   bd earfnc pid rsrp/q dB(m)", w, '#');
+      snprintf(line, sizeof(line), "  %*c :  plmn    tac      cell   bd earfnc pid rsrp/q dB(m)", w, '#');
       idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
       for (int index = 0; index < cells_info->gci_cells_count; ++index) {
          gci_cells = gci_cells_sorted[index];
@@ -753,9 +754,16 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
                ++hits;
             }
          }
-         snprintf(line, sizeof(line), "[%c%*d]: %3d%02d 0x%04x 0x%08X %2d %5d  %3d  %4d/%3d",
+         if (gci_cells->mnc < 0 || gci_cells->mnc > 999) {
+            sprintf(mnc, "xxx");
+         } else if (gci_cells->mnc > 99) {
+            sprintf(mnc, "%3d", gci_cells->mnc);
+         } else {
+            sprintf(mnc, "%02d ", gci_cells->mnc);
+         }
+         snprintf(line, sizeof(line), "[%c%*d]: %3d%s 0x%04x 0x%08X %2d %5d  %3d  %4d/%3d",
                   current_cell == gci_cells->id ? '*' : ' ', w, index,
-                  gci_cells->mcc, gci_cells->mnc, gci_cells->tac, gci_cells->id,
+                  gci_cells->mcc, mnc, gci_cells->tac, gci_cells->id,
                   modem_get_band(gci_cells->earfcn), gci_cells->earfcn, gci_cells->phys_cell_id,
                   RSRP(gci_cells->rsrp), RSRQ(gci_cells->rsrq));
          idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
