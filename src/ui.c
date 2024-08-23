@@ -357,6 +357,8 @@ static void ui_op(gpio_device_ext_t *output_spec, led_op_t op, struct k_work_del
    k_mutex_unlock(&ui_mutex);
 }
 
+#if defined(UI_LED)
+
 static void ui_led_timer_expiry_fn(struct k_work *work)
 {
 #if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
@@ -378,6 +380,51 @@ static void ui_led_timer_expiry_fn(struct k_work *work)
    }
 #endif
 }
+
+static const led_task_t *ui_led_task = NULL;
+static const led_task_t *ui_led_loop = NULL;
+static uint16_t ui_led_loop_counter = 0;
+static void ui_led_task_fn(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(ui_led_task_work, ui_led_task_fn);
+
+static void ui_led_task_fn(struct k_work *work)
+{
+   led_task_t task = {.led = LED_NONE};
+
+   k_mutex_lock(&ui_mutex, K_FOREVER);
+   if (ui_led_task) {
+      task = *ui_led_task;
+      if (task.loop) {
+         if (ui_led_loop != ui_led_task) {
+            ui_led_loop = ui_led_task;
+            ui_led_loop_counter = task.loop-1;
+         } else {
+            ui_led_loop_counter--;
+         }
+      }
+      if (task.time_ms) {
+         ++ui_led_task;
+         if ((ui_led_task->loop || !ui_led_task->time_ms) && ui_led_loop_counter) {
+            ui_led_task = ui_led_loop;
+            LOG_DBG("ui led task loop %u.", ui_led_loop_counter);
+         } else {
+            LOG_DBG("ui led task next.");
+         }
+      }
+   }
+   k_mutex_unlock(&ui_mutex);
+   if (task.led != LED_NONE) {
+      ui_led_op(task.led, task.op);
+      if (task.time_ms) {
+         power_manager_pulse(K_MSEC(task.time_ms + 100));
+         work_reschedule_for_io_queue(&ui_led_task_work, K_MSEC(task.time_ms));
+      } else {
+         LOG_DBG("ui led task finished.");
+      }
+   }
+}
+
+#endif /* UI_LED */
 
 static int ui_init_output(gpio_device_ext_t *output_spec)
 {
@@ -449,6 +496,19 @@ int ui_led_op_prio(led_t led, led_op_t op)
 #endif
          break;
    }
+   return 0;
+}
+
+int ui_led_tasks(const led_task_t *tasks)
+{
+#if defined(UI_LED)
+   k_mutex_lock(&ui_mutex, K_FOREVER);
+   ui_led_task = tasks;
+   ui_led_loop = NULL;
+   ui_led_loop_counter = 0;
+   k_mutex_unlock(&ui_mutex);
+   ui_led_task_fn(NULL);
+#endif
    return 0;
 }
 
@@ -660,6 +720,65 @@ static void sh_cmd_led_help(void)
    LOG_INF("      <color>      : red, blue, green, or all.");
    LOG_INF("              <op> : on, off, blink, or blinking.");
 }
+
+#if defined(UI_LED) && defined(CONFIG_SH_CMD_UI_LED_TASK_TEST)
+
+static const led_task_t led_reboot[] = {
+    {.loop = 4, .time_ms = 499, .led = LED_COLOR_RED, .op = LED_SET},
+    {.time_ms = 1, .led = LED_COLOR_RED, .op = LED_CLEAR},
+    {.time_ms = 499, .led = LED_COLOR_BLUE, .op = LED_SET},
+    {.time_ms = 1, .led = LED_COLOR_BLUE, .op = LED_CLEAR},
+    {.time_ms = 0, .led = LED_COLOR_ALL, .op = LED_CLEAR},
+};
+
+static const led_task_t led_no_host[] = {
+    {.time_ms = 1000, .led = LED_COLOR_ALL, .op = LED_SET},
+    {.time_ms = 1000, .led = LED_COLOR_ALL, .op = LED_CLEAR},
+    {.time_ms = 1000, .led = LED_COLOR_BLUE, .op = LED_SET},
+    {.time_ms = 1000, .led = LED_COLOR_BLUE, .op = LED_CLEAR},
+    {.loop = 2, .time_ms = 1000, .led = LED_COLOR_RED, .op = LED_SET},
+    {.time_ms = 1000, .led = LED_COLOR_RED, .op = LED_CLEAR},
+    {.time_ms = 0, .led = LED_COLOR_RED, .op = LED_CLEAR},
+};
+
+static const led_task_t led_all[] = {
+    {.loop = 3, .time_ms = 1000, .led = LED_COLOR_ALL, .op = LED_SET},
+    {.time_ms = 1000, .led = LED_COLOR_ALL, .op = LED_CLEAR},
+    {.loop = 1, .time_ms = 1000, .led = LED_COLOR_BLUE, .op = LED_SET},
+    {.time_ms = 1000, .led = LED_COLOR_BLUE, .op = LED_CLEAR},
+    {.loop = 4, .time_ms = 1000, .led = LED_COLOR_RED, .op = LED_SET},
+    {.time_ms = 1000, .led = LED_COLOR_RED, .op = LED_CLEAR},
+    {.time_ms = 0, .led = LED_COLOR_RED, .op = LED_CLEAR},
+};
+
+static int sh_cmd_ledt(const char *parameter)
+{
+   char value[10];
+   const char *cur = parameter;
+   const led_task_t *task = led_all;
+   memset(value, 0, sizeof(value));
+
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+   if (!stricmp("no", value)) {
+      task = led_no_host;
+   } else if (!stricmp("reboot", value)) {
+      task = led_reboot;
+   }
+   ui_enable(true);
+   ui_led_tasks(task);
+   return 0;
+}
+
+static void sh_cmd_ledt_help(void)
+{
+   LOG_INF("> help ledt:");
+   LOG_INF("  ledt no : LED signals 'no host'.");
+   LOG_INF("  ledt    : LED signals 'reboot'.");
+}
+
+SH_CMD(ledt, NULL, "led tasks.", sh_cmd_ledt, sh_cmd_ledt_help, 0);
+
+#endif /* UI_LED && CONFIG_SH_CMD_UI_LED_TASK_TEST */
 
 SH_CMD(led, NULL, "led command.", sh_cmd_led, sh_cmd_led_help, 0);
 #endif /* CONFIG_SH_CMD */

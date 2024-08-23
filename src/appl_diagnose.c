@@ -413,7 +413,7 @@ SH_CMD(reboot, NULL, "reboot device.", sh_cmd_reboot, sh_cmd_reboot_help, 0);
 SH_CMD(reboots, NULL, "read reboot codes.", sh_cmd_read_reboots, NULL, 0);
 SH_CMD(restarts, NULL, "read restart reasons.", sh_cmd_read_restarts, NULL, 0);
 
-#if defined(CONFIG_SH_TEST_CMD)
+#if defined(CONFIG_SH_CMD_TEST)
 static int sh_cmd_fail(const char *parameter)
 {
    ARG_UNUSED(parameter);
@@ -463,7 +463,7 @@ static int sh_cmd_assert(const char *parameter)
 SH_CMD(assert, NULL, "cause an assert.", sh_cmd_assert, NULL, 0);
 #endif
 
-#endif /* CONFIG_SH_TEST_CMD */
+#endif /* CONFIG_SH_CMD_TEST */
 #endif /* CONFIG_SH_CMD */
 
 static int appl_watchdog_init(void)

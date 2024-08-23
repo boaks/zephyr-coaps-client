@@ -37,8 +37,16 @@ typedef enum { LED_CLEAR,
                LED_INTERNAL_TIMER,
 } led_op_t;
 
+typedef struct led_task {
+   uint16_t loop;
+   uint16_t time_ms;
+   led_t led;
+   led_op_t op;
+} led_task_t;
+
 int ui_led_op(led_t led, led_op_t op);
 int ui_led_op_prio(led_t led, led_op_t op);
+int ui_led_tasks(const led_task_t* tasks);
 int ui_init(ui_callback_handler_t button_callback);
 int ui_config(void);
 void ui_enable(bool enable);

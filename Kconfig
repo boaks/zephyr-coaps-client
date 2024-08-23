@@ -384,13 +384,22 @@ config SH_CMD
 	  Enable support for sh commands. Provides simplified access to
 	  selected AT commands without using special characters. 
 
-config SH_TEST_CMD
+if (SH_CMD) 
+
+config SH_CMD_TEST
     bool "Enable sh cmd support."
     depends on SH_CMD
 	default n
 	help
 	  Enable support for special sh test commands.
 	  Onyl used to test the debugging and fault reporting. 
+
+config SH_CMD_UI_LED_TASK_TEST
+    bool "Enable sh cmd for LED task tests."
+    depends on SH_CMD
+	default n
+	help
+	  Enable test cmd for LED tasks. 
 
 config SH_CMD_UNLOCK
 	bool "Enable unlock/protected cmd"
@@ -405,6 +414,7 @@ config SH_CMD_UNLOCK_PASSWORD
     help
         Must be replaced by secret password!
 	   
+endif
 endif
 
 menu "Extra Functions"

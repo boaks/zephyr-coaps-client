@@ -331,6 +331,14 @@ static bool set_next_send_interval(int new_interval)
    }
 }
 
+static const led_task_t led_reboot[] = {
+    {.loop = 4, .time_ms = 499, .led = LED_COLOR_RED, .op = LED_SET},
+    {.time_ms = 1, .led = LED_COLOR_RED, .op = LED_CLEAR},
+    {.time_ms = 499, .led = LED_COLOR_BLUE, .op = LED_SET},
+    {.time_ms = 1, .led = LED_COLOR_BLUE, .op = LED_CLEAR},
+    {.time_ms = 0, .led = LED_COLOR_ALL, .op = LED_CLEAR},
+};
+
 static void restart(int error, bool factoryReset)
 {
    int res;
@@ -355,17 +363,10 @@ static void restart(int error, bool factoryReset)
       dtls_info("> modem busy, not switched off.");
    }
 
-   ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-   ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
-   ui_led_op(LED_COLOR_RED, LED_SET);
-   k_sleep(K_MSEC(500));
+   ui_led_op(LED_COLOR_ALL, LED_CLEAR);
    for (int i = 0; i < 4; ++i) {
-      ui_led_op(LED_COLOR_RED, LED_CLEAR);
-      ui_led_op(LED_COLOR_BLUE, LED_SET);
-      k_sleep(K_MSEC(500));
-      ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
-      ui_led_op(LED_COLOR_RED, LED_SET);
-      k_sleep(K_MSEC(500));
+      ui_led_tasks(led_reboot);
+      k_sleep(K_MSEC(4000));
    }
    // reboot now
    appl_reboot(error, K_NO_WAIT);
@@ -2398,6 +2399,16 @@ static void init(int config, int *protocol)
    }
 }
 
+static const led_task_t led_no_host[] = {
+    {.time_ms = 1000, .led = LED_COLOR_ALL, .op = LED_SET},
+    {.time_ms = 1000, .led = LED_COLOR_ALL, .op = LED_CLEAR},
+    {.time_ms = 1000, .led = LED_COLOR_BLUE, .op = LED_SET},
+    {.time_ms = 1000, .led = LED_COLOR_BLUE, .op = LED_CLEAR},
+    {.loop = 2, .time_ms = 1000, .led = LED_COLOR_RED, .op = LED_SET},
+    {.time_ms = 1000, .led = LED_COLOR_RED, .op = LED_CLEAR},
+    {.time_ms = 0, .led = LED_COLOR_RED, .op = LED_CLEAR},
+};
+
 int main(void)
 {
    int config = 0;
@@ -2501,6 +2512,14 @@ int main(void)
    appl_ready = true;
    coap_client_init();
 
+   appl_settings_get_destination(app_data_context.host, sizeof(app_data_context.host));
+   if (!app_data_context.host[0]) {
+      // no hostname
+      while (true) {
+         ui_led_tasks(led_no_host);
+         k_sem_take(&dtls_trigger_msg, K_MINUTES(10));
+      }
+   }
    init_destination(&app_data_context);
 
    dtls_trigger("initial message");
