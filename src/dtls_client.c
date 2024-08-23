@@ -1495,7 +1495,17 @@ static int dtls_network_searching(const k_timeout_t timeout)
    return true;
 }
 
-static int dtls_loop(dtls_app_data_t *app, int reset_cause, uint16_t reboot_cause)
+static long dtls_calculate_reboot_timeout(int reboot)
+{
+#ifdef CONFIG_UPDATE
+   if (appl_update_image_verified()) {
+      return MSEC_PER_HOUR;
+   }
+#endif
+   return reboot == 1 ? MSEC_PER_HOUR * 4 : MSEC_PER_DAY;
+}
+
+static int dtls_loop(dtls_app_data_t *app, int reboot)
 {
    struct pollfd udp_poll;
    dtls_context_t *dtls_context = NULL;
@@ -1503,6 +1513,7 @@ static int dtls_loop(dtls_app_data_t *app, int reset_cause, uint16_t reboot_caus
    int result;
    int loops = 0;
    long time;
+   long reboot_timeout = dtls_calculate_reboot_timeout(reboot);
    bool restarting_modem = false;
    bool restarting_modem_power_off = false;
    bool network_not_found = false;
@@ -1567,14 +1578,12 @@ static int dtls_loop(dtls_app_data_t *app, int reset_cause, uint16_t reboot_caus
 #endif
       watchdog_feed();
 
-      if (!initial_success) {
-         int reboot = (reset_cause & FLAG_REBOOT_RETRY) ? ERROR_DETAIL(reboot_cause) : 0;
-         if (k_uptime_get() > ((reboot == 1) ? (4 * MSEC_PER_HOUR) : MSEC_PER_DAY)) {
-            // no initial_success for 4 hours / 1 day => reboot
-            ++reboot;
-            dtls_info("> No initial success, reboot %d.", reboot);
-            restart(ERROR_CODE(ERROR_CODE_INIT_NO_SUCCESS, reboot), true);
-         }
+      if (!initial_success &&
+          k_uptime_get() > reboot_timeout) {
+         // no initial_success for 4 hours / 1 day => reboot
+         ++reboot;
+         dtls_info("> No initial success, reboot %d.", reboot);
+         restart(ERROR_CODE(ERROR_CODE_INIT_NO_SUCCESS, reboot), true);
       }
 
       network_not_found = false;
@@ -2003,12 +2012,9 @@ static void dump_destination(const dtls_app_data_t *app)
 
 static int init_destination(dtls_app_data_t *app)
 {
-   int err = 0;
    int rc = -ENOENT;
-   uint16_t port = htons(appl_settings_get_destination_port(app->protocol == PROTOCOL_COAP_DTLS));
 
    appl_settings_get_destination(app->host, sizeof(app->host));
-   app->destination.addr.sin.sin_port = port;
 
    if (app->host[0]) {
       int count = 0;
@@ -2019,22 +2025,20 @@ static int init_destination(dtls_app_data_t *app)
 
       dtls_info("DNS lookup: %s", app->host);
       watchdog_feed();
-      err = getaddrinfo(app->host, NULL, &hints, &result);
-      while (-err == EAGAIN && count < 10) {
+      rc = getaddrinfo(app->host, NULL, &hints, &result);
+      while (rc == -EAGAIN && count < 10) {
          k_sleep(K_MSEC(1000));
          ++count;
          watchdog_feed();
-         err = getaddrinfo(app->host, NULL, &hints, &result);
+         rc = getaddrinfo(app->host, NULL, &hints, &result);
       }
-      if (err != 0) {
-         dtls_warn("ERROR: getaddrinfo failed %d", err);
-         rc = -EIO;
+      if (rc < 0) {
+         dtls_warn("ERROR: getaddrinfo failed %d %s", rc, strerror(-rc));
       } else if (result == NULL) {
          dtls_warn("ERROR: Address not found");
          rc = -ENOENT;
       } else {
          /* Free the address. */
-         rc = 0;
          app->destination.addr.sin = *((struct sockaddr_in *)result->ai_addr);
          freeaddrinfo(result);
       }
@@ -2042,7 +2046,7 @@ static int init_destination(dtls_app_data_t *app)
    if (rc) {
       return rc;
    }
-   app->destination.addr.sin.sin_port = port;
+   app->destination.addr.sin.sin_port = htons(appl_settings_get_destination_port(app->protocol == PROTOCOL_COAP_DTLS));
    app->destination.size = sizeof(struct sockaddr_in);
    dump_destination(app);
    return 0;
@@ -2523,7 +2527,7 @@ int main(void)
    init_destination(&app_data_context);
 
    dtls_trigger("initial message");
-   dtls_loop(&app_data_context, reset_cause, reboot_cause);
+   dtls_loop(&app_data_context, (reset_cause & FLAG_REBOOT_RETRY) ? ERROR_DETAIL(reboot_cause) : 0);
 
    return 0;
 }

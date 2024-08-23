@@ -379,6 +379,11 @@ int appl_update_image_verified(void)
    }
 }
 
+int appl_update_image_unverified(void)
+{
+   return boot_is_img_confirmed() ? 0 : 1;
+}
+
 static int appl_update_init(void)
 {
    dfu_flash_area_id = -1;

@@ -41,5 +41,6 @@ int appl_update_get_pending_version(char *buf, size_t len);
 int appl_update_dump_pending_image(void);
 int appl_update_request_upgrade(void);
 int appl_update_image_verified(void);
+int appl_update_image_unverified(void);
 
 #endif /* APPL_UPDATE_H */
