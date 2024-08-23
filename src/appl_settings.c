@@ -1023,7 +1023,40 @@ static void appl_setting_factory_reset(int flags)
    int res = 0;
 
    k_mutex_lock(&settings_mutex, K_FOREVER);
+
+#ifdef CONFIG_SH_CMD_UNLOCK
+   if (flags & SETTINGS_RESET_UNLOCK) {
+#ifndef CONFIG_SH_CMD_UNLOCK_PASSWORD
+      // missing initial settings
+      if (unlock_password[0]) {
+         // do not apply factory reset
+         k_mutex_unlock(&settings_mutex);
+         LOG_WRN("abort factory reset: unlock password will be lost!");
+         return;
+      }
+#endif
+      memset(unlock_password, 0, sizeof(unlock_password));
+#ifdef CONFIG_SH_CMD_UNLOCK_PASSWORD
+      strncpy(unlock_password, CONFIG_SH_CMD_UNLOCK_PASSWORD, sizeof(unlock_password) - 1);
+#endif
+      save = true;
+   }
+#endif /* CONFIG_SH_CMD_UNLOCK */
+
+#if !defined(CONFIG_COAP_SERVER_HOSTNAME) && !defined(CONFIG_COAP_SERVER_ADDRESS_STATIC)
    if (flags & SETTINGS_RESET_DEST) {
+      // missing initial settings
+      if (destination[0]) {
+         // do not apply factory reset
+         k_mutex_unlock(&settings_mutex);
+         LOG_WRN("abort factory reset: destination will be lost!");
+         return;
+      }
+   }
+#endif /* !CONFIG_COAP_SERVER_HOSTNAME && !CONFIG_COAP_SERVER_ADDRESS_STATIC */
+
+   if (flags & SETTINGS_RESET_DEST) {
+
       memset(scheme, 0, sizeof(scheme));
       memset(destination, 0, sizeof(destination));
       memset(coap_path, 0, sizeof(coap_path));
@@ -1156,16 +1189,6 @@ static void appl_setting_factory_reset(int flags)
       save = true;
    }
 #endif /* DTLS_ECC */
-
-#ifdef CONFIG_SH_CMD_UNLOCK
-   if (flags & SETTINGS_RESET_UNLOCK) {
-      memset(unlock_password, 0, sizeof(unlock_password));
-#ifdef CONFIG_SH_CMD_UNLOCK_PASSWORD
-      strncpy(unlock_password, CONFIG_SH_CMD_UNLOCK_PASSWORD, sizeof(unlock_password) - 1);
-#endif
-      save = true;
-   }
-#endif /* CONFIG_SH_CMD_UNLOCK */
 
    if (save || !settings_initialized) {
       settings_initialized = 1;
