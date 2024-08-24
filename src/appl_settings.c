@@ -1715,6 +1715,15 @@ static void sh_cmd_settings_sethex_help(void)
    LOG_INF("  set <key> <hex-value> : set hexadecimal value for key.");
 }
 
+static int appl_settings_del(const char *key)
+{
+   int res = settings_runtime_set(key, NULL, 0);
+   if (!res) {
+      res = settings_delete(key);
+   }
+   return res;
+}
+
 static int sh_cmd_settings_del(const char *parameter)
 {
    int res = 1;
@@ -1727,10 +1736,7 @@ static int sh_cmd_settings_del(const char *parameter)
       res = -EINVAL;
    } else {
       appl_settings_expand_key(key, sizeof(key));
-      res = settings_runtime_set(key, NULL, 0);
-      if (!res) {
-         res = settings_delete(key);
-      }
+      res = appl_settings_del(key);
       if (res < 0) {
          LOG_WRN("Settings delete: fail (err %d, %s)\n", res, strerror(-res));
       } else {
@@ -1747,6 +1753,32 @@ static void sh_cmd_settings_del_help(void)
    LOG_INF("  del <key>  : delete value for key.");
 }
 
+static int sh_cmd_settings_delall(const char *parameter)
+{
+   ARG_UNUSED(parameter);
+
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_INIT);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_PORT);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_SECURE_PORT);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_ID);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_SCHEME);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_DESTINATION);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_COAP_PATH);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_COAP_QUERY);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_REBOOTS);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_APN);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_BATTERY_PROFILE);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_UNLOCK);
+
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_PSK_ID);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_PSK_KEY);
+
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_EC_PRIV);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_EC_TRUST);
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_PROV);
+   return 0;
+}
+
 static int sh_cmd_settings_provdone(const char *parameter)
 {
    ARG_UNUSED(parameter);
@@ -1757,6 +1789,7 @@ static int sh_cmd_settings_provdone(const char *parameter)
 SH_CMD(set, NULL, "set settings from text.", sh_cmd_settings_set, sh_cmd_settings_set_help, 1);
 SH_CMD(sethex, NULL, "set settings from hexadezimal.", sh_cmd_settings_sethex, sh_cmd_settings_sethex_help, 1);
 SH_CMD(del, NULL, "delete settings.", sh_cmd_settings_del, sh_cmd_settings_del_help, 1);
+SH_CMD(delall, NULL, "delete all settings.", sh_cmd_settings_delall, NULL, 1);
 SH_CMD(provdone, NULL, "provisioning done.", sh_cmd_settings_provdone, NULL, 1);
 
 #ifdef DTLS_PSK
