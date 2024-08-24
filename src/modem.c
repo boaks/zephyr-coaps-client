@@ -1727,37 +1727,36 @@ int modem_get_release_time(void)
 
 int modem_get_time_scale(void)
 {
-   int factor = 100;
+   int factor1 = 100;
+   int factor2 = 100;
    struct lte_ce_info info;
 
    if (modem_get_coverage_enhancement_info(&info) >= 0) {
-      uint8_t repetition = MAX(info.downlink_repetition, info.uplink_repetition);
-#if 1
+      uint8_t repetition = MAX(info.downlink_repetition, info.uplink_repetition << 2);
       if (repetition <= 8) {
          // no scale
       } else if (repetition <= 16) {
-         factor = 150;
+         factor1 = 150;
       } else if (repetition <= 32) {
-         factor = 250;
+         factor1 = 200;
       } else if (repetition <= 64) {
-         factor = 350;
+         factor1 = 350;
       } else if (repetition <= 128) {
-         factor = 500;
+         factor1 = 500;
       }
-#else
-      if (info.rsrp < -110) {
-         factor = 150;
-         if (info.rsrp < -130) {
-            factor = 500;
-         } else if (info.rsrp < -125) {
-            factor = 350;
-         } else if (info.rsrp < -120) {
-            factor = 250;
-         }
+      if (info.rsrp > -110) {
+         // no scale
+      } else if (info.rsrp > -120) {
+         factor2 = 150;
+      } else if (info.rsrp > -125) {
+         factor2 = 200;
+      } else if (info.rsrp > -130) {
+         factor2 = 350;
+      } else {
+         factor2 = 500;
       }
-#endif
    }
-   return factor;
+   return MAX(factor1, factor2);
 }
 
 int modem_get_network_info(struct lte_network_info *info)
