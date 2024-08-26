@@ -142,6 +142,8 @@ const char *appl_get_reboot_desciption(int error)
          return "update";
       case ERROR_CODE_LOW_VOLTAGE:
          return "low voltage";
+      case ERROR_CODE_REINIT_CMD:
+         return "cmd reinit";
    }
    return "\?\?\?";
 }

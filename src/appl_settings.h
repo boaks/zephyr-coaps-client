@@ -20,7 +20,7 @@
 
 #define MAX_SETTINGS_VALUE_LENGTH 64
 
-void appl_settings_init(const char *imei, dtls_handler_t* handler);
+int appl_settings_init(const char *imei, dtls_handler_t* handler);
 
 int appl_settings_get_apn(char* buf, size_t len);
 int appl_settings_get_device_identity(char* buf, size_t len);

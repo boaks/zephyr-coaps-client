@@ -363,6 +363,9 @@ appl_settings_get_ecdsa_key(dtls_context_t *ctx,
 #else
    *result = &ecdsa_key;
 #endif
+   if (is_zero((*result)->priv_key, sizeof(ecdsa_priv_key))) {
+      return dtls_alert_fatal_create(DTLS_ALERT_BAD_CERTIFICATE);
+   }
    return 0;
 }
 
@@ -1017,7 +1020,7 @@ static int appl_settings_expand_imei(char *buf, size_t size, const char *value)
 }
 #endif /* CONFIG_DEVICE_IDENTITY || CONFIG_DTLS_PSK_IDENTITY || CONFIG_COAP_RESOURCE || CONFIG_COAP_QUERY */
 
-static void appl_setting_factory_reset(int flags)
+static int appl_setting_factory_reset(int flags)
 {
    bool save = false;
    int res = 0;
@@ -1026,36 +1029,33 @@ static void appl_setting_factory_reset(int flags)
 
 #ifdef CONFIG_SH_CMD_UNLOCK
    if (flags & SETTINGS_RESET_UNLOCK) {
-#ifndef CONFIG_SH_CMD_UNLOCK_PASSWORD
+#ifndef CONFIG_INIT_SETTINGS
       // missing initial settings
       if (unlock_password[0]) {
          // do not apply factory reset
          k_mutex_unlock(&settings_mutex);
          LOG_WRN("abort factory reset: unlock password will be lost!");
-         return;
+         return -ECANCELED;
       }
-#endif
+#endif /* !CONFIG_INIT_SETTINGS */
       memset(unlock_password, 0, sizeof(unlock_password));
 #ifdef CONFIG_SH_CMD_UNLOCK_PASSWORD
       strncpy(unlock_password, CONFIG_SH_CMD_UNLOCK_PASSWORD, sizeof(unlock_password) - 1);
-#endif
+#endif /* CONFIG_SH_CMD_UNLOCK_PASSWORD */
       save = true;
    }
 #endif /* CONFIG_SH_CMD_UNLOCK */
 
-#if !defined(CONFIG_COAP_SERVER_HOSTNAME) && !defined(CONFIG_COAP_SERVER_ADDRESS_STATIC)
    if (flags & SETTINGS_RESET_DEST) {
+#ifndef CONFIG_INIT_SETTINGS
       // missing initial settings
       if (destination[0]) {
          // do not apply factory reset
          k_mutex_unlock(&settings_mutex);
          LOG_WRN("abort factory reset: destination will be lost!");
-         return;
+         return -ECANCELED;
       }
-   }
-#endif /* !CONFIG_COAP_SERVER_HOSTNAME && !CONFIG_COAP_SERVER_ADDRESS_STATIC */
-
-   if (flags & SETTINGS_RESET_DEST) {
+#endif /* !CONFIG_INIT_SETTINGS */
 
       memset(scheme, 0, sizeof(scheme));
       memset(destination, 0, sizeof(destination));
@@ -1077,17 +1077,17 @@ static void appl_setting_factory_reset(int flags)
 #endif /* CONFIG_COAP_SERVER_SECURE_PORT */
 #ifdef CONFIG_COAP_SCHEME
       strncpy(scheme, CONFIG_COAP_SCHEME, sizeof(scheme) - 1);
-#else
+#else /* CONFIG_COAP_SCHEME */
       strncpy(scheme, "coaps", sizeof(scheme) - 1);
-#endif
+#endif /* CONFIG_COAP_SCHEME */
       LOG_INF("dest: %s://%s:%u/%u", scheme, destination, destination_port, destination_secure_port);
 
 #ifdef CONFIG_COAP_RESOURCE
       appl_settings_expand_imei(coap_path, sizeof(coap_path), CONFIG_COAP_RESOURCE);
-#endif
+#endif /* CONFIG_COAP_RESOURCE */
 #ifdef CONFIG_COAP_QUERY
       appl_settings_expand_imei(coap_query, sizeof(coap_query), CONFIG_COAP_QUERY);
-#endif
+#endif /* CONFIG_COAP_QUERY */
       save = true;
    }
 
@@ -1195,10 +1195,22 @@ static void appl_setting_factory_reset(int flags)
       settings_save();
    }
    k_mutex_unlock(&settings_mutex);
+   return 1;
 }
 
-void appl_settings_init(const char *imei, dtls_handler_t *handler)
+int appl_settings_init(const char *imei, dtls_handler_t *handler)
 {
+   // keep initial value.
+   // 0 := already initialized
+   // 1 := initialized
+   // -ECANCELED : not initialized, no initial values
+   static int res = 0;
+
+   if (!imei && !handler) {
+      // return initialization status
+      return res;
+   }
+
    if (imei) {
       k_mutex_lock(&settings_mutex, K_FOREVER);
       memset(device_imei, 0, sizeof(device_imei));
@@ -1216,11 +1228,11 @@ void appl_settings_init(const char *imei, dtls_handler_t *handler)
 #endif /* DTLS_ECC && CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
    } else {
       if (handler) {
-         appl_setting_factory_reset(SETTINGS_RESET_DEST | SETTINGS_RESET_ID | SETTINGS_RESET_UNLOCK |
-                                    SETTINGS_RESET_PSK | SETTINGS_RESET_ECDSA | SETTINGS_RESET_TRUST |
-                                    SETTINGS_RESET_PROVISIONING);
+         res = appl_setting_factory_reset(SETTINGS_RESET_DEST | SETTINGS_RESET_ID | SETTINGS_RESET_UNLOCK |
+                                          SETTINGS_RESET_PSK | SETTINGS_RESET_ECDSA | SETTINGS_RESET_TRUST |
+                                          SETTINGS_RESET_PROVISIONING);
       } else {
-         appl_setting_factory_reset(SETTINGS_RESET_DEST | SETTINGS_RESET_ID | SETTINGS_RESET_UNLOCK);
+         res = appl_setting_factory_reset(SETTINGS_RESET_DEST | SETTINGS_RESET_ID | SETTINGS_RESET_UNLOCK);
       }
    }
 
@@ -1248,6 +1260,7 @@ void appl_settings_init(const char *imei, dtls_handler_t *handler)
       k_mutex_unlock(&settings_mutex);
 #endif /* DTLS_ECC */
    }
+   return res;
 }
 
 int appl_settings_get_apn(char *buf, size_t len)
@@ -1785,6 +1798,53 @@ static int sh_cmd_settings_provdone(const char *parameter)
    appl_settings_provisioning_done();
    return 0;
 }
+
+#ifdef CONFIG_INIT_SETTINGS
+
+#include "appl_diagnose.h"
+
+static int sh_cmd_reinit(const char *parameter)
+{
+   long id = 0;
+   uint16_t reboot_code = 0;
+   int err = 0;
+
+   if (appl_reboots()) {
+      LOG_INF(">> device already reboots!");
+      return 0;
+   }
+   if (parameter == parse_next_long(parameter, 10, &id)) {
+      LOG_INF("missing parameter <n>!");
+      return -EINVAL;
+   }
+   err = appl_settings_get_reboot_code(0, NULL, &reboot_code);
+   if (err == -EINVAL) {
+      LOG_INF("reinit codes not supported!");
+   } else if (err == 1 && reboot_code == ERROR_CODE(ERROR_CODE_REINIT_CMD, id)) {
+      LOG_INF("device already reinited %u", (uint16_t)id);
+      return 0;
+   }
+   if (appl_settings_init(NULL, NULL)) {
+      LOG_INF("skip reinit, settings are currently initialized!");
+      return 0;
+   }
+
+   appl_settings_del(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_INIT);
+   appl_reboot(ERROR_CODE(ERROR_CODE_REINIT_CMD, id), K_MSEC(2000));
+   LOG_INF(">> device reboots %u for reinitialization ...", (uint16_t)id);
+
+   return 0;
+}
+
+static void sh_cmd_reinit_help(void)
+{
+   LOG_INF("> help reinit:");
+   LOG_INF("  reinit <n> : reboot device <n> and reinitialize settings,");
+   LOG_INF("               if <last> reboot was not the same <n>.");
+}
+
+SH_CMD(reinit, NULL, "reboot device and reinitialize settings.", sh_cmd_reinit, sh_cmd_reinit_help, 1);
+#endif
 
 SH_CMD(set, NULL, "set settings from text.", sh_cmd_settings_set, sh_cmd_settings_set_help, 1);
 SH_CMD(sethex, NULL, "set settings from hexadezimal.", sh_cmd_settings_sethex, sh_cmd_settings_sethex_help, 1);
