@@ -643,7 +643,7 @@ static void dtls_coap_next(dtls_app_data_t *app, int interval)
    }
 
    dtls_log_now();
-   dtls_coap_set_request_state("coap next", app, WAIT_SUSPEND);
+   dtls_coap_set_request_state("next request", app, WAIT_SUSPEND);
    memset(appl_buffer, 0, sizeof(appl_buffer));
    appl_buffer_len = MAX_APPL_BUF;
    k_sem_reset(&dtls_trigger_msg);
@@ -817,6 +817,12 @@ static void dtls_coap_failure(dtls_app_data_t *app, const char *cause)
       dtls_info("current failures %d.", f);
    }
    interval = app->result_handler(app, false);
+
+   if (app->dtls_pending) {
+      dtls_info("dtls, restart handshake.");
+      app->dtls_next_flight = 0;
+      app->dtls_flight = 0;
+   }
 
 #if CONFIG_COAP_FAILURE_SEND_INTERVAL > 0
    if (interval == 0) {
@@ -1038,42 +1044,51 @@ dtls_handle_event(dtls_context_t *ctx, session_t *session,
       return 0;
    }
    app = dtls_get_app_data(ctx);
-
-   if (DTLS_EVENT_CONNECTED == code) {
-      dtls_coap_set_request_state("dtls connected", app, NONE);
-      app->dtls_pending = 0;
-      app->dtls_next_flight = 0;
-      app->dtls_flight = 0;
-      app->no_rai = 0;
-      peer = dtls_get_peer(ctx, session);
-      if (peer) {
-         const dtls_security_parameters_t *security_params = peer->security_params[0];
-         const dtls_cipher_t cipher = dtls_get_cipher_suite(security_params->cipher_index);
-         const struct cipher_entry *cur = ciphers_map;
-         app->dtls_cid = security_params->write_cid_length > 0 ? 1 : 0;
-         app->dtls_cipher_suite = "none";
-         while (cur && cur->cipher != TLS_NULL_WITH_NULL_NULL) {
-            if (cur->cipher == cipher) {
-               app->dtls_cipher_suite = cur->name;
-               break;
+   if (level == DTLS_ALERT_LEVEL_WARNING) {
+      dtls_info("dtls event alert warning 0x%04x", code);
+      dtls_coap_failure(app, "dtls warning");
+   } else if (level == DTLS_ALERT_LEVEL_FATAL) {
+      dtls_info("dtls event alert fatal 0x%04x", code);
+      dtls_coap_failure(app, "dtls alert");
+   } else if (level == 0) {
+      if (DTLS_EVENT_CONNECTED == code) {
+         dtls_coap_set_request_state("dtls event connected", app, NONE);
+         app->dtls_pending = 0;
+         app->dtls_next_flight = 0;
+         app->dtls_flight = 0;
+         app->no_rai = 0;
+         peer = dtls_get_peer(ctx, session);
+         if (peer) {
+            const dtls_security_parameters_t *security_params = peer->security_params[0];
+            const dtls_cipher_t cipher = dtls_get_cipher_suite(security_params->cipher_index);
+            const struct cipher_entry *cur = ciphers_map;
+            app->dtls_cid = security_params->write_cid_length > 0 ? 1 : 0;
+            app->dtls_cipher_suite = "none";
+            while (cur && cur->cipher != TLS_NULL_WITH_NULL_NULL) {
+               if (cur->cipher == cipher) {
+                  app->dtls_cipher_suite = cur->name;
+                  break;
+               }
+               ++cur;
             }
-            ++cur;
          }
+         ui_led_op(LED_COLOR_RED, LED_CLEAR);
+         ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
+         ui_led_op(LED_DTLS, LED_SET);
+      } else if (DTLS_EVENT_CONNECT == code) {
+         dtls_info("dtls event connect ...");
+         app->dtls_pending = 1;
+         app->dtls_cipher_suite = NULL;
+         app->dtls_cid = 0;
+         ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
+         ui_led_op(LED_COLOR_RED, LED_SET);
+         ui_led_op(LED_COLOR_GREEN, LED_SET);
+         ui_led_op(LED_DTLS, LED_CLEAR);
+      } else {
+         dtls_info("dtls event, unknown code 0x%04x", code);
       }
-      ui_led_op(LED_COLOR_RED, LED_CLEAR);
-      ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
-      ui_led_op(LED_DTLS, LED_SET);
-   } else if (DTLS_EVENT_CONNECT == code) {
-      dtls_info("dtls connect ...");
-      app->dtls_pending = 1;
-      app->dtls_cipher_suite = NULL;
-      app->dtls_cid = 0;
-      ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
-      ui_led_op(LED_COLOR_RED, LED_SET);
-      ui_led_op(LED_COLOR_GREEN, LED_SET);
-      ui_led_op(LED_DTLS, LED_CLEAR);
    } else {
-      dtls_info("dtls failure 0x%04x", code);
+      dtls_info("dtls event, %d unknown level, 0x%04x", level, code);
    }
    return 0;
 }
@@ -1170,7 +1185,9 @@ sendto_peer(dtls_app_data_t *app, struct dtls_context_t *ctx)
       }
       if (atomic_test_bit(&general_states, LTE_CONNECTED)) {
          ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
-         dtls_coap_set_request_state("sent", app, RECEIVE);
+         if (!app->dtls_pending || app->dtls_flight) {
+            dtls_coap_set_request_state("sent", app, RECEIVE);
+         }
       }
    }
    return result;
@@ -2467,17 +2484,15 @@ int main(void)
    init(config, &app_data_context.protocol);
    switch (app_data_context.protocol) {
       case PROTOCOL_COAP_DTLS:
+#ifndef CONFIG_DTLS_ALWAYS_HANDSHAKE
          app_data_context.keep_connection = 1;
+#endif
          dtls_info("CoAP/DTLS 1.2 CID");
          break;
       case PROTOCOL_COAP_UDP:
          dtls_info("CoAP/UDP");
          break;
    }
-
-#ifdef CONFIG_DTLS_ALWAYS_HANDSHAKE
-   app_data_context.keep_connection = 0;
-#endif
 
    power_manager_init();
 
