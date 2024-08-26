@@ -380,10 +380,10 @@ static void check_restart(void)
       int ui = ui_config();
       if (ui < 0) {
          dtls_info("> modem restart / factory reset");
-         restart(ERROR_CODE_MANUAL_TRIGGERED, true);
+         restart(ERROR_CODE_REBOOT_MANUAL, true);
       } else if (ui & 2) {
          dtls_info("> modem restart");
-         restart(ERROR_CODE_MANUAL_TRIGGERED, false);
+         restart(ERROR_CODE_REBOOT_MANUAL, false);
       }
       trigger_duration = 0;
    }
@@ -2322,7 +2322,7 @@ static void sh_cmd_coap_sendflags_help(void)
 static int sh_cmd_restart(const char *parameter)
 {
    ARG_UNUSED(parameter);
-   restart(ERROR_CODE_CMD, true);
+   restart(ERROR_CODE_REBOOT_CMD, true);
    return 0;
 }
 

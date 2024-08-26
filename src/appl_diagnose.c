@@ -134,10 +134,10 @@ const char *appl_get_reboot_desciption(int error)
          return "too many failures";
       case ERROR_CODE_MODEM_FAULT:
          return "modem fault";
-      case ERROR_CODE_CMD:
+      case ERROR_CODE_REBOOT_CMD:
          return "cmd reboot";
-      case ERROR_CODE_MANUAL_TRIGGERED:
-         return "triggered reboot";
+      case ERROR_CODE_REBOOT_MANUAL:
+         return "manual reboot";
       case ERROR_CODE_UPDATE:
          return "update";
       case ERROR_CODE_LOW_VOLTAGE:
@@ -334,18 +334,18 @@ static int sh_cmd_reboot(const char *parameter)
       bool boot = (parameter == parse_next_long(parameter, 10, &id));
       int err = appl_settings_get_reboot_code(0, NULL, &reboot_code);
       if (boot) {
-         if (err == 1 && ERROR_CLASS(reboot_code) == ERROR_CODE_CMD) {
+         if (err == 1 && ERROR_CLASS(reboot_code) == ERROR_CODE_REBOOT_CMD) {
             id = ERROR_DETAIL(reboot_code);
          }
       } else if (err == -EINVAL) {
          LOG_INF("reboot codes not supported!");
-      } else if (err == 1 && reboot_code == ERROR_CODE(ERROR_CODE_CMD, id)) {
+      } else if (err == 1 && reboot_code == ERROR_CODE(ERROR_CODE_REBOOT_CMD, id)) {
          LOG_INF("device already rebooted %u", (uint16_t)id);
       } else {
          boot = true;
       }
       if (boot) {
-         appl_reboot(ERROR_CODE(ERROR_CODE_CMD, id), K_MSEC(2000));
+         appl_reboot(ERROR_CODE(ERROR_CODE_REBOOT_CMD, id), K_MSEC(2000));
          LOG_INF(">> device reboot %u ...", (uint16_t)id);
       }
    }
