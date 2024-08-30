@@ -14,6 +14,9 @@
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
+#ifdef CONFIG_LED
+#include <zephyr/drivers/led.h>
+#endif
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -29,6 +32,8 @@ LOG_MODULE_REGISTER(UI, CONFIG_UI_LOG_LEVEL);
 #define LED_RED_NODE DT_ALIAS(led0)
 #define LED_GREEN_NODE DT_ALIAS(led1)
 #define LED_BLUE_NODE DT_ALIAS(led2)
+
+#define LED_MULTI_NODE DT_ALIAS(multi_leds)
 
 #define OUT_LTE_NODE_1 DT_ALIAS(led3)
 #define OUT_LTE_NODE_2 DT_ALIAS(out1)
@@ -60,6 +65,8 @@ typedef struct gpio_device {
 typedef struct gpio_device_ext {
    const char *desc;
    const struct gpio_dt_spec gpio_spec;
+   bool gpio;
+   bool on;
    bool init;
    led_op_t op;
 } gpio_device_ext_t;
@@ -74,7 +81,25 @@ typedef struct gpio_device_ext {
 
 #define GPIO_NAMED_DEVICE_INIT_EXT(NAME, NODE) \
    {                                           \
-       NAME, GPIO_DT_SPEC_GET(NODE, gpios), false, LED_CLEAR}
+       NAME, GPIO_DT_SPEC_GET(NODE, gpios), true, false, false, LED_CLEAR}
+
+#ifdef CONFIG_LED
+#if (DT_NODE_HAS_STATUS(LED_MULTI_NODE, okay))
+#define GPIO_NAMED_DEVICE_INIT_PMIC(NAME, NODE, PIN) \
+   {                                                 \
+       NAME, {                                       \
+                 .port = DEVICE_DT_GET(NODE),        \
+                 .pin = PIN,                         \
+                 .dt_flags = 0,                      \
+             },                                      \
+       false,                                        \
+       false,                                        \
+       false,                                        \
+       LED_CLEAR}
+#else /* DT_NODE_HAS_STATUS(LED_MULTI_NODE, okay) */
+#undef CONFIG_LED
+#endif /* DT_NODE_HAS_STATUS(LED_MULTI_NODE, okay) */
+#endif /* CONFIG_LED */
 
 #if DT_NODE_HAS_STATUS(CONFIG_BUTTON_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_1, okay) && DT_NODE_HAS_STATUS(CONFIG_SWITCH_NODE_2, okay)
 static gpio_device_t config_button_1_spec = GPIO_DEVICE_INIT(CONFIG_BUTTON_NODE_1);
@@ -84,15 +109,35 @@ static gpio_device_t config_switch_2_spec = GPIO_DEVICE_INIT(CONFIG_SWITCH_NODE_
 
 #if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
 #define UI_LED
+#define UI_RED
 static gpio_device_ext_t led_red_spec = GPIO_NAMED_DEVICE_INIT_EXT("red ", LED_RED_NODE);
+#elif defined(CONFIG_LED)
+#define UI_LED
+#define UI_RED
+// led 0 of nRF9161 feather
+static gpio_device_ext_t led_red_spec = GPIO_NAMED_DEVICE_INIT_PMIC("red ", LED_MULTI_NODE, 0);
 #endif
+
 #if (DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
 #define UI_LED
+#define UI_GREEN
 static gpio_device_ext_t led_green_spec = GPIO_NAMED_DEVICE_INIT_EXT("green ", LED_GREEN_NODE);
+#elif defined(CONFIG_LED)
+#define UI_LED
+#define UI_GREEN
+// led 1 of nRF9161 feather
+static gpio_device_ext_t led_green_spec = GPIO_NAMED_DEVICE_INIT_PMIC("green ", LED_MULTI_NODE, 1);
 #endif
+
 #if (DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
 #define UI_LED
+#define UI_BLUE
 static gpio_device_ext_t led_blue_spec = GPIO_NAMED_DEVICE_INIT_EXT("blue ", LED_BLUE_NODE);
+#elif defined(CONFIG_LED)
+#define UI_LED
+#define UI_BLUE
+// led 2 of nRF9161 feather
+static gpio_device_ext_t led_blue_spec = GPIO_NAMED_DEVICE_INIT_PMIC("blue ", LED_MULTI_NODE, 2);
 #endif
 
 #ifndef UI_LED
@@ -133,13 +178,13 @@ static K_WORK_DELAYABLE_DEFINE(button_enable_interrupt_work, ui_button_enable_in
 static void ui_led_timer_expiry_fn(struct k_work *work);
 #endif /* UI_LED */
 
-#if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
+#ifdef UI_RED
 static K_WORK_DELAYABLE_DEFINE(led_red_timer_work, ui_led_timer_expiry_fn);
 #endif
-#if (DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
+#ifdef UI_GREEN
 static K_WORK_DELAYABLE_DEFINE(led_green_timer_work, ui_led_timer_expiry_fn);
 #endif
-#if (DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
+#ifdef UI_BLUE
 static K_WORK_DELAYABLE_DEFINE(led_blue_timer_work, ui_led_timer_expiry_fn);
 #endif
 
@@ -301,6 +346,59 @@ static int ui_init_button(void)
 #endif
 
 #if defined(UI_LED) || defined(UI_OU)
+
+#ifdef CONFIG_LED
+
+static int ui_led_on(gpio_device_ext_t *output_spec)
+{
+   int rc = led_on(output_spec->gpio_spec.port, output_spec->gpio_spec.pin);
+   if (!rc) {
+      output_spec->on = true;
+   }
+   return rc;
+}
+
+static int ui_led_off(gpio_device_ext_t *output_spec)
+{
+   int rc = led_off(output_spec->gpio_spec.port, output_spec->gpio_spec.pin);
+   if (!rc) {
+      output_spec->on = false;
+   }
+   return rc;
+}
+
+static int ui_led_toggle(gpio_device_ext_t *output_spec)
+{
+   if (output_spec->on) {
+      return ui_led_off(output_spec);
+   } else {
+      return ui_led_on(output_spec);
+   }
+}
+#else /* CONFIG_LED */
+static inline int ui_led_on(gpio_device_ext_t *output_spec)
+{
+   (void)output_spec;
+   // empty by intention
+   return -ENOTSUP;
+}
+
+static inline int ui_led_off(gpio_device_ext_t *output_spec)
+{
+   (void)output_spec;
+   // empty by intention
+   return -ENOTSUP;
+}
+
+static inline int ui_led_toggle(gpio_device_ext_t *output_spec)
+{
+   (void)output_spec;
+   // empty by intention
+   return -ENOTSUP;
+}
+
+#endif /* CONFIG_LED */
+
 static void ui_op(gpio_device_ext_t *output_spec, led_op_t op, struct k_work_delayable *timer)
 {
    k_mutex_lock(&ui_mutex, K_FOREVER);
@@ -309,45 +407,74 @@ static void ui_op(gpio_device_ext_t *output_spec, led_op_t op, struct k_work_del
    }
    if (output_spec != NULL && output_spec->init) {
       const struct gpio_dt_spec *gpio_spec = &output_spec->gpio_spec;
+      bool gpio = output_spec->gpio;
       switch (op) {
          case LED_SET:
             if (output_spec->op != op) {
-               gpio_pin_set_dt(gpio_spec, 1);
+               if (gpio) {
+                  gpio_pin_set_dt(gpio_spec, 1);
+               } else {
+                  ui_led_on(output_spec);
+               }
                LOG_DBG("UI: %sLED set", output_spec->desc);
             }
             break;
          case LED_CLEAR:
             if (output_spec->op != op) {
-               gpio_pin_set_dt(gpio_spec, 0);
+               if (gpio) {
+                  gpio_pin_set_dt(gpio_spec, 0);
+               } else {
+                  ui_led_off(output_spec);
+               }
                LOG_DBG("UI: %sLED clear", output_spec->desc);
             }
             break;
          case LED_TOGGLE:
-            gpio_pin_toggle_dt(gpio_spec);
+            if (gpio) {
+               gpio_pin_toggle_dt(gpio_spec);
+            } else {
+               ui_led_toggle(output_spec);
+            }
             LOG_DBG("UI: %sLED toggle", output_spec->desc);
             break;
          case LED_BLINK:
             if (timer) {
-               gpio_pin_set_dt(gpio_spec, 1);
+               if (gpio) {
+                  gpio_pin_set_dt(gpio_spec, 1);
+               } else {
+                  ui_led_on(output_spec);
+               }
                work_reschedule_for_io_queue(timer, K_MSEC(LED_BLINK_MS));
                LOG_DBG("UI: %sLED blink", output_spec->desc);
             }
             break;
          case LED_BLINKING:
             if (timer) {
-               gpio_pin_set_dt(gpio_spec, 1);
+               if (gpio) {
+                  gpio_pin_set_dt(gpio_spec, 1);
+               } else {
+                  ui_led_on(output_spec);
+               }
                work_reschedule_for_io_queue(timer, K_MSEC(LED_BLINKING_MS));
                LOG_DBG("UI: %sLED start blinking", output_spec->desc);
             }
             break;
          case LED_INTERNAL_TIMER:
             if (timer && output_spec->op == LED_BLINKING) {
-               gpio_pin_toggle_dt(gpio_spec);
+               if (gpio) {
+                  gpio_pin_toggle_dt(gpio_spec);
+               } else {
+                  ui_led_toggle(output_spec);
+               }
                work_reschedule_for_io_queue(timer, K_MSEC(300));
                LOG_DBG("UI: %sLED blinking", output_spec->desc);
                op = LED_BLINKING;
             } else {
-               gpio_pin_set_dt(gpio_spec, 0);
+               if (gpio) {
+                  gpio_pin_set_dt(gpio_spec, 0);
+               } else {
+                  ui_led_off(output_spec);
+               }
                op = LED_CLEAR;
             }
             break;
@@ -361,19 +488,20 @@ static void ui_op(gpio_device_ext_t *output_spec, led_op_t op, struct k_work_del
 
 static void ui_led_timer_expiry_fn(struct k_work *work)
 {
-#if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
+#ifdef UI_RED
    if (&led_red_timer_work.work == work) {
       ui_op(&led_red_spec, LED_INTERNAL_TIMER, &led_red_timer_work);
       return;
    }
 #endif
-#if (DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
+#ifdef UI_GREEN
    if (&led_green_timer_work.work == work) {
       ui_op(&led_green_spec, LED_INTERNAL_TIMER, &led_green_timer_work);
       return;
    }
 #endif
-#if (DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
+
+#ifdef UI_BLUE
    if (&led_blue_timer_work.work == work) {
       ui_op(&led_blue_spec, LED_INTERNAL_TIMER, &led_blue_timer_work);
       return;
@@ -397,7 +525,7 @@ static void ui_led_task_fn(struct k_work *work)
       if (task.loop) {
          if (ui_led_loop != ui_led_task) {
             ui_led_loop = ui_led_task;
-            ui_led_loop_counter = task.loop-1;
+            ui_led_loop_counter = task.loop - 1;
          } else {
             ui_led_loop_counter--;
          }
@@ -430,10 +558,17 @@ static int ui_init_output(gpio_device_ext_t *output_spec)
 {
    int ret = -ENOTSUP;
    if (output_spec && device_is_ready(output_spec->gpio_spec.port)) {
-      ret = gpio_pin_configure_dt(&output_spec->gpio_spec, GPIO_OUTPUT_ACTIVE);
-      if (!ret) {
-         gpio_pin_set_dt(&output_spec->gpio_spec, 0);
-         output_spec->init = true;
+      if (output_spec->gpio) {
+         ret = gpio_pin_configure_dt(&output_spec->gpio_spec, GPIO_OUTPUT_ACTIVE);
+         if (!ret) {
+            gpio_pin_set_dt(&output_spec->gpio_spec, 0);
+            output_spec->init = true;
+         }
+      } else {
+         ret = ui_led_off(output_spec);
+         if (!ret) {
+            output_spec->init = true;
+         }
       }
    }
    return ret;
@@ -466,19 +601,20 @@ int ui_led_op_prio(led_t led, led_op_t op)
          ui_led_op_prio(LED_COLOR_GREEN, op);
          break;
       case LED_COLOR_RED:
-#if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
+#ifdef UI_RED
          ui_op(&led_red_spec, op, &led_red_timer_work);
 #endif
          break;
       case LED_COLOR_BLUE:
-#if (DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
+#ifdef UI_BLUE
          ui_op(&led_blue_spec, op, &led_blue_timer_work);
 #endif
          break;
       case LED_COLOR_GREEN:
-#if (DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
+#ifdef UI_GREEN
          ui_op(&led_green_spec, op, &led_green_timer_work);
 #endif
+
          break;
       case LED_LTE_1:
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_1, okay)
@@ -517,19 +653,19 @@ int ui_init(ui_callback_handler_t button_handler)
    int ret;
    LOG_INF("UI init.");
 
-#if (DT_NODE_HAS_STATUS(LED_RED_NODE, okay))
+#ifdef UI_RED
    ret = ui_init_output(&led_red_spec);
    if (ret) {
       LOG_INF("UI init: LED red failed! %d", ret);
    }
 #endif
-#if (DT_NODE_HAS_STATUS(LED_GREEN_NODE, okay))
+#ifdef UI_GREEN
    ret = ui_init_output(&led_green_spec);
    if (ret) {
       LOG_INF("UI init: LED green failed! %d", ret);
    }
 #endif
-#if (DT_NODE_HAS_STATUS(LED_BLUE_NODE, okay))
+#ifdef UI_BLUE
    ret = ui_init_output(&led_blue_spec);
    if (ret) {
       LOG_INF("UI init: LED blue failed! %d", ret);
@@ -704,6 +840,7 @@ static int sh_cmd_led(const char *parameter)
       return -EINVAL;
    }
    if (timeout.ticks) {
+      ui_enable(true);
       ui_prio_mode = true;
       power_manager_pulse(timeout);
       work_reschedule_for_io_queue(&ui_finish_prio_work, timeout);
@@ -720,6 +857,8 @@ static void sh_cmd_led_help(void)
    LOG_INF("      <color>      : red, blue, green, or all.");
    LOG_INF("              <op> : on, off, blink, or blinking.");
 }
+
+SH_CMD(led, NULL, "led command.", sh_cmd_led, sh_cmd_led_help, 0);
 
 #if defined(UI_LED) && defined(CONFIG_SH_CMD_UI_LED_TASK_TEST)
 
@@ -780,5 +919,4 @@ SH_CMD(ledt, NULL, "led tasks.", sh_cmd_ledt, sh_cmd_ledt_help, 0);
 
 #endif /* UI_LED && CONFIG_SH_CMD_UI_LED_TASK_TEST */
 
-SH_CMD(led, NULL, "led command.", sh_cmd_led, sh_cmd_led_help, 0);
 #endif /* CONFIG_SH_CMD */
