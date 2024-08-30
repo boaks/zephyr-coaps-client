@@ -1804,12 +1804,13 @@ int modem_get_imei(char *buf, size_t len)
    if (!initialized) {
       char temp[64];
 
+      memset(temp, 0, sizeof(temp));
       nrf_modem_lib_init();
       err = modem_at_cmd(temp, sizeof(temp), NULL, "AT+CGSN");
       if (err < 0) {
          LOG_INF("Failed to read IMEI.");
       } else {
-         LOG_INF("imei: %s", modem_info.imei);
+         LOG_INF("imei: %s", temp);
          if (buf) {
             --len;
             strncpy(buf, temp, len);
