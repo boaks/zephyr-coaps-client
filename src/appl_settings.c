@@ -1077,7 +1077,7 @@ static int appl_setting_factory_reset(int flags)
 #endif /* CONFIG_COAP_SERVER_SECURE_PORT */
 #ifdef CONFIG_COAP_SCHEME
       strncpy(scheme, CONFIG_COAP_SCHEME, sizeof(scheme) - 1);
-#else /* CONFIG_COAP_SCHEME */
+#else  /* CONFIG_COAP_SCHEME */
       strncpy(scheme, "coaps", sizeof(scheme) - 1);
 #endif /* CONFIG_COAP_SCHEME */
       LOG_INF("dest: %s://%s:%u/%u", scheme, destination, destination_port, destination_secure_port);
@@ -1211,6 +1211,8 @@ int appl_settings_init(const char *imei, dtls_handler_t *handler)
       return res;
    }
 
+   LOG_INF("Settings initialization.");
+
    if (imei) {
       k_mutex_lock(&settings_mutex, K_FOREVER);
       memset(device_imei, 0, sizeof(device_imei));
@@ -1321,7 +1323,12 @@ int appl_settings_get_reboot_code(size_t index, int64_t *time, uint16_t *code)
       k_mutex_unlock(&settings_mutex);
       if (sys_get_be48(&buf[index])) {
          if (time) {
-            *time = sys_get_be48(&buf[index]) * MSEC_PER_SEC;
+            uint64_t time_s = sys_get_be48(&buf[index]);
+            if (time_s == 1) {
+               *time = 0;
+            } else {
+               *time = time_s * MSEC_PER_SEC;
+            }
          }
          if (code) {
             *code = sys_get_be16(&buf[index + REBOOT_TIME_SIZE]);
