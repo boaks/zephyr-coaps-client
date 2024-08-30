@@ -518,7 +518,8 @@ int adp536x_power_manager_init(void)
 
 #ifdef CONFIG_NPM1300_CHARGER
 
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_charger), okay))
+
+#if (DT_NODE_HAS_STATUS(DT_INST(0, nordic_npm1300_charger), okay))
 
 #include <zephyr/drivers/sensor/npm1300_charger.h>
 
@@ -532,7 +533,7 @@ int adp536x_power_manager_init(void)
 #define NPM1300_CHG_STATUS_HIGH_TEMPERATURE BIT(6)
 #define NPM1300_CHG_STATUS_SUPLEMENT BIT(7)
 
-static const struct device *npm1300_charger_dev = DEVICE_DT_GET(DT_NODELABEL(npm1300_charger));
+static const struct device *npm1300_charger_dev = DEVICE_DT_GET(DT_INST(0, nordic_npm1300_charger));
 
 static int npm1300_power_manager_read_status(power_manager_status_t *status, char *buf, size_t len)
 {
@@ -636,11 +637,11 @@ static int npm1300_buck2_suspend(bool suspend)
 #endif /* CONFIG_REGULATOR_NPM1300 */
 
 #ifdef CONFIG_MFD_NPM1300
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_pmic), okay))
+#if (DT_NODE_HAS_STATUS(DT_INST(0, nordic_npm1300), okay))
 
 #include <zephyr/drivers/mfd/npm1300.h>
 
-static const struct device *npm1300_mfd_dev = DEVICE_DT_GET(DT_NODELABEL(npm1300_pmic));
+static const struct device *npm1300_mfd_dev = DEVICE_DT_GET(DT_INST(0, nordic_npm1300));
 
 #ifdef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
 
