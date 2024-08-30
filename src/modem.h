@@ -148,6 +148,8 @@ typedef void (*lte_state_change_callback_handler_t)(enum lte_state_type type, bo
 
 int modem_init(int config, lte_state_change_callback_handler_t state_handler);
 
+int modem_reinit(bool lib);
+
 int modem_start(const k_timeout_t timeout, bool save);
 
 int modem_start_search(void);

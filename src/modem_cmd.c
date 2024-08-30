@@ -35,8 +35,6 @@ LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 #include "modem_at.h"
 #include "modem_desc.h"
 
-int modem_reinit(void);
-
 static bool modem_is_plmn(const char *value)
 {
    int len = 0;
@@ -59,6 +57,28 @@ static void cmd_resp_callback_send(const char *at_response)
    } else {
       LOG_INF("modem cmd => %s", at_response);
    }
+}
+
+static int modem_cmd_reinit(const char *config)
+{
+   const bool is_on = modem_at_is_on() == 1;
+
+   LOG_INF(">> modem reinit");
+   modem_at_push_off(false);
+   modem_reinit(true);
+   modem_at_restore();
+   LOG_INF(">> modem reinit ready");
+   if (is_on) {
+      sh_cmd_append("send", K_MSEC(2000));
+   }
+   return 0;
+}
+
+static void modem_cmd_reinit_help(void)
+{
+   LOG_INF("> help reinit:");
+   LOG_INF("  reinit     : reinitialize modem.");
+   LOG_INF("  reinit lib : reinitialize modem and library.");
 }
 
 #define CFG_NB_IOT "nb"
@@ -126,7 +146,7 @@ static int modem_cmd_config(const char *config)
       }
       LOG_INF(">> cfg init");
       modem_at_push_off(false);
-      modem_reinit();
+      modem_reinit(false);
       modem_at_restore();
       LOG_INF(">> cfg init ready");
       if (is_on) {
@@ -1074,13 +1094,14 @@ SH_CMD(sms, "", "send SMS.", modem_cmd_sms, modem_cmd_sms_help, 0);
 #endif
 
 SH_CMD(eval, "AT%CONEVAL", "evaluate connection.", NULL, NULL, 0);
-SH_CMD(off, "", "switch modem off.", modem_cmd_switch_off, NULL, 0);
+SH_CMD(off, "AT+CFUN=0", "switch modem off.", modem_cmd_switch_off, NULL, 0);
 SH_CMD(offline, "AT+CFUN=4", "switch modem offline.", NULL, NULL, 0);
+SH_CMD(reinitmodem, "", "reinitialize modem.", modem_cmd_reinit, modem_cmd_reinit_help, 0);
 SH_CMD(reset, "AT%XFACTORYRESET=0", "modem factory reset.", NULL, NULL, 0);
 SH_CMD(search, "AT+COPS=?", "network search.", NULL, NULL, 0);
 
 SH_CMD(limit, "", "read apn rate limit.", modem_cmd_rate_limit, NULL, 0);
-SH_CMD(on, "", "switch modem on.", modem_cmd_switch_on, NULL, 0);
+SH_CMD(on, "AT+CFUN=1", "switch modem on.", modem_cmd_switch_on, NULL, 0);
 SH_CMD(state, "", "read modem state.", modem_cmd_state, NULL, 0);
 
 SH_CMD(cfg, "", "configure modem.", modem_cmd_config, modem_cmd_config_help, 0);

@@ -51,20 +51,33 @@ LOG_MODULE_REGISTER(MODEM, CONFIG_MODEM_LOG_LEVEL);
 static K_MUTEX_DEFINE(lte_mutex);
 static K_CONDVAR_DEFINE(lte_condvar);
 
+#define MODEM_LIB_INITIALIZED 0
+#define MODEM_INITIALIZED 1
+#define MODEM_INTERRUPT_SEARCH 2
+#define MODEM_FIRMWARE_2 3
+#define MODEM_SIGNAL_READY 4
+#define MODEM_READY 5
+#define MODEM_CONNECTED 6
+#define MODEM_LOW_POWER 7
+#define MODEM_LTE_MODE_INITIALIZED 8
+#define MODEM_LTE_MODE_PREFERENCE 9
+#define MODEM_LTE_MODE_FORCE 10
+
+static atomic_t modem_states = ATOMIC_INIT(0);
+
+static inline bool modem_states_changed(int bit, bool value)
+{
+   if (value) {
+      return !atomic_test_and_set_bit(&modem_states, bit);
+   } else {
+      return atomic_test_and_clear_bit(&modem_states, bit);
+   }
+}
+
 static lte_state_change_callback_handler_t lte_state_change_handler = NULL;
+
 static int lte_initial_config = 0;
-static bool lte_mode_init = true;
 static enum lte_lc_system_mode lte_initial_mode = LTE_LC_SYSTEM_MODE_LTEM;
-
-static bool lte_mfw2 = false;
-
-static bool initialized = false;
-
-static bool lte_signal_ready = false;
-static bool lte_ready = false;
-static bool lte_connected = false;
-static bool lte_cell_updated = false;
-static bool lte_low_power = false;
 
 static struct lte_lc_edrx_cfg edrx_status = {LTE_LC_LTE_MODE_NONE, 0.0, 0.0};
 static struct lte_lc_psm_cfg psm_status = {0, -1};
@@ -87,14 +100,10 @@ static int64_t lte_wakeup_time = 0;
 static int64_t lte_connected_time = 0;
 static int64_t lte_asleep_time = 0;
 static int64_t lte_psm_delay_time = 0;
-static bool lte_force_nb_iot = false;
-static bool lte_force_lte_m = false;
-static volatile bool lte_system_mode_preference = false;
+
 static struct lte_modem_info modem_info;
 static struct lte_network_info network_info;
 static struct lte_ce_info ce_info;
-
-static volatile bool lte_interrupt_search = false;
 
 static int64_t transmission_time = 0;
 static int64_t network_search_time = 0;
@@ -197,23 +206,18 @@ static K_WORK_DELAYABLE_DEFINE(modem_ready_work, modem_ready_work_fn);
 
 static void modem_ready_work_fn(struct k_work *work)
 {
-   bool ready;
-   k_mutex_lock(&lte_mutex, K_FOREVER);
-   ready = lte_ready;
-   k_mutex_unlock(&lte_mutex);
+   bool ready = atomic_test_bit(&modem_states, MODEM_READY);
    if (ready) {
       lte_state_change_callback_handler_t callback = lte_state_change_handler;
       if (callback) {
          callback(LTE_STATE_READY_1S, true);
       }
    }
-   k_mutex_lock(&lte_mutex, K_FOREVER);
    if (ready) {
-      lte_signal_ready = true;
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      atomic_set_bit(&modem_states, MODEM_SIGNAL_READY);
       k_condvar_broadcast(&lte_condvar);
-   }
-   k_mutex_unlock(&lte_mutex);
-   if (ready) {
+      k_mutex_unlock(&lte_mutex);
       LOG_INF("modem signaled ready.");
    }
 }
@@ -311,11 +315,11 @@ bool modem_set_preference(enum preference_mode mode)
                sys_mode = nbiot_preference ? "NB-IoT" : "LTE-M";
                LOG_INF("Keep LTE mode preference %s", sys_mode);
             }
-            lte_system_mode_preference = true;
+            atomic_set_bit(&modem_states, MODEM_LTE_MODE_PREFERENCE);
             return true;
          }
       } else {
-         lte_system_mode_preference = false;
+         atomic_clear_bit(&modem_states, MODEM_LTE_MODE_PREFERENCE);
       }
    }
    return false;
@@ -323,7 +327,7 @@ bool modem_set_preference(enum preference_mode mode)
 
 bool modem_uses_preference(void)
 {
-   return lte_system_mode_preference;
+   return atomic_test_bit(&modem_states, MODEM_LTE_MODE_PREFERENCE);
 }
 
 static int lte_ready_wait(k_timeout_t timeout)
@@ -331,14 +335,14 @@ static int lte_ready_wait(k_timeout_t timeout)
    int status = -EINPROGRESS;
    int res = -EINPROGRESS;
    if (!k_mutex_lock(&lte_mutex, timeout)) {
-      if (lte_low_power) {
+      if (atomic_test_bit(&modem_states, MODEM_LOW_POWER)) {
          res = -EINVAL;
-      } else if (lte_signal_ready) {
+      } else if (atomic_test_bit(&modem_states, MODEM_SIGNAL_READY)) {
          status = 0;
          res = 0;
       } else {
          if (!k_condvar_wait(&lte_condvar, &lte_mutex, timeout)) {
-            if (lte_signal_ready) {
+            if (atomic_test_bit(&modem_states, MODEM_SIGNAL_READY)) {
                res = 0;
             }
          }
@@ -410,7 +414,6 @@ static void lte_update_cell(uint16_t tac, uint32_t id)
       lte_cell_updates++;
       network_info.tac = tac;
       network_info.cell = id;
-      lte_cell_updated = true;
    }
    k_mutex_unlock(&lte_mutex);
 }
@@ -457,13 +460,11 @@ static void lte_connection_status(void)
 
    bool connected = ready &&
                     network_info.rrc_active == LTE_NETWORK_STATE_ON;
-   if (lte_connected && !connected) {
-      lte_connected = connected;
+   if (!connected && atomic_test_and_clear_bit(&modem_states, MODEM_CONNECTED)) {
       work_submit_to_io_queue(&modem_unconnected_callback_work);
    }
-   if (lte_ready != ready) {
-      lte_ready = ready;
-      lte_signal_ready = false;
+   if (modem_states_changed(MODEM_READY, ready)) {
+      atomic_clear_bit(&modem_states, MODEM_SIGNAL_READY);
       ui_led_op(LED_READY, ready ? LED_SET : LED_CLEAR);
       if (ready) {
          ui_led_op(LED_SEARCH, LED_CLEAR);
@@ -486,8 +487,7 @@ static void lte_connection_status(void)
 #endif
       }
    }
-   if (!lte_connected && connected) {
-      lte_connected = connected;
+   if (connected && !atomic_test_and_set_bit(&modem_states, MODEM_CONNECTED)) {
       work_submit_to_io_queue(&modem_read_coverage_enhancement_info_work);
       work_submit_to_io_queue(&modem_connected_callback_work);
    }
@@ -936,7 +936,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
             work_submit_to_io_queue(&modem_low_voltage_callback_work);
             k_mutex_lock(&lte_mutex, K_FOREVER);
             ++lte_low_voltage;
-            lte_low_power = true;
+            atomic_set_bit(&modem_states, MODEM_LOW_POWER);
             k_mutex_unlock(&lte_mutex);
          } else if (evt->modem_evt == LTE_LC_MODEM_EVT_OVERHEATED) {
             LOG_INF("LTE modem Overheated!");
@@ -1092,7 +1092,7 @@ static void modem_on_cfun(enum lte_lc_func_mode mode, void *ctx)
       int16_t edrx_time_s = 0;
       k_mutex_lock(&lte_mutex, K_FOREVER);
       ++lte_starts;
-      lte_low_power = false;
+      atomic_clear_bit(&modem_states, MODEM_LOW_POWER);
       edrx_status.mode = LTE_LC_LTE_MODE_NONE;
       edrx_time_s = requested_edrx_time_s;
       k_mutex_unlock(&lte_mutex);
@@ -1131,9 +1131,8 @@ static int modem_connect(void)
          }
       }
       if (!err && !lte_lc_system_mode_get(&lte_mode, &lte_preference)) {
-         if (lte_mode_init) {
+         if (!atomic_test_and_set_bit(&modem_states, MODEM_LTE_MODE_INITIALIZED)) {
             lte_initial_mode = lte_mode;
-            lte_mode_init = false;
             LOG_INF("Start %s", modem_get_system_mode_description(lte_mode, lte_preference));
          } else {
             LOG_INF("Restart %s", modem_get_system_mode_description(lte_mode, lte_preference));
@@ -1175,7 +1174,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 
    if (IS_ENABLED(CONFIG_LTE_AUTO_INIT_AND_CONNECT)) {
       /* Do nothing, modem is already configured and LTE connected. */
-   } else if (!initialized) {
+   } else if (!atomic_test_and_set_bit(&modem_states, MODEM_INITIALIZED)) {
       char buf[128];
       const char *plmn = NULL;
 
@@ -1184,8 +1183,8 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       k_mutex_lock(&lte_mutex, K_FOREVER);
       memset(&modem_info, 0, sizeof(modem_info));
       memset(&network_info, 0, sizeof(network_info));
-      lte_ready = false;
-      lte_signal_ready = false;
+      atomic_clear_bit(&modem_states, MODEM_SIGNAL_READY);
+      atomic_clear_bit(&modem_states, MODEM_READY);
       lte_initial_config = config;
       lte_state_change_handler = state_handler;
       k_mutex_unlock(&lte_mutex);
@@ -1194,7 +1193,9 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 #else
       LOG_INF("Modem trace disabled");
 #endif
-      nrf_modem_lib_init();
+      if (!atomic_test_and_set_bit(&modem_states, MODEM_LIB_INITIALIZED)) {
+         nrf_modem_lib_init();
+      }
 
       err = modem_at_cmd(buf, sizeof(buf), "%HWVERSION: ", "AT%HWVERSION");
       if (err > 0) {
@@ -1205,7 +1206,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          }
          strncpy(modem_info.version, &buf[index], sizeof(modem_info.version) - 1);
       }
-      lte_mfw2 = false;
+      atomic_clear_bit(&modem_states, MODEM_FIRMWARE_2);
       err = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CGMR");
       if (err > 0) {
          LOG_INF("rev: %s", buf);
@@ -1214,7 +1215,9 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
             index = strstart(buf, "mfw_nrf91x1_", true);
          }
          strncpy(modem_info.firmware, &buf[index], sizeof(modem_info.firmware) - 1);
-         lte_mfw2 = modem_info.firmware[0] >= '2';
+         if (modem_info.firmware[0] >= '2') {
+            atomic_set_bit(&modem_states, MODEM_FIRMWARE_2);
+         }
       }
       err = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CGSN");
       if (err < 0) {
@@ -1230,18 +1233,19 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          k_sleep(K_SECONDS(10));
       } else if (config & 2) {
          // force NB-IoT only
-         lte_force_nb_iot = true;
+         atomic_set_bit(&modem_states, MODEM_LTE_MODE_FORCE);
          lte_lc_system_mode_set(LTE_LC_SYSTEM_MODE_NBIOT, LTE_LC_SYSTEM_MODE_PREFER_NBIOT);
       } else if (config & 1) {
          // force LTE-M only
-         lte_force_lte_m = true;
+         atomic_set_bit(&modem_states, MODEM_LTE_MODE_FORCE);
          lte_lc_system_mode_set(LTE_LC_SYSTEM_MODE_LTEM, LTE_LC_SYSTEM_MODE_PREFER_LTEM);
       }
-      if (!lte_mode_init && !lte_force_lte_m && !lte_force_nb_iot) {
+      if (atomic_test_bit(&modem_states, MODEM_LTE_MODE_INITIALIZED) &&
+          !atomic_test_bit(&modem_states, MODEM_LTE_MODE_FORCE)) {
          lte_lc_system_mode_set(lte_initial_mode, CONFIG_LTE_MODE_PREFERENCE_VALUE);
       }
 
-      if (lte_mfw2) {
+      if (atomic_test_bit(&modem_states, MODEM_FIRMWARE_2)) {
          err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%FEACONF=0,1,1");
          if (err > 0) {
             LOG_INF("Set feaconv skip HPPLMN: %s", buf);
@@ -1347,7 +1351,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       }
 #endif
 
-      if (!lte_mfw2) {
+      if (!atomic_test_bit(&modem_states, MODEM_FIRMWARE_2)) {
          err = modem_at_cmd(buf, sizeof(buf), "%XRAI: ", "AT%XRAI=0");
          if (err < 0) {
             LOG_WRN("Failed to disable control plane RAI, err %d", err);
@@ -1465,6 +1469,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          } else {
             LOG_WRN("Modem initialization failed, error: %d", err);
          }
+         atomic_clear_bit(&modem_states, MODEM_INITIALIZED);
          return err;
       }
 #endif
@@ -1483,7 +1488,6 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       }
 #endif
 
-      initialized = true;
       modem_set_preference(RESET_PREFERENCE);
       LOG_INF("Modem initialized");
    }
@@ -1491,10 +1495,12 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
    return err;
 }
 
-int modem_reinit(void)
+int modem_reinit(bool lib)
 {
-   initialized = false;
-   nrf_modem_lib_shutdown();
+   atomic_clear_bit(&modem_states, MODEM_INITIALIZED);
+   if (lib && atomic_test_and_clear_bit(&modem_states, MODEM_LIB_INITIALIZED)) {
+      nrf_modem_lib_shutdown();
+   }
    return modem_init(lte_initial_config, lte_state_change_handler);
 }
 
@@ -1510,9 +1516,9 @@ int modem_wait_ready(const k_timeout_t timeout)
    watchdog_feed();
    err = lte_ready_wait(K_MSEC(10));
    if (err == -EINPROGRESS) {
-      lte_interrupt_search = false;
+      atomic_clear_bit(&modem_states, MODEM_INTERRUPT_SEARCH);
       LOG_INF("Modem connects for %ld s", (long)MSEC_TO_SEC(timeout_ms));
-      while (!lte_interrupt_search && -EINPROGRESS == (err = lte_ready_wait(K_MSEC(1500)))) {
+      while (!atomic_test_bit(&modem_states, MODEM_INTERRUPT_SEARCH) && -EINPROGRESS == (err = lte_ready_wait(K_MSEC(1500)))) {
          now = k_uptime_get();
          led_on = !led_on;
          if (led_on) {
@@ -1537,14 +1543,13 @@ int modem_wait_ready(const k_timeout_t timeout)
    ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
    now = k_uptime_get();
-   lte_interrupt_search = false;
    LOG_INF("Modem network %sconnected in %ld s", err ? "not " : "", (long)MSEC_TO_SEC(now - start));
    return err;
 }
 
 void modem_interrupt_wait(void)
 {
-   lte_interrupt_search = true;
+   atomic_set_bit(&modem_states, MODEM_INTERRUPT_SEARCH);
 }
 
 int modem_start(const k_timeout_t timeout, bool save)
@@ -1567,7 +1572,7 @@ int modem_start(const k_timeout_t timeout, bool save)
    err = modem_at_cmd(NULL, 0, NULL, "AT+CFUN=41");
    if (err > 0) {
       modem_sim_read_info(NULL, true);
-      if (lte_system_mode_preference) {
+      if (atomic_test_bit(&modem_states, MODEM_LTE_MODE_PREFERENCE)) {
          modem_sim_apply_iccid_preference();
       }
       lte_lc_offline();
@@ -1599,7 +1604,7 @@ int modem_start(const k_timeout_t timeout, bool save)
             LOG_INF("Modem saving ...");
 
             k_mutex_lock(&lte_mutex, K_FOREVER);
-            if (lte_system_mode_preference) {
+            if (atomic_test_bit(&modem_states, MODEM_LTE_MODE_PREFERENCE)) {
                if (network_info.mode == LTE_LC_LTE_MODE_LTEM) {
                   current_mode = LTE_M_PREFERENCE;
                } else if (network_info.mode == LTE_LC_LTE_MODE_NBIOT) {
@@ -1640,7 +1645,7 @@ int modem_get_power_state(enum lte_power_state *state)
 
    if (state) {
       k_mutex_lock(&lte_mutex, K_FOREVER);
-      if (lte_low_power) {
+      if (atomic_test_bit(&modem_states, MODEM_LOW_POWER)) {
          *state = LTE_POWER_STATE_LOW_VOLTAGE;
       } else if (network_info.sleeping == LTE_NETWORK_STATE_ON) {
          *state = LTE_POWER_STATE_SLEEPING;
@@ -1801,11 +1806,13 @@ int modem_get_imei(char *buf, size_t len)
 {
    int err = 0;
 
-   if (!initialized) {
+   if (!atomic_test_bit(&modem_states, MODEM_INITIALIZED)) {
       char temp[64];
 
       memset(temp, 0, sizeof(temp));
-      nrf_modem_lib_init();
+      if (!atomic_test_and_set_bit(&modem_states, MODEM_LIB_INITIALIZED)) {
+         nrf_modem_lib_init();
+      }
       err = modem_at_cmd(temp, sizeof(temp), NULL, "AT+CGSN");
       if (err < 0) {
          LOG_INF("Failed to read IMEI.");
@@ -1817,7 +1824,6 @@ int modem_get_imei(char *buf, size_t len)
             buf[len] = 0;
          }
       }
-      nrf_modem_lib_shutdown();
    } else {
       k_mutex_lock(&lte_mutex, K_FOREVER);
       if (buf) {
@@ -2105,7 +2111,6 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
    if (network_info.cell != temp.cell || network_info.tac != temp.tac) {
       lte_cell_updates++;
    }
-   lte_cell_updated = false;
    temp.plmn_lock = network_info.plmn_lock;
    temp.sleeping = network_info.sleeping;
    network_info = temp;
