@@ -213,11 +213,7 @@ static void uart_tx_pause(bool pause)
 
 static void uart_tx_off(bool off)
 {
-   if (off) {
-      atomic_clear_bit(&uart_state, UART_TX_ENABLED);
-   } else {
-      atomic_set_bit(&uart_state, UART_TX_ENABLED);
-   }
+   atomic_set_bit_to(&uart_state, UART_TX_ENABLED, !off);
 }
 
 static inline void uart_tx_ready(void)
