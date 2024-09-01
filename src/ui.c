@@ -606,6 +606,13 @@ int ui_led_op_prio(led_t led, led_op_t op)
 #endif
          break;
       case LED_COLOR_BLUE:
+#ifdef CONFIG_UART_LED
+         break;
+      case LED_UART:
+#elif CONFIG_MFD_NPM1300_BUCK2_LED
+         break;
+      case LED_BUCK2:
+#endif /* CONFIG_UART_LED || CONFIG_MFD_NPM1300_BUCK2_LED */
 #ifdef UI_BLUE
          ui_op(&led_blue_spec, op, &led_blue_timer_work);
 #endif
@@ -614,7 +621,6 @@ int ui_led_op_prio(led_t led, led_op_t op)
 #ifdef UI_GREEN
          ui_op(&led_green_spec, op, &led_green_timer_work);
 #endif
-
          break;
       case LED_LTE_1:
 #if DT_NODE_HAS_STATUS(OUT_LTE_NODE_1, okay)

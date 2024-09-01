@@ -26,7 +26,13 @@ typedef enum { LED_NONE,
                LED_COLOR_ALL,
                LED_LTE_1, /* application layer */
                LED_LTE_2, /* mobile ip layer */
-               LED_LTE_3  /* mobile connection layer */
+               LED_LTE_3, /* mobile connection layer */
+#ifdef CONFIG_UART_LED
+               LED_UART, /* UART active indicator */
+#undef CONFIG_MFD_NPM1300_BUCK2_LED
+#elif CONFIG_MFD_NPM1300_BUCK2_LED
+               LED_BUCK2, /* BUCK2 active indicator */
+#endif
 } led_t;
 
 typedef enum { LED_CLEAR,
@@ -46,7 +52,7 @@ typedef struct led_task {
 
 int ui_led_op(led_t led, led_op_t op);
 int ui_led_op_prio(led_t led, led_op_t op);
-int ui_led_tasks(const led_task_t* tasks);
+int ui_led_tasks(const led_task_t *tasks);
 int ui_init(ui_callback_handler_t button_callback);
 int ui_config(void);
 void ui_enable(bool enable);

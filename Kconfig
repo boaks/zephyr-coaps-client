@@ -431,6 +431,13 @@ config UART_RX_PULLDOWN
 	help
 	  Use pulldown for RX to ensure UART is suspended, if RX is not connected.
 
+config UART_LED
+    bool "Use blue LED as UART indicator."
+    depends on UART_MANAGER
+    default n
+    help
+      Use LED to check, if inactivity is detected properly.
+
 config LOG_BACKEND_UART_MANAGER
    bool "Use UART manager as log backend."
    depends on UART_MANAGER && !ALL_POWER_OFF
