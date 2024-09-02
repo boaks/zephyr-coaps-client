@@ -78,16 +78,21 @@ cmd rscan 5 6
 Executes a network scan and report the result to the server.
 
 ```
-CAT-M1 neighbor cell measurements 0/6
-  # :  plmn   tac     cell    earfnc pid rsrp/q dB(m)
-[ 0]: 26201 0x67b9 0x01CC2B03  6400  206   -97/-10
-[ 1]: 26201 0x67b9 0x01CC2B06  1444  270  -102/ -5
-[*2]: 26203 0xe936 0x01656201  6200  151   -96/-14
-[ 3]: 26202 0xb982 0x031D7801  6300  197  -103/-12
-[ 4]: 26201 0x67b9 0x01CC2B00  1300   78  -113/-11
-[ 5]: 26201 0x67b9 0x022A1102  1300   33  -119/-16
-Scans 1, improves 0, 67 s, overall 0 s
+CAT-M1 neighbor cell measurements 0/8
+  # :  plmn    tac      cell  band earfnc pid rsrp/q dB(m)
+[ 0]: 26203  0xe936 0x01656201  20  6200  251   -98/ -9
+[ 1]: 26201  0x67b9 0x01CC2B06   3  1444  270  -106/ -5
+[ 2]: 26201  0x67b9 0x01CC2B03  20  6400  206  -101/-11
+[ 3]: 26201  0x67b9 0x01CC2B05  20  6400  205  -101/-11
+[*4]: 26201  0x67b9 0x01CC2B00   3  1300   78  -106/-10
+[ 5]: 26202  0xb982 0x031D7801  20  6300  197  -106/-13
+[ 6]: 26203  0xe936 0x016E4017  20  6200  380  -108/-18
+[ 7]: 26201  0x67b9 0x022A1111  20  6400   28  -108/-18
+(*4 : current cell)
+Scans 1, improves 0, 69 s, overall 0 s
 ```
+
+The list contains the `plmn`, `tac` and `cell`, along with the `band`, the frequency (`earfnc`), `pid` and the radio signal condition (`rsrp` and `rsrq`). The current cell is marked with an `*`. Please note, that the result is changing over the time pretty fast. Sometimes even the current cell is not contained in the list.
 
 To see the options, also use "help rscan" locally.
 

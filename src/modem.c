@@ -688,25 +688,29 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
    int64_t now = k_uptime_get();
    int64_t all = 0;
    int current_cell;
+   int current_earfcn;
    enum lte_lc_lte_mode mode;
    size_t idx = 0;
-   char line[128];
    char mnc[4];
+   char line[128];
+
+   memset(mnc, 0, sizeof(mnc));
 
    k_mutex_lock(&lte_mutex, K_FOREVER);
    mode = network_info.mode;
    modem_last_neighbor_cell_meas_len = 0;
    current_cell = network_info.cell;
+   current_earfcn = network_info.earfcn;
    if (scan_time) {
       now -= scan_time;
       scan_time = 0;
-      if (cells_info->ncells_count) {
+      if (cells_info->gci_cells_count) {
          all_scan_time += now;
-         all = all_scan_time;
       }
    } else {
       now = 0;
    }
+   all = all_scan_time;
    k_mutex_unlock(&lte_mutex);
 
    snprintf(line, sizeof(line), "%s neighbor cell measurements %d/%d",
@@ -723,11 +727,13 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
       idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
    }
    if (cells_info->gci_cells_count) {
-      int quality;
-      int max_quality = 0;
       const struct lte_lc_cell *gci_cells = cells_info->gci_cells;
       const struct lte_lc_cell *gci_cells_sorted[cells_info->gci_cells_count];
       int w = cells_info->gci_cells_count > 9 ? 2 : 1;
+      int quality;
+      int max_quality = 0;
+      int matched_current = -1;
+      bool match_current = false;
 
       for (int index = 0; index < cells_info->gci_cells_count; ++index) {
          quality = lte_lc_cell_quality(gci_cells);
@@ -745,27 +751,34 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
          ++gci_cells;
       }
       ++scans;
-      snprintf(line, sizeof(line), "  %*c :  plmn    tac      cell   bd earfnc pid rsrp/q dB(m)", w, '#');
+      snprintf(line, sizeof(line), "  %*c :  plmn    tac      cell  band earfnc pid rsrp/q dB(m)", w, '#');
       idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
       for (int index = 0; index < cells_info->gci_cells_count; ++index) {
          gci_cells = gci_cells_sorted[index];
-         if (current_cell == gci_cells->id) {
+         match_current = current_cell == gci_cells->id && current_earfcn == gci_cells->earfcn;
+         if (match_current) {
+            matched_current = index;
+            // compare current cell with best quality.
             if ((max_quality - lte_lc_cell_quality(gci_cells)) > MIN_QUALITY_DELTA) {
                ++hits;
             }
          }
-         if (gci_cells->mnc < 0 || gci_cells->mnc > 999) {
-            sprintf(mnc, "xxx");
-         } else if (gci_cells->mnc > 99) {
-            sprintf(mnc, "%3d", gci_cells->mnc);
+         if (gci_cells->mnc >= 100 && gci_cells->mnc <= 999) {
+            snprintf(mnc, sizeof(mnc), "%3d", gci_cells->mnc);
+         } else if (gci_cells->mnc >= 0 && gci_cells->mnc <= 99) {
+            snprintf(mnc, sizeof(mnc), "%02d ", gci_cells->mnc);
          } else {
-            sprintf(mnc, "%02d ", gci_cells->mnc);
+            snprintf(mnc, sizeof(mnc), "xxx");
          }
-         snprintf(line, sizeof(line), "[%c%*d]: %3d%s 0x%04x 0x%08X %2d %5d  %3d  %4d/%3d",
-                  current_cell == gci_cells->id ? '*' : ' ', w, index,
+         snprintf(line, sizeof(line), "[%c%*d]: %3d%s 0x%04x 0x%08X  %2d %5d  %3d  %4d/%3d",
+                  match_current ? '*' : ' ', w, index,
                   gci_cells->mcc, mnc, gci_cells->tac, gci_cells->id,
                   modem_get_band(gci_cells->earfcn), gci_cells->earfcn, gci_cells->phys_cell_id,
                   RSRP(gci_cells->rsrp), RSRQ(gci_cells->rsrq));
+         idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
+      }
+      if (matched_current >= 0) {
+         snprintf(line, sizeof(line), "(*%*d : current cell)", w, matched_current);
          idx = append_result(modem_last_neighbor_cell_meas, idx, sizeof(modem_last_neighbor_cell_meas), line);
       }
       if (now) {
