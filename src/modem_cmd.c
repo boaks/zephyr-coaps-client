@@ -610,11 +610,16 @@ static int modem_cmd_psm(const char *config)
             }
          }
          print_bin(&rat[3], 5, active_time);
-         // requested tracking aree update time
+         // requested tracking aera update time
          // 2s
-         if (tau_unit == 'h') {
+         if (tau_unit == 'd') {
+            tau_time *= 3600 * 24;
+         } else if (tau_unit == 'h') {
             tau_time *= 3600;
+         } else if (tau_unit == 'm') {
+            tau_time *= 60;
          }
+
          tau_time = ROUND_UP_TIME(tau_time, 2);
          if (tau_time > 31) {
             // 30s
@@ -655,8 +660,12 @@ static int modem_cmd_psm(const char *config)
          print_bin(&tau[0], 3, tau_unit_id);
          print_bin(&tau[3], 5, tau_time);
 
-         if (tau_unit == 'h') {
+         if (tau_unit == 'd') {
+            LOG_INF("PSM enable, act: %d s, tau: %d d", active_time * rat_mul, (tau_time * tau_mul) / (3600 * 24));
+         } else if (tau_unit == 'h') {
             LOG_INF("PSM enable, act: %d s, tau: %d h", active_time * rat_mul, (tau_time * tau_mul) / 3600);
+         } else if (tau_unit == 'm') {
+            LOG_INF("PSM enable, act: %d s, tau: %d m", active_time * rat_mul, (tau_time * tau_mul) / 60);
          } else {
             LOG_INF("PSM enable, act: %d s, tau: %d s", active_time * rat_mul, tau_time * tau_mul);
          }
@@ -674,10 +683,12 @@ static int modem_cmd_psm(const char *config)
 static void modem_cmd_psm_help(void)
 {
    LOG_INF("> help psm:");
-   LOG_INF("  psm <act-time> <tau-time>[h] : request PSM times.");
+   LOG_INF("  psm <act-time> <tau-time>[m|h|d] : request PSM times.");
    LOG_INF("     <act-time>    : active time in s.");
-   LOG_INF("     <tau-time>    : tracking area update time in s.");
-   LOG_INF("     <tau-time>h   : tracking area update time in h.");
+   LOG_INF("     <tau-time>    : tracking area update time in seconds.");
+   LOG_INF("     <tau-time>m   : tracking area update time in minutes.");
+   LOG_INF("     <tau-time>h   : tracking area update time in hours.");
+   LOG_INF("     <tau-time>d   : tracking area update time in days.");
    LOG_INF("  psm normal       : PSM handled by application.");
    LOG_INF("  psm off          : disable PSM.");
    LOG_INF("  psm              : show current PSM status.");
