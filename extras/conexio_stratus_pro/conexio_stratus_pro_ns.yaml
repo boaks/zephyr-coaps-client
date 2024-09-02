@@ -1,0 +1,19 @@
+identifier: conexio_stratus_pro_ns
+name: CONEXIO-STRATUS-PRO-Non-Secure
+type: mcu
+arch: arm
+toolchain:
+  - gnuarmemb
+  - xtools
+  - zephyr
+ram: 128
+flash: 192
+supported:
+  - i2c
+  - spi
+  - gpio
+  - serial
+  - pwm
+  - watchdog
+  - netif:modem
+vendor: nordic

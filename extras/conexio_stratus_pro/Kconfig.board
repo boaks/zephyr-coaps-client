@@ -1,0 +1,15 @@
+# CONEXIO STRATUS PRO board configuration
+
+# Copyright (c) 2024 Conexio Technologies, Inc
+# Copyright (c) 2018-2020 Nordic Semiconductor ASA
+# SPDX-License-Identifier: Apache-2.0
+
+if SOC_NRF9161_LACA
+
+config BOARD_CONEXIO_STRATUS_PRO
+	bool "Conexio Stratus Pro"
+
+config BOARD_CONEXIO_STRATUS_PRO_NS
+	bool "Conexio Stratus Pro non-secure"
+
+endif # SOC_NRF9161_LACA
