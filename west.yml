@@ -22,7 +22,19 @@ manifest:
       repo-path: sdk-nrf
       remote: ncs
       revision: v2.6.1
-      import: true
+      import:
+        name-blocklist:
+          - matter
+          - nrf-802154
+          - openthread
+          - cmock
+          - unity
+          - cddl-gen
+          - homekit
+          - loramac-node
+          - lz4
+          - lvgl
+          - mipi-sys-t
     - name: tinydtls
       submodules: true
       repo-path: tinydtls
