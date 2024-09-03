@@ -30,8 +30,9 @@ CONFIG_UART_CONSOLE=y
 CONFIG_PINCTRL=y
 
 # Fixes for I2C
-CONFIG_TFM_SECURE_UART=n
-CONFIG_TFM_LOG_LEVEL_SILENCE=y
+# Removed by Achim Kraus, cloudcoap.io
+# CONFIG_TFM_SECURE_UART=n
+# CONFIG_TFM_LOG_LEVEL_SILENCE=y
 
 # Disable entropy driver, as it's not yet implemented
 CONFIG_ENTROPY_NRF5_RNG=n

@@ -1,7 +1,5 @@
-# Circuit Dojo nRF9161 Feather configuration
-#
-# Copyright (c) 2020-2024 Circuit Dojo LLC
-# SPDX-License-Identifier: Apache-2.0
-
+if !MCUBOOT
 config CIRCUITDOJO_FEATHER_NRF9161_PMIC_STARTUP
 	bool "Allows for executing startup code for PMIC."
+	default y
+endif
