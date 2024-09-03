@@ -9,11 +9,11 @@ In order to be able to build the demo-client, you need to install the developmen
 ### Install Tools and Tool-Chains
 
 Basically, this requires to follow [Developing with Zephyr](https://docs.zephyrproject.org/latest/develop/index.html).
-Though for now only the [Nordic Semiconductor Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) is supported, it may be easier to go through [Getting started with Thingy:91](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/ug_thingy91_gsg.html). This is also required, if you want to update your modem firmware.
+Though for now only the [Nordic Semiconductor Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91) is supported, it may be easier to go through [Getting started with Thingy:91](https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/gsg_guides/thingy91_gsg.html). This is also required, if you want to update your modem firmware.
 
-Please check the proper installation of your tools building some of the provided samples there (e.g. [zephyr/samples/basic/blinky](https://github.com/zephyrproject-rtos/zephyr/tree/main/samples/basic/blinky) or/and [nrf/samples/nrf9160/udp](https://github.com/nrfconnect/sdk-nrf/tree/main/samples/nrf9160/udp)).
+Please check the proper installation of your tools building some of the provided samples there (e.g. [zephyr/samples/basic/blinky](https://github.com/zephyrproject-rtos/zephyr/tree/main/samples/basic/blinky) or/and [nrf/samples/cellular/udp](https://github.com/nrfconnect/sdk-nrf/tree/main/samples/cellular/udp)).
 
-**Note:** both, the zephyr's "developing" and Nordic Semiconductor's "getting started" has changed and may change over time and so it's hard to give good advice. Currently I have good experience with [Nordic Semiconductor - Installing manually](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/gs_installing.html) and Ubuntu 20.04. Installing [nRF Connect for Desktop](https://www.nordicsemi.com/Products/Development-tools/nrf-connect-for-desktop/download#infotabs) and apply the "Toolchain Manager" app works as well on Ubuntu 22.04 and Ubuntu 20.04  (support for 18.04 has been removed for the `nRF Connect for Desktop`). To use this toolchain-manager-installation after installing, start a terminal from that app to get a command console with an setup environment.
+**Note:** both, the zephyr's "developing" and Nordic Semiconductor's "getting started" has changed and may change over time and so it's hard to give good advice. Previously I had good experience with [Nordic Semiconductor - Installing manually](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/nrf/gs_installing.html) on Ubuntu 20.04, but that's in the meantime removed by Nordic. And installing [nRF Connect for Desktop](https://www.nordicsemi.com/Products/Development-tools/nrf-connect-for-desktop/download#infotabs) and applying the "Toolchain Manager" app works as well on Ubuntu 22.04 and Ubuntu 20.04. To use this toolchain-manager-installation after installing, start a terminal from that app to get a command console with an setup environment.
 
 ![Toolchain Manager](./toolchain-manager.png)
 
@@ -40,7 +40,7 @@ west update
 
 That takes a while (couple of minutes). It downloads zephyr, the Nordic Semiconductor SDK and the tinydlts zephyr module.
 
-Currently the demo uses the [feature/connection_id](https://github.com/eclipse/tinydtls/tree/feature/connection_id) branch of tinydtls. When that feature branch gets merged into main, this demo will be switched to that.
+Currently the demo switched back to the [zephyr-cid-develop](https://github.com/boaks/tinydtls/tree/zephyr_cid_develop) branch of my tinydtls fork. This is only intended for temporary convenience because currently many PRs are pending at the eclipse repo and it will take some time to get them merged into "develop" or "main" there. When done, this demo will be switched to that eclipse repo.
 
 ### Download the Sources into an available zephyr workspace
 
@@ -64,6 +64,14 @@ west update
 ```
 
 That takes a couple of seconds, though zephyr and nrf is already downloaded.
+
+In some case, if the `zephyr-coaps-client` is already downloaded, also
+
+```sh
+west init -l coaps-client
+```
+
+may do the job.
 
 ### Build & Flash
 
@@ -204,7 +212,7 @@ openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out privkey.pem
 You will need one key pair for the server, and one key pair for each device. To make the device and server trust each other, they need to exchange their `public key`s ahead. Therefore extract the `public key` from the key pair using
 
 ```sh
-openssl pkey -in privkey.pem -pubout
+openssl pkey -pubout -in privkey.pem 
 
 -----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENTGXGkhc7gL614R4HBOkXoESM98Y
