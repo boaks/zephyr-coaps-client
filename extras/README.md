@@ -6,7 +6,7 @@
  
 ## Experimental Board Support - nRF9161-feather
 
-| [Circuit Dojo, nRF9161 feather - Suggestions for next version](https://community.circuitdojo.com/d/480-nrf9160-feather-suggestions-for-next-version/64) | ![nRF9161-feather](https://docs.circuitdojo.com/nrf91x1-feather/img/1715823292-618536-img-9110.jpg) |
+| [Circuit Dojo, nRF9161 feather - Suggestions for next version](https://community.circuitdojo.com/d/480-nrf9160-feather-suggestions-for-next-version/64) | [<img src="../docu/nRF9161-feather.png" width="450"/>](../docu/nRF9161-feather.png) |
 | :- | - |
 
 **Note:** **This is experimental.** The maintained board files will be available from `Circuit Dojo`.
@@ -52,7 +52,7 @@ The nRF9161-feather has an RP20240 for USB and flashing. The BUCK2 provides powe
 
 ## Experimental Board Support - Conexio Stratus Pro
 
-| [Conexio Stratus Pro](https://conexiotech.com/conexio-stratus-pro/) | ![Conexio Stratus Pro](https://www.crowdsupply.com/img/de27/53832be8-3825-4941-bdbc-ff65e9f9de27/conexio-stratus-pro-front-01_jpg_aa-md.jpg) |
+| [Conexio Stratus Pro](https://conexiotech.com/conexio-stratus-pro/) | [<img src="https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png" width="450"/>](https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png) |
 | :- | - |
 
 **Note:** **This is experimental.** The maintained board files are available from [Conexio Technologies](https://docs.conexiotech.com/master/building-and-programming-an-application/conexio-stratus-board-definition-files#step-2-patch-mcuboot-file-for-stratus-pro-board).

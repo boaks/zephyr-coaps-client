@@ -46,9 +46,9 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160) based devic
 
 | Device | |
 | :- | - |
-| [Nordic Semiconductor, Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91)<br>Works "out-of-the-box" in the "wild". Not easy to extend with custom sensors. | ![Thingy:91](./docu/thingy91.jpg) |
-| [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/)<br>Requires additional batteries, antennas, and closures to work in the "wild". The design of the feather allows to easily add custom sensors. | ![nRF9160-feather-v5](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
-| [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. The design allows to easily add custom sensors. | ![nRF9160-DK](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png) |
+| [Nordic Semiconductor, Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91)<br>Works "out-of-the-box" in the "wild".<br>Not easy to extend with custom sensors. | [<img src="./docu/thingy91.jpg" width="300"/>](./docu/thingy91.jpg) |
+| [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/)<br>Requires additional batteries, antennas, and closures to<br>work in the "wild". The design of the feather allows to<br>easily add custom sensors. | [<img src="https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg" width="300"/>](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
+| [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk.<br>The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png) |
                                              
 The demo works with [ncs-2.6.1](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.1).
 
@@ -56,15 +56,30 @@ To benefit from the newer modem features, please consider to use the modem firmw
 
 In the meantime it also supports the [nRF9161-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9161-DK) and the [mfw 2.0.0](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/dev-kits/nrf9161-dk/application-firmware/nrf9161dk_mfw-2-0-0_sdk-2-5-0.zip) for that.
 
+## Experimentally Supported Devices
+
+The demo supports experimentally two new upcoming devices based on the nRF9161.
+
+| Device | |
+| :- | - |
+| [Circuit Dojo, nRF9161 feather](https://community.circuitdojo.com/d/480-nrf9160-feather-suggestions-for-next-version/64)<br>With 2-channel USB and onboard OCD.| [<img src="./docu/nRF9161-feather.png" width="300"/>](./docu/nRF9161-feather.png) |
+| [Conexio Stratus Pro](https://conexiotech.com/conexio-stratus-pro/)<br>With built-in solar energy harvesting.<br>Includes a SIM card with 500MB in 10 years.| [<img src="https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png" width="300"/>](https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png) |
+
+**Note:** for both experimentally supported boards you need to copy the board definitions in folder `extra` into the destination folders.
+
+See [extras/README](./extras/README.md) for more information.
+
+## More Devices
+
 Maybe other modems and devices gets supported over the time as well. For some of the nRF9160 based devices porting should not be too hard.
 
 | nRF9160 based candidates | |
 | :- | - |
-| [Sparkfun Thing Plus nRF9160](https://www.sparkfun.com/products/17354?utm_source=sendfox&utm_medium=email&utm_campaign=nrf9160-thing-plus)<br>Qwiic and 2x5 plug for JTAG. | ![Sparkfun Thing Plus nRF9160](https://cdn.sparkfun.com//assets/parts/1/6/3/6/0/17354-SparkFun_Thing_Plus_-_nRF9160-01.jpg) |
-| [Icarus IoT Board v2](https://www.actinius.com/icarus)<br>Includes a eSIM.| ![Icarus IoT Board v2](https://www.actinius.com/images/icarus-nrf9160-feather-v2-front-sm-p-500.png) |
-| [Conexio Stratus](https://www.crowdsupply.com/conexio/stratus)<br>Built-in energy harvesting capability for autonomous operation. Includes a SIM card with 500MB in 10 years. | ![Conexio Stratus](https://www.crowdsupply.com/img/9c62/side.png) |
-| [Fanstel LN60E](https://www.fanstel.com/buy/bt840f-v1-nrf52840-bluetooth-5-thread-zigbee-module-by45z-8ypje)<br>Reduced to the minimum. Unfortunately the current version uses a LDO with 50µA quiescent current.| ![Fanstel LN60E](https://images.squarespace-cdn.com/content/v1/561459a2e4b0b39f5cefa12e/1600900228634-0AGSVRBYZKC1MD9Q5YDA/LN60E.png) |
-| [MIKROE LTE IoT 4 Click](https://www.mikroe.com/lte-iot-4-click)<br>Even less, but with power LED. If you want to use it, remove the LED or cut the connects to the ground-plane next the LED. | ![MIKROE LTE IoT 4 Click](https://cdn1-shop.mikroe.com/img/product/lte-iot-4-click/lte-iot-4-click-large_default-1.jpg) |
+| [Sparkfun Thing Plus nRF9160](https://www.sparkfun.com/products/17354?utm_source=sendfox&utm_medium=email&utm_campaign=nrf9160-thing-plus)<br>Qwiic and 2x5 plug for JTAG. | [<img src="https://cdn.sparkfun.com//assets/parts/1/6/3/6/0/17354-SparkFun_Thing_Plus_-_nRF9160-01.jpg" width="300"/>](https://cdn.sparkfun.com//assets/parts/1/6/3/6/0/17354-SparkFun_Thing_Plus_-_nRF9160-01.jpg) |
+| [Icarus IoT Board v2](https://www.actinius.com/icarus)<br>Includes a eSIM.| [<img src="https://www.actinius.com/images/icarus-nrf9160-feather-v2-front-sm-p-500.png" width="300"/>](https://www.actinius.com/images/icarus-nrf9160-feather-v2-front-sm-p-500.png) |
+| [Conexio Stratus](https://www.crowdsupply.com/conexio/stratus)<br>With built-in solar energy harvesting.<br>Includes a SIM card with 500MB in 10 years. | [<img src="https://www.crowdsupply.com/img/9c62/side.png" width="300"/>](https://www.crowdsupply.com/img/9c62/side.png) |
+| [Fanstel LN60E](https://www.fanstel.com/buy/bt840f-v1-nrf52840-bluetooth-5-thread-zigbee-module-by45z-8ypje)<br>Reduced to the minimum. Unfortunately<br>the current version uses a LDO with 50µA<br>quiescent current.| [<img src="https://images.squarespace-cdn.com/content/v1/561459a2e4b0b39f5cefa12e/1600900228634-0AGSVRBYZKC1MD9Q5YDA/LN60E.png" width="300"/>](https://images.squarespace-cdn.com/content/v1/561459a2e4b0b39f5cefa12e/1600900228634-0AGSVRBYZKC1MD9Q5YDA/LN60E.png) |
+| [MIKROE LTE IoT 4 Click](https://www.mikroe.com/lte-iot-4-click)<br>Even less, but with power LED.<br>If you want to use it, remove the LED or cut the<br>connects to the ground-plane next the LED. | [<img src="https://cdn1-shop.mikroe.com/img/product/lte-iot-4-click/lte-iot-4-click-large_default-1.jpg" width="300"/>](https://cdn1-shop.mikroe.com/img/product/lte-iot-4-click/lte-iot-4-click-large_default-1.jpg) |
 
 
 ## Required HW-Tools for Thingy:91
@@ -74,7 +89,7 @@ In order to use this demo with a `Thingy:91`, you need:
 - a `Thingy:91` (maybe better two ;-)).
 - the `Thingy:91` is usually shipped with a SIM card. Check, if that covers your [area/country](https://www.nordicsemi.com/-/media/Software-and-other-downloads/3rd-party/iBasis-simplified-coverage-map-for-web.pdf). If not, you need a SIM card for your area/country. (Sometimes the `Thingy:91` is shipped with an expired SIM card. Then you will need also an other one.)
 - a debug probe to flash the device.
-   - either a [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) and a [10-wire-ribbon connector, 2x5, 0.050"](https://www.digikey.com/en/products/detail/harwin-inc/M50-9100542/4953091).
+   - either a [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) and a `10-wire-ribbon connector, 2x5, 0.050"` from [Harwin Inc.](https://www.digikey.com/en/products/detail/harwin-inc/M50-9100542/4953091) or [Adafruit Industries LLC](https://www.digikey.de/de/products/detail/adafruit-industries-llc/1675/6827142).
    - or a [Segger j-Link](https://www.segger.com/products/debug-probes/j-link/) and a [cortex-M adapter](https://www.segger.com/products/debug-probes/j-link/accessories/adapters/9-pin-cortex-m-adapter/).
 
 **Note:** the `Thingy:91` uses 1.8V VDD and requires the Jlink to support 1.8V as well. Not all Jlinks supporting that, ensure you get a right one! If the `nRF9160-DK` is used, ensure you select 1.8V for VDD-IO (SW9 on the DK). 
