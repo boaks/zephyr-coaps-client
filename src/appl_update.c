@@ -167,9 +167,13 @@ int appl_update_cmd(const char *config)
       }
       rc = UPDATE_CMD_OK;
    } else if (!stricmp("erase", value)) {
-      LOG_INF("Erase update.");
-      k_sleep(K_MSEC(500));
-      rc = boot_erase_img_bank((uint8_t)dfu_flash_area_id);
+      if (dfu_flash_area_id >= 0) {
+         LOG_INF("Erase update (area id %d) ... (approx. 10s)", dfu_flash_area_id);
+         k_sleep(K_MSEC(200));
+         rc = boot_erase_img_bank((uint8_t)dfu_flash_area_id);
+      } else {
+         LOG_INF("Erase update failed, no valid area id %d.", dfu_flash_area_id);
+      }
    } else if (!stricmp("revert", value)) {
       rc = boot_request_upgrade(BOOT_UPGRADE_TEST);
    } else if (!stricmp("reboot", value)) {
