@@ -2111,20 +2111,22 @@ static int sh_cmd_send_interval(const char *parameter)
    cur = parse_next_text(cur, ' ', value, sizeof(value));
 
    if (value[0]) {
-      res = sscanf(value, "%u%c", &interval, &unit);
+      int new_interval = interval;
+      res = sscanf(value, "%u%c", &new_interval, &unit);
       if (res >= 1) {
          if (unit == 's' || unit == 'h' || unit == 'm') {
-            LOG_INF("set send interval %u%c", interval, unit);
+            int interval_s = new_interval;
             if (unit == 'h') {
-               interval *= 3600;
+               interval_s *= 3600;
             } else if (unit == 'm') {
-               interval *= 60;
+               interval_s *= 60;
             }
-            set_send_interval(interval);
-            if (interval > 0) {
-               work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(interval));
+            if (interval != interval_s) {
+               LOG_INF("set send interval %u%c", new_interval, unit);
+               set_send_interval(interval_s);
+               sh_cmd_append("send", K_MSEC(2000));
             } else {
-               k_work_cancel_delayable(&dtls_timer_trigger_work);
+               LOG_INF("send interval %u%c already active", new_interval, unit);
             }
             res = 0;
          } else {
