@@ -42,28 +42,31 @@ The demo client is considered to use CoAP/DTLS 1.2 CID. Without server-side supp
 
 ## Supported Devices
 
-For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160) based devices are supported.
+For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160) and [nRF9161](https://www.nordicsemi.com/products/nrf9161) based devices are supported.
 
-| Device | |
+| Device | Image |
 | :- | - |
-| [Nordic Semiconductor, Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91)<br>Works "out-of-the-box" in the "wild".<br>Not easy to extend with custom sensors. | [<img src="./docu/thingy91.jpg" width="300"/>](./docu/thingy91.jpg) |
-| [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/)<br>Requires additional batteries, antennas, and closures to<br>work in the "wild". The design of the feather allows to<br>easily add custom sensors. | [<img src="https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg" width="300"/>](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
-| [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk.<br>The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png) |
+| [Nordic Semiconductor, Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91)<br>Works "out-of-the-box" in the "wild". Comes with selection of sensors (environment, motion) and a 2KB EEPROM. Not easy to extend with custom sensors. | [<img src="./docu/thingy91.jpg" width="300"/>](./docu/thingy91.jpg) |
+| [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with motion sensor and 4MB flash. The design of the feather allows to easily add custom sensors. | [<img src="https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg" width="300"/>](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
+| [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. Comes with a 8MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png) |
+| [Nordic Semiconductor, nRF9161 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9161-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9161-DK/nRF9161_DK_Perspective-small.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9161-DK/nRF9161_DK_Perspective-small.png) |
                                              
 The demo works with [ncs-2.6.1](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.1).
 
-To benefit from the newer modem features, please consider to use the modem firmware [1.3.6](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.6.zip). See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
+To benefit from the newer modem features, please consider to use the modem firmware [1.3.6](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.6.zip) for `nRF9160` based device. See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
-In the meantime it also supports the [nRF9161-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9161-DK) and the [mfw 2.0.0](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/dev-kits/nrf9161-dk/application-firmware/nrf9161dk_mfw-2-0-0_sdk-2-5-0.zip) for that.
+For `nRF9161` devices use the modem firmware [2.0.0](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/dev-kits/nrf9161-dk/application-firmware/nrf9161dk_mfw-2-0-0_sdk-2-5-0.zip) for that. In my experience, the [2.0.1](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/dev-kits/nrf9161-dk/application-firmware/nrf9161dk_mfw-2.0.1_sdk-2.6.1.zip) wasn't able to connect some Rel. 14 networks, but you may also tryout that one.
+
+`NCS 2.7.0` is not supported for now.
 
 ## Experimentally Supported Devices
 
 The demo supports experimentally two new upcoming devices based on the nRF9161.
 
-| Device | |
+| Device | Image |
 | :- | - |
-| [Circuit Dojo, nRF9161 feather](https://community.circuitdojo.com/d/480-nrf9160-feather-suggestions-for-next-version/64)<br>With 2-channel USB and onboard OCD.| [<img src="./docu/nRF9161-feather.png" width="300"/>](./docu/nRF9161-feather.png) |
-| [Conexio Stratus Pro](https://conexiotech.com/conexio-stratus-pro/)<br>With built-in solar energy harvesting.<br>Includes a SIM card with 500MB in 10 years.| [<img src="https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png" width="300"/>](https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png) |
+| [Circuit Dojo, nRF9161 feather](https://community.circuitdojo.com/d/480-nrf9160-feather-suggestions-for-next-version/64)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with 2-channel USB, onboard OCD, motion sensor, a 16MB flash and a Qwiic connector. | [<img src="./docu/nRF9161-feather.png" width="300"/>](./docu/nRF9161-feather.png) |
+| [Conexio Stratus Pro](https://conexiotech.com/conexio-stratus-pro/)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with built-in solar energy harvesting, motion sensor, 2KB EEPROM, and 2x5 plug for JTAG. Includes a SIM card with 500MB in 10 years. | [<img src="https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png" width="300"/>](https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png) |
 
 **Note:** for both experimentally supported boards you need to copy the board definitions in folder `extra` into the destination folders.
 
@@ -73,13 +76,13 @@ See [extras/README](./extras/README.md) for more information.
 
 Maybe other modems and devices gets supported over the time as well. For some of the nRF9160 based devices porting should not be too hard.
 
-| nRF9160 based candidates | |
+| Candidate | Image |
 | :- | - |
 | [Sparkfun Thing Plus nRF9160](https://www.sparkfun.com/products/17354?utm_source=sendfox&utm_medium=email&utm_campaign=nrf9160-thing-plus)<br>Qwiic and 2x5 plug for JTAG. | [<img src="https://cdn.sparkfun.com//assets/parts/1/6/3/6/0/17354-SparkFun_Thing_Plus_-_nRF9160-01.jpg" width="300"/>](https://cdn.sparkfun.com//assets/parts/1/6/3/6/0/17354-SparkFun_Thing_Plus_-_nRF9160-01.jpg) |
 | [Icarus IoT Board v2](https://www.actinius.com/icarus)<br>Includes a eSIM.| [<img src="https://www.actinius.com/images/icarus-nrf9160-feather-v2-front-sm-p-500.png" width="300"/>](https://www.actinius.com/images/icarus-nrf9160-feather-v2-front-sm-p-500.png) |
-| [Conexio Stratus](https://www.crowdsupply.com/conexio/stratus)<br>With built-in solar energy harvesting.<br>Includes a SIM card with 500MB in 10 years. | [<img src="https://www.crowdsupply.com/img/9c62/side.png" width="300"/>](https://www.crowdsupply.com/img/9c62/side.png) |
-| [Fanstel LN60E](https://www.fanstel.com/buy/bt840f-v1-nrf52840-bluetooth-5-thread-zigbee-module-by45z-8ypje)<br>Reduced to the minimum. Unfortunately<br>the current version uses a LDO with 50µA<br>quiescent current.| [<img src="https://images.squarespace-cdn.com/content/v1/561459a2e4b0b39f5cefa12e/1600900228634-0AGSVRBYZKC1MD9Q5YDA/LN60E.png" width="300"/>](https://images.squarespace-cdn.com/content/v1/561459a2e4b0b39f5cefa12e/1600900228634-0AGSVRBYZKC1MD9Q5YDA/LN60E.png) |
-| [MIKROE LTE IoT 4 Click](https://www.mikroe.com/lte-iot-4-click)<br>Even less, but with power LED.<br>If you want to use it, remove the LED or cut the<br>connects to the ground-plane next the LED. | [<img src="https://cdn1-shop.mikroe.com/img/product/lte-iot-4-click/lte-iot-4-click-large_default-1.jpg" width="300"/>](https://cdn1-shop.mikroe.com/img/product/lte-iot-4-click/lte-iot-4-click-large_default-1.jpg) |
+| [Conexio Stratus](https://www.crowdsupply.com/conexio/stratus)<br>With built-in solar energy harvesting. Includes a SIM card with 500MB in 10 years. | [<img src="https://www.crowdsupply.com/img/9c62/side.png" width="300"/>](https://www.crowdsupply.com/img/9c62/side.png) |
+| [Fanstel LN60E](https://www.fanstel.com/buy/bt840f-v1-nrf52840-bluetooth-5-thread-zigbee-module-by45z-8ypje)<br>Reduced to the minimum. Unfortunately the current version uses a LDO with 50µA quiescent current.| [<img src="https://images.squarespace-cdn.com/content/v1/561459a2e4b0b39f5cefa12e/1600900228634-0AGSVRBYZKC1MD9Q5YDA/LN60E.png" width="300"/>](https://images.squarespace-cdn.com/content/v1/561459a2e4b0b39f5cefa12e/1600900228634-0AGSVRBYZKC1MD9Q5YDA/LN60E.png) |
+| [MIKROE LTE IoT 4 Click](https://www.mikroe.com/lte-iot-4-click)<br>Even less, but with power LED. If you want to use it, remove the LED or cut the connects to the ground-plane next the LED. The device has no analogue gpio available at the header. | [<img src="https://cdn1-shop.mikroe.com/img/product/lte-iot-4-click/lte-iot-4-click-large_default-1.jpg" width="300"/>](https://cdn1-shop.mikroe.com/img/product/lte-iot-4-click/lte-iot-4-click-large_default-1.jpg) |
 
 
 ## Required HW-Tools for Thingy:91
