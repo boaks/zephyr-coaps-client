@@ -25,6 +25,7 @@ typedef enum {
    CHARGING_I,
    CHARGING_V,
    CHARGING_COMPLETED,
+   FROM_EXTERNAL,
 } power_manager_status_t;
 
 int power_manager_init(void);

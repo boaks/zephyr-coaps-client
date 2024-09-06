@@ -516,82 +516,6 @@ int adp536x_power_manager_init(void)
 
 #endif
 
-#ifdef CONFIG_NPM1300_CHARGER
-
-
-#if (DT_NODE_HAS_STATUS(DT_INST(0, nordic_npm1300_charger), okay))
-
-#include <zephyr/drivers/sensor/npm1300_charger.h>
-
-/* nPM1300_PS_v1.1.pdf, 6.2.14.31 BCHGCHARGESTATUS, page 45 */
-#define NPM1300_CHG_STATUS_BATTERY_DETECTED BIT(0)
-#define NPM1300_CHG_STATUS_COMPLETED BIT(1)
-#define NPM1300_CHG_STATUS_TRICKLE BIT(2)
-#define NPM1300_CHG_STATUS_CURRENT BIT(3)
-#define NPM1300_CHG_STATUS_VOLTAGE BIT(4)
-#define NPM1300_CHG_STATUS_RECHARGE BIT(5)
-#define NPM1300_CHG_STATUS_HIGH_TEMPERATURE BIT(6)
-#define NPM1300_CHG_STATUS_SUPLEMENT BIT(7)
-
-static const struct device *npm1300_charger_dev = DEVICE_DT_GET(DT_INST(0, nordic_npm1300_charger));
-
-static int npm1300_power_manager_read_status(power_manager_status_t *status, char *buf, size_t len)
-{
-   struct sensor_value value;
-   int ret = 0;
-   int index = 0;
-
-   if (!device_is_ready(npm1300_charger_dev)) {
-      LOG_WRN("NPM1300 charger not ready!");
-      return -ENOTSUP;
-   }
-
-   ret = sensor_sample_fetch_chan(npm1300_charger_dev, SENSOR_CHAN_NPM1300_CHARGER_STATUS);
-   if (ret < 0) {
-      LOG_WRN("NPM1300 fetch channel failed, %d (%s)!", ret, strerror(-ret));
-      return ret;
-   }
-
-   ret = sensor_channel_get(npm1300_charger_dev, SENSOR_CHAN_NPM1300_CHARGER_STATUS, &value);
-   if (ret < 0) {
-      LOG_WRN("NPM1300 get channel failed, %d (%s)!", ret, strerror(-ret));
-      return ret;
-   }
-   LOG_DBG("NPM1300 status 0x%02x", value.val1);
-   if (buf && len) {
-      index += snprintf(&buf[index], len - index, " 0x%02x", value.val1);
-      ret = index;
-   }
-   if (value.val1 & NPM1300_CHG_STATUS_BATTERY_DETECTED) {
-      LOG_DBG("NPM1300 status battery");
-      if (value.val1 & NPM1300_CHG_STATUS_COMPLETED) {
-         LOG_DBG("NPM1300 status battery full");
-         *status = CHARGING_COMPLETED;
-      } else if (value.val1 & NPM1300_CHG_STATUS_TRICKLE) {
-         LOG_DBG("NPM1300 status battery trickle");
-         *status = CHARGING_TRICKLE;
-      } else if (value.val1 & NPM1300_CHG_STATUS_CURRENT) {
-         LOG_DBG("NPM1300 status battery current");
-         *status = CHARGING_I;
-      } else if (value.val1 & NPM1300_CHG_STATUS_VOLTAGE) {
-         LOG_DBG("NPM1300 status battery voltage");
-         *status = CHARGING_V;
-      } else {
-         LOG_DBG("NPM1300 status from battery");
-         *status = FROM_BATTERY;
-      }
-   } else {
-      LOG_DBG("NPM1300 status not charging");
-      *status = FROM_BATTERY;
-   }
-
-   return ret;
-}
-#else /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_charger), okay) */
-#undef CONFIG_NPM1300_CHARGER
-#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_charger), okay) */
-#endif /* CONFIG_NPM1300_CHARGER */
-
 #ifdef CONFIG_REGULATOR_NPM1300
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay))
 
@@ -643,12 +567,10 @@ static int npm1300_buck2_suspend(bool suspend)
 
 static const struct device *npm1300_mfd_dev = DEVICE_DT_GET(DT_INST(0, nordic_npm1300));
 
-#ifdef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
-
 #define NPM1300_SYSREG_BASE 0x2
 #define NPM1300_USBCDETECTSTATUS_OFFSET 0x5
 
-static int npm1300_mfd_detect_usb(void)
+static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
 {
    int ret = 0;
    uint8_t status = 0;
@@ -664,13 +586,16 @@ static int npm1300_mfd_detect_usb(void)
       return ret;
    } else {
       LOG_INF("NPM1300 USB 0x%x", status);
-      npm1300_buck2_suspend(!status);
+      if (usb) {
+         *usb = status;
+      }
+      if (switch_regulator) {
+         npm1300_buck2_suspend(!status);
+      }
    }
 
    return ret;
 }
-
-#endif /* CONFIG_MFD_NPM1300_BUCK2_WITH_USB */
 
 static int npm1300_mfd_init(void)
 {
@@ -682,7 +607,7 @@ static int npm1300_mfd_init(void)
    }
 
 #ifdef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
-   ret = npm1300_mfd_detect_usb();
+   ret = npm1300_mfd_detect_usb(NULL, true);
 #endif /* CONFIG_MFD_NPM1300_BUCK2_WITH_USB */
 
    return ret;
@@ -692,6 +617,92 @@ static int npm1300_mfd_init(void)
 #undef CONFIG_MFD_NPM1300
 #endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay) */
 #endif /* CONFIG_MFD_NPM1300 */
+
+#ifdef CONFIG_NPM1300_CHARGER
+
+#if (DT_NODE_HAS_STATUS(DT_INST(0, nordic_npm1300_charger), okay))
+
+#include <zephyr/drivers/sensor/npm1300_charger.h>
+
+/* nPM1300_PS_v1.1.pdf, 6.2.14.31 BCHGCHARGESTATUS, page 45 */
+#define NPM1300_CHG_STATUS_BATTERY_DETECTED BIT(0)
+#define NPM1300_CHG_STATUS_COMPLETED BIT(1)
+#define NPM1300_CHG_STATUS_TRICKLE BIT(2)
+#define NPM1300_CHG_STATUS_CURRENT BIT(3)
+#define NPM1300_CHG_STATUS_VOLTAGE BIT(4)
+#define NPM1300_CHG_STATUS_RECHARGE BIT(5)
+#define NPM1300_CHG_STATUS_HIGH_TEMPERATURE BIT(6)
+#define NPM1300_CHG_STATUS_SUPLEMENT BIT(7)
+
+static const struct device *npm1300_charger_dev = DEVICE_DT_GET(DT_INST(0, nordic_npm1300_charger));
+
+static int npm1300_power_manager_read_status(power_manager_status_t *status, char *buf, size_t len)
+{
+   struct sensor_value value;
+   int ret = 0;
+   int index = 0;
+
+   if (!device_is_ready(npm1300_charger_dev)) {
+      LOG_WRN("NPM1300 charger not ready!");
+      return -ENOTSUP;
+   }
+
+   ret = sensor_sample_fetch_chan(npm1300_charger_dev, SENSOR_CHAN_NPM1300_CHARGER_STATUS);
+   if (ret < 0) {
+      LOG_WRN("NPM1300 fetch channel failed, %d (%s)!", ret, strerror(-ret));
+      return ret;
+   }
+
+   ret = sensor_channel_get(npm1300_charger_dev, SENSOR_CHAN_NPM1300_CHARGER_STATUS, &value);
+   if (ret < 0) {
+      LOG_WRN("NPM1300 get channel failed, %d (%s)!", ret, strerror(-ret));
+      return ret;
+   }
+   LOG_DBG("NPM1300 status 0x%02x", value.val1);
+   if (buf && len && value.val1) {
+      index += snprintf(&buf[index], len - index, " 0x%02x", value.val1);
+      ret = index;
+   } else {
+      ret = 0;
+   }
+   if (value.val1 & NPM1300_CHG_STATUS_BATTERY_DETECTED) {
+      LOG_DBG("NPM1300 status battery");
+      if (value.val1 & NPM1300_CHG_STATUS_COMPLETED) {
+         LOG_DBG("NPM1300 status battery full");
+         *status = CHARGING_COMPLETED;
+      } else if (value.val1 & NPM1300_CHG_STATUS_TRICKLE) {
+         LOG_DBG("NPM1300 status battery trickle");
+         *status = CHARGING_TRICKLE;
+      } else if (value.val1 & NPM1300_CHG_STATUS_CURRENT) {
+         LOG_DBG("NPM1300 status battery current");
+         *status = CHARGING_I;
+      } else if (value.val1 & NPM1300_CHG_STATUS_VOLTAGE) {
+         LOG_DBG("NPM1300 status battery voltage");
+         *status = CHARGING_V;
+      } else {
+         LOG_DBG("NPM1300 status from battery");
+         *status = FROM_BATTERY;
+      }
+   } else {
+      power_manager_status_t temp = FROM_BATTERY;
+#ifdef CONFIG_MFD_NPM1300
+      uint8_t usb_status = 0;
+      if (!npm1300_mfd_detect_usb(&usb_status, false)) {
+         if (status) {
+            temp = FROM_EXTERNAL;
+         }
+      }
+#endif /* CONFIG_MFD_NPM1300 */
+      *status = temp;
+      LOG_DBG("NPM1300 status not charging, USB %sconnected", temp == FROM_EXTERNAL ? "" : "not ");
+   }
+
+   return ret;
+}
+#else /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_charger), okay) */
+#undef CONFIG_NPM1300_CHARGER
+#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_charger), okay) */
+#endif /* CONFIG_NPM1300_CHARGER */
 
 #ifdef CONFIG_INA219
 
@@ -1068,6 +1079,9 @@ int power_manager_status_desc(char *buf, size_t len)
             break;
          case CHARGING_COMPLETED:
             msg = "full";
+            break;
+         case FROM_EXTERNAL:
+            msg = "external";
             break;
          default:
             break;
