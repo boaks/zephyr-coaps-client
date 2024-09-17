@@ -688,8 +688,12 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, cha
 #ifdef CONFIG_MFD_NPM1300
       uint8_t usb_status = 0;
       if (!npm1300_mfd_detect_usb(&usb_status, false)) {
-         if (status) {
+         if (usb_status) {
             temp = FROM_EXTERNAL;
+            if (buf && len) {
+               index += snprintf(&buf[index], len - index, " usb 0x%02x", usb_status);
+               ret = index;
+            }
          }
       }
 #endif /* CONFIG_MFD_NPM1300 */
