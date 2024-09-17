@@ -107,7 +107,7 @@ typedef struct dtls_app_data_t {
    uint8_t dtls_next_flight : 1;
    uint8_t dtls_cid : 1;
    uint8_t no_response : 1;
-   uint8_t no_rai : 1;
+   uint8_t rai : 1;
    uint8_t dtls_flight;
 #ifdef CONFIG_COAP_UPDATE
    uint8_t download_progress;
@@ -696,11 +696,9 @@ static int dtls_app_download_result_handler(struct dtls_app_data_t *app, bool su
    if (success) {
       if (!appl_update_coap_pending()) {
          app->download_progress = DOWNLOAD_PROGRESS_LAST_STATUS_MESSAGE;
-         app->no_rai = 0;
          return 2;
       }
    } else {
-      app->no_rai = 0;
       app->download_progress = 0;
       appl_update_coap_cancel();
       return 2;
@@ -927,7 +925,7 @@ dtls_read_from_peer(dtls_context_t *ctx, session_t *session, uint8 *data, size_t
 static void prepare_socket(dtls_app_data_t *app)
 {
    atomic_clear_bit(&general_states, LTE_CONNECTED_SEND);
-   if (!app->no_rai && !lte_power_on_off) {
+   if (app->rai && !lte_power_on_off) {
       modem_set_rai_mode(app->no_response ? RAI_MODE_LAST : RAI_MODE_ONE_RESPONSE, app->fd);
    } else {
       modem_set_rai_mode(RAI_MODE_OFF, app->fd);
@@ -1056,7 +1054,6 @@ dtls_handle_event(dtls_context_t *ctx, session_t *session,
          app->dtls_pending = 0;
          app->dtls_next_flight = 0;
          app->dtls_flight = 0;
-         app->no_rai = 0;
          peer = dtls_get_peer(ctx, session);
          if (peer) {
             const dtls_security_parameters_t *security_params = peer->security_params[0];
@@ -1135,6 +1132,7 @@ sendto_peer(dtls_app_data_t *app, struct dtls_context_t *ctx)
    const uint8_t *coap_message_buf = NULL;
 
    if (app->dtls_pending) {
+      app->rai = 0;
       if (app->dtls_flight) {
          app->dtls_next_flight = 0;
          dtls_check_retransmit(ctx, NULL);
@@ -1149,7 +1147,6 @@ sendto_peer(dtls_app_data_t *app, struct dtls_context_t *ctx)
          app->retransmission = 0;
          app->dtls_next_flight = 1;
          app->dtls_flight = 1;
-         app->no_rai = 1;
          dtls_coap_set_request_state("DTLS 1.2 start handshake", app, SEND);
          result = dtls_connect(ctx, &app->destination);
       }
@@ -1737,6 +1734,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                 !dtls_trigger_pending()) {
                dtls_info("wait for download ...");
                loops = 0;
+               app->download_progress = 1;
                while (appl_update_coap_pending() &&
                       !appl_update_coap_pending_next() &&
                       !dtls_trigger_pending()) {
@@ -1752,12 +1750,11 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
             pending = appl_update_coap_pending();
             if (pending) {
                bool download = false;
-               app->no_rai = 1;
                if (!dtls_trigger_pending()) {
-                  download = app->download_progress;
+                  download = app->download_progress > 1;
                   if (++app->download_progress >= DOWNLOAD_PROGRESS_STATUS_MESSAGE) {
                      // skip for status message
-                     app->download_progress = 0;
+                     app->download_progress = 1;
                   }
                   if (download) {
                      dtls_info("download request");
@@ -1765,7 +1762,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                      dtls_trigger("download status report");
                   }
                } else {
-                  dtls_info("download manual request");
+                  dtls_info("manual download status report");
                }
                if (download) {
                   loops = 0;
@@ -1774,6 +1771,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   appl_update_coap_next();
                   app->coap_handler = coap_update_client_handler;
                   app->result_handler = dtls_app_download_result_handler;
+                  app->rai = 0;
                   dtls_info("next download request");
                   sendto_peer(app, dtls_context);
                   continue;
@@ -1831,6 +1829,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   res = coap_prov_client_prepare_post(appl_buffer, appl_buffer_len);
                   app->coap_handler = coap_prov_client_handler;
                   app->result_handler = dtls_app_prov_result_handler;
+                  app->rai = 0;
                } else
 #endif
                {
@@ -1839,9 +1838,12 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   app->coap_handler = coap_appl_client_handler;
                   app->result_handler = dtls_app_coap_result_handler;
 #ifdef CONFIG_COAP_UPDATE
+                  app->rai = app->download_progress ? 0 : 1;
                   if (app->download_progress == DOWNLOAD_PROGRESS_LAST_STATUS_MESSAGE) {
                      app->download_progress = DOWNLOAD_PROGRESS_REBOOT;
                   }
+#else
+                  app->rai = 1;
 #endif
                }
                if (res < 0) {
@@ -1920,6 +1922,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   dtls_coap_set_request_state("resend", app, SEND);
 
                   dtls_info("%s resend, timeout %d s", type, app->timeout);
+                  app->rai = 0;
                   sendto_peer(app, dtls_context);
                } else {
                   // maximum retransmissions reached
@@ -1969,7 +1972,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                app->retransmission = 0;
                sendto_peer(app, dtls_context);
             }
-            if (!lte_power_on_off && !app->no_rai &&
+            if (!lte_power_on_off && app->rai &&
                 (app->request_state == NONE || app->request_state == WAIT_SUSPEND)) {
                modem_set_rai_mode(RAI_MODE_NOW, app->fd);
             }
