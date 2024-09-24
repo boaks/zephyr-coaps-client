@@ -422,8 +422,9 @@ static int modem_cmd_apn(const char *config)
 static void modem_cmd_apn_help(void)
 {
    LOG_INF("> help apn:");
-   LOG_INF("  apn <apn>  : set and active APN.");
-   LOG_INF("  apn        : show current APN.");
+   LOG_INF("  apn <apn>  : set and active modem APN.");
+   LOG_INF("  apn        : show current modem APN.");
+   LOG_INF(" (apnclr     : clear modem APN, use default of SIM card.)");
 }
 
 static int modem_cmd_apnclr(const char *config)
@@ -1118,7 +1119,7 @@ SH_CMD(state, "", "read modem state.", modem_cmd_state, NULL, 0);
 SH_CMD(cfg, "", "configure modem.", modem_cmd_config, modem_cmd_config_help, 0);
 SH_CMD(con, "", "connect modem.", modem_cmd_connect, modem_cmd_connect_help, 0);
 SH_CMD(apn, "", "modem APN.", modem_cmd_apn, modem_cmd_apn_help, 0);
-SH_CMD(apnclr, "", "clear modem APN.", modem_cmd_apnclr, NULL, 0);
+SH_CMD(apnclr, "", "clear modem APN, use default of SIM card.", modem_cmd_apnclr, NULL, 0);
 
 SH_CMD(scan, "AT%NCELLMEAS", "network scan.", modem_cmd_scan, modem_cmd_scan_help, 0);
 SH_CMD(rscan, "", "remote network scan.", modem_cmd_rscan, modem_cmd_rscan_help, 0);
