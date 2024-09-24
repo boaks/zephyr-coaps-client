@@ -164,7 +164,11 @@ static volatile bool moved = false;
 
 #define MAX_APPL_BUF 1600
 static uint8_t appl_buffer[MAX_APPL_BUF];
-static volatile size_t appl_buffer_len = MAX_APPL_BUF;
+
+#define MAX_SEND_BUF 1024
+static uint8_t send_buffer[MAX_SEND_BUF];
+static volatile size_t send_buffer_len = 0;
+static K_MUTEX_DEFINE(send_buffer_mutex);
 
 #define RTT_SLOTS 9
 #define RTT_INTERVAL (2 * MSEC_PER_SEC)
@@ -546,14 +550,16 @@ static void dtls_cmd_trigger(bool led, int mode, const uint8_t *data, size_t len
 {
    bool ready = atomic_test_bit(&general_states, LTE_READY);
    if (mode & 1) {
-      if (dtls_no_pending_request()) {
-         if (data && len) {
-            if (len > sizeof(appl_buffer)) {
-               len = sizeof(appl_buffer);
-            }
-            memmove(appl_buffer, data, len);
-            appl_buffer_len = len;
+      if (data && len) {
+         if (len > sizeof(send_buffer)) {
+            len = sizeof(send_buffer);
          }
+         k_mutex_lock(&send_buffer_mutex, K_FOREVER);
+         memmove(send_buffer, data, len);
+         send_buffer_len = len;
+         k_mutex_unlock(&send_buffer_mutex);
+      }
+      if (dtls_no_pending_request()) {
          ui_enable(led);
          dtls_trigger("cmd");
          if (!ready && !(mode & 2)) {
@@ -643,9 +649,8 @@ static void dtls_coap_next(dtls_app_data_t *app, int interval)
    }
 
    dtls_log_now();
-   dtls_coap_set_request_state("next request", app, WAIT_SUSPEND);
    memset(appl_buffer, 0, sizeof(appl_buffer));
-   appl_buffer_len = MAX_APPL_BUF;
+   dtls_coap_set_request_state("next request", app, WAIT_SUSPEND);
    k_sem_reset(&dtls_trigger_msg);
 
    if (interval > 0 && set_next_send_interval(interval)) {
@@ -1826,7 +1831,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                app->retransmission = 0;
 #ifdef CONFIG_DTLS_ECDSA_AUTO_PROVISIONING
                if (appl_settings_is_provisioning()) {
-                  res = coap_prov_client_prepare_post(appl_buffer, appl_buffer_len);
+                  res = coap_prov_client_prepare_post(appl_buffer, sizeof(appl_buffer));
                   app->coap_handler = coap_prov_client_handler;
                   app->result_handler = dtls_app_prov_result_handler;
                   app->rai = 0;
@@ -1834,7 +1839,15 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
 #endif
                {
                   app->no_response = (coap_send_flags_next & COAP_SEND_FLAG_NO_RESPONSE) ? 1 : 0;
-                  res = coap_appl_client_prepare_post(appl_buffer, appl_buffer_len, coap_send_flags_next);
+                  k_mutex_lock(&send_buffer_mutex, K_FOREVER);
+                  if (send_buffer_len) {
+                     res = coap_appl_client_prepare_post(send_buffer, send_buffer_len, coap_send_flags_next);
+                     send_buffer_len = 0;
+                     k_mutex_unlock(&send_buffer_mutex);
+                  } else {
+                     k_mutex_unlock(&send_buffer_mutex);
+                     res = coap_appl_client_prepare_post(appl_buffer, sizeof(appl_buffer), coap_send_flags_next);
+                  }
                   app->coap_handler = coap_appl_client_handler;
                   app->result_handler = dtls_app_coap_result_handler;
 #ifdef CONFIG_COAP_UPDATE
