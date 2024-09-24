@@ -541,6 +541,11 @@ static void modem_sim_read(bool init)
       bool changed = false;
       memset(mcc, 0, sizeof(mcc));
       modem_get_mcc(mcc);
+      if (res == 20) {
+         // remove checksum
+         res = 19;
+         buf[res] = 0;
+      }
       k_mutex_lock(&sim_mutex, K_FOREVER);
       if (strcmp(sim_info.iccid, buf)) {
          // SIM card changed, clear infos
