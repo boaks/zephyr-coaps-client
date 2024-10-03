@@ -238,6 +238,25 @@ static const struct battery_profile profile_nimh_2000 = {
     .curve = &curve_nimh_2000};
 #endif
 
+#ifdef CONFIG_BATTERY_TYPE_NIMH_4_2000_MAH
+static const struct transform_curve curve_nimh_4_2000 = {
+    /* nRF9160 feather */
+    .points = 8,
+    .curve = {
+        {5800, 10000}, /* requires external charger */
+        {5365, 9265},
+        {5181, 7746},
+        {5045, 3380},
+        {4928, 1830},
+        {4720, 845},
+        {4573, 422},
+        {4400, 0},
+    }};
+static const struct battery_profile profile_nimh_4_2000 = {
+    .name = "NiMH/4",
+    .curve = &curve_nimh_4_2000};
+#endif
+
 static const struct transform_curve curve_no_bat = {
     /* no battery */
     .points = 1,
@@ -262,6 +281,11 @@ static const struct battery_profile *battery_profiles[] = {
 #endif
 #ifdef CONFIG_BATTERY_TYPE_NIMH_2000_MAH
     &profile_nimh_2000,
+#else
+    NULL,
+#endif
+#ifdef CONFIG_BATTERY_TYPE_NIMH_4_2000_MAH
+    &profile_nimh_4_2000,
 #else
     NULL,
 #endif
@@ -712,18 +736,29 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, cha
 
 #include <zephyr/drivers/sensor.h>
 
-#define PM_NODE DT_NODELABEL(ina219)
+#define PM_NODE_0 DT_NODELABEL(ina219_0)
+#define PM_NODE_1 DT_NODELABEL(ina219_1)
 
-const struct device *const ina219 = DEVICE_DT_GET_OR_NULL(PM_NODE);
+static const struct device *const ina219_0 = DEVICE_DT_GET_OR_NULL(PM_NODE_0);
+static const struct device *const ina219_1 = DEVICE_DT_GET_OR_NULL(PM_NODE_1);
 
 int power_manager_read_ina219(uint16_t *voltage, uint16_t *current)
 {
    int rc;
    struct sensor_value value;
+   const struct device *ina219 = NULL;
 
-   if (!device_is_ready(ina219)) {
-      if (ina219) {
-         LOG_WRN("Device %s is not ready.", ina219->name);
+   if (device_is_ready(ina219_0)) {
+      ina219 = ina219_0;
+   } else if (device_is_ready(ina219_1)) {
+      ina219 = ina219_1;
+   }
+
+   if (!ina219) {
+      if (ina219_0) {
+         LOG_WRN("Device %s is not ready.", ina219_0->name);
+      } else if (ina219_1) {
+         LOG_WRN("Device %s is not ready.", ina219_1->name);
       } else {
          LOG_WRN("Device INA219 is not available.");
       }
@@ -770,8 +805,10 @@ int power_manager_init(void)
    }
    power_manager_suspend_realtime_clock();
 #ifdef CONFIG_INA219
-   if (device_is_ready(ina219)) {
-      power_manager_add_device(ina219);
+   if (device_is_ready(ina219_0)) {
+      power_manager_add_device(ina219_0);
+   } else if (device_is_ready(ina219_1)) {
+      power_manager_add_device(ina219_1);
    }
 #endif
 
@@ -938,6 +975,9 @@ int power_manager_voltage(uint16_t *voltage)
 #elif defined(CONFIG_BATTERY_VOLTAGE_SOURCE_ADC)
          rc = battery_sample(&internal_voltage);
          LOG_DBG("ADC %u mV", internal_voltage);
+#elif defined(CONFIG_INA219_MODE_POWER_MANAGER)
+         rc = power_manager_read_ina219(&internal_voltage, NULL);
+         LOG_DBG("INA219 %u mV", internal_voltage);
 #else
          char buf[32];
 
@@ -977,7 +1017,7 @@ int power_manager_voltage_ext(uint16_t *voltage)
    int rc = -ENODEV;
 #ifdef CONFIG_BATTERY_ADC
    rc = battery2_sample(voltage);
-#elif defined(CONFIG_INA219)
+#elif defined(CONFIG_INA219) && !defined(CONFIG_INA219_MODE_POWER_MANAGER)
    rc = power_manager_read_ina219(voltage, NULL);
 #endif
    return rc;

@@ -543,18 +543,25 @@ config BATTERY_TYPE_NIMH_2000_MAH
 	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NS
 	default y if BOARD_CONEXIO_STRATUS_PRO_NS
 
+config BATTERY_TYPE_NIMH_4_2000_MAH
+	bool "NiMH/4 2000 mAh"
+    help
+	   NiMH with 4 cells
+
 if (INIT_SETTINGS)
 config BATTERY_TYPE_DEFAULT
 	int "Default battery profile."
 	default 1 if BATTERY_TYPE_LIPO_1350_MAH
 	default 2 if BATTERY_TYPE_LIPO_2000_MAH
 	default 3 if BATTERY_TYPE_NIMH_2000_MAH
+	default 4 if BATTERY_TYPE_NIMH_4_2000_MAH
 	default 0 
 	help
 	  0 := no battery
 	  1 := LiPO 1350 mAh (Thingy:91)
 	  2 := LiPO 2000 mAh (nRF9160 feather)
 	  3 := NiMH 2000 mAh (nRF9160 feather)
+	  4 := NiMH/4 2000 mAh (nRF9160 feather)
 endif
 
 config NAU7802_SCALE
@@ -617,6 +624,15 @@ config MFD_NPM1300_BUCK2_LED
        Use LED to indicate buck2 status.
 
 endif # MFD_NPM1300
+
+if INA219
+
+config INA219_MODE_POWER_MANAGER
+	bool "INA219 power manager"
+
+endif # INA219
+
+
 
 choice BATTERY_VOLTAGE_SOURCE
 	prompt "Battery voltage source"
