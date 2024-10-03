@@ -546,19 +546,10 @@ static void dtls_manual_trigger(int duration)
    }
 }
 
-static void dtls_cmd_trigger(bool led, int mode, const uint8_t *data, size_t len)
+static void dtls_cmd_trigger(bool led, int mode)
 {
    bool ready = atomic_test_bit(&general_states, LTE_READY);
    if (mode & 1) {
-      if (data && len) {
-         if (len > sizeof(send_buffer)) {
-            len = sizeof(send_buffer);
-         }
-         k_mutex_lock(&send_buffer_mutex, K_FOREVER);
-         memmove(send_buffer, data, len);
-         send_buffer_len = len;
-         k_mutex_unlock(&send_buffer_mutex);
-      }
       if (dtls_no_pending_request()) {
          ui_enable(led);
          dtls_trigger("cmd");
@@ -640,6 +631,8 @@ static void dtls_coap_set_request_state(const char *desc, dtls_app_data_t *app, 
 
 static void dtls_coap_next(dtls_app_data_t *app, int interval)
 {
+   bool pending = false;
+
    ui_led_op(LED_APPLICATION, LED_CLEAR);
    if (lte_power_on_off) {
       dtls_debug("> modem switching off ...");
@@ -649,27 +642,37 @@ static void dtls_coap_next(dtls_app_data_t *app, int interval)
    }
 
    dtls_log_now();
-   memset(appl_buffer, 0, sizeof(appl_buffer));
-   dtls_coap_set_request_state("next request", app, WAIT_SUSPEND);
-   k_sem_reset(&dtls_trigger_msg);
-
-   if (interval > 0 && set_next_send_interval(interval)) {
-      // special interval
-      work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(interval));
-      dtls_info("Next request, schedule in %d s.", interval);
-   } else {
-      interval = get_send_interval();
-      if (interval > 0 && work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(interval)) == 1) {
-         // standard interval
-         dtls_debug("Next request, schedule in %d s.", interval);
-      }
-   }
 
 #ifdef CONFIG_COAP_UPDATE
    if (app->download_progress == DOWNLOAD_PROGRESS_REBOOT) {
       appl_update_coap_reboot();
    }
 #endif
+
+   memset(appl_buffer, 0, sizeof(appl_buffer));
+   dtls_coap_set_request_state("next request", app, WAIT_SUSPEND);
+
+   k_mutex_lock(&send_buffer_mutex, K_FOREVER);
+   pending = send_buffer_len > 0;
+   k_mutex_unlock(&send_buffer_mutex);
+
+   if (pending) {
+      // send pending custom request
+      k_sem_give(&dtls_trigger_msg);
+   } else {
+      k_sem_reset(&dtls_trigger_msg);
+      if (interval > 0 && set_next_send_interval(interval)) {
+         // special interval
+         work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(interval));
+         dtls_info("Next request, schedule in %d s.", interval);
+      } else {
+         interval = get_send_interval();
+         if (interval > 0 && work_schedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(interval)) == 1) {
+            // standard interval
+            dtls_debug("Next request, schedule in %d s.", interval);
+         }
+      }
+   }
 }
 
 static int dtls_app_coap_result_handler(struct dtls_app_data_t *app, bool success)
@@ -2089,11 +2092,37 @@ static int init_destination(dtls_app_data_t *app)
 
 static int sh_cmd_send(const char *parameter)
 {
+   size_t len = strlen(parameter);
    LOG_INF(">> send %s", parameter);
+
+   if (!dtls_no_pending_request()) {
+      dtls_info("Busy, request pending ... (state %d)", app_data_context.request_state);
+      return -EBUSY;
+   }
+
+   if (parameter && len) {
+      int res = 0;
+      if (len > sizeof(send_buffer)) {
+         len = sizeof(send_buffer);
+      }
+      k_mutex_lock(&send_buffer_mutex, K_FOREVER);
+      if (send_buffer_len) {
+         res = -EBUSY;
+      } else {
+         memmove(send_buffer, parameter, len);
+         send_buffer_len = len;
+      }
+      k_mutex_unlock(&send_buffer_mutex);
+      if (res) {
+         dtls_info("Busy, custom request pending ...");
+         return res;
+      }
+   }
+
    if (!atomic_test_bit(&general_states, LTE_CONNECTED)) {
       ui_led_op(LED_COLOR_BLUE, LED_SET);
    }
-   dtls_cmd_trigger(true, 3, parameter, strlen(parameter));
+   dtls_cmd_trigger(true, 3);
    if (atomic_test_bit(&general_states, LTE_CONNECTED)) {
       ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
    }
@@ -2111,7 +2140,7 @@ static int sh_cmd_send_result(const char *parameter)
 {
    LOG_INF(">> send result");
    coap_send_flags_next = COAP_SEND_FLAG_NET_SCAN_INFO;
-   dtls_cmd_trigger(false, 3, NULL, 0);
+   dtls_cmd_trigger(false, 3);
    return 0;
 }
 
