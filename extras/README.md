@@ -2,16 +2,16 @@
 
 ## Zephyr - Coaps Demo Client with Eclipse/TinyDtls
 
-# Experimental Board Support
+# New/Upcoming Board Support
  
-## Experimental Board Support - nRF9161-feather
+## Upcoming Board Support - nRF9161-feather
 
 | [Circuit Dojo, nRF9161 feather - Suggestions for next version](https://community.circuitdojo.com/d/480-nrf9160-feather-suggestions-for-next-version/64) | [<img src="../docu/nRF9161-feather.png" width="450"/>](../docu/nRF9161-feather.png) |
 | :- | - |
 
-**Note:** **This is experimental.** The maintained board files will be available from `Circuit Dojo`.
+**Note:** The maintained board files will be available from `Circuit Dojo`.
 
-To build the coaps-client with experimental nRF9161-feather support, first cp the folder `circuitdojo_feather_nrf9161` into the zephyr's boards folder `boards/arm`
+To build the coaps-client with nRF9161-feather support, first cp the folder `circuitdojo_feather_nrf9161` into the zephyr's boards folder `boards/arm`
 
 ```
 cp -r circuitdojo_feather_nrf9161 ../../zephyr/boards/arm/
@@ -50,14 +50,14 @@ The nRF9161-feather has an RP20240 for USB and flashing. The BUCK2 provides powe
 - If you want to check the power consumption over time, please reset the device with unpluged USB.
 - If you want to flash the device, connect USB and reset it.
 
-## Experimental Board Support - Conexio Stratus Pro
+## New Board Support - Conexio Stratus Pro
 
 | [Conexio Stratus Pro](https://conexiotech.com/conexio-stratus-pro/) | [<img src="https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png" width="450"/>](https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png) |
 | :- | - |
 
-**Note:** **This is experimental.** The maintained board files are available from [Conexio Technologies](https://docs.conexiotech.com/master/building-and-programming-an-application/conexio-stratus-board-definition-files#step-2-patch-mcuboot-file-for-stratus-pro-board).
+**Note:** The maintained board files are available from [Conexio Technologies](https://docs.conexiotech.com/master/building-and-programming-an-application/conexio-stratus-board-definition-files#step-2-patch-mcuboot-file-for-stratus-pro-board).
 
-To build the coaps-client with experimental Conexio Stratus Pro support, first cp the folder `conexio_stratus_pro` into the zephyr's boards folder `boards/arm`
+To build the coaps-client with Conexio Stratus Pro support, first cp the folder `conexio_stratus_pro` into the zephyr's boards folder `boards/arm`
 
 ```
 cp -r conexio_stratus_pro ../../zephyr/boards/arm/
