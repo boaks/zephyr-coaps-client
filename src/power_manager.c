@@ -594,8 +594,14 @@ static const struct device *npm1300_mfd_dev = DEVICE_DT_GET(DT_INST(0, nordic_np
 #define NPM1300_SYSREG_BASE 0x2
 #define NPM1300_USBCDETECTSTATUS_OFFSET 0x5
 
+#define NPM1300_CHGR_BASE 0x3
+#define NPM1300_CHGR_OFFSET_DIS_SET 0x06
+
 static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
 {
+#ifndef CONFIG_REGULATOR_NPM1300
+   (void)switch_regulator;
+#endif
    int ret = 0;
    uint8_t status = 0;
 
@@ -613,9 +619,11 @@ static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
       if (usb) {
          *usb = status;
       }
+#ifdef CONFIG_REGULATOR_NPM1300
       if (switch_regulator) {
          npm1300_buck2_suspend(!status);
       }
+#endif
    }
 
    return ret;
@@ -633,6 +641,10 @@ static int npm1300_mfd_init(void)
 #ifdef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
    ret = npm1300_mfd_detect_usb(NULL, true);
 #endif /* CONFIG_MFD_NPM1300_BUCK2_WITH_USB */
+
+#ifdef CONFIG_MFD_NPM1300_DISABLE_NTC
+   ret = mfd_npm1300_reg_write(npm1300_mfd_dev, NPM1300_CHGR_BASE, NPM1300_CHGR_OFFSET_DIS_SET, 2);
+#endif /* CONFIG_MFD_NPM1300_DISABLE_NTC */
 
    return ret;
 }

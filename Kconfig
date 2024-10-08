@@ -623,6 +623,10 @@ config MFD_NPM1300_BUCK2_LED
     help
        Use LED to indicate buck2 status.
 
+config MFD_NPM1300_DISABLE_NTC
+	bool
+	default y if BOARD_CONEXIO_STRATUS_PRO_NS
+
 endif # MFD_NPM1300
 
 if INA219
