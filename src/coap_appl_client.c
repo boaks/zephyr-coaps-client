@@ -822,7 +822,9 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
 
    appl_context.message_len = 0;
 
-   if (len && buf[0] == 0) {
+   if (flags & COAP_SEND_FLAG_SET_PAYLOAD) {
+      index = len;
+   } else {
       if (flags & COAP_SEND_FLAG_MODEM_INFO) {
          err = coap_appl_client_prepare_modem_info(buf, len, flags);
          if (err > 0) {
@@ -897,9 +899,8 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
          }
       }
 
-   } else {
-      index = len;
    }
+
    appl_context.token = coap_client_next_token();
    appl_context.mid = coap_next_id();
 

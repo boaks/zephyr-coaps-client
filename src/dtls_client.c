@@ -1105,6 +1105,7 @@ recvfrom_peer(dtls_app_data_t *app, dtls_context_t *ctx)
    session_t session;
 
    memset(&session, 0, sizeof(session_t));
+   memset(appl_buffer, 0, sizeof(appl_buffer));
    session.size = sizeof(session.addr);
    dtls_info("recvfrom_peer ...");
    result = recvfrom(app->fd, appl_buffer, MAX_APPL_BUF, 0,
@@ -1844,11 +1845,13 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   app->no_response = (coap_send_flags_next & COAP_SEND_FLAG_NO_RESPONSE) ? 1 : 0;
                   k_mutex_lock(&send_buffer_mutex, K_FOREVER);
                   if (send_buffer_len) {
-                     res = coap_appl_client_prepare_post(send_buffer, send_buffer_len, coap_send_flags_next);
+                     res = coap_appl_client_prepare_post(send_buffer, send_buffer_len,
+                                                         coap_send_flags_next | COAP_SEND_FLAG_SET_PAYLOAD);
                      send_buffer_len = 0;
                      k_mutex_unlock(&send_buffer_mutex);
                   } else {
                      k_mutex_unlock(&send_buffer_mutex);
+                     memset(appl_buffer, 0, sizeof(appl_buffer));
                      res = coap_appl_client_prepare_post(appl_buffer, sizeof(appl_buffer), coap_send_flags_next);
                   }
                   app->coap_handler = coap_appl_client_handler;
