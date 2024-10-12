@@ -375,6 +375,16 @@ config PROTOCOL_MODE_DTLS
 
 endchoice # PROTOCOL_MODE
 
+# CONFIG_LTE_PROPRIETARY_PSM_REQ           
+
+config LTE_FEATURE_HPPLMN_SKIP
+	bool "Skip HPPLMN search. mfw 2.0.0 >= only."
+	default y
+
+config LTE_FEATURE_PLMN_SELECT_OPTIMIZATION
+	bool "PLMN select optimization. mfw 2.0.1 >= only."
+	default y
+
 endmenu
 
 config SH_CMD

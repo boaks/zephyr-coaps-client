@@ -1259,7 +1259,11 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       }
 
       if (atomic_test_bit(&modem_states, MODEM_FIRMWARE_2)) {
+#ifdef CONFIG_LTE_FEATURE_HPPLMN_SKIP
          err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%FEACONF=0,1,1");
+#else
+         err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%FEACONF=0,1,0");
+#endif
          if (err > 0) {
             LOG_INF("Set feaconv skip HPPLMN: %s", buf);
          }
@@ -1268,7 +1272,11 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
             LOG_INF("Get feaconv skip HPPLMN: %s", buf);
          }
          if (strcmp(modem_info.firmware, "2.0.1") >= 0) {
+#ifdef CONFIG_LTE_FEATURE_PLMN_SELECT_OPTIMIZATION
             err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%FEACONF=0,3,1");
+#else
+            err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%FEACONF=0,3,0");
+#endif
             if (err > 0) {
                LOG_INF("Set feaconv PLMN opt.sel: %s", buf);
             }
