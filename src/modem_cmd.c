@@ -387,20 +387,21 @@ static void modem_cmd_connect_help(void)
 static int modem_cmd_apn(const char *config)
 {
    int res = 0;
-   int len = strlen(config);
+   size_t len = strlen(config);
+   size_t off = strtrim(config, &len);
 
    if (len) {
-      res = settings_runtime_set("csrv/apn", config, len);
+      res = settings_runtime_set("csrv/apn", config + off, len);
       if (!res) {
-         res = settings_save_one("csrv/apn", config, len);
+         res = settings_save_one("csrv/apn", config + off, len);
       }
       if (res) {
-         LOG_INF("Set APN: '%s' failed!", config);
+         LOG_INF("Set APN: '%s' failed!", config + off);
       } else {
          if (!modem_at_push_off(false)) {
             modem_at_restore();
          }
-         LOG_INF("Set APN: '%s'", config);
+         LOG_INF("Set APN: '%s'", config + off);
       }
    } else {
       char value[MODEM_APN_SIZE];

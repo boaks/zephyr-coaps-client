@@ -249,6 +249,21 @@ int stricmp(const char *value1, const char *value2)
    return res;
 }
 
+int strtrim(const char *value, size_t *tail)
+{
+   unsigned char *uvalue = (unsigned char *)value;
+   while (isspace(*uvalue)) {
+      ++uvalue;
+   }
+   if (tail) {
+      int end = strlen(uvalue);
+      while (end && isspace(uvalue[--end]))
+         ;
+      *tail = end + 1;
+   }
+   return uvalue - (unsigned char *)value;
+}
+
 int strtrunc(char *value, char quote)
 {
    return strtrunc2(value, quote, quote);

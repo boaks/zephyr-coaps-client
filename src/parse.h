@@ -47,6 +47,8 @@ const char *strichr(const char *value1, int value2);
 
 int stricmp(const char *value1, const char *value2);
 
+int strtrim(const char *value, size_t* tail);
+
 int strtrunc(char *value, char quote);
 
 int strtrunc2(char *value, char quote1, char quote2);
