@@ -558,6 +558,12 @@ config BATTERY_TYPE_NIMH_4_2000_MAH
     help
 	   NiMH with 4 cells
 
+config BATTERY_TYPE_SUPER_CAP_LIHY
+	bool "SupCap/LiHy 4V/400F"
+	default y if BOARD_CONEXIO_STRATUS_PRO_NS
+    help
+	   Super CAP, Lithium Hybrid, 4V, 400F
+
 if (INIT_SETTINGS)
 config BATTERY_TYPE_DEFAULT
 	int "Default battery profile."

@@ -257,6 +257,23 @@ static const struct battery_profile profile_nimh_4_2000 = {
     .curve = &curve_nimh_4_2000};
 #endif
 
+
+#ifdef CONFIG_BATTERY_TYPE_SUPER_CAP_LIHY
+/* LIB1620Q4R0407, super capacitor, 4V, 400F */
+static const struct transform_curve curve_supcap_lihy = {
+    /* nRF9160 feather */
+    .points = 2,
+    .curve = {
+        {4000, 10000},
+        {3300, 0},
+    }};
+
+static const struct battery_profile profile_supcap_lihy = {
+    .name = "LiHy",
+    .curve = &curve_supcap_lihy};
+#endif
+
+
 static const struct transform_curve curve_no_bat = {
     /* no battery */
     .points = 1,
@@ -286,6 +303,11 @@ static const struct battery_profile *battery_profiles[] = {
 #endif
 #ifdef CONFIG_BATTERY_TYPE_NIMH_4_2000_MAH
     &profile_nimh_4_2000,
+#else
+    NULL,
+#endif
+#ifdef CONFIG_BATTERY_TYPE_SUPER_CAP_LIHY
+    &profile_supcap_lihy,
 #else
     NULL,
 #endif
