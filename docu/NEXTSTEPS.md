@@ -32,11 +32,11 @@ In many cases, it's also required to adapt the server. While this adaption itsel
 
 Californium's sandbox runs the [cf-plugtest-server](https://github.com/eclipse/californium/tree/main/demo-apps/cf-plugtest-server).
 
-For your own setup a [cf-cloud-demo-server](https://github.com/boaks/californium/tree/add_cloud_demo_server/demo-apps/cf-cloud-demo-server) is in preparation. It comes with configured `DTLS graceful restart` and a simple integrated HTTPs server to read the last posted data of your devices. A install script is available to speed up your first experience (see [cf-cloud-demo-server - installation](https://github.com/boaks/californium/tree/add_cloud_demo_server/demo-apps/cf-cloud-demo-server#systemd-service)). This cloud-demo-server enables to add your own resources, see
+For your own setup a [cf-cloud-demo-server](https://github.com/eclipse-californium/californium/tree/main/demo-apps/cf-cloud-demo-server) is in preparation. It comes with configured `DTLS graceful restart` and a simple integrated HTTPs server to read the last posted data of your devices. A install script is available to speed up your first experience (see [cf-cloud-demo-server - installation](https://github.com/eclipse-californium/californium/tree/main/demo-apps/cf-cloud-demo-server#systemd-service)). This cloud-demo-server enables to add your own resources, see
 
 [server - add a resource](https://github.com/eclipse/californium/tree/main/californium-core#server---add-a-resource)
 
-For some applications the CoAP-S3-Proxy [cf-s3-proxy-server](https://github.com/boaks/californium/tree/add_s3_proxy/demo-apps/cf-s3-proxy-server) simplifies the usage. That is in preparation as well. It comes with configured `DTLS graceful restart` and forwards the data send by the device to a S3 storage. It reads the user and device credentials from S3 or the file-system. Small and medium deployments benefits a lot from that. Finally, a Web-Browser javascript app displays that device data directly from S3 as text or chart. The reduces the need of an Web-Server to a HTTPs login servive, which is provided by the CoAP-S3-Proxy.
+For some applications the CoAP-S3-Proxy [cf-s3-proxy-server](https://github.com/eclipse-californium/californium/tree/main/demo-apps/cf-s3-proxy-server) simplifies the usage. That is in preparation as well. It comes with configured `DTLS graceful restart` and forwards the data send by the device to a S3 storage. It reads the user and device credentials from S3 or the file-system. Small and medium deployments benefits a lot from that. Finally, a Web-Browser javascript app displays that device data directly from S3 as text or chart. The reduces the need of an Web-Server to a HTTPs login servive, which is provided by the CoAP-S3-Proxy.
 
 ![web-app](./web-app.png)
 
@@ -53,6 +53,6 @@ Californium comes with some examples installation instructions for either
 
 To start with, usually the systemd-service may be easier. Using a cloud vm, [cloud-init](https://github.com/eclipse/californium/wiki/Californium-as-old-style-unix-systemd-service#cloud-init---automatic-cloud-vm-installation) may speed up your installation a lot. Just install the unmodified plugtest-server and then [update](https://github.com/eclipse/californium/wiki/Californium-as-old-style-unix-systemd-service#apply-jar-updates) it to your modified version.
 
-The [cf-cloud-demo-server - installation](https://github.com/boaks/californium/tree/add_cloud_demo_server/demo-apps/cf-cloud-demo-server#systemd-service) installs the server also as systemd-service. A similiar installation will follow for the [cf-s3-proxy-server](https://github.com/boaks/californium/tree/add_s3_proxy/demo-apps/cf-s3-proxy-server).
+The [cf-cloud-demo-server - installation](https://github.com/eclipse-californium/californium/tree/main/demo-apps/cf-cloud-demo-server#systemd-service) installs the server also as systemd-service. A similiar installation will follow for the [cf-s3-proxy-server](https://github.com/eclipse-californium/californium/tree/main/demo-apps/cf-s3-proxy-server).
 
 ** !!! Under Construction !!! **
