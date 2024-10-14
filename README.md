@@ -66,7 +66,7 @@ The demo supports two new upcoming devices based on the nRF9161.
 | Device | Image |
 | :- | - |
 | [Circuit Dojo, nRF9161 feather](https://community.circuitdojo.com/d/480-nrf9160-feather-suggestions-for-next-version/64)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with 2-channel USB, onboard OCD, motion sensor, a 16MB flash and a Qwiic connector. | [<img src="./docu/nRF9161-feather.png" width="300"/>](./docu/nRF9161-feather.png) |
-| [Conexio Stratus Pro](https://conexiotech.com/conexio-stratus-pro/)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with built-in solar energy harvesting, motion sensor, 2KB EEPROM, and 2x5 plug for JTAG. Includes a SIM card with 500MB in 10 years. | [<img src="https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png" width="300"/>](https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png) |
+| [Conexio Stratus Pro nRF9161](https://conexiotech.com/conexio-stratus-pro-nrf9161/)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with built-in solar energy harvesting, motion sensor, 2KB EEPROM, and 2x5 plug for JTAG. Includes a SIM card with 500MB in 10 years. | [<img src="https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png" width="300"/>](https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png) |
 
 **Note:** for both supported new boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, so the full support will only come with NCS 2.7.0. 
 

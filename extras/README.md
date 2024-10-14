@@ -52,7 +52,7 @@ The nRF9161-feather has an RP20240 for USB and flashing. The BUCK2 provides powe
 
 ## New Board Support - Conexio Stratus Pro
 
-| [Conexio Stratus Pro](https://conexiotech.com/conexio-stratus-pro/) | [<img src="https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png" width="450"/>](https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png) |
+| [Conexio Stratus Pro nRF9161](https://conexiotech.com/conexio-stratus-pro-nrf9161/) | [<img src="https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png" width="450"/>](https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png) |
 | :- | - |
 
 **Note:** The maintained board files are available from [Conexio Technologies](https://docs.conexiotech.com/master/building-and-programming-an-application/conexio-stratus-board-definition-files#step-2-patch-mcuboot-file-for-stratus-pro-board).
