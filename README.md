@@ -50,12 +50,13 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160) and [nRF916
 | [Circuit Dojo, nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with motion sensor and 4MB flash. The design of the feather allows to easily add custom sensors. | [<img src="https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg" width="300"/>](https://docs.jaredwolff.com/img/nrf9160-feather-v4-nobg.jpg) |
 | [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. Comes with a 8MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png) |
 | [Nordic Semiconductor, nRF9161 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9161-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9161-DK/nRF9161_DK_Perspective-small.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9161-DK/nRF9161_DK_Perspective-small.png) |
+| [Nordic Semiconductor, nRF9151 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9151-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png) |
                                              
-The demo works with [ncs-2.6.1](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.1).
+The demo works with [ncs-2.6.2](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.2).
 
 To benefit from the newer modem features, please consider to use the modem firmware [1.3.6](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.6.zip) for `nRF9160` based device. See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
-For `nRF9161` devices use the modem firmware [2.0.0](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/dev-kits/nrf9161-dk/application-firmware/nrf9161dk_mfw-2-0-0_sdk-2-5-0.zip) for that. In my experience, the [2.0.1](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/dev-kits/nrf9161-dk/application-firmware/nrf9161dk_mfw-2.0.1_sdk-2.6.1.zip) wasn't able to connect some Rel. 14 networks, but you may also tryout that one.
+For `nRF9161` and `nRF9151` devices use the modem firmware [2.0.0](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/dev-kits/nrf9161-dk/application-firmware/nrf9161dk_mfw-2-0-0_sdk-2-5-0.zip) for that. In my experience, the [2.0.1](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/dev-kits/nrf9161-dk/application-firmware/nrf9161dk_mfw-2.0.1_sdk-2.6.1.zip) wasn't able to connect some Rel. 14 networks, but you may also tryout that one.
 
 `NCS 2.7.0` is not supported for now.
 
@@ -120,7 +121,7 @@ In order to use this demo with a `nRF9160-DK`, you need:
 - the `nRF9160-DK` is usually shipped with a SIM card. Check, if that covers your [area/country](https://www.nordicsemi.com/-/media/Software-and-other-downloads/3rd-party/iBasis-simplified-coverage-map-for-web.pdf). If not, you need a SIM card for your area/country. (Sometimes the `nRF9160-DK` is shipped with an expired SIM card. Then you will need also an other one.)
 - the `nRF9160-DK` comes with a internal debug probe to flash the device. No additional equipment is required.   
 
-**Note:** the `nRF9160-DK` is a great tool to develop apps for the nRF9160 on your desk. For the "wild", a `Thingy:91` or `nRF9160 feather v5` does a better job.
+**Note:** the `nRF9160-DK` is a great tool to develop apps for the `nRF9160` on your desk. For the "wild", a `Thingy:91` or `nRF9160 feather v5` does a better job.
 
 ## Required HW-Tools for nRF9161-DK
 
@@ -130,7 +131,17 @@ In order to use this demo with a `nRF9161-DK`, you need:
 - the `nRF9161-DK` is usually shipped with a Onomondo SIM card and provides a 30 days test free of charge. Check, if that covers your [area/country](https://onomondo.com/product/coverage/). If not, or you need connectivity for longer, you need a SIM card for your area/country or a subscription from Onomondo.
 - the `nRF9161-DK` comes with a internal debug probe to flash the device. No additional equipment is required.   
 
-**Note:** the `nRF9161-DK` is a great tool to develop apps for the nRF9161 on your desk. For the "wild", a `Thingy:91` or `nRF9160 feather v5` does a better job.
+**Note:** the `nRF9161-DK` is a great tool to develop apps for the `nRF9161` on your desk. For the "wild", a `Thingy:91` or `nRF9160 feather v5` does a better job.
+
+## Required HW-Tools for nRF9151-DK
+
+In order to use this demo with a `nRF9151-DK`, you need:
+
+- a `nRF9151-DK` (maybe better two ;-)).
+- the `nRF9151-DK` is usually shipped with a Onomondo SIM card and provides a 30 days test free of charge. Check, if that covers your [area/country](https://onomondo.com/product/coverage/). If not, or you need connectivity for longer, you need a SIM card for your area/country or a subscription from Onomondo.
+- the `nRF9151-DK` comes with a internal debug probe to flash the device. No additional equipment is required.   
+
+**Note:** the `nRF9151-DK` is a great tool to develop apps for the `nRF9151` on your desk. For the "wild", a `Thingy:91` or `nRF9160 feather v5` does a better job.
 
 ## Run It - Fast Track
 
