@@ -291,7 +291,7 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
          } else {
             uint8_t hours = uptime % 24;
             uptime = uptime / 24;
-            index = snprintf(buf, len, "%u-%02u:%02u:%02u [d-hh:mm:ss]", (uint8_t)uptime, hours, mins, secs);
+            index = snprintf(buf, len, "%u-%02u:%02u:%02u [d-hh:mm:ss]", (uint32_t)uptime, hours, mins, secs);
          }
       }
    }
