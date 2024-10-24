@@ -48,6 +48,8 @@
         /* lower term voltage for super-cap */
 	term-microvolt = <4000000>;
 	term-warm-microvolt = <4000000>;
+	trickle-microvolt = <2500000>;
+
 };
 
 

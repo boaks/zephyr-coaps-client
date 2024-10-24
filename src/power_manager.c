@@ -262,10 +262,12 @@ static const struct battery_profile profile_nimh_4_2000 = {
 /* LIB1620Q4R0407, super capacitor, 4V, 400F */
 static const struct transform_curve curve_supcap_lihy = {
     /* nRF9160 feather */
-    .points = 2,
+    .points = 4,
     .curve = {
-        {4000, 10000},
-        {3300, 0},
+        {3950, 10000},
+        {3550, 1682},
+        {3472, 412},
+        {3415, 0},
     }};
 
 static const struct battery_profile profile_supcap_lihy = {
