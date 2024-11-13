@@ -256,10 +256,17 @@ int strtrim(const char *value, size_t *tail)
       ++uvalue;
    }
    if (tail) {
-      int end = strlen(uvalue);
-      while (end && isspace(uvalue[--end]))
-         ;
-      *tail = end + 1;
+      size_t end = strlen(uvalue);
+      while (true) {
+         if (!end) {
+            *tail = end;
+            break;
+         }
+         if (!isspace(uvalue[--end])) {
+            *tail = end + 1;
+            break;
+         }
+      }
    }
    return uvalue - (unsigned char *)value;
 }
