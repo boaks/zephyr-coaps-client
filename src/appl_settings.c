@@ -98,6 +98,12 @@ static uint8_t reboot_codes[REBOOT_SIZE * REBOOT_HISTORY];
 static unsigned char unlock_password[DTLS_PSK_MAX_KEY_LEN + 1] = {0};
 #endif /* CONFIG_SH_CMD_UNLOCK */
 
+#if !defined(DTLS_ECC)
+#undef CONFIG_DTLS_ECDSA_PRIVATE_KEY
+#undef CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY
+#undef CONFIG_DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY
+#endif /* !DTLS_ECC */
+
 #if defined(CONFIG_DTLS_PSK_SECRET) || defined(CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY) || defined(CONFIG_DTLS_ECDSA_PRIVATE_KEY) || defined(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING_PRIVATE_KEY)
 
 static int appl_settings_decode_value(const char *desc, const char *value, uint8_t *buf, size_t len)
@@ -409,7 +415,6 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
    LOG_INF("set: '%s'", name);
 
    if (!next) {
-      bool sh_prot = sh_protected();
       uint16_t value = 0;
       char buf[MAX_SETTINGS_VALUE_LENGTH];
 
@@ -427,7 +432,7 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
       }
 
       if (appl_settings_key_match(name, SETTINGS_KEY_PROV, name_len)) {
-#if defined(DTLS_ECC) && defined(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING)
+#if defined(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING)
          res = read_cb(cb_arg, &buf, sizeof(ecdsa_provisioning_enabled));
          k_mutex_lock(&settings_mutex, K_FOREVER);
          if (res == sizeof(ecdsa_provisioning_enabled)) {
@@ -437,7 +442,7 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
          }
          k_mutex_unlock(&settings_mutex);
          LOG_INF("provisioning: %u", ecdsa_provisioning_enabled);
-#endif /* DTLS_ECC && CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
+#endif /* CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
          return 0;
       }
 
@@ -562,6 +567,7 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
       }
 
       if (appl_settings_key_match(name, SETTINGS_KEY_PSK_ID, name_len)) {
+#ifdef DTLS_PSK
          res = read_cb(cb_arg, &buf, sizeof(psk_id) - 1);
          k_mutex_lock(&settings_mutex, K_FOREVER);
          memcpy(psk_id, buf, sizeof(psk_id));
@@ -570,6 +576,7 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
          if (res > 0) {
             LOG_INF("psk_id: '%s'", psk_id);
          }
+#endif /* DTLS_PSK */
          return 0;
       }
 
@@ -582,11 +589,10 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
          k_mutex_unlock(&settings_mutex);
          if (res > 0) {
             LOG_INF("psk_key: %d bytes", res);
-            if (!sh_prot) {
+            if (!sh_protected()) {
                LOG_HEXDUMP_INF(buf, res, name);
             }
          }
-         k_mutex_unlock(&settings_mutex);
 #endif /* DTLS_PSK */
          return 0;
       }
@@ -672,7 +678,7 @@ static int appl_settings_handle_export(int (*cb)(const char *name,
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_EC_TRUST, trusted_pub_key, sizeof(trusted_pub_key));
 #ifdef CONFIG_DTLS_ECDSA_AUTO_PROVISIONING
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_PROV, &ecdsa_provisioning_enabled, sizeof(ecdsa_provisioning_enabled));
-#endif
+#endif /* CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
 #endif /* DTLS_ECC */
    k_mutex_unlock(&settings_mutex);
    return 0;
@@ -717,7 +723,6 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
    memset(val, 0, val_len_max);
 
    if (!next) {
-      bool sh_prot = sh_protected();
 
       if (appl_settings_key_match(name, SETTINGS_KEY_INIT, name_len)) {
          res = sizeof(settings_initialized);
@@ -732,7 +737,7 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
       }
 
       if (appl_settings_key_match(name, SETTINGS_KEY_PROV, name_len)) {
-#if defined(DTLS_ECC) && defined(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING)
+#if defined(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING)
          res = sizeof(ecdsa_provisioning_enabled);
          if (res > val_len_max) {
             return -EINVAL;
@@ -741,7 +746,7 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
          memmove(val, &ecdsa_provisioning_enabled, res);
          LOG_DBG("provisioning: %u", ecdsa_provisioning_enabled);
          k_mutex_unlock(&settings_mutex);
-#endif /* DTLS_ECC && CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
+#endif /* CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
          return res;
       }
 
@@ -853,7 +858,7 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
          res = psk_key_length;
          k_mutex_unlock(&settings_mutex);
          if (res) {
-            if (sh_prot) {
+            if (sh_protected()) {
                LOG_INF("Get: '%s' protected!", name);
                res = 0;
             } else {
@@ -971,6 +976,7 @@ SYS_INIT(appl_settings_initialize, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY
 #define SETTINGS_RESET_TRUST 32
 #define SETTINGS_RESET_PROVISIONING 64
 
+#ifdef DTLS_ECC
 #ifdef CONFIG_DTLS_ECDSA_AUTO_PROVISIONING
 static int appl_settings_init_provisioning(void)
 {
@@ -987,7 +993,8 @@ static int appl_settings_init_provisioning(void)
    memset(ecdsa_provisioning_priv_key, 0, sizeof(ecdsa_provisioning_priv_key));
    return 0;
 }
-#endif
+#endif /* DTLS_ECC */
+#endif /* CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
 
 #ifdef CONFIG_COAP_SERVER_HOSTNAME
 #define CONFIG_COAP_SERVER CONFIG_COAP_SERVER_HOSTNAME
@@ -1023,7 +1030,6 @@ static int appl_settings_expand_imei(char *buf, size_t size, const char *value)
 static int appl_setting_factory_reset(int flags)
 {
    bool save = false;
-   int res = 0;
 
    k_mutex_lock(&settings_mutex, K_FOREVER);
 
@@ -1113,13 +1119,12 @@ static int appl_setting_factory_reset(int flags)
 #endif /* CONFIG_DTLS_PSK_IDENTITY */
       LOG_INF("psk-id: %s", psk_id);
       if (psk_id_length) {
+         int res = 0;
 #ifdef CONFIG_DTLS_PSK_SECRET_GENERATE
          dtls_prng(psk_key, 12);
          res = 12;
 #elif defined(CONFIG_DTLS_PSK_SECRET)
          res = appl_settings_decode_value("psk-secret", CONFIG_DTLS_PSK_SECRET, psk_key, sizeof(psk_key));
-#else
-         res = 0;
 #endif
          if (res > 0) {
             psk_key_length = res;
@@ -1149,19 +1154,33 @@ static int appl_setting_factory_reset(int flags)
          LOG_INF("ecdsa private key: failed to generate, disabled.");
       }
 #elif defined(CONFIG_DTLS_ECDSA_PRIVATE_KEY)
-      res = appl_settings_decode_private_key("ecdsa private key", CONFIG_DTLS_ECDSA_PRIVATE_KEY, ecdsa_priv_key, sizeof(ecdsa_priv_key));
-      if (res > 0) {
-         if (res == DTLS_EC_KEY_SIZE) {
-            dtls_ecdsa_generate_public_key2(ecdsa_priv_key, ecdsa_pub_key, DTLS_EC_KEY_SIZE, TLS_EXT_ELLIPTIC_CURVES_SECP256R1);
-            LOG_HEXDUMP_INF(ecdsa_pub_key, sizeof(ecdsa_pub_key), "device public key:");
-         } else {
-            memset(ecdsa_priv_key, 0, sizeof(ecdsa_priv_key));
-            LOG_ERR("ecdsa private key: %d != %d wrong length.", res, DTLS_EC_KEY_SIZE);
+      {
+         int res = appl_settings_decode_private_key("ecdsa private key", CONFIG_DTLS_ECDSA_PRIVATE_KEY, ecdsa_priv_key, sizeof(ecdsa_priv_key));
+         if (res > 0) {
+            if (res == DTLS_EC_KEY_SIZE) {
+               dtls_ecdsa_generate_public_key2(ecdsa_priv_key, ecdsa_pub_key, DTLS_EC_KEY_SIZE, TLS_EXT_ELLIPTIC_CURVES_SECP256R1);
+               LOG_HEXDUMP_INF(ecdsa_pub_key, sizeof(ecdsa_pub_key), "device public key:");
+            } else {
+               memset(ecdsa_priv_key, 0, sizeof(ecdsa_priv_key));
+               LOG_ERR("ecdsa private key: %d != %d wrong length.", res, DTLS_EC_KEY_SIZE);
+            }
          }
       }
 #endif
       if (is_zero(ecdsa_priv_key, sizeof(ecdsa_priv_key))) {
          LOG_INF("ecdsa no private key: disabled.");
+      }
+      save = true;
+   }
+
+   if (flags & SETTINGS_RESET_TRUST) {
+      memset(trusted_pub_key, 0, sizeof(trusted_pub_key));
+
+#ifdef CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY
+      appl_settings_decode_public_key("trusted public key", CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY, trusted_pub_key, sizeof(trusted_pub_key));
+#endif /* CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY */
+      if (is_zero(trusted_pub_key, sizeof(trusted_pub_key))) {
+         LOG_INF("ecdsa no trusted public key: disabled.");
       }
       save = true;
    }
@@ -1176,18 +1195,6 @@ static int appl_setting_factory_reset(int flags)
    }
 #endif /* CONFIG_DTLS_ECDSA_PROVISIONING */
 
-   if (flags & SETTINGS_RESET_TRUST) {
-      memset(trusted_pub_key, 0, sizeof(trusted_pub_key));
-#ifdef CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY
-      res = appl_settings_decode_public_key("trusted public key", CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY, trusted_pub_key, sizeof(trusted_pub_key));
-#else
-      res = 0;
-#endif /* CONFIG_DTLS_ECDSA_TRUSTED_PUBLIC_KEY */
-      if (is_zero(trusted_pub_key, sizeof(trusted_pub_key))) {
-         LOG_INF("ecdsa no trusted public key: disabled.");
-      }
-      save = true;
-   }
 #endif /* DTLS_ECC */
 
    if (save || !settings_initialized) {
@@ -1221,13 +1228,13 @@ int appl_settings_init(const char *imei, dtls_handler_t *handler)
    }
 
    if (settings_initialized) {
-#if defined(DTLS_ECC) && defined(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING)
+#if defined(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING)
       if (handler && ecdsa_provisioning_enabled) {
          if (!appl_settings_init_provisioning()) {
             appl_settings_provisioning_done();
          }
       }
-#endif /* DTLS_ECC && CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
+#endif /* CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
    } else {
       if (handler) {
          res = appl_setting_factory_reset(SETTINGS_RESET_DEST | SETTINGS_RESET_ID | SETTINGS_RESET_UNLOCK |
@@ -1410,12 +1417,16 @@ appl_settings_add_ecdsa_signature_elem(uint8 *p, uint32_t *point_r, uint32_t *po
 }
 #endif /* DTLS_ECC */
 
-int appl_settings_get_provisioning(char *buf, size_t len)
+static int appl_settings_get_provisioning_internal(char *buf, size_t len, bool cmd)
 {
    int index = 0;
-   int start = 0;
    size_t out_len = 0;
-   bool sh_prot = sh_protected();
+
+#if defined(DTLS_PSK)
+   bool sh_prot = cmd && sh_protected();
+#else  /* DTLS_PSK */
+   (void)cmd;
+#endif /* DTLS_PSK */
 
    k_mutex_lock(&settings_mutex, K_FOREVER);
 
@@ -1430,6 +1441,7 @@ int appl_settings_get_provisioning(char *buf, size_t len)
 
 #if defined(DTLS_PSK)
    if (psk_key_length && psk_id_length) {
+      int start = 0;
       if (sh_prot) {
          printk("# for PSK provisioning, 'unlock' first!");
       } else {
@@ -1517,29 +1529,34 @@ int appl_settings_get_provisioning(char *buf, size_t len)
    return index;
 }
 
+int appl_settings_get_provisioning(char *buf, size_t len)
+{
+   return appl_settings_get_provisioning_internal(buf, len, false);
+}
+
 bool appl_settings_is_provisioning(void)
 {
-#if defined(DTLS_ECC) && defined(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING)
+#if defined(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING)
    bool res;
    k_mutex_lock(&settings_mutex, K_FOREVER);
    res = ecdsa_provisioning_enabled;
    k_mutex_unlock(&settings_mutex);
    return res;
-#else  /* DTLS_ECC && CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
+#else  /* CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
    return false;
-#endif /* DTLS_ECC && CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
+#endif /* CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
 }
 
 void appl_settings_provisioning_done(void)
 {
-#if defined(DTLS_ECC) && defined(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING)
+#if defined(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING)
    k_mutex_lock(&settings_mutex, K_FOREVER);
    if (ecdsa_provisioning_enabled) {
       ecdsa_provisioning_enabled = false;
       settings_save_one(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_PROV, &ecdsa_provisioning_enabled, sizeof(ecdsa_provisioning_enabled));
    }
    k_mutex_unlock(&settings_mutex);
-#endif /* DTLS_ECC && CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
+#endif /* CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
 }
 
 bool appl_settings_unlock(const char *value)
@@ -1642,7 +1659,7 @@ static int sh_cmd_settings_prov(const char *parameter)
    if (appl_settings_is_provisioning()) {
       LOG_INF("Auto-provisioning pending.");
    }
-   appl_settings_get_provisioning(buf, sizeof(buf));
+   appl_settings_get_provisioning_internal(buf, sizeof(buf), true);
    return 0;
 }
 
