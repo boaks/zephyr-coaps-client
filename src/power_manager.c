@@ -33,6 +33,10 @@
 #include "battery_adc.h"
 #endif /* CONFIG_BATTERY_ADC */
 
+#ifdef CONFIG_SOLAR_CHARGER
+#include "solar_charger.h"
+#endif /* CONFIG_SOLAR_CHARGER */
+
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 typedef const struct device *t_devptr;
@@ -257,7 +261,6 @@ static const struct battery_profile profile_nimh_4_2000 = {
     .curve = &curve_nimh_4_2000};
 #endif
 
-
 #ifdef CONFIG_BATTERY_TYPE_SUPER_CAP_LIHY
 /* LIB1620Q4R0407, super capacitor, 4V, 400F */
 static const struct transform_curve curve_supcap_lihy = {
@@ -274,7 +277,6 @@ static const struct battery_profile profile_supcap_lihy = {
     .name = "LiHy",
     .curve = &curve_supcap_lihy};
 #endif
-
 
 static const struct transform_curve curve_no_bat = {
     /* no battery */
@@ -1079,11 +1081,21 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
          adp536x_power_manager_read_status(&internal_status);
          internal_status_forecast = internal_status;
-#endif
-#ifdef CONFIG_NPM1300_CHARGER
+#elif defined(CONFIG_NPM1300_CHARGER)
          npm1300_power_manager_read_status(&internal_status, NULL, 0);
          internal_status_forecast = internal_status;
+#elif defined(CONFIG_SOLAR_CHARGER)
+         if (solar_power_is_good()) {
+            if (solar_is_charging()) {
+               internal_status = CHARGING_I;
+            } else {
+               internal_status = CHARGING_COMPLETED;
+            }
+         } else {
+            internal_status = FROM_BATTERY;
+         }
 #endif
+
          internal_level = transform_curve(internal_voltage, pm_get_battery_profile()->curve);
          days = calculate_forecast(&now, internal_level, internal_status_forecast);
          if (internal_level < 25500) {

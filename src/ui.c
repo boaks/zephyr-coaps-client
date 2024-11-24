@@ -559,9 +559,8 @@ static int ui_init_output(gpio_device_ext_t *output_spec)
    int ret = -ENOTSUP;
    if (output_spec && device_is_ready(output_spec->gpio_spec.port)) {
       if (output_spec->gpio) {
-         ret = gpio_pin_configure_dt(&output_spec->gpio_spec, GPIO_OUTPUT_ACTIVE);
+         ret = gpio_pin_configure_dt(&output_spec->gpio_spec, GPIO_OUTPUT_INACTIVE);
          if (!ret) {
-            gpio_pin_set_dt(&output_spec->gpio_spec, 0);
             output_spec->init = true;
          }
       } else {
