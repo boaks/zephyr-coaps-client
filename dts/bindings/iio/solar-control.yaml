@@ -1,0 +1,58 @@
+# Copyright (c) 2025, Achim Kraus, cloudcoap.net
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+    Description for a solar-charger controler. Monitors "power in", "charging"
+    and "carging enable".
+
+compatible: "solar-control"
+
+include: base.yaml
+
+properties:
+  enable-gpios:
+    type: phandle-array
+    description: |
+      Charger enable output.
+
+      If present the corresponding GPIO must be set to an active level
+      to enable the charger. The commonly used 10k pull-down causes
+      400µA quiescent current, when charging should be disabled.
+
+  power-good-gpios:
+    type: phandle-array
+    description: |
+      Power Good input.
+
+      If present the corresponding GPIO must indicate power-in as active level.
+
+  charging-gpios:
+    type: phandle-array
+    description: |
+      Charging input.
+
+      If present the corresponding GPIO must indicate charging as active level.
+
+  max-voltage:
+    type: int
+    default: 4200
+    description: |
+      maximum voltage in millivolt
+
+  low-voltage:
+    type: int
+    default: 3400
+    description: |
+      low voltage in millivolt
+
+  check-interval:
+    type: int
+    default: 300
+    description: |
+      voltage check interval in seconds
+
+  change-interval:
+    type: int
+    default: 10
+    description: |
+      power good check interval in seconds

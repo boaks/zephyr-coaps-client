@@ -55,6 +55,8 @@
 
 };
 
+/* fix green / blue led for NCS 2.6.2 */
+
 &green_led {
 	gpios = <&gpio0 31 0>;
 };

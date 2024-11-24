@@ -1,0 +1,63 @@
+/*
+ * Copyright (c) 2025 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0 or Apache-2.0
+ */
+
+/*
+ * Usage: 
+ *
+ * west build -d build_feather_nrf9160_ns -b circuitdojo_feather_nrf9160_ns --pristine -- \
+ *    -DOVERLAY_CONFIG="60min0-prj.conf;uart-prj.conf" -DDTC_OVERLAY_FILE="feather-solar.overlay" \
+ *    -DCONFIG_SOLAR_CHARGER=y
+ */
+
+#include "boards/circuitdojo_feather_nrf9160_ns.overlay"
+
+/	{
+
+	leds {
+		green_led: led_1 {
+			gpios = <&gpio0 2 GPIO_ACTIVE_LOW>;
+		};
+
+	};
+
+	buttons {
+		button0: button_0 {
+			gpios = <&gpio0 1 (GPIO_PULL_DOWN | GPIO_ACTIVE_HIGH)>;
+		};
+	};
+
+
+	solar-control {
+		compatible = "solar-control";
+		status = "okay";
+		low-voltage = <3600>;
+		max-voltage = <4000>;
+		check-interval = <300>;
+		enable-gpios     = <&gpio0 15 GPIO_ACTIVE_LOW>;
+		power-good-gpios = <&gpio0 16 GPIO_ACTIVE_LOW>;
+		charging-gpios   = <&gpio0 17 GPIO_ACTIVE_LOW>;
+	};
+
+	aliases {
+
+		led2 = &{/leds/led_0};
+		led1 = &{/leds/led_1};
+
+	};
+
+};
+
+&gpio0 {
+    sense-edge-mask = <0xffffff>;
+};
+
