@@ -38,7 +38,7 @@ target_sources(app PRIVATE
 	src/coap_appl_client.c
 	src/expansion_port.c
 	)
-
+   
 target_sources_ifdef(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING app PRIVATE src/coap_prov_client.c)
 
 target_sources_ifdef(CONFIG_SH_CMD app PRIVATE src/sh_cmd.c)
@@ -64,6 +64,8 @@ target_sources_ifdef(CONFIG_SHT21 app PRIVATE src/environment_sht21.c src/enviro
 target_sources_ifdef(CONFIG_BATTERY_ADC app PRIVATE src/battery_adc.c)
 
 target_sources_ifdef(CONFIG_NAU7802_SCALE app PRIVATE src/nau7802.c src/appl_storage.c src/appl_storage_config.c)
+
+target_sources_ifdef(CONFIG_SOLAR_CHARGER app PRIVATE src/solar_charger.c)
 
 if (CONFIG_BME680_BSEC)
         set(bsec_version "bsec_1-4-9-2_generic_release")

@@ -34,6 +34,10 @@
 #include "battery_adc.h"
 #endif /* CONFIG_BATTERY_ADC */
 
+#ifdef CONFIG_SOLAR_CHARGER
+#include "solar_charger.h"
+#endif /* CONFIG_SOLAR_CHARGER */
+
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
 typedef const struct device *t_devptr;
@@ -1170,11 +1174,23 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
          adp536x_power_manager_read_status(&internal_status);
          internal_status_forecast = internal_status;
-#endif
-#ifdef CONFIG_NPM1300_CHARGER
+#elif defined(CONFIG_NPM1300_CHARGER)
          npm1300_power_manager_read_status(&internal_status, NULL, 0);
          internal_status_forecast = internal_status;
+#elif defined(CONFIG_SOLAR_CHARGER)
+         if (solar_power_is_good() == 0) {
+            internal_status = FROM_BATTERY;
+         } else {
+            if (solar_is_charging() > 0) {
+               internal_status = CHARGING_I;
+            } else if (solar_is_enabled()) {
+               internal_status = CHARGING_COMPLETED;
+            } else {
+               internal_status = FROM_BATTERY;
+            }
+         }
 #endif
+
          internal_level = transform_curve(internal_voltage, pm_get_battery_profile()->curve);
          days = calculate_forecast(&now, internal_level, internal_status_forecast);
          if (internal_level < 25500) {

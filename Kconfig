@@ -537,6 +537,10 @@ config EXT_BATTERY_ADC
 	help
 	   Enable external battery measurement
 
+config SOLAR_CHARGER
+	bool "Enable Solar charger control (ce,chrg)."
+	default n
+
 config BATTERY_TYPE_LIPO_1350_MAH
 	bool
 	default y if BOARD_THINGY91_NRF9160_NS
@@ -680,8 +684,6 @@ config INA219_MODE_POWER_MANAGER
 	bool "INA219 power manager"
 
 endif # INA219
-
-
 
 choice BATTERY_VOLTAGE_SOURCE
 	prompt "Battery voltage source"

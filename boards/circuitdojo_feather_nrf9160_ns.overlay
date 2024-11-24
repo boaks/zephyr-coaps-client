@@ -14,8 +14,8 @@
 /	{
 
 	zephyr,user {
-        latch-en-gpios = <&gpio0 31 GPIO_ACTIVE_HIGH>;
-    };
+		latch-en-gpios = <&gpio0 31 GPIO_ACTIVE_HIGH>;
+	};
 
 	leds {
 		blue_led: led_0 {
