@@ -366,39 +366,6 @@ static void uart_log_dump_hex(int prefix, const uint8_t *data, size_t data_len)
    }
 }
 
-static const char *uart_log_get_source_name(struct log_msg *msg)
-{
-   void *source = (void *)log_msg_get_source(msg);
-   if (source != NULL) {
-      uint8_t domain_id = log_msg_get_domain(msg);
-      int16_t source_id = IS_ENABLED(CONFIG_LOG_RUNTIME_FILTERING) ? log_dynamic_source_id(source) : log_const_source_id(source);
-      if (source_id >= 0) {
-         return log_source_name_get(domain_id, source_id);
-      }
-   }
-   return NULL;
-}
-
-static bool uart_log_filter(struct log_msg *msg)
-{
-   static int last_level = -1;
-   static const char *last_source = NULL;
-
-   const char *source_name = uart_log_get_source_name(msg);
-
-   if (last_level == msg->hdr.desc.level) {
-      if (source_name && strcmp("i2c_nrfx_twim", source_name) == 0) {
-         if (last_source && strcmp(last_source, source_name) == 0) {
-            return true;
-         }
-      }
-   }
-   last_level = msg->hdr.desc.level;
-   last_source = source_name;
-
-   return false;
-}
-
 static void uart_log_process(const struct log_backend *const backend,
                              union log_msg_generic *msg)
 {
@@ -422,11 +389,6 @@ static void uart_log_process(const struct log_backend *const backend,
       if (plen || dlen) {
          int prefix = 0;
          char level = level_tab[msg->log.hdr.desc.level];
-
-         if (!panic && uart_log_filter(&msg->log)) {
-            // drop filtered msg
-            return;
-         }
 
 #ifndef CONFIG_LOG_MODE_IMMEDIATE
          if (!panic) {
