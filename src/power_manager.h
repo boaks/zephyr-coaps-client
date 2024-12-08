@@ -28,6 +28,9 @@ typedef enum {
    FROM_EXTERNAL,
 } power_manager_status_t;
 
+#define PM_INVALID_VOLTAGE 0xffff
+#define PM_INVALID_LEVEL 0xff
+
 int power_manager_init(void);
 
 int power_manager_add_device(const struct device *dev);
