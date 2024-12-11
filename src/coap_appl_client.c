@@ -898,7 +898,6 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
             index = start + err;
          }
       }
-
    }
 
    appl_context.token = coap_client_next_token();
@@ -930,8 +929,13 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
       return err;
    }
 
-   if (appl_settings_get_coap_query(value, sizeof(value))) {
+   if ((err = appl_settings_get_coap_query(value, sizeof(value)))) {
       const char *read = NULL;
+      ++err;
+      if (value[0] != '?' && err < sizeof(value)) {
+         memmove(&value[1], value, err);
+         value[0] = '?';
+      }
       err = coap_packet_set_path(&request, value);
       if (err < 0) {
          dtls_warn("Failed to encode CoAP URI-QUERY '%s' option, %d", value, err);
