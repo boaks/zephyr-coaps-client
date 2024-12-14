@@ -53,14 +53,15 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160) and [nRF916
 | [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. Comes with a 8MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png) |
 | [Nordic Semiconductor, nRF9161 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9161-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9161-DK/nRF9161_DK_Perspective-small.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9161-DK/nRF9161_DK_Perspective-small.png) |
 | [Nordic Semiconductor, nRF9151 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9151-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png) |
+| [Nordic Semiconductor, Thingy:91X](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91-X)<br>Works "out-of-the-box" in the "wild". Comes with selection of sensors (environment, motion) and a 32MB flash. A QWIIC connector enables to add custom sensors. | [<img src="./docu/thingy91x.jpg" width="300"/>](./docu/thingy91x.jpg) |
                                              
 The demo works with [ncs-2.6.2](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.2).
 
-To benefit from the newer modem features, please consider to use the modem firmware [1.3.6](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.6.zip) for `nRF9160` based device. See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
+To benefit from the newer modem features, please consider to use the modem firmware [1.3.7](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.7.zip) for `nRF9160` based device. See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
-For `nRF9161` and `nRF9151` devices use the modem firmware [2.0.0](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/dev-kits/nrf9161-dk/application-firmware/nrf9161dk_mfw-2-0-0_sdk-2-5-0.zip) for that. In my experience, the [2.0.1](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/dev-kits/nrf9161-dk/application-firmware/nrf9161dk_mfw-2.0.1_sdk-2.6.1.zip) wasn't able to connect some Rel. 14 networks, but you may also tryout that one.
+For `nRF9161` and `nRF9151` devices use the modem firmware [2.0.2](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/sip/nrf91x1-sip/nrf91x1-lte-modem-firmware/mfw_nrf91x1_2.0.2.zip) for that. 
 
-`NCS 2.7.0` is not supported for now.
+`NCS 2.7.0` nor `NCS 2.8.0` is not supported for now.
 
 ## Supported New/Upcoming Devices
 
@@ -144,6 +145,18 @@ In order to use this demo with a `nRF9151-DK`, you need:
 - the `nRF9151-DK` comes with a internal debug probe to flash the device. No additional equipment is required.   
 
 **Note:** the `nRF9151-DK` is a great tool to develop apps for the `nRF9151` on your desk. For the "wild", a `Thingy:91` or `nRF9160 feather v5` does a better job.
+
+## Required HW-Tools for Thingy:91X
+
+In order to use this demo with a `Thingy:91X`, you need:
+
+- a `Thingy:91X` (maybe better two ;-)).
+- the `Thingy:91X` is usually shipped with a Onomondo SIM card and provides a 30 days test free of charge. Check, if that covers your [area/country](https://onomondo.com/product/coverage/). If not, or you need connectivity for longer, you need a SIM card for your area/country or a subscription from Onomondo.
+- a debug probe to flash the device.
+   - either a [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) and a `10-wire-ribbon connector, 2x5, 0.050"` from [Harwin Inc.](https://www.digikey.com/en/products/detail/harwin-inc/M50-9100542/4953091) or [Adafruit Industries LLC](https://www.digikey.de/de/products/detail/adafruit-industries-llc/1675/6827142).
+   - or a [Segger j-Link](https://www.segger.com/products/debug-probes/j-link/) and a [cortex-M adapter](https://www.segger.com/products/debug-probes/j-link/accessories/adapters/9-pin-cortex-m-adapter/).
+
+**Note:** the `Thingy:91X` uses 1.8V VDD and requires the Jlink to support 1.8V as well. Not all Jlinks supporting that, ensure you get a right one! If the `nRF9160-DK` is used, ensure you select 1.8V for VDD-IO (SW9 on the DK). 
 
 ## Run It - Fast Track
 
