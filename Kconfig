@@ -810,6 +810,11 @@ config DISABLE_REALTIME_CLOCK
 	default y
 	depends on I2C && BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
 
+config DISABLE_BMM350
+	bool "Disable BMM350 (Thingy:91X only!)"
+	default y
+	depends on I2C && BOARD_THINGY91X_NRF9151_NS
+
 if FLASH
 config FLASH_APPL_STORAGE
 	bool "Flash support for application storage."

@@ -41,7 +41,7 @@ typedef const struct device *t_devptr;
 
 #define REALTIME_CLOCK_ADDR 0x51
 
-static inline void power_manager_suspend_realtime_clock()
+static int power_manager_suspend_realtime_clock(void)
 {
    const struct device *i2c_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(i2c1));
    if (device_is_ready(i2c_dev)) {
@@ -55,13 +55,31 @@ static inline void power_manager_suspend_realtime_clock()
          LOG_INF("Suspending realtime clock failed. %d %d", rc1, rc2);
       }
    }
+   return 0;
 }
-#else
-static inline void power_manager_suspend_realtime_clock()
+
+SYS_INIT(power_manager_suspend_realtime_clock, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY);
+
+#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay) && defined(CONFIG_DISABLE_REALTIME_CLOCK) */
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c2), okay) && defined(CONFIG_DISABLE_BMM350)
+
+// magnetometer
+#define BMM350_I2C_DEVICE DEVICE_DT_GET(DT_NODELABEL(i2c2))
+#define BMM350_REG_OTP_CMD_REG UINT8_C(0x50)
+#define BMM350_OTP_CMD_PWR_OFF_OTP UINT8_C(0x80)
+#define BMM350_START_UP_TIME_FROM_POR 3000
+
+static int power_manager_bmm350_init_minimal(void)
 {
-   // empty
+   k_sleep(K_USEC(BMM350_START_UP_TIME_FROM_POR));
+   uint8_t otp_cmd = BMM350_OTP_CMD_PWR_OFF_OTP;
+   i2c_burst_write(BMM350_I2C_DEVICE, 0x14, BMM350_REG_OTP_CMD_REG, &otp_cmd, 1);
+   return 0;
 }
-#endif
+
+SYS_INIT(power_manager_bmm350_init_minimal, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY);
+#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(i2c2), okay) && defined(CONFIG_DISABLE_BMM350) */
 
 #define PM_INVALID_INTERNAL_LEVEL 0xffff
 
@@ -259,7 +277,6 @@ static const struct battery_profile profile_nimh_4_2000 = {
     .curve = &curve_nimh_4_2000};
 #endif
 
-
 #ifdef CONFIG_BATTERY_TYPE_SUPER_CAP_LIHY
 /* LIB1620Q4R0407, super capacitor, 4V, 400F */
 static const struct transform_curve curve_supcap_lihy = {
@@ -276,7 +293,6 @@ static const struct battery_profile profile_supcap_lihy = {
     .name = "LiHy",
     .curve = &curve_supcap_lihy};
 #endif
-
 
 static const struct transform_curve curve_no_bat = {
     /* no battery */
@@ -876,7 +892,6 @@ int power_manager_init(void)
       LOG_WRN("UART0 console not available.");
 #endif
    }
-   power_manager_suspend_realtime_clock();
 #ifdef CONFIG_INA219
    if (device_is_ready(ina219_0)) {
       power_manager_add_device(ina219_0);
