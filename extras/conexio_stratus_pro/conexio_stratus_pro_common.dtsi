@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2024 Conexio Technologies, Inc
- * Copyright (c) 2023 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -71,7 +70,7 @@
 			   <22 0 &gpio0 22 0>,	/* D22/CS */
 			   <23 0 &gpio0 23 0>,	/* D23 */
 			   <24 0 &gpio0 24 0>,	/* D24 */
-			   /* 25 not connected */
+			   /* 25 internally connected */
 			   <26 0 &gpio0 26 0>,	/* D26 */
 			   <27 0 &gpio0 27 0>,	/* D27/RX */
 			   <28 0 &gpio0 28 0>;	/* D28/TX */
@@ -131,21 +130,23 @@
 			compatible = "nordic,npm1300-charger";
 			term-microvolt = <4150000>;
 			term-warm-microvolt = <4000000>;
-			current-microamp = <300000>;
+			current-microamp = <800000>;
 			dischg-limit-microamp = <1000000>;
-			vbus-limit-microamp = <500000>;
+			vbus-limit-microamp = <1000000>;
 			thermistor-ohms = <10000>;
 			thermistor-beta = <3380>;
 			charging-enable;
 		};
 		regulators {
 			compatible = "nordic,npm1300-regulator";
-			BUCK1 {
+			/* Main 1.8 V regulator, for VDD_GPIO */
+			reg_1v8: BUCK1 {
 				regulator-min-microvolt = <1800000>;
 				regulator-max-microvolt = <1800000>;
 				regulator-boot-on;
 			};
-			BUCK2 {
+			/* 3.3 V regulator, for QWIIC and GPS LNA */
+			reg_3v3: BUCK2 {
 				regulator-min-microvolt = <3300000>;
 				regulator-max-microvolt = <3300000>;
 				regulator-boot-on;
@@ -179,10 +180,10 @@
 	pinctrl-names = "default", "sleep";
 };
 
-&spi3 {
+edge_connector_spi: &spi3 {
 	compatible = "nordic,nrf-spim";
-	status = "okay";
-	cs-gpios = <&gpio0 22 GPIO_ACTIVE_LOW>; /* D22 */
+	status = "disabled";
+	cs-gpios = <&gpio0 17 GPIO_ACTIVE_LOW>; // Used for WiFi CS
 	pinctrl-0 = <&spi3_default>;
 	pinctrl-1 = <&spi3_sleep>;
 	pinctrl-names = "default", "sleep";

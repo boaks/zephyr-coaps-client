@@ -1,5 +1,5 @@
-identifier: conexio_stratus_pro
-name: CONEXIO-STRATUS-PRO
+identifier: conexio_stratus_pro_nrf9161
+name: Conexio-Stratus-Pro-nRF9161
 type: mcu
 arch: arm
 toolchain:
@@ -16,4 +16,3 @@ supported:
   - pwm
   - watchdog
   - counter
-vendor: nordic

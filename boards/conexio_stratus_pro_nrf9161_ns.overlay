@@ -1,0 +1,35 @@
+/*
+ * Copyright (c) 2024 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+
+/	{
+
+	ins {
+		compatible = "gpio-keys";
+		rx0: uart0_rx {
+			gpios = <&gpio0 27 0>;
+		};
+	};
+
+	aliases {
+		/delete-property/ led0;
+
+		led1 = &{/leds/led_0};
+
+		/* alias for sensor with SENSOR_CHAN_ACCEL_XYZ channels */
+		accelerometer-sensor = &lis2dh;
+
+	};
+
+};
+
+sensor_i2c: &i2c2 {};

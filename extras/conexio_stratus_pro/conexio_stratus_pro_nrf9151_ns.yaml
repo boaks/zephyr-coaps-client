@@ -1,5 +1,5 @@
-identifier: conexio_stratus_pro_ns
-name: CONEXIO-STRATUS-PRO-Non-Secure
+identifier: conexio_stratus_pro_nrf9151_ns
+name: Conexio-Stratus-Pro-nRF9151-Non-Secure
 type: mcu
 arch: arm
 toolchain:
@@ -16,4 +16,3 @@ supported:
   - pwm
   - watchdog
   - netif:modem
-vendor: nordic

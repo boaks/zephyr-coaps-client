@@ -1,6 +1,7 @@
+# Copyright (c) 2024 Conexio Technologies, Inc
 # SPDX-License-Identifier: Apache-2.0
 
-if(CONFIG_BOARD_CONEXIO_STRATUS_PRO_NS)
+if(CONFIG_BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS OR CONFIG_BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS)
   set(TFM_PUBLIC_KEY_FORMAT "full")
 endif()
 

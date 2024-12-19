@@ -6,10 +6,20 @@
 
 if SOC_NRF9161_LACA
 
-config BOARD_CONEXIO_STRATUS_PRO
-	bool "Conexio Stratus Pro"
+config BOARD_CONEXIO_STRATUS_PRO_NRF9161
+	bool "Conexio Stratus Pro nRF9161"
 
-config BOARD_CONEXIO_STRATUS_PRO_NS
-	bool "Conexio Stratus Pro non-secure"
+config BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
+	bool "Conexio Stratus Pro nRF9161 non-secure"
 
 endif # SOC_NRF9161_LACA
+
+if SOC_NRF9151_LACA
+
+config BOARD_CONEXIO_STRATUS_PRO_NRF9151
+	bool "Conexio Stratus Pro nRF9151"
+
+config BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
+	bool "Conexio Stratus Pro nRF9151 non-secure"
+
+endif # SOC_NRF9151_LACA

@@ -1,0 +1,18 @@
+identifier: conexio_stratus_pro_nrf9161_ns
+name: Conexio-Stratus-Pro-nRF9161-Non-Secure
+type: mcu
+arch: arm
+toolchain:
+  - gnuarmemb
+  - xtools
+  - zephyr
+ram: 128
+flash: 192
+supported:
+  - i2c
+  - spi
+  - gpio
+  - serial
+  - pwm
+  - watchdog
+  - netif:modem

@@ -546,13 +546,15 @@ config BATTERY_TYPE_LIPO_2000_MAH
 	bool "LiPo 2000 mAh"
 	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
 	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NS
-	default y if BOARD_CONEXIO_STRATUS_PRO_NS
+	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
+	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
 
 config BATTERY_TYPE_NIMH_2000_MAH
 	bool "NiMH 2000 mAh"
 	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
 	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NS
-	default y if BOARD_CONEXIO_STRATUS_PRO_NS
+	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
+	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
 
 config BATTERY_TYPE_NIMH_4_2000_MAH
 	bool "NiMH/4 2000 mAh"
@@ -561,7 +563,8 @@ config BATTERY_TYPE_NIMH_4_2000_MAH
 
 config BATTERY_TYPE_SUPER_CAP_LIHY
 	bool "SupCap/LiHy 4V/400F"
-	default y if BOARD_CONEXIO_STRATUS_PRO_NS
+	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
+	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
     help
 	   Super CAP, Lithium Hybrid, 4V, 400F
 
@@ -572,13 +575,15 @@ config BATTERY_TYPE_DEFAULT
 	default 2 if BATTERY_TYPE_LIPO_2000_MAH
 	default 3 if BATTERY_TYPE_NIMH_2000_MAH
 	default 4 if BATTERY_TYPE_NIMH_4_2000_MAH
+	default 4 if BATTERY_TYPE_SUPER_CAP_LIHY
 	default 0 
 	help
 	  0 := no battery
 	  1 := LiPO 1350 mAh (Thingy:91)
-	  2 := LiPO 2000 mAh (nRF9160 feather)
-	  3 := NiMH 2000 mAh (nRF9160 feather)
-	  4 := NiMH/4 2000 mAh (nRF9160 feather)
+	  2 := LiPO 2000 mAh (nRF9160 feather & conexio stratus pro)
+	  3 := NiMH 2000 mAh (nRF9160 feather & conexio stratus pro)
+	  4 := NiMH/4 2000 mAh (nRF9160 feather & conexio stratus pro)
+	  5 := Super CAP, Lithium Hybrid (conexio stratus pro)
 endif
 
 config NAU7802_SCALE
@@ -642,7 +647,8 @@ config MFD_NPM1300_BUCK2_LED
 
 config MFD_NPM1300_DISABLE_NTC
 	bool
-	default y if BOARD_CONEXIO_STRATUS_PRO_NS
+	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
+	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
 
 endif # MFD_NPM1300
 
@@ -841,7 +847,8 @@ config APPL_MODEL
 	default "bm" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && EXT_BATTERY_ADC
 	default "fh" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
 	default "f1" if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NS
-	default "csp" if BOARD_CONEXIO_STRATUS_PRO_NS
+	default "csp" if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
+	default "cs51" if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
 	help
 		Select firmware for model. 
 
@@ -855,9 +862,10 @@ config APPL_MODEL_DESCRIPTION
 	default "nRF9160-monitor" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && EXT_BATTERY_ADC
 	default "nRF9160-feather" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
 	default "nRF9161-feather" if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NS
-	default "conexio-stratus-pro" if BOARD_CONEXIO_STRATUS_PRO_NS
+	default "conexio-nRF9151" if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
+	default "conexio-nRF9161" if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
 	help
-		Select firmware for model. 
+		Select description for model. 
 
 # Logging
 
