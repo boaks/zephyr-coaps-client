@@ -82,6 +82,8 @@ More details about PSM and other power saving functions can be found in:
 
 [Telecom Trainer - How does NB-IoT handle mobility of connected devices?](https://www.telecomtrainer.com/how-does-nb-iot-handle-mobility-of-connected-devices/)
 
+[Circuit Dojo, Jared Wolff, Zephyr 101 - Reaching Low Power ﹤5 µA](https://www.youtube.com/live/yY9eaUdx1wY)
+
 ## Summary:
 
 In my experiments, the first question is, which quiescent current does your device have itself. The second one will be, which self-discarging of the battery must be considered. Only if that sum is low enough, the consumption of the message exchanges builds the calculation base for the runtime.
