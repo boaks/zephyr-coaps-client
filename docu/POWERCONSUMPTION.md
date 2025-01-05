@@ -248,7 +248,7 @@ We will see, how large the  self-discarge is and how many bugs will prevent proo
 
 ## Antenna Performance - Thingy:91
 
-According [Thingy:91 - Antenna performance](https://infocenter.nordicsemi.com/topic/ug_thingy91/UG/thingy91/hw_description/hw_antenna_performance.html) the antenna performance depends on the frequency.
+According [Thingy:91 - Antenna performance](https://docs.nordicsemi.com/bundle/ug_thingy91/page/UG/thingy91/hw_description/hw_antenna_performance.html) the antenna performance depends on the frequency.
 
 | Technical features | 698–748 MHz | 746–803 MHz | 791–849 MHz | 824–894 MHz | 880–960 MHz | 1575 MHz |	1710–2220 MHz |
 | - | - | - | - | - | - | - | - |
@@ -266,7 +266,7 @@ According [unictron - H2B4MH1F2F0100](https://www.unictron.com/wp-content/upload
 
 ## Antenna Performance - nRF9160-DK
 
-According [nRF9160-DK - Antenna performance](https://infocenter.nordicsemi.com/topic/ug_nrf91_dk/UG/nrf91_DK/radiated_performance.html) the antenna performance depends on the LTE-band.
+According [nRF9160-DK - Antenna performance](https://docs.nordicsemi.com/bundle/ug_nrf9160_dk/page/UG/nrf91_DK/radiated_performance/radiated_performance.html) the antenna performance depends on the LTE-band.
 
 | LTE-Band | 3 | 4 | 13 | 20 |
 | - | - | - | - | - |

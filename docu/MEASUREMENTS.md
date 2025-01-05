@@ -19,7 +19,7 @@ In order to use the [Nordic Semiconductor - Power Profiler Kit II (PPK2)](https:
 ## Wiring
 
 To measure the current, the tool is usually inserted into the VDD wire.
-See [Power Profiler Kit II - Quick Start](https://infocenter.nordicsemi.com/topic/ug_ppk2/UG/ppk/PPK_user_guide_Quick_start.html) how to do that.
+See [Power Profiler Kit II - Quick Start](https://docs.nordicsemi.com/bundle/ug_ppk2/page/UG/ppk/PPK_user_guide_Quick_start.html) how to do that.
 The GND is also required to be connected. Some device will the record the energy (current multiplied by voltage) others only the current, as the `PPK2`. Though voltage usually doesn't change during the test, that also works as well.
 
 | Device Power Rail | Tool Current | Function |
@@ -30,7 +30,7 @@ The GND is also required to be connected. Some device will the record the energy
 
 (On P22 a jumper is mounted. To wire a current measurment tool, unmount that jumper and insert the wires.)
 
-In some case it is also interesting, to correlate the phases of the device to their power consumes. To make that visible, GPIO outputs of the device may be connected to inputs of the tool. Using [Nordic Semiconductor - nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) together with the [Power Profiler Kit II - Logic Port](https://infocenter.nordicsemi.com/topic/ug_ppk2/UG/ppk/logic_port.html) does so. 
+In some case it is also interesting, to correlate the phases of the device to their power consumes. To make that visible, GPIO outputs of the device may be connected to inputs of the tool. Using [Nordic Semiconductor - nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) together with the [Power Profiler Kit II - Logic Port](https://docs.nordicsemi.com/bundle/ug_ppk2/page/UG/ppk/PPK_user_guide_Connectors.html) does so. 
 
 The application here in this project uses:
 

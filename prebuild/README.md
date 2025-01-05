@@ -50,7 +50,7 @@ For Windows you still need to switch on the bootloader mode manually by pressing
 - [signed app image: thingy91_nrf9160_ns_app_signed.hex](../../../raw/main/prebuild/thingy91_nrf9160_ns_app_signed.hex) app signed with the demo keys. May be used for updates using a debug probe after the initial full image.
 - [signed app update: thingy91_nrf9160_ns_app_update.bin](../../../raw/main/prebuild/thingy91_nrf9160_ns_app_update.bin) app signed with the demo keys. May be used for FOTA (CoAP) or XMODEM updates after the initial full image.
 
-If the serial bootloader interface is enabled again for custombuilds, the "..._app_signed.hex" may be used without debug probe via USB and [nRF Connect Programmer](https://infocenter.nordicsemi.com/index.jsp?topic=/struct_nrftools/struct/nrftools_nrfconnect.html).
+If the serial bootloader interface is enabled again for custombuilds, the "..._app_signed.hex" may be used without debug probe via USB and [nRF Connect Programmer](https://docs.nordicsemi.com/bundle/nrf-connect-programmer/page/index.html).
 
 ## [nrf9160 DevKit](https://www.nordicsemi.com/Products/Development-hardware/nrf9160-dk)
 

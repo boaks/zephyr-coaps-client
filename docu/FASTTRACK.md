@@ -12,9 +12,9 @@ Download the [nRF Connect for Desktop](https://www.nordicsemi.com/Products/Devel
 
 Download one of the [pre-build firmware images](../prebuild/) matching your device and available tools.
 
-Connect the `Thingy:91` to your debug probe and use the [nRF Connect Programmer](https://infocenter.nordicsemi.com/index.jsp?topic=/struct_nrftools/struct/nrftools_nrfconnect.html) to apply the downloaded pre-build firmware.
+Connect the `Thingy:91` to your debug probe and use the [nRF Connect Programmer](https://docs.nordicsemi.com/bundle/nrf-connect-programmer/page/index.html) to apply the downloaded pre-build firmware.
 
-Using [nRF Connect Programmer](https://infocenter.nordicsemi.com/index.jsp?topic=/struct_nrftools/struct/nrftools_nrfconnect.html) requires, that the device is detected as "genuine" Nordic devices. That unfortunately doesn't support to use other USB controllers. If a JLink probe is used, that target must be a "genuine" Nordic device and must be already connected starting the programmer app. Otherwise you may get an error message as
+Using [nRF Connect Programmer](https://docs.nordicsemi.com/bundle/nrf-connect-programmer/page/index.html) requires, that the device is detected as "genuine" Nordic devices. That unfortunately doesn't support to use other USB controllers. If a JLink probe is used, that target must be a "genuine" Nordic device and must be already connected starting the programmer app. Otherwise you may get an error message as
 
     Unsupported device. The detected device could not be recognized as neither JLink device nor Nordic USB device.
 
