@@ -72,7 +72,13 @@ The demo supports two new upcoming devices based on the nRF9161.
 | [Circuit Dojo, nRF9161 feather](https://community.circuitdojo.com/d/480-nrf9160-feather-suggestions-for-next-version/64)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with 2-channel USB, onboard OCD, motion sensor, a 16MB flash and a Qwiic connector. | [<img src="./docu/nRF9161-feather.png" width="300"/>](./docu/nRF9161-feather.png) |
 | [Conexio Stratus Pro nRF9161](https://conexiotech.com/conexio-stratus-pro-nrf9161/)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with built-in solar energy harvesting, motion sensor, 2KB EEPROM, and 2x5 plug for JTAG. Includes a SIM card with 500MB in 10 years. | [<img src="https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png" width="300"/>](https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png) |
 
-**Note:** for both supported new boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, so the full support will only come with NCS 2.7.0. 
+The demo supports also new upcoming devices based on the nRF9151.
+
+| Device | Image |
+| :- | - |
+| [Conexio Stratus Pro nRF9151](https://conexiotech.com/conexio-stratus-pro-nrf9151/)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with built-in solar energy harvesting, motion sensor, 2KB EEPROM, and 2x5 plug for JTAG. Includes a SIM card with 500MB in 10 years. | [<img src="https://conexiotech.com/wp-content/uploads/2024/10/stratus-pro-transparency-1-1536x911.png" width="300"/>](https://conexiotech.com/wp-content/uploads/2024/10/stratus-pro-transparency-1-1536x911.png) |
+
+**Note:** for all supported new boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, so the full support will only come with NCS 2.7.0. 
 
 See [extras/README](./extras/README.md) for more information.
 
@@ -83,7 +89,7 @@ Maybe other modems and devices gets supported over the time as well. For some of
 | Candidate | Image |
 | :- | - |
 | [Sparkfun Thing Plus nRF9160](https://www.sparkfun.com/products/17354?utm_source=sendfox&utm_medium=email&utm_campaign=nrf9160-thing-plus)<br>Qwiic and 2x5 plug for JTAG. | [<img src="https://cdn.sparkfun.com//assets/parts/1/6/3/6/0/17354-SparkFun_Thing_Plus_-_nRF9160-01.jpg" width="300"/>](https://cdn.sparkfun.com//assets/parts/1/6/3/6/0/17354-SparkFun_Thing_Plus_-_nRF9160-01.jpg) |
-| [Icarus IoT Board v2](https://www.actinius.com/icarus)<br>Includes a eSIM.| [<img src="https://www.actinius.com/images/icarus-nrf9160-feather-v2-front-sm-p-500.png" width="300"/>](https://www.actinius.com/images/icarus-nrf9160-feather-v2-front-sm-p-500.png) |
+| [Icarus IoT Board v2](https://www.actinius.com/icarus)<br>Includes a eSIM.| [<img src="https://www.actinius.com/images/Icarus_without_shadow_ff07ad69e4.png" width="300"/>](https://www.actinius.com/images/Icarus_without_shadow_ff07ad69e4.png) |
 | [Conexio Stratus](https://www.crowdsupply.com/conexio/stratus)<br>With built-in solar energy harvesting. Includes a SIM card with 500MB in 10 years. | [<img src="https://www.crowdsupply.com/img/9c62/side.png" width="300"/>](https://www.crowdsupply.com/img/9c62/side.png) |
 | [Fanstel LN60E](https://www.fanstel.com/buy/bt840f-v1-nrf52840-bluetooth-5-thread-zigbee-module-by45z-8ypje)<br>Reduced to the minimum. Unfortunately the current version uses a LDO with 50µA quiescent current.| [<img src="https://images.squarespace-cdn.com/content/v1/561459a2e4b0b39f5cefa12e/1600900228634-0AGSVRBYZKC1MD9Q5YDA/LN60E.png" width="300"/>](https://images.squarespace-cdn.com/content/v1/561459a2e4b0b39f5cefa12e/1600900228634-0AGSVRBYZKC1MD9Q5YDA/LN60E.png) |
 | [MIKROE LTE IoT 4 Click](https://www.mikroe.com/lte-iot-4-click)<br>Even less, but with power LED. If you want to use it, remove the LED or cut the connects to the ground-plane next the LED. The device has no analogue gpio available at the header. | [<img src="https://cdn1-shop.mikroe.com/img/product/lte-iot-4-click/lte-iot-4-click-large_default-1.jpg" width="300"/>](https://cdn1-shop.mikroe.com/img/product/lte-iot-4-click/lte-iot-4-click-large_default-1.jpg) |
