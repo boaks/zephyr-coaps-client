@@ -65,6 +65,9 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #define SETTINGS_KEY_PROV "prov"
 #define SETTINGS_KEY_UNLOCK "unlock"
 
+#define SETTINGS_KEY_SCALE_SETUP_A "scale_a"
+#define SETTINGS_KEY_SCALE_SETUP_B "scale_b"
+
 static K_MUTEX_DEFINE(settings_mutex);
 
 static uint8_t settings_initialized = 0;
@@ -86,6 +89,13 @@ static char device_imei[DTLS_PSK_MAX_CLIENT_IDENTITY_LEN + 1] = {0};
 static char device_id[DTLS_PSK_MAX_CLIENT_IDENTITY_LEN + 1] = {0};
 static char coap_path[MAX_SETTINGS_VALUE_LENGTH] = {0};
 static char coap_query[MAX_SETTINGS_VALUE_LENGTH] = {0};
+
+#ifdef CONFIG_NAU7802_SCALE
+static size_t scale_a_length = 0;
+static size_t scale_b_length = 0;
+static uint8_t scale_a[MAX_SETTINGS_VALUE_LENGTH] = {0};
+static uint8_t scale_b[MAX_SETTINGS_VALUE_LENGTH] = {0};
+#endif
 
 #define REBOOT_HISTORY 4
 #define REBOOT_TIME_SIZE 6
@@ -418,6 +428,7 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
       uint16_t value = 0;
       char buf[MAX_SETTINGS_VALUE_LENGTH];
 
+      memset(buf, 0, sizeof(buf));
       if (appl_settings_key_match(name, SETTINGS_KEY_INIT, name_len)) {
          res = read_cb(cb_arg, &buf, sizeof(settings_initialized));
          k_mutex_lock(&settings_mutex, K_FOREVER);
@@ -636,6 +647,38 @@ static int appl_settings_handle_set(const char *name, size_t len, settings_read_
 #endif /* DTLS_ECC */
          return 0;
       }
+
+      if (appl_settings_key_match(name, SETTINGS_KEY_SCALE_SETUP_A, name_len)) {
+#ifdef CONFIG_NAU7802_SCALE
+         res = read_cb(cb_arg, &buf, sizeof(scale_a));
+         k_mutex_lock(&settings_mutex, K_FOREVER);
+         memcpy(scale_a, buf, sizeof(scale_a));
+         scale_a_length = res > 0 ? res : 0;
+         k_mutex_unlock(&settings_mutex);
+         if (!res) {
+            LOG_INF("scale setup A: n.a.");
+         } else if (res > 0) {
+            LOG_INF("scale setup A: %d bytes", res);
+         }
+#endif /* CONFIG_NAU7802_SCALE */
+         return 0;
+      }
+
+      if (appl_settings_key_match(name, SETTINGS_KEY_SCALE_SETUP_B, name_len)) {
+#ifdef CONFIG_NAU7802_SCALE
+         res = read_cb(cb_arg, &buf, sizeof(scale_b));
+         k_mutex_lock(&settings_mutex, K_FOREVER);
+         memcpy(scale_b, buf, sizeof(scale_b));
+         scale_b_length = res > 0 ? res : 0;
+         k_mutex_unlock(&settings_mutex);
+         if (!res) {
+            LOG_INF("scale setup B: n.a.");
+         } else if (res > 0) {
+            LOG_INF("scale setup B: %d bytes", res);
+         }
+#endif /* CONFIG_NAU7802_SCALE */
+         return 0;
+      }
    }
    LOG_INF("set: '%s' unknown", name);
 
@@ -660,6 +703,15 @@ static int appl_settings_handle_export(int (*cb)(const char *name,
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_BATTERY_PROFILE, &battery_profile, sizeof(battery_profile));
 #ifdef CONFIG_SH_CMD_UNLOCK
    (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_UNLOCK, unlock_password, strlen(unlock_password));
+#endif
+
+#ifdef CONFIG_NAU7802_SCALE
+   if (scale_a_length) {
+      (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_SCALE_SETUP_A, scale_a, scale_a_length);
+   }
+   if (scale_b_length) {
+      (void)cb(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_SCALE_SETUP_B, scale_b, scale_b_length);
+   }
 #endif
 
 #ifdef DTLS_PSK
@@ -941,6 +993,42 @@ static int appl_settings_handle_get(const char *name, char *val, int val_len_max
          }
 #endif /* CONFIG_SH_CMD_UNLOCK */
          return 0;
+      }
+
+      if (appl_settings_key_match(name, SETTINGS_KEY_SCALE_SETUP_A, name_len)) {
+#ifdef CONFIG_NAU7802_SCALE
+         k_mutex_lock(&settings_mutex, K_FOREVER);
+         res = scale_a_length;
+         if (res > val_len_max) {
+            res = -EINVAL;
+         } else {
+            memmove(val, scale_a, res);
+         }
+         k_mutex_unlock(&settings_mutex);
+         if (res >= 0) {
+            LOG_DBG("Get: '%s' %d bytes", name, res);
+            LOG_HEXDUMP_DBG(val, res, name);
+         }
+#endif /* CONFIG_NAU7802_SCALE */
+         return res;
+      }
+
+      if (appl_settings_key_match(name, SETTINGS_KEY_SCALE_SETUP_B, name_len)) {
+#ifdef CONFIG_NAU7802_SCALE
+         k_mutex_lock(&settings_mutex, K_FOREVER);
+         res = scale_b_length;
+         if (res > val_len_max) {
+            res = -EINVAL;
+         } else {
+            memmove(val, scale_b, res);
+         }
+         k_mutex_unlock(&settings_mutex);
+         if (res >= 0) {
+            LOG_DBG("Get: '%s' %d bytes", name, res);
+            LOG_HEXDUMP_DBG(val, res, name);
+         }
+#endif /* CONFIG_NAU7802_SCALE */
+         return res;
       }
    }
    LOG_WRN("get: '%s' unknown", name);
@@ -1330,12 +1418,7 @@ int appl_settings_get_reboot_code(size_t index, int64_t *time, uint16_t *code)
       k_mutex_unlock(&settings_mutex);
       if (sys_get_be48(&buf[index])) {
          if (time) {
-            uint64_t time_s = sys_get_be48(&buf[index]);
-            if (time_s == 1) {
-               *time = 0;
-            } else {
-               *time = time_s * MSEC_PER_SEC;
-            }
+            *time = sys_get_be48(&buf[index]) * MSEC_PER_SEC;
          }
          if (code) {
             *code = sys_get_be16(&buf[index + REBOOT_TIME_SIZE]);
@@ -1354,10 +1437,6 @@ int appl_settings_add_reboot_code(uint16_t reboot_code)
 
    appl_get_now(&now);
    now = (now / MSEC_PER_SEC) & 0xffffffffffffL;
-   if (!now) {
-      // in rare cases of now == 0, add 1 second
-      ++now;
-   }
    sys_put_be48(now, buf);
    sys_put_be16(reboot_code, &buf[REBOOT_TIME_SIZE]);
    k_mutex_lock(&settings_mutex, K_FOREVER);
@@ -1366,6 +1445,76 @@ int appl_settings_add_reboot_code(uint16_t reboot_code)
    k_mutex_unlock(&settings_mutex);
    return settings_save_one(SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_REBOOTS, reboot_codes, sizeof(reboot_codes));
 }
+
+#ifdef CONFIG_NAU7802_SCALE
+
+int appl_settings_get_bytes(const char *id, int64_t *time, uint8_t *data, size_t data_size)
+{
+   int res = 0;
+   uint8_t buf[MAX_SETTINGS_VALUE_LENGTH];
+
+   k_mutex_lock(&settings_mutex, K_FOREVER);
+   if (!strcmp(id, "CHA")) {
+      memmove(&buf, scale_a, MAX_SETTINGS_VALUE_LENGTH);
+      res = scale_a_length;
+   } else if (!strcmp(id, "CHB")) {
+      memmove(&buf, scale_b, MAX_SETTINGS_VALUE_LENGTH);
+      res = scale_b_length;
+   }
+   k_mutex_unlock(&settings_mutex);
+
+   if (res > 0) {
+      if (res < 6) {
+         res = -EINVAL;
+      } else {
+         res -= 6;
+         if (time) {
+            *time = sys_get_be48(buf) * MSEC_PER_SEC;
+         }
+         if (res > data_size) {
+            res = -EINVAL;
+         } else {
+            if (data) {
+               memmove(data, &buf[6], res);
+            }
+         }
+      }
+   }
+   return res;
+}
+
+int appl_settings_set_bytes(const char *id, uint8_t *data, size_t data_size)
+{
+   int64_t now = 0;
+   int res = data_size + 6;
+   uint8_t buf[MAX_SETTINGS_VALUE_LENGTH];
+   const char *key = NULL;
+
+   if (MAX_SETTINGS_VALUE_LENGTH < res) {
+      return -EINVAL;
+   }
+
+   appl_get_now(&now);
+   now = (now / MSEC_PER_SEC) & 0xffffffffffffL;
+   sys_put_be48(now, buf);
+   memmove(&buf[6], data, data_size);
+
+   k_mutex_lock(&settings_mutex, K_FOREVER);
+   if (!strcmp(id, "CHA")) {
+      memmove(&scale_a, buf, res);
+      scale_a_length = res;
+      key = SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_SCALE_SETUP_A;
+   } else if (!strcmp(id, "CHB")) {
+      memmove(&scale_b, buf, res);
+      scale_b_length = res;
+      key = SETTINGS_SERVICE_NAME "/" SETTINGS_KEY_SCALE_SETUP_B;
+   }
+   k_mutex_unlock(&settings_mutex);
+
+   return settings_save_one(key, buf, res);
+}
+
+#endif /* CONFIG_NAU7802_SCALE */
 
 #if defined(DTLS_ECC)
 

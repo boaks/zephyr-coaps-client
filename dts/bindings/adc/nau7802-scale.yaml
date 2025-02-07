@@ -34,11 +34,37 @@ properties:
       - 4200
       - 4500
 
+  ext_avref_mv:
+    type: int
+    required: true
+    description: External Analog Voltage Reference in mV
+
+  min_divider:
+    type: int
+    required: true
+    description: Minimal divider
+    
+  max_dither:
+    type: int
+    required: true
+    description: Maximum dither
+  
   gain:
     type: int
     required: true
-    description: Input GAIN
+    description: |
+      Gain selection:
+        - 0: bypass PGA
+        - 1: gain x1
+        - 2: gain x2
+        - 4: gain x4
+        - 8: gain x8
+        - 16: gain x16
+        - 32: gain x32
+        - 64: gain x64
+        - 128: gain x128
     enum:
+      - 0
       - 1
       - 2
       - 4
@@ -48,6 +74,15 @@ properties:
       - 64
       - 128
 
+  internal_oscilator:
+    type: boolean
+    description: |
+      Enable internal oscilator.
+
+  pga_cap:
+    type: boolean
+    description: |
+      Enable PGA output bypass capacitor connected across pins Vin2P Vin2N.
+
   calibration_storage:
     type: phandle
-    required: true
