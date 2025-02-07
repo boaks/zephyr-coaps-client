@@ -25,18 +25,7 @@
  */
 int scale_sample(double *valueA, double *valueB, double *temperatureA, double *temperatureB);
 
-int scale_sample_desc(char* buf, size_t len, bool series);
-
-enum calibrate_phase {
-	CALIBRATE_NONE,
-	CALIBRATE_START,
-	CALIBRATE_ZERO,
-	CALIBRATE_CHA_10KG,
-	CALIBRATE_CHB_10KG,
-	CALIBRATE_DONE,
-};
-
-int scale_calibrate(enum calibrate_phase phase);
+int scale_sample_desc(char* buf, size_t len);
 
 bool scale_calibrate_setup(void);
 
