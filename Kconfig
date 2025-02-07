@@ -586,11 +586,33 @@ config BATTERY_TYPE_DEFAULT
 	  5 := Super CAP, Lithium Hybrid (conexio stratus pro)
 endif
 
+config EXPANSION_PORT
+	bool "Use expansion port"
+	default y
+	depends on BOARD_THINGY91X_NRF9151_NS
+	help
+	   Use Thingy:91X expansion port.
+
+config EXPANSION_PORT_INIT_PRIORITY
+	int "Expansion port init priority"
+	default 87
+	depends on EXPANSION_PORT
+	help
+	   Thingy:91X expansion port init priority.
+	   Must be executed before sensor init.
+
+config ENABLE_EXPANSION_PORT
+	bool "Enable expansion port on init"
+	depends on EXPANSION_PORT
+	help
+	   Enable Thingy:91X expansion port.
+
+
 config NAU7802_SCALE
 	bool "Enable NAU7802 scale"
 	depends on I2C
 	help
-	   Enable NAU7802 scale
+	   Enable NAU7802 scale.
 
 config NAU7802_PARALLEL_READ
 	bool "Enable parallel channel reads for NAU7802"
@@ -857,7 +879,7 @@ config APPL_MODEL_DESCRIPTION
 	default "nRF9160-DK" if BOARD_NRF9160DK_NRF9160_NS
 	default "nRF9161-DK" if BOARD_NRF9161DK_NRF9161_NS
 	default "Thingy:91" if BOARD_THINGY91_NRF9160_NS
-	default "Thingy:91 X" if BOARD_THINGY91X_NRF9151_NS
+	default "Thingy:91X" if BOARD_THINGY91X_NRF9151_NS
 	default "nRF9160-scale" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && ADC_SCALE
 	default "nRF9160-monitor" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && EXT_BATTERY_ADC
 	default "nRF9160-feather" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS

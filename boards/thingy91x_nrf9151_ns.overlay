@@ -13,6 +13,16 @@
 
 / {
 
+	outs {
+		compatible = "gpio-leds";
+		status = "okay";
+		
+		exp_port_enable: exp_port_enable {
+			gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+		};
+
+	};
+
 	ins {
 		compatible = "gpio-keys";
 		rx0: uart0_rx {
@@ -38,6 +48,8 @@
 
 		/* alias for watchdog */
 		watchdog0 = &wdt0;
+
+		exp-port-enable = &exp_port_enable;
 	};
 
 };
@@ -45,5 +57,10 @@
 &bme680 {
 	status = "okay";
 };
+
+&flash_ext {
+	jedec-id = [c8 60 19];
+};
+
 
 sensor_i2c: &i2c2 { };
