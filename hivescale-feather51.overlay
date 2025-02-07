@@ -1,0 +1,63 @@
+/*
+ * Copyright (c) 2025 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http: //www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+
+/*
+ * Usage (NCS 2.9.1):
+ *
+ * west build -d build_feather_nrf9151_ns -b circuitdojo_feather_nrf9151/nrf9151/ns --pristine -- \
+ *    -DOVERLAY_CONFIG="60min0-prj.conf;uart-prj.conf;hivescale-prj.conf" \
+ *    -DDTC_OVERLAY_FILE="hivescale-feather51.overlay" -DCONFIG_BATTERY_TYPE_ENELOOP_2000_MAH=y
+ */
+
+#include "boards/circuitdojo_feather_nrf9151_ns.overlay"
+
+&i2c2 {
+
+	eeprom_a: eeprom@50 {
+		/* AT24HC04B (4 kbit eeprom 512x8 bit) */
+		/* NOTE: the 9th address bit collides with the 0x51 of the feather clock chip. */
+		compatible = "atmel,at24";
+		reg = <0x50>;
+		size = <512>;
+		pagesize = <16>;
+		address-width = <8>;
+		timeout = <5>;
+	};
+
+	scale_a: scale@2a {
+		compatible = "nau7802-scale";
+		reg = <0x2a>;
+		avref_mv = <2700>;
+		ext_avref_mv = <0>;
+		gain = <32>;
+		min_divider = <500>;
+		max_dither = <50>;
+		internal_oscilator;
+		pga_cap;
+//		calibration_storage = <&eeprom_a>;
+	};
+
+};
+
+&npm1300_buck1 {
+	// 2.7V will result in less NAU7802 performance
+	regulator-min-microvolt = <3300000>;	
+};
+
+/    {
+
+	aliases {
+		scale-a = &scale_a;
+	};
+
+};

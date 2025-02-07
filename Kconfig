@@ -503,7 +503,7 @@ config LOG_BACKEND_UART_THROTTLE
    default y if BOARD_THINGY91X_NRF9151_NS
     help
       Throttle UART log backend. Thingy:91X connectivity
-	  bridge seems to has some issues.
+      bridge seems to has some issues.
 
 config UART_UPDATE
     bool "Support firmware update via UART cmd."
@@ -674,6 +674,9 @@ if NAU7802_SCALE
 
 config NAU7802_SCALE_ON_EXPANSION_BOARD
 	bool "NAU7802 on expansion board"
+	default y if BOARD_THINGY91X_NRF9151_NS
+	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
+	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
 
 config NAU7802_PARALLEL_READ
 	bool "Enable parallel channel reads for NAU7802"
@@ -705,7 +708,7 @@ config ADC_SCALE
 
 config ADC_SCALE_SETUP
 	bool "Enable button setup"
-	default y
+	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
 	depends on ADC_SCALE
 
 if SENSOR

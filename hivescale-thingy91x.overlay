@@ -1,0 +1,51 @@
+/*
+ * Copyright (c) 2025 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http: //www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+
+/*
+ * Usage:
+ *
+ * west build -d build_thingy91x_nrf9151_ns -b thingy91x/nrf9151/ns --pristine -- \
+ *    -DOVERLAY_CONFIG="60min0-prj.conf;at-cmd-prj.conf;hivescale-prj.conf" \
+ *    -DDTC_OVERLAY_FILE="hivescale-thingy91x.overlay"
+ */
+
+#include "boards/thingy91x_nrf9151_ns.overlay"
+
+&i2c2 {
+
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+
+	scale_a: scale@2a {
+		compatible = "nau7802-scale";
+		reg = <0x2a>;
+		avref_mv = <2700>;
+		ext_avref_mv = <0>;
+		gain = <32>;
+		min_divider = <500>;
+		max_dither = <50>;
+		internal_oscilator;
+		pga_cap;
+	};
+
+};
+
+
+/    {
+
+	aliases {
+		scale-a = &scale_a;
+		/delete-property/ humidity-sensor;
+		/delete-property/ pressure-sensor;
+	};
+
+};

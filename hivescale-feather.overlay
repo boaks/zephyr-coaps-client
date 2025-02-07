@@ -15,7 +15,7 @@
  * Usage:
  *
  * west build -d build_feather_nrf9160_ns -b circuitdojo_feather_nrf9160_ns --pristine -- \
- *    -DOVERLAY_CONFIG="60min0-prj.conf;at-cmd-prj.conf;hivescale-prj.conf" \
+ *    -DOVERLAY_CONFIG="60min0-prj.conf;uart-prj.conf;hivescale-prj.conf" \
  *    -DDTC_OVERLAY_FILE="hivescale-feather.overlay" -DCONFIG_BATTERY_TYPE_ENELOOP_2000_MAH=y
  */
 
@@ -62,8 +62,13 @@
 	scale_a: scale@2a {
 		compatible = "nau7802-scale";
 		reg = <0x2a>;
-		avref_mv = <3000>;
-		gain = <64>;
+		avref_mv = <2700>;
+		ext_avref_mv = <0>;
+		gain = <32>;
+		min_divider = <500>;
+		max_dither = <50>;
+		internal_oscilator;
+		pga_cap;
 		calibration_storage = <&eeprom_a>;
 	};
 
@@ -90,8 +95,13 @@
 	scale_b: scale@2a {
 		compatible = "nau7802-scale";
 		reg = <0x2a>;
-		avref_mv = <3000>;
-		gain = <64>;
+		avref_mv = <2700>;
+		ext_avref_mv = <0>;
+		gain = <32>;
+		min_divider = <500>;
+		max_dither = <50>;
+		internal_oscilator;
+		pga_cap;
 		calibration_storage = <&eeprom_b>;
 	};
 

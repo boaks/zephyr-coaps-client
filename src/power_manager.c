@@ -663,6 +663,11 @@ static int npm1300_buck2_enable(bool enable, bool force)
    int counter = 0;
    bool change = false;
 
+   if (!npm1300_buck2_dev) {
+      LOG_WRN("NPM1300 buck2 not defined!");
+      return -ENOTSUP;
+   }
+
    if (!device_is_ready(npm1300_buck2_dev)) {
       LOG_WRN("NPM1300 buck2 not ready!");
       return -ENOTSUP;
