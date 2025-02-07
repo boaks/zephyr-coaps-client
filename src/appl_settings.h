@@ -36,6 +36,11 @@ int appl_settings_get_battery_profile(void);
 int appl_settings_get_reboot_code(size_t index, int64_t* time, uint16_t* code);
 int appl_settings_add_reboot_code(uint16_t reboot_code);
 
+#ifdef CONFIG_NAU7802_SCALE
+int appl_settings_get_bytes(const char* id, int64_t* time, uint8_t* data, size_t data_size);
+int appl_settings_set_bytes(const char* id, uint8_t* data, size_t data_size);
+#endif /* CONFIG_NAU7802_SCALE */
+
 int appl_settings_get_provisioning(char *buf, size_t len);
 bool appl_settings_is_provisioning(void);
 void appl_settings_provisioning_done(void);

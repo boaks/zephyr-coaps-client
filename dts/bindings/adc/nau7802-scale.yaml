@@ -50,4 +50,3 @@ properties:
 
   calibration_storage:
     type: phandle
-    required: true
