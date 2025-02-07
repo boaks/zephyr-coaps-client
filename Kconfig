@@ -641,12 +641,16 @@ config ENABLE_EXPANSION_PORT
 	help
 	   Enable Qwiic expansion port.
 
-
 config NAU7802_SCALE
 	bool "Enable NAU7802 scale"
 	depends on I2C
 	help
 	   Enable NAU7802 scale.
+
+if NAU7802_SCALE
+
+config NAU7802_SCALE_ON_EXPANSION_BOARD
+	bool "NAU7802 on expansion board"
 
 config NAU7802_PARALLEL_READ
 	bool "Enable parallel channel reads for NAU7802"
@@ -661,10 +665,25 @@ config NAU7802_DUMMY_CALIBRATION
 	default n
 	depends on NAU7802_SCALE
 
+config NAU7802_INIT_PRIORITY
+	int "NAU7802 init priority"
+	default 91
+	depends on NAU7802_SCALE
+	help
+	   NAU7802 init priority.
+	   Must be executed after i2c driver init.
+
+endif # NAU7802_SCALE
+
 config ADC_SCALE
 	bool
 	default y
 	depends on NAU7802_SCALE
+
+config ADC_SCALE_SETUP
+	bool "Enable button setup"
+	default y
+	depends on ADC_SCALE
 
 if SENSOR
 
@@ -900,6 +919,7 @@ config APPL_MODEL
 	default "dk2" if BOARD_NRF9161DK_NRF9161_NS
 	default "dk3" if BOARD_NRF9151DK_NRF9151_NS
 	default "ty" if BOARD_THINGY91_NRF9160_NS
+	default "txsc" if BOARD_THINGY91X_NRF9151_NS && ADC_SCALE
 	default "tx" if BOARD_THINGY91X_NRF9151_NS
 	default "sc" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && ADC_SCALE
 	default "bm" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && EXT_BATTERY_ADC
@@ -916,6 +936,7 @@ config APPL_MODEL_DESCRIPTION
 	default "nRF9161-DK" if BOARD_NRF9161DK_NRF9161_NS
 	default "nRF9151-DK" if BOARD_NRF9151DK_NRF9151_NS
 	default "Thingy:91" if BOARD_THINGY91_NRF9160_NS
+	default "Thingy:91X scale" if BOARD_THINGY91X_NRF9151_NS && ADC_SCALE
 	default "Thingy:91X" if BOARD_THINGY91X_NRF9151_NS
 	default "nRF9160-scale" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && ADC_SCALE
 	default "nRF9160-monitor" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && EXT_BATTERY_ADC

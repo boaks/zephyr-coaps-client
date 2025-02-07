@@ -1518,9 +1518,9 @@ static void accelerometer_handler(const struct accelerometer_evt *const evt)
    ui_led_op(LED_COLOR_RED, LED_BLINK);
 #endif /* MOTION_DETECTION_LED */
 }
-#endif
+#endif /* CONFIG_MOTION_DETECTION */
 
-#ifdef CONFIG_ADC_SCALE
+#ifdef CONFIG_ADC_SCALE_SETUP
 
 static bool dtls_setup_mode(void)
 {
@@ -1570,7 +1570,7 @@ static bool dtls_setup_mode(void)
 
    return restart;
 }
-#endif
+#endif /* CONFIG_ADC_SCALE_SETUP */
 
 #define MAX_MULTI_IMSI_SEARCH_TIME_S (30 * 60)
 
@@ -1869,7 +1869,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
             network_not_found = false;
          }
       }
-#ifdef CONFIG_ADC_SCALE
+#ifdef CONFIG_ADC_SCALE_SETUP
       if (atomic_test_bit(&general_states, TRIGGER_DURATION)) {
          if (!dtls_setup_mode()) {
             atomic_clear_bit(&general_states, TRIGGER_DURATION);

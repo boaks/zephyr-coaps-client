@@ -62,8 +62,13 @@
 	scale_a: scale@2a {
 		compatible = "nau7802-scale";
 		reg = <0x2a>;
-		avref_mv = <3000>;
-		gain = <64>;
+		avref_mv = <2700>;
+		ext_avref_mv = <0>;
+		gain = <0>;
+		min_divider = <500>;
+		max_dither = <50>;
+		internal_oscilator;
+		pga_cap;
 		calibration_storage = <&eeprom_a>;
 	};
 
@@ -90,8 +95,13 @@
 	scale_b: scale@2a {
 		compatible = "nau7802-scale";
 		reg = <0x2a>;
-		avref_mv = <3000>;
-		gain = <64>;
+		avref_mv = <2700>;
+		ext_avref_mv = <0>;
+		gain = <0>;
+		min_divider = <500>;
+		max_dither = <50>;
+		internal_oscilator;
+		pga_cap;
 		calibration_storage = <&eeprom_b>;
 	};
 
