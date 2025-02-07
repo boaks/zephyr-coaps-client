@@ -844,12 +844,15 @@ int power_manager_read_ina219(uint16_t *voltage, uint16_t *current)
    }
 
    if (!ina219) {
-      if (ina219_0) {
-         LOG_WRN("Device %s is not ready.", ina219_0->name);
-      } else if (ina219_1) {
-         LOG_WRN("Device %s is not ready.", ina219_1->name);
+      if (ina219_0 == NULL && ina219_1 == NULL) {
+         LOG_WRN("No INA219 device available.");
       } else {
-         LOG_WRN("Device INA219 is not available.");
+         if (ina219_0) {
+            LOG_WRN("%s device is not ready.", ina219_0->name);
+         }
+         if (ina219_1) {
+            LOG_WRN("%s device is not ready.", ina219_1->name);
+         }
       }
       return -EINVAL;
    }
@@ -1222,7 +1225,10 @@ int power_manager_status_desc(char *buf, size_t len)
          index += snprintf(buf + index, len - index, " %s", msg);
       }
 #ifdef CONFIG_NPM1300_CHARGER
-      index += npm1300_power_manager_read_status(&battery_status, buf + index, len - index);
+      int rc = npm1300_power_manager_read_status(&battery_status, buf + index, len - index);
+      if (rc > 0) {
+         index += rc;
+      }
 #endif
    }
    return index;
