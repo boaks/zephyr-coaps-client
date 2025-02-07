@@ -883,7 +883,7 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
       if (flags & COAP_SEND_FLAG_SCALE_INFO) {
          buf[index] = '\n';
          start = index + 1;
-         err = scale_sample_desc(buf + start, len - start, true);
+         err = scale_sample_desc(buf + start, len - start);
          if (err > 0) {
             index = start + err;
          }

@@ -627,6 +627,14 @@ config NAU7802_DUMMY_CALIBRATION
 	default n
 	depends on NAU7802_SCALE
 
+config NAU7802_INIT_PRIORITY
+	int "NAU7802 init priority"
+	default 91
+	depends on NAU7802_SCALE
+	help
+	   NAU7802 init priority.
+	   Must be executed after i2c driver init.
+
 config ADC_SCALE
 	bool
 	default y
@@ -864,6 +872,7 @@ config APPL_MODEL
 	default "dk" if BOARD_NRF9160DK_NRF9160_NS
 	default "dk2" if BOARD_NRF9161DK_NRF9161_NS
 	default "ty" if BOARD_THINGY91_NRF9160_NS
+	default "txsc" if BOARD_THINGY91X_NRF9151_NS && ADC_SCALE
 	default "tx" if BOARD_THINGY91X_NRF9151_NS
 	default "sc" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && ADC_SCALE
 	default "bm" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && EXT_BATTERY_ADC
@@ -879,6 +888,7 @@ config APPL_MODEL_DESCRIPTION
 	default "nRF9160-DK" if BOARD_NRF9160DK_NRF9160_NS
 	default "nRF9161-DK" if BOARD_NRF9161DK_NRF9161_NS
 	default "Thingy:91" if BOARD_THINGY91_NRF9160_NS
+	default "Thingy:91X scale" if BOARD_THINGY91X_NRF9151_NS && ADC_SCALE
 	default "Thingy:91X" if BOARD_THINGY91X_NRF9151_NS
 	default "nRF9160-scale" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && ADC_SCALE
 	default "nRF9160-monitor" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && EXT_BATTERY_ADC
