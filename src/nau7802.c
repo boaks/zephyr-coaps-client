@@ -20,13 +20,17 @@
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/random/random.h>
 #include <zephyr/sys/byteorder.h>
 
+#include "appl_settings.h"
 #include "appl_storage.h"
 #include "appl_storage_config.h"
 #include "appl_time.h"
+#include "expansion_port.h"
 #include "io_job_queue.h"
 #include "nau7802.h"
+#include "parse.h"
 #include "ui.h"
 
 #include "sh_cmd.h"
@@ -39,77 +43,107 @@ LOG_MODULE_REGISTER(SCALE, CONFIG_SCALE_LOG_LEVEL);
 #define NAU7802_CTRL1 0x01
 #define NAU7802_CTRL2 0x02
 #define NAU7802_OCAL1 0x03
+#define NAU7802_GCAL1 0x06
+#define NAU7802_OCAL2 0x0A
+#define NAU7802_GCAL2 0x0D
 #define NAU7802_I2C 0x11
 #define NAU7802_ADC 0x12
 #define NAU7802_ADC_CTRL 0x15
 #define NAU7802_PGA_CTRL 0x1B
 #define NAU7802_POWER_CTRL 0x1C
 
-/*
-  gain 0 => 1x
-  gain 1 => 2x
-  gain 2 => 4x
-  ...
-  gain 7 => 128x
-*/
-#define NAU7802_DEFAULT_GAIN 7
-#define NAU7802_DEFAULT_AVREF 2400
-#define NAU7802_CALIBRATE_ON_RESUME true
 #define NAU7802_MAX_ADC_VALUE 0x7ffffd
 #define NAU7802_NONE_ADC_VALUE 0xff800000
 
-#define NAU7802_MIN_PAUSE_CALIBRATION_MS 200
 #define NAU7802_MIN_PAUSE_SAMPLE_MS 100
-#define NAU7802_CALIBRATION_INTERVAL_MS (60 * 60 * 1000) // 1h
 
 // 10 g resolution
 #define SCALE_RESOLUTION_G 10
 // 10 kg calibration
 #define SCALE_CALIBRATION_G 10000
 
-#define MAX_ADC_CHANNELS 2
 #define MAX_ADC_LOOPS 12
 #define MIN_ADC_SAMPLES 4
-#define MAX_ADC_LOOPS_CALIBRATION 15
-#define MIN_ADC_SAMPLES_CALIBRATION 8
-#define MAX_ADC_HISTORY ((MIN_ADC_SAMPLES_CALIBRATION < MIN_ADC_SAMPLES) ? MIN_ADC_SAMPLES : MIN_ADC_SAMPLES_CALIBRATION)
 
-#define MAX_ADC_DITHER (512 * 3)
-#define MIN_ADC_DIVIDER 2000
-#define DUMMY_ADC_DIVIDER 100
+#define DUMMY_ADC_DIVIDER 1000
 
-#define NORMALIZE_DIVIDER(DIV) (((DIV) >= MIN_ADC_DIVIDER || (DIV) == DUMMY_ADC_DIVIDER) ? (DIV) : 0)
+#define NORMALIZE_DIVIDER(DIV, MIN) (((DIV) >= (MIN) || (DIV) == DUMMY_ADC_DIVIDER) ? (DIV) : 0)
+
+#define DIV_ROUNDED(N, D) (((N) + (D) / 2) / (D))
 
 #define TEMPERATURE_DOUBLE(T) (((double)T) / 1000.0)
+
+#if DT_NODE_HAS_STATUS(DT_ALIAS(scale_a), okay)
+#define HAS_SCALE_A
+#if DT_NODE_HAS_STATUS(DT_ALIAS(scale_b), okay)
+#define HAS_SCALE_B
+#if (DT_REG_ADDR(DT_BUS(DT_ALIAS(scale_a))) == DT_REG_ADDR(DT_BUS(DT_ALIAS(scale_b))))
+// no parallel reads on the same i2c bus
+#undef CONFIG_NAU7802_PARALLEL_READ
+#endif
+#endif /* DT_NODE_HAS_STATUS(DT_ALIAS(scale_b), okay) */
+#else
+#error "missing scale definition in devicetree!"
+#endif /* DT_NODE_HAS_STATUS(DT_ALIAS(scale_a), okay) */
 
 /* Only the first 256 bytes of the 512 bytes EEPROM are useable! */
 /* The second 256 are in I2C address conflict with the feather's clock at 0x51. */
 #define CALIBRATION_STORAGE_PAGES 2
 
+enum calibrate_phase {
+   CALIBRATE_NONE,
+   CALIBRATE_START,
+   CALIBRATE_ZERO,
+   CALIBRATE_CHA_10KG,
+#ifdef HAS_SCALE_B
+   CALIBRATE_CHB_10KG,
+#endif /* HAS_SCALE_B */
+   CALIBRATE_DONE,
+   CALIBRATE_CMD,
+};
+
 static K_MUTEX_DEFINE(scale_mutex);
 
-static const struct storage_config calibration_storage_configs[] = {
+#ifdef HAS_SCALE_A
+#if DT_NODE_HAS_STATUS(DT_PHANDLE(DT_ALIAS(scale_a), calibration_storage), okay)
+#define HAS_EEPROM_A
+#endif
+#endif /* HAS_SCALE_A */
+
+#ifdef HAS_EEPROM_A
+static const struct storage_config calibration_storage_config_a =
     {
         .storage_device = DEVICE_DT_GET_OR_NULL(DT_PHANDLE(DT_ALIAS(scale_a), calibration_storage)),
-        .desc = "calibration A",
+        .desc = "setup A",
         .is_flash_device = false,
         .id = CALIBRATION_A_ID,
         .magic = 0x03400560,
-        .version = 1,
+        .version = 2,
         .value_size = CALIBRATE_VALUE_SIZE,
         .pages = CALIBRATION_STORAGE_PAGES,
-    },
+};
+#endif /* HAS_EEPROM_A */
+
+#ifdef HAS_SCALE_B
+
+#if DT_NODE_HAS_STATUS(DT_PHANDLE(DT_ALIAS(scale_b), calibration_storage), okay)
+#define HAS_EEPROM_B
+#endif
+#endif /* HAS_SCALE_B */
+
+#ifdef HAS_EEPROM_B
+static const struct storage_config calibration_storage_config_b =
     {
         .storage_device = DEVICE_DT_GET_OR_NULL(DT_PHANDLE(DT_ALIAS(scale_b), calibration_storage)),
-        .desc = "calibration B",
+        .desc = "setup B",
         .is_flash_device = false,
         .id = CALIBRATION_B_ID,
         .magic = 0x03400560,
-        .version = 1,
+        .version = 2,
         .value_size = CALIBRATE_VALUE_SIZE,
         .pages = CALIBRATION_STORAGE_PAGES,
-    },
 };
+#endif /* HAS_EEPROM_B */
 
 enum avdd_source {
    AVDD_UNKNOWN,
@@ -119,136 +153,283 @@ enum avdd_source {
 
 const char *AVDD_DESCRIPTION[] = {"n.a", "ext.", "int."};
 
-struct scale_calibrate {
+enum adc_channel {
+   ADC_CHANNEL_1,
+   ADC_CHANNEL_TEMPERATURE,
+};
+
+struct scale_setup {
+   int64_t time;
    int32_t offset;
    int32_t divider;
    int32_t calibration_temperature;
-   uint16_t avref;
+   uint16_t int_avref;
+   uint16_t ext_avref;
+   uint16_t max_dither;
+   uint16_t min_divider;
+   uint8_t gain;
+   bool int_osc;
+   bool pga_cap;
 };
 
 struct scale_config {
    const char *channel_name;
    const struct storage_config *storage_config;
    const struct device *i2c_device;
-   struct scale_calibrate external_calibration;
+   const struct scale_setup *default_setup;
+   struct scale_setup setup;
    bool i2c_ok;
-   bool calibrate;
    bool read_temperature;
    enum avdd_source source;
-   uint8_t gain;
    int64_t resume_time;
-   int64_t calibration_time;
-   int32_t internal_offset;
    int32_t raw;
+   int32_t internal_offset;
    int32_t weight;
    int32_t temperature;
-   int32_t previous_offset;
-   int32_t previous_divider;
+   int32_t gcal2_marker;
 };
 
-static struct scale_config configs[MAX_ADC_CHANNELS] = {
+#ifdef HAS_SCALE_A
+
+
+#define INIT_SCALE_SETUP(N) { \
+   .int_avref = DT_PROP(N, avref_mv), \
+   .ext_avref = DT_PROP(N, ext_avref_mv), \
+   .gain = DT_PROP(N, gain), \
+   .int_osc = DT_PROP(N, internal_oscilator), \
+   .pga_cap = DT_PROP(N, pga_cap), \
+   .max_dither = DT_PROP(N, max_dither), \
+   .min_divider = DT_PROP(N, min_divider), \
+   .offset = 0, \
+   .divider = 0, \
+   .calibration_temperature = 0, }
+
+static const struct scale_setup setup_a = INIT_SCALE_SETUP(DT_ALIAS(scale_a));
+
+static struct scale_config config_a =
     {
         .channel_name = "CHA",
-        .storage_config = &calibration_storage_configs[0],
+#ifdef HAS_EEPROM_A
+        .storage_config = &calibration_storage_config_a,
+#else
+        .storage_config = NULL,
+#endif
         .i2c_device = DEVICE_DT_GET_OR_NULL(DT_BUS(DT_ALIAS(scale_a))),
-        .external_calibration = {
-            .avref = DT_PROP_OR(DT_ALIAS(scale_a), avref_mv, NAU7802_DEFAULT_AVREF),
-            .offset = NAU7802_NONE_ADC_VALUE,
-            .divider = 0,
-        },
+        .default_setup = &setup_a,
         .i2c_ok = false,
         .read_temperature = false,
         .source = AVDD_UNKNOWN,
-        .gain = DT_PROP_OR(DT_ALIAS(scale_a), gain, NAU7802_DEFAULT_GAIN),
         .resume_time = 0,
-        .calibration_time = 0,
+        .internal_offset = NAU7802_NONE_ADC_VALUE,
         .raw = NAU7802_NONE_ADC_VALUE,
+        .weight = NAU7802_NONE_ADC_VALUE,
         .temperature = NAU7802_NONE_ADC_VALUE,
-        .previous_offset = NAU7802_NONE_ADC_VALUE,
-        .previous_divider = 0,
-    },
+};
+
+#endif /* HAS_SCALE_A */
+
+#ifdef HAS_SCALE_B
+
+static const struct scale_setup setup_b = INIT_SCALE_SETUP(DT_ALIAS(scale_b));
+
+static struct scale_config config_b =
     {
         .channel_name = "CHB",
-        .storage_config = &calibration_storage_configs[1],
+#ifdef HAS_EEPROM_B
+        .storage_config = &calibration_storage_config_b,
+#else
+        .storage_config = NULL,
+#endif
         .i2c_device = DEVICE_DT_GET_OR_NULL(DT_BUS(DT_ALIAS(scale_b))),
-        .external_calibration = {
-            .avref = DT_PROP_OR(DT_ALIAS(scale_b), avref_mv, NAU7802_DEFAULT_AVREF),
-            .offset = NAU7802_NONE_ADC_VALUE,
-            .divider = 0,
-        },
+        .default_setup = &setup_b,
         .i2c_ok = false,
         .read_temperature = false,
         .source = AVDD_UNKNOWN,
-        .gain = DT_PROP_OR(DT_ALIAS(scale_b), gain, NAU7802_DEFAULT_GAIN),
         .resume_time = 0,
-        .calibration_time = 0,
+        .internal_offset = NAU7802_NONE_ADC_VALUE,
         .raw = NAU7802_NONE_ADC_VALUE,
+        .weight = NAU7802_NONE_ADC_VALUE,
         .temperature = NAU7802_NONE_ADC_VALUE,
-        .previous_offset = NAU7802_NONE_ADC_VALUE,
-        .previous_divider = 0,
-    }};
+};
+#endif /* HAS_SCALE_B */
+
+static struct scale_config *configs[] =
+    {
+#ifdef HAS_SCALE_A
+        &config_a,
+#endif /* HAS_SCALE_A */
+#ifdef HAS_SCALE_B
+        &config_b,
+#endif /* HAS_SCALE_B */
+};
+
+static const int max_configs = sizeof(configs) / sizeof(struct scale_config *);
 
 static volatile enum calibrate_phase current_calibrate_phase = CALIBRATE_NONE;
 static volatile enum calibrate_phase next_calibrate_phase = CALIBRATE_START;
+
+static inline bool scale_use_pga_capacitor(const struct scale_config *scale_dev)
+{
+   return scale_dev->setup.pga_cap;
+}
 
 static inline int32_t expand_sign_24(int32_t value)
 {
    return (value << 8) >> 8;
 }
 
-static void scale_save_external_calibration(struct scale_config *scale_dev)
+static inline uint8_t scale_gain_reg(uint8_t gain)
 {
-   if (scale_dev->i2c_ok) {
-      int rc = 0;
-      uint8_t calibration[CALIBRATE_VALUE_SIZE];
-      memset(calibration, 0, sizeof(calibration));
-      sys_put_be24(scale_dev->external_calibration.offset, calibration);
-      sys_put_be24(scale_dev->external_calibration.divider, &calibration[3]);
-      sys_put_be24(scale_dev->external_calibration.calibration_temperature, &calibration[6]);
-      sys_put_be16(scale_dev->external_calibration.avref, &calibration[9]);
-      rc = appl_storage_write_bytes_item(scale_dev->storage_config->id, calibration, sizeof(calibration));
-      if (rc) {
-         LOG_INF("ADC %s saving external calibration failed, %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
-      } else {
-         LOG_INF("ADC %s external calibration saved.", scale_dev->channel_name);
-      }
-   } else {
-      LOG_INF("ADC %s I2C error.", scale_dev->channel_name);
+   uint8_t reg = 0;
+   uint8_t value = 1;
+
+   while (gain > value) {
+      ++reg;
+      value <<= 1;
    }
+   return reg;
 }
 
-static void scale_read_external_calibration(struct scale_config *scale_dev)
+static inline uint8_t scale_gain_factor(uint8_t id)
+{
+   uint8_t value = 1;
+
+   while (id > 0) {
+      --id;
+      value <<= 1;
+   }
+   return value;
+}
+
+#ifdef CONFIG_NAU7802_SCALE_ON_EXPANSION_BOARD
+static int scale_expansion_port_power(bool enable)
 {
    int rc = 0;
-   struct scale_calibrate cal;
+   if (!enable) {
+      k_sleep(K_MSEC(10));
+   }
+   rc = expansion_port_power(enable);
+   if (enable) {
+      k_sleep(K_MSEC(100));
+   }
+   return rc;
+}
+#else /* CONFIG_NAU7802_SCALE_ON_EXPANSION_BOARD */
+
+static inline int scale_expansion_port_power(bool enable)
+{
+   (void)enable;
+   return 0;
+}
+
+#endif /* CONFIG_NAU7802_SCALE_ON_EXPANSION_BOARD */
+
+static void scale_dump_calibration(struct scale_config *scale_dev)
+{
+   int32_t divider = 0;
+   struct scale_setup *setup = NULL;
+
+   if (!scale_dev) {
+      return;
+   }
+   if (CALIBRATE_CMD == current_calibrate_phase) {
+      LOG_INF("ADC %s manual calibration pending.", scale_dev->channel_name);
+   } else if (CALIBRATE_NONE != current_calibrate_phase) {
+      LOG_INF("ADC %s calibration pending.", scale_dev->channel_name);
+   }
+
+   setup = &scale_dev->setup;
+   divider = setup->divider;
+
+   if (!setup->time) {
+      LOG_INF("ADC %s calibration missing.", scale_dev->channel_name);
+   } else {
+      char buf[32];
+      appl_format_time(setup->time, buf, sizeof(buf));
+      LOG_INF("ADC %s calibration %s", scale_dev->channel_name, buf);
+   }
+   LOG_INF("ADC %s offset:      %7d", scale_dev->channel_name, setup->offset);
+   LOG_INF("ADC %s divider:     %7d%s", scale_dev->channel_name, divider, divider == DUMMY_ADC_DIVIDER ? " (dummy)" : "");
+   LOG_INF("ADC %s temperature: %7.1f C", scale_dev->channel_name, TEMPERATURE_DOUBLE(setup->calibration_temperature));
+   LOG_INF("ADC %s gain         %7u x", scale_dev->channel_name, setup->gain);
+   LOG_INF("ADC %s int. avref:  %7.1f V", scale_dev->channel_name, ((double)setup->int_avref) / 1000);
+   LOG_INF("ADC %s ext. avref:  %7.1f V", scale_dev->channel_name, ((double)setup->ext_avref) / 1000);
+   LOG_INF("ADC %s avref:       %7s", scale_dev->channel_name, AVDD_DESCRIPTION[scale_dev->source]);
+   LOG_INF("ADC %s max. dither  %7u", scale_dev->channel_name, setup->max_dither);
+   LOG_INF("ADC %s min. divider %7u", scale_dev->channel_name, setup->min_divider);
+   LOG_INF("ADC %s int. osc.:   %7s", scale_dev->channel_name, setup->int_osc ? "yes" : "no");
+   LOG_INF("ADC %s PGA cap.:    %7s", scale_dev->channel_name, setup->pga_cap ? "yes" : "no");
+   LOG_INF("ADC %s int. off.:   %7d", scale_dev->channel_name, scale_dev->internal_offset);
+}
+
+static void scale_save_setup(struct scale_config *scale_dev)
+{
+   int rc = 0;
    uint8_t calibration[CALIBRATE_VALUE_SIZE];
 
    memset(calibration, 0, sizeof(calibration));
-   rc = appl_storage_read_bytes_item(scale_dev->storage_config->id, 0,
-                                     NULL, calibration, sizeof(calibration));
+   sys_put_be24(scale_dev->setup.offset, calibration);
+   sys_put_be24(scale_dev->setup.divider, &calibration[3]);
+   sys_put_be24(scale_dev->setup.calibration_temperature, &calibration[6]);
+   sys_put_be16(scale_dev->setup.int_avref, &calibration[9]);
+   sys_put_be16(scale_dev->setup.ext_avref, &calibration[11]);
+   calibration[13] = scale_dev->setup.gain;
+   calibration[14] = scale_dev->setup.int_osc ? 1 : 0;
+   calibration[15] = scale_dev->setup.pga_cap ? 1 : 0;
+   if (scale_dev->storage_config) {
+      rc = appl_storage_write_bytes_item(scale_dev->storage_config->id, calibration, sizeof(calibration));
+   } else {
+      rc = appl_settings_set_bytes(scale_dev->channel_name, calibration, sizeof(calibration));
+   }
+   if (rc) {
+      LOG_INF("ADC %s saving setup failed, %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
+   } else {
+      appl_get_now(&scale_dev->setup.time);
+      LOG_INF("ADC %s setup saved.", scale_dev->channel_name);
+      scale_dump_calibration(scale_dev);
+   }
+}
+
+static void scale_load_setup(struct scale_config *scale_dev)
+{
+   int rc = 0;
+   int64_t time = 0;
+   uint8_t calibration[CALIBRATE_VALUE_SIZE];
+
+   memset(calibration, 0, sizeof(calibration));
+   if (scale_dev->storage_config) {
+      rc = appl_storage_read_bytes_item(scale_dev->storage_config->id, 0,
+                                        &time, calibration, sizeof(calibration));
+   } else {
+      rc = appl_settings_get_bytes(scale_dev->channel_name, &time, calibration, sizeof(calibration));
+   }
    if (rc == sizeof(calibration)) {
-      cal.offset = expand_sign_24((int32_t)sys_get_be24(calibration));
-      cal.divider = NORMALIZE_DIVIDER(sys_get_be24(&calibration[3]));
-      cal.calibration_temperature = expand_sign_24((int32_t)sys_get_be24(&calibration[6]));
-      cal.avref = sys_get_be16(&calibration[9]);
-      if (cal.divider > 0 &&
-          (cal.divider == DUMMY_ADC_DIVIDER || cal.avref == scale_dev->external_calibration.avref)) {
-         scale_dev->external_calibration = cal;
-         LOG_INF("ADC %s calibration 0x%06x, %d, %.1f loaded.", scale_dev->channel_name,
-                 cal.offset, cal.divider, TEMPERATURE_DOUBLE(cal.calibration_temperature));
+      struct scale_setup *setup = &scale_dev->setup;
+      setup->max_dither = scale_dev->default_setup->max_dither;
+      setup->min_divider = scale_dev->default_setup->min_divider;
+      setup->time = time;
+      setup->offset = expand_sign_24((int32_t)sys_get_be24(calibration));
+      setup->divider = sys_get_be24(&calibration[3]);
+      setup->calibration_temperature = expand_sign_24((int32_t)sys_get_be24(&calibration[6]));
+      setup->int_avref = sys_get_be16(&calibration[9]);
+      setup->ext_avref = sys_get_be16(&calibration[11]);
+      setup->gain = calibration[13];
+      setup->int_osc = calibration[14] ? true : false;
+      setup->pga_cap = calibration[15] ? true : false;
+      setup->divider = NORMALIZE_DIVIDER(setup->divider, setup->min_divider);
+      if (setup->divider > 0) {
+         LOG_INF("ADC %s setup 0x%06x, %d, %.1f loaded.", scale_dev->channel_name,
+                 setup->offset, setup->divider, TEMPERATURE_DOUBLE(setup->calibration_temperature));
       } else {
-         LOG_INF("ADC %s disabled.", scale_dev->channel_name);
-         scale_dev->external_calibration.divider = 0;
-         scale_dev->external_calibration.offset = 0;
+         LOG_INF("ADC %s setup disabled.", scale_dev->channel_name);
       }
    } else {
       if (rc) {
-         LOG_INF("ADC %s disabled, calibration loading failed, %d (%s)", scale_dev->channel_name, rc, strerror(-rc));
+         LOG_INF("ADC %s disabled, loading setup failed, %d (%s)", scale_dev->channel_name, rc, strerror(-rc));
       } else {
-         LOG_INF("ADC %s disabled, calibration not available.", scale_dev->channel_name);
+         LOG_INF("ADC %s disabled, setup not available.", scale_dev->channel_name);
       }
-      scale_dev->external_calibration.divider = 0;
-      scale_dev->external_calibration.offset = 0;
+      scale_dev->setup = *scale_dev->default_setup;
    }
 }
 
@@ -313,10 +494,19 @@ static inline int scale_wait_adc(const struct device *i2c_dev, const k_timeout_t
    return scale_wait(i2c_dev, NAU7802_PU_CTRL, BIT(5), BIT(5), K_MSEC(5), timeout);
 }
 
+static inline void scale_pause_sample(struct scale_config *scale_dev)
+{
+   scale_dev->resume_time = k_uptime_get() + NAU7802_MIN_PAUSE_SAMPLE_MS;
+}
+
 static int scale_write_regs(const struct scale_config *scale_dev, uint8_t reg, int32_t val, size_t len)
 {
    int rc = 0;
    uint8_t value[4] = {0, 0, 0, 0};
+
+   if (!scale_dev->i2c_ok) {
+      return -EINVAL;
+   }
 
    if (len < 1 || len > 4) {
       return -EINVAL;
@@ -350,6 +540,8 @@ static int scale_read_regs(const struct scale_config *scale_dev, uint8_t reg, in
    int32_t v = 0;
    uint8_t value[4] = {0, 0, 0, 0};
 
+   // no i2c_ok check, required to check mark for auto detection!
+
    if (len < 1 || len > 4) {
       return -EINVAL;
    }
@@ -382,93 +574,9 @@ static int scale_read_regs(const struct scale_config *scale_dev, uint8_t reg, in
    return rc;
 }
 
-static int scale_write_ocal_value(const struct scale_config *scale_dev, int32_t val)
+static int scale_suspend(const struct scale_config *scale_dev)
 {
-   bool neg = val < 0;
-
-   if (neg) {
-      val = -val;
-   }
-   if (val > 0x7FFFFF) {
-      val &= 0x7FFFFF;
-   }
-   if (neg) {
-      val |= 0x800000;
-   }
-
-   return scale_write_regs(scale_dev, NAU7802_OCAL1, val, 3);
-}
-
-static int scale_read_ocal_value(const struct scale_config *scale_dev, int32_t *val)
-{
-   int32_t value = 0;
-   int rc = scale_read_regs(scale_dev, NAU7802_OCAL1, &value, 3);
-
-   if (!rc) {
-      if (value & 0x800000) {
-         // Bit 23 is +/-
-         value = -(value & 0x7FFFFF);
-      }
-      if (val) {
-         *val = value;
-      }
-   }
-   return rc;
-}
-
-static int scale_internal_calibrate(struct scale_config *scale_dev, const char *tag)
-{
-   int rc = 0;
-   int32_t value = 0;
-   int64_t now = 0;
-
-   if (!scale_dev || !scale_dev->i2c_ok) {
-      return -EINVAL;
-   }
-   /* Calibrate internal offset */
-   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_CTRL2, BIT(0) | BIT(1), 0);
-   if (rc) {
-      LOG_WRN("ADC %s I2C NAU7802 config int. calibration %s, write failure, %d (%s)!",
-              scale_dev->channel_name, tag, rc, strerror(-rc));
-      return rc;
-   }
-   scale_wait_uptime(&scale_dev->resume_time);
-   /* Start internal calibration */
-   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_CTRL2, BIT(2), BIT(2));
-   if (rc) {
-      LOG_WRN("ADC %s I2C NAU7802 start int. calibration %s, write failure, %d (%s)!",
-              scale_dev->channel_name, tag, rc, strerror(-rc));
-      return rc;
-   }
-   /* wait internal calibration */
-   rc = scale_wait(scale_dev->i2c_device, NAU7802_CTRL2, BIT(2), 0, K_MSEC(25), K_MSEC(2000));
-   if (rc) {
-      LOG_WRN("ADC %s I2C NAU7802 int. calibration %s not ready, %d (%s)!",
-              scale_dev->channel_name, tag, rc, strerror(-rc));
-      return rc;
-   }
-   now = k_uptime_get();
-   rc = scale_read_ocal_value(scale_dev, &value);
-   if (!rc) {
-      if (value == 0) {
-         /* Unlikely, the 0 mostly indicates a new device */
-         value++;
-         scale_write_ocal_value(scale_dev, value);
-         LOG_INF("ADC %s I2C NAU7802 %s, int. calibration ready: offset %d*", scale_dev->channel_name, tag, value);
-      } else {
-         LOG_INF("ADC %s I2C NAU7802 %s, int. calibration ready: offset %d", scale_dev->channel_name, tag, value);
-      }
-      scale_dev->internal_offset = value;
-      scale_dev->calibration_time = now + NAU7802_CALIBRATION_INTERVAL_MS;
-      scale_dev->calibrate = false;
-   }
-   scale_dev->resume_time = now + NAU7802_MIN_PAUSE_SAMPLE_MS;
-   return rc;
-}
-
-static inline int scale_suspend(const struct scale_config *scale_dev)
-{
-   if (!scale_dev || !scale_dev->i2c_ok) {
+   if (!scale_dev->i2c_ok) {
       return -EINVAL;
    }
    LOG_INF("ADC %s suspend", scale_dev->channel_name);
@@ -479,7 +587,7 @@ static int scale_reset(const struct scale_config *scale_dev)
 {
    /* reset */
    int rc = 0;
-   if (!scale_dev || !scale_dev->i2c_ok) {
+   if (!scale_dev->i2c_ok) {
       return -EINVAL;
    }
    LOG_INF("ADC %s reset", scale_dev->channel_name);
@@ -492,15 +600,60 @@ static int scale_reset(const struct scale_config *scale_dev)
    return rc;
 }
 
-static int scale_avdd(struct scale_config *scale_dev, bool internal)
+static int scale_mark(struct scale_config *scale_dev)
+{
+   if (!scale_dev->i2c_ok) {
+      return -EINVAL;
+   }
+   sys_csrand_get(&scale_dev->gcal2_marker, sizeof(scale_dev->gcal2_marker));
+   if (scale_dev->gcal2_marker == 0x800000) {
+      // prevent default value
+      scale_dev->gcal2_marker--;
+   }
+   return scale_write_regs(scale_dev, NAU7802_GCAL2, scale_dev->gcal2_marker, sizeof(scale_dev->gcal2_marker));
+}
+
+static int scale_check_mark(struct scale_config *scale_dev)
+{
+   int32_t mark = 0;
+   int rc = 0;
+
+   if (!device_is_ready(scale_dev->i2c_device)) {
+      scale_dev->i2c_ok = false;
+      return -EINVAL;
+   }
+   rc = scale_read_regs(scale_dev, NAU7802_GCAL2, &mark, sizeof(mark));
+   if (rc) {
+      // reading internal calibration offset failed
+      LOG_INF("ADC %s i2c read marker failed, %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
+   } else if (mark == 0x800000) {
+      // default value => new sensor
+      LOG_INF("ADC %s new sensor.", scale_dev->channel_name);
+      rc = 1;
+   } else if (scale_dev->gcal2_marker != mark) {
+      // different mark => changed sensor
+      LOG_INF("ADC %s changed sensor.", scale_dev->channel_name);
+      rc = 2;
+   } else {
+      LOG_INF("ADC %s same sensor.", scale_dev->channel_name);
+   }
+   scale_dev->i2c_ok = 0 <= rc;
+   return rc;
+}
+
+static int scale_set_avdd(struct scale_config *scale_dev, bool internal)
 {
    int rc = 0;
+
+   if (!scale_dev->i2c_ok) {
+      return -EINVAL;
+   }
 
    LOG_INF("ADC %s avdd %s", scale_dev->channel_name, internal ? "int" : "ext");
 
    if (internal) {
       /* internal AVDD, enable AVDD-LDO */
-      int ldo_vref = ((4500 - scale_dev->external_calibration.avref) / 300);
+      int ldo_vref = ((4500 - scale_dev->setup.int_avref) / 300);
       if (ldo_vref < 0) {
          ldo_vref = 0;
       } else if (ldo_vref > 7) {
@@ -508,7 +661,7 @@ static int scale_avdd(struct scale_config *scale_dev, bool internal)
       }
 
       /* VLDO 6 => 2.7V, VLDO 7 => 2.4V */
-      rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_CTRL1, (7 << 3), (ldo_vref << 3));
+      rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_CTRL1, BIT(3) | BIT(4) | BIT(5), (ldo_vref << 3));
       if (rc) {
          LOG_WRN("ADC %s I2C NAU7802 config VLDO, write failure, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
          return rc;
@@ -519,7 +672,6 @@ static int scale_avdd(struct scale_config *scale_dev, bool internal)
          LOG_WRN("ADC %s I2C NAU7802 enable AVDD-LDO, write failure, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
       }
       scale_dev->source = AVDD_INTERNAL;
-      scale_dev->read_temperature = true;
       return rc;
    } else {
       /* external AVDD, disable AVDD-LDO */
@@ -528,81 +680,90 @@ static int scale_avdd(struct scale_config *scale_dev, bool internal)
          LOG_WRN("ADC %s I2C NAU7802 disable AVDD-LDO, write failure, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
       }
       scale_dev->source = AVDD_EXTERNAL;
-      scale_dev->read_temperature = false;
       return rc;
    }
 }
 
-static int scale_resume(struct scale_config *scale_dev)
+static int scale_set_gain(struct scale_config *scale_dev, uint8_t gain)
 {
    int rc = 0;
-   int64_t now = 0;
 
-   if (!scale_dev || !scale_dev->i2c_ok) {
+   if (!scale_dev->i2c_ok) {
       return -EINVAL;
    }
-   LOG_INF("ADC %s resume", scale_dev->channel_name);
-   /* PUD */
-   rc = i2c_reg_write_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_PU_CTRL, BIT(1));
+
+   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_POWER_CTRL, BIT(7), scale_use_pga_capacitor(scale_dev) ? BIT(7) : 0);
    if (rc) {
-      LOG_WRN("ADC %s I2C NAU7802 start, write failure %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
-      return rc;
-   }
-   /* wait PUR */
-   rc = scale_wait(scale_dev->i2c_device, NAU7802_PU_CTRL, BIT(3), BIT(3), K_MSEC(25), K_MSEC(2000));
-   if (rc) {
-      LOG_WRN("ADC %s I2C NAU7802 power up not ready, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
+      LOG_WRN("ADC %s I2C NAU7802 set PGA cap., write failure, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
       return rc;
    }
 
-   /* PUA */
-   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_PU_CTRL, BIT(2), BIT(2));
-   if (rc) {
-      LOG_WRN("ADC %s I2C NAU7802 enable PUA, write failure, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
-      return rc;
-   }
-
-   /* Select gain 4 => 16x, gain 7 => 128x */
-   rc = i2c_reg_write_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_CTRL1, scale_dev->gain);
-   if (rc) {
-      LOG_WRN("ADC %s I2C NAU7802 config gain, write failure, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
-      return rc;
-   }
-
-   /* Use low ESR cap, disable PGA bypass, select ADC reg 0x15 */
-   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_PGA_CTRL, BIT(4) | BIT(6) | BIT(7), BIT(6));
-   if (rc) {
-      LOG_WRN("ADC %s I2C NAU7802 denable low ESR cap., write failure, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
-      return rc;
-   }
-
-   /* Disable ADC Chopper */
-   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_ADC_CTRL, 0x3 << 4, 0x3 << 4);
-   if (rc) {
-      LOG_WRN("ADC %s I2C NAU7802 disble ADC chopper, write failure, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
-      return rc;
-   }
-
-   /* Enable CAP on Vin2 */
-   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_POWER_CTRL, BIT(7), BIT(7));
-   if (rc) {
-      LOG_WRN("ADC %s I2C NAU7802 enable Vin 2 cap, write failure, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
-      return rc;
-   }
-
-   if (scale_dev->source != AVDD_UNKNOWN) {
-      rc = scale_avdd(scale_dev, scale_dev->source == AVDD_INTERNAL);
+   if (gain > 0) {
+      uint8_t gain_reg = scale_gain_reg(gain);
+      rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_PGA_CTRL, BIT(4) | BIT(5), 0);
       if (rc) {
+         LOG_INF("ADC %s enable PGA failed,  %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
          return rc;
       }
+      rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_CTRL1, BIT(0) | BIT(1) | BIT(2), gain_reg);
+      if (rc) {
+         LOG_INF("ADC %s set gain=%d failed,  %d (%s).", scale_dev->channel_name, gain, rc, strerror(-rc));
+      }
+   } else {
+      rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_PGA_CTRL, BIT(4) | BIT(5), BIT(4));
+      if (rc) {
+         LOG_INF("ADC %s bypass PGA failed,  %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
+      }
+      rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_CTRL1, BIT(0) | BIT(1) | BIT(2), 0);
+      if (rc) {
+         LOG_INF("ADC %s set gain=%d failed,  %d (%s).", scale_dev->channel_name, gain, rc, strerror(-rc));
+      }
+      /* Enable CAP on Vin2 */
+   }
+   if (!rc) {
+      LOG_INF("ADC %s set gain %u", scale_dev->channel_name, gain);
    }
 
-   now = k_uptime_get();
-   if (scale_dev->calibrate && (now - scale_dev->calibration_time) > 0) {
-      scale_dev->resume_time = now + NAU7802_MIN_PAUSE_CALIBRATION_MS;
-      rc = scale_internal_calibrate(scale_dev, "resume");
-   } else {
-      scale_dev->resume_time = now + NAU7802_MIN_PAUSE_SAMPLE_MS;
+   return rc;
+}
+
+static int scale_set_osc(struct scale_config *scale_dev)
+{
+   /* ext. osc. */
+   bool enable = scale_dev->setup.int_osc;
+   int rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_PU_CTRL, BIT(6), enable ? 0 : BIT(6));
+   if (rc) {
+      LOG_WRN("ADC %s I2C NAU7802 %s osc., write failure, %d (%s)!", scale_dev->channel_name, enable ? "int." : "ext.", rc, strerror(-rc));
+      return rc;
+   }
+   LOG_INF("ADC %s I2C NAU7802 %s osc.", scale_dev->channel_name, enable ? "int." : "ext.");
+   return rc;
+}
+
+static int scale_select_channel(struct scale_config *scale_dev, enum adc_channel channel)
+{
+   int rc = 0;
+   bool temperature = channel == ADC_CHANNEL_TEMPERATURE;
+   const char *desc = temperature ? "select temperature" : "select vin";
+
+   if (!scale_dev->i2c_ok) {
+      return -EINVAL;
+   }
+
+   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_I2C, BIT(1), temperature ? BIT(1) : 0);
+   if (rc) {
+      LOG_WRN("ADC %s I2C NAU7802 %s failed, %d (%s)!", scale_dev->channel_name, desc, rc, strerror(-rc));
+   }
+
+   return rc;
+}
+
+static int scale_set_short_inputs(struct scale_config *scale_dev, bool enable)
+{
+   int rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_I2C, BIT(3), enable ? BIT(3) : 0);
+   if (rc) {
+      LOG_WRN("ADC %s I2C NAU7802 %s inputs, write failure, %d (%s)!", scale_dev->channel_name,
+              enable ? "short" : "open", rc, strerror(-rc));
    }
    return rc;
 }
@@ -610,7 +771,12 @@ static int scale_resume(struct scale_config *scale_dev)
 static int scale_read_adc_value(const struct scale_config *scale_dev, int32_t *val, bool log)
 {
    int32_t v = 0;
-   int rc = scale_wait_adc(scale_dev->i2c_device, K_MSEC(2000));
+   int rc = 0;
+
+   if (!scale_dev->i2c_ok) {
+      return -EINVAL;
+   }
+   rc = scale_wait_adc(scale_dev->i2c_device, K_MSEC(2000));
    if (rc) {
       LOG_WRN("ADC %s wait failure %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
       return rc;
@@ -631,21 +797,13 @@ static int scale_read_adc_value(const struct scale_config *scale_dev, int32_t *v
    return rc;
 }
 
-static int32_t scale_values_average(int counter, int32_t *values)
+static int32_t scale_values_sum(int counter, int32_t *values)
 {
-   int32_t rc = -ENODATA;
-   if (counter > 0) {
-      int32_t v = values[0];
-      if (counter > 1) {
-         for (int i = 1; i < counter; ++i) {
-            v += values[i];
-         }
-         rc = (v + (counter / 2)) / counter;
-      } else {
-         rc = v;
-      }
+   int32_t v = values[0];
+   for (int i = 1; i < counter; ++i) {
+      v += values[i];
    }
-   return rc;
+   return v;
 }
 
 static int scale_read_channel_value(struct scale_config *scale_dev, int max_loops, int min_values)
@@ -656,9 +814,11 @@ static int scale_read_channel_value(struct scale_config *scale_dev, int max_loop
    int maxCounter = 1;
 
    int32_t v = 0;
+   int32_t avg = 0;
    int32_t max = 0;
    int32_t min = 0;
-   int32_t values[MAX_ADC_HISTORY];
+   int32_t max_dither = scale_dev->setup.max_dither;
+   int32_t values[MIN_ADC_SAMPLES];
 
    scale_dev->raw = NAU7802_NONE_ADC_VALUE;
 
@@ -677,12 +837,11 @@ static int scale_read_channel_value(struct scale_config *scale_dev, int max_loop
       return rc;
    }
 
-   LOG_INF("ADC %s int. calibration offset %d", scale_dev->channel_name, scale_dev->internal_offset);
-
    if (loops) {
-      LOG_INF("ADC %s initial sample", scale_dev->channel_name);
+      LOG_DBG("ADC %s initial read", scale_dev->channel_name);
       rc = scale_read_adc_value(scale_dev, &v, false);
       if (rc) {
+         LOG_INF("ADC %s initial read failed, %d (%s)", scale_dev->channel_name, rc, strerror(-rc));
          return rc;
       }
    } else {
@@ -705,11 +864,11 @@ static int scale_read_channel_value(struct scale_config *scale_dev, int max_loop
       } else if (v > max) {
          max = v;
       }
-      if ((max - min) > MAX_ADC_DITHER) {
+      if ((max - min) > max_dither) {
          counter = 1;
          values[0] = v;
          if (loops < max_loops) {
-            LOG_INF("ADC %s raw 0x%06x, %d, diff: %d, loop: %d, instable => retry", scale_dev->channel_name, v & 0xffffff, v, (max - min), loops);
+            LOG_INF("ADC %s raw 0x%06x, %d, diff: %d > %d, loop: %d, instable => retry", scale_dev->channel_name, v & 0xffffff, v, (max - min), max_dither, loops);
             max = v;
             min = v;
          }
@@ -724,21 +883,12 @@ static int scale_read_channel_value(struct scale_config *scale_dev, int max_loop
    scale_stop_adc(scale_dev->i2c_device);
 
    if (counter) {
-      v = scale_values_average(counter, values);
-      if (v < -NAU7802_MAX_ADC_VALUE || v > NAU7802_MAX_ADC_VALUE) {
+      v = scale_values_sum(counter, values);
+      avg = v / counter;
+      if (avg < -NAU7802_MAX_ADC_VALUE || avg > NAU7802_MAX_ADC_VALUE) {
          LOG_INF("ADC %s raw 0x%06x, %d, invalid",
-                 scale_dev->channel_name, v & 0xffffff, v);
+                 scale_dev->channel_name, avg & 0xffffff, avg);
          return -EINVAL;
-      }
-      if (scale_dev->internal_offset) {
-         int32_t r = v - scale_dev->internal_offset;
-         if (r < -NAU7802_MAX_ADC_VALUE || r > NAU7802_MAX_ADC_VALUE) {
-            LOG_INF("ADC %s raw 0x%06x, 0x%06x, %d, %d, invalid",
-                    scale_dev->channel_name, v & 0xffffff, r & 0xffffff, v, r);
-            return -EINVAL;
-         } else {
-            LOG_INF("ADC %s no. cal. 0x%06x, %d", scale_dev->channel_name, r & 0xffffff, r);
-         }
       }
    } else {
       v = 0;
@@ -747,13 +897,13 @@ static int scale_read_channel_value(struct scale_config *scale_dev, int max_loop
    if (rc < 0) {
       LOG_INF("ADC %s read failed, %d (%s)", scale_dev->channel_name, rc, strerror(-rc));
    } else if (counter < min_values) {
-      LOG_INF("ADC %s raw 0x%06x, %d, ++/-- %d, %d/%d loops, instable",
-              scale_dev->channel_name, v & 0xffffff, v, (max - min), maxCounter, loops);
+      LOG_INF("ADC %s raw 0x%06x, %d, ++/-- %d > %d, %d/%d loops, instable",
+              scale_dev->channel_name, avg & 0xffffff, avg, (max - min), max_dither, maxCounter, loops);
       rc = -ESTALE;
    } else {
       scale_dev->raw = v;
-      LOG_INF("ADC %s raw 0x%06x, %d, +/- %d, %d/%d loops",
-              scale_dev->channel_name, v & 0xffffff, v, (max - min), counter, loops);
+      LOG_INF("ADC %s raw 0x%06x, %d, +/- %d < %d, %d/%d loops",
+              scale_dev->channel_name, avg & 0xffffff, avg, (max - min), max_dither, counter, loops);
       rc = 0;
    }
    return rc;
@@ -762,13 +912,12 @@ static int scale_read_channel_value(struct scale_config *scale_dev, int max_loop
 static int scale_values_to_doubles(struct scale_config *scale_dev, double *value, double *temperature)
 {
    int rc = -ENODATA;
-   int32_t div = scale_dev->external_calibration.divider;
+   int32_t div = scale_dev->setup.divider;
 
    if (!scale_dev->i2c_ok) {
-      LOG_INF("ADC %s => missing.", scale_dev->channel_name);
       return rc;
    }
-   if (scale_dev->external_calibration.divider == 0) {
+   if (div == 0) {
       LOG_INF("ADC %s => not calibrated.", scale_dev->channel_name);
       return rc;
    }
@@ -778,14 +927,21 @@ static int scale_values_to_doubles(struct scale_config *scale_dev, double *value
    }
 
    if (div > 0) {
-      int32_t off = scale_dev->external_calibration.offset;
+      int32_t off = scale_dev->setup.offset;
       int32_t offset_value = scale_dev->weight - off;
-      int32_t cal_value = ((offset_value * (1000 / SCALE_RESOLUTION_G)) + (div / 2) - 1) / div;
-      double v = ((double)cal_value) / (1000 / SCALE_RESOLUTION_G);
+      double v = (offset_value * 10000.0) / div; // [g]
+      v /= SCALE_RESOLUTION_G;
+      v = round(v);
+      if (-0.5 < v && v < 0.5) {
+         // eliminate "-0.0"
+         v = 0.0;
+      }
+      v *= SCALE_RESOLUTION_G;
+      v /= 1000; // [kg]
       if (value) {
          *value = v;
       }
-      LOG_INF("ADC %s => off: %d, div: %d (%s)", scale_dev->channel_name, off, div, AVDD_DESCRIPTION[scale_dev->source]);
+      LOG_INF("ADC %s => off: %d, div: %d (avdd %s)", scale_dev->channel_name, off, div, AVDD_DESCRIPTION[scale_dev->source]);
       if (div == 1) {
          LOG_INF("ADC %s => raw: %d, rel: %d", scale_dev->channel_name, scale_dev->weight, offset_value);
       } else {
@@ -805,44 +961,158 @@ static int scale_read_temperature(struct scale_config *scale_dev, int max_loops,
    int rc = -ENODATA;
    int64_t val = 0;
 
+   if (!scale_dev->i2c_ok) {
+      return rc;
+   }
+
    /* Select temperature */
-   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_I2C, BIT(1), BIT(1));
+   rc = scale_select_channel(scale_dev, ADC_CHANNEL_TEMPERATURE);
    if (rc) {
-      LOG_INF("ADC %s select temperature failed,  %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
-      return rc;
+      goto exit_restore;
    }
 
-   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_CTRL1, 7, 1);
+   /* Select gain 2x */
+   rc = scale_set_gain(scale_dev, 2);
    if (rc) {
-      LOG_INF("ADC %s set gain=2 failed,  %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
-      return rc;
+      goto exit_restore;
    }
-   scale_dev->resume_time = k_uptime_get() + NAU7802_MIN_PAUSE_SAMPLE_MS;
 
+   scale_pause_sample(scale_dev);
    rc = scale_read_channel_value(scale_dev, max_loops, min_values);
    if (rc) {
       LOG_INF("ADC %s read temperature failed,  %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
-      return rc;
+      goto exit_restore;
    }
-   /* Unselect temperature */
-   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_I2C, BIT(1), 0);
-   if (rc) {
-      LOG_INF("ADC %s unselect temperature failed,  %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
-   }
-   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_CTRL1, 7, scale_dev->gain);
-   if (rc) {
-      LOG_INF("ADC %s restore gain failed,  %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
-      return rc;
-   }
-   scale_dev->resume_time = k_uptime_get() + NAU7802_MIN_PAUSE_SAMPLE_MS;
 
    // avref [mV] * 1000 => [uV]
-   val = ((int64_t)scale_dev->raw * scale_dev->external_calibration.avref * 1000) >> 24;
+   if (AVDD_INTERNAL == scale_dev->source) {
+      val = scale_dev->setup.int_avref;
+   } else {
+      val = scale_dev->setup.ext_avref;
+   }
+   val = ((scale_dev->raw / min_values) * val * 1000) >> 24;
    LOG_INF("ADC %s temperature %d uV", scale_dev->channel_name, (int32_t)val);
    // datasheet 109mV at 25°C and +390uV/°C
    val = 25000 + (val - 109000) * 1000 / 390;
    LOG_INF("ADC %s temperature %d", scale_dev->channel_name, (int32_t)val);
    scale_dev->temperature = (int32_t)val;
+
+exit_restore:
+   /* Unselect temperature */
+   scale_select_channel(scale_dev, ADC_CHANNEL_1);
+   scale_set_gain(scale_dev, scale_dev->setup.gain);
+   return rc;
+}
+
+static int scale_read_internal_offset(struct scale_config *scale_dev, int max_loops, int min_values, bool add, bool open)
+{
+   int rc = -ENODATA;
+
+   if (!scale_dev->i2c_ok) {
+      return rc;
+   }
+
+   rc = scale_set_short_inputs(scale_dev, true);
+   if (rc) {
+      return rc;
+   }
+
+   scale_pause_sample(scale_dev);
+   rc = scale_read_channel_value(scale_dev, max_loops, min_values);
+   if (rc) {
+      LOG_INF("ADC %s read internal offset failed,  %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
+      goto exit_restore;
+   }
+
+   if (add) {
+      scale_dev->internal_offset += scale_dev->raw;
+   } else {
+      scale_dev->internal_offset = scale_dev->raw;
+   }
+   LOG_INF("ADC %s internal offset %d", scale_dev->channel_name, scale_dev->raw / min_values);
+
+exit_restore:
+   if (open) {
+      /* open inputs */
+      scale_set_short_inputs(scale_dev, false);
+   }
+   return rc;
+}
+
+static void scale_prepare_calibration(struct scale_config *scale_dev)
+{
+   if (!scale_dev->setup.divider) {
+      scale_dev->setup.divider = 1;
+   }
+   scale_dev->read_temperature = true;
+}
+
+static int scale_resume(struct scale_config *scale_dev)
+{
+   int rc = 0;
+
+   if (!scale_dev->i2c_ok) {
+      return -EINVAL;
+   }
+
+   LOG_INF("ADC %s resume", scale_dev->channel_name);
+   /* PUD */
+   rc = i2c_reg_write_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_PU_CTRL, BIT(1));
+   if (rc) {
+      LOG_WRN("ADC %s I2C NAU7802 start, write failure %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
+      return rc;
+   }
+   /* wait PUR */
+   rc = scale_wait(scale_dev->i2c_device, NAU7802_PU_CTRL, BIT(3), BIT(3), K_MSEC(25), K_MSEC(2000));
+   if (rc) {
+      LOG_WRN("ADC %s I2C NAU7802 power up not ready, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
+      return rc;
+   }
+
+   /* PUA */
+   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_PU_CTRL, BIT(2), BIT(2));
+   if (rc) {
+      LOG_WRN("ADC %s I2C NAU7802 enable PUA, write failure, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
+      return rc;
+   }
+
+   rc = scale_set_osc(scale_dev);
+   if (rc) {
+      return rc;
+   }
+
+   rc = scale_set_gain(scale_dev, scale_dev->setup.gain);
+   if (rc) {
+      return rc;
+   }
+
+   rc = scale_select_channel(scale_dev, ADC_CHANNEL_1);
+   if (rc) {
+      return rc;
+   }
+
+   /* Use 5 Ohm ESR cap, select ADC reg 0x15 */
+   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_PGA_CTRL, BIT(6) | BIT(7), BIT(6));
+   if (rc) {
+      LOG_WRN("ADC %s I2C NAU7802 enable ESR cap., write failure, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
+      return rc;
+   }
+
+   /* Disable ADC Chopper */
+   rc = i2c_reg_update_byte(scale_dev->i2c_device, NAU7802_ADDR, NAU7802_ADC_CTRL, 0x3 << 4, 0x3 << 4);
+   if (rc) {
+      LOG_WRN("ADC %s I2C NAU7802 disable ADC chopper, write failure, %d (%s)!", scale_dev->channel_name, rc, strerror(-rc));
+      return rc;
+   }
+
+   if (scale_dev->source != AVDD_UNKNOWN) {
+      rc = scale_set_avdd(scale_dev, scale_dev->source == AVDD_INTERNAL);
+      if (rc) {
+         return rc;
+      }
+   }
+
+   rc = scale_read_internal_offset(scale_dev, 4, MIN_ADC_SAMPLES / 2, false, false);
 
    return rc;
 }
@@ -850,29 +1120,37 @@ static int scale_read_temperature(struct scale_config *scale_dev, int max_loops,
 static int scale_init_channel(struct scale_config *scale_dev)
 {
    int rc = -ENOTSUP;
-   int32_t value = 0;
    const struct device *i2c_dev = scale_dev->i2c_device;
 
    if (!i2c_dev) {
       LOG_INF("ADC %s not configured", scale_dev->channel_name);
-      return -ENOTSUP;
+      return -rc;
    }
-
-   LOG_INF("ADC %s initialize %s", scale_dev->channel_name, i2c_dev->name);
 
    if (!device_is_ready(i2c_dev)) {
-      if (i2c_dev) {
-         LOG_WRN("ADC %s missing I2C %s", scale_dev->channel_name, i2c_dev->name);
-      } else {
-         LOG_WRN("ADC %s missing I2C", scale_dev->channel_name);
-      }
+      LOG_WRN("ADC %s I2C %s not ready", scale_dev->channel_name, i2c_dev->name);
       return rc;
    }
 
-   rc = appl_storage_add(scale_dev->storage_config);
-   if (rc) {
-      LOG_WRN("ADC %s missing calibration EEPROM", scale_dev->channel_name);
+   rc = scale_check_mark(scale_dev);
+   if (rc < 0) {
+      LOG_INF("ADC %s device doesn't respond", scale_dev->channel_name);
       return rc;
+   }
+
+   LOG_INF("ADC %s initialize", scale_dev->channel_name);
+
+   if (scale_dev->storage_config) {
+      rc = appl_storage_add(scale_dev->storage_config);
+      if (rc) {
+         LOG_WRN("ADC %s missing setup EEPROM", scale_dev->channel_name);
+         return rc;
+      }
+   }
+
+   scale_load_setup(scale_dev);
+   if (CALIBRATE_NONE != current_calibrate_phase) {
+      scale_prepare_calibration(scale_dev);
    }
 
    /* reset */
@@ -881,70 +1159,45 @@ static int scale_init_channel(struct scale_config *scale_dev)
       return rc;
    }
 
-   /* resume */
-   scale_dev->calibrate = false;
+   if (scale_dev->setup.ext_avref > 0) {
+      scale_dev->source = AVDD_EXTERNAL;
+   } else {
+      scale_dev->source = AVDD_INTERNAL;
+   }
+
    rc = scale_resume(scale_dev);
-   if (rc) {
-      return rc;
+
+   if (rc == -EAGAIN && !scale_dev->setup.int_osc) {
+      scale_dev->setup.int_osc = true;
+      scale_set_osc(scale_dev);
+      rc = scale_read_internal_offset(scale_dev, 4, MIN_ADC_SAMPLES / 2, false, false);
    }
 
-   /* AVDD to external */
-   rc = scale_avdd(scale_dev, false);
-   if (rc) {
-      return rc;
-   }
-   rc = scale_read_ocal_value(scale_dev, &value);
-   if (rc) {
-      return rc;
-   }
-   scale_dev->internal_offset = value;
-
-   rc = scale_read_channel_value(scale_dev, 10, 3);
    if (rc && rc != -EINVAL && rc != -ESTALE) {
       return rc;
    }
-   if (rc == -EINVAL) {
-      LOG_INF("ADC %s I2C NAU7802 ext. AVDD: invalid", scale_dev->channel_name);
-   } else if (!rc) {
-      LOG_INF("ADC %s I2C NAU7802 ext. AVDD: %d", scale_dev->channel_name, scale_dev->raw);
-   }
 
-   if (rc == -EINVAL) {
-      /* no external AVDD, enable internal AVDD-LDO */
-      rc = scale_avdd(scale_dev, true);
-      if (rc) {
-         return rc;
+   if (scale_dev->setup.ext_avref > 0) {
+      if (rc == -EINVAL) {
+         LOG_INF("ADC %s I2C NAU7802 ext. AVDD: invalid", scale_dev->channel_name);
+      } else if (!rc) {
+         LOG_INF("ADC %s I2C NAU7802 ext. AVDD: %d", scale_dev->channel_name, scale_dev->raw);
       }
-      rc = scale_read_channel_value(scale_dev, 10, 3);
-      if (rc) {
-         return rc;
-      }
-      LOG_INF("ADC %s I2C NAU7802 int. AVDD: %d", scale_dev->channel_name, scale_dev->raw);
-   }
 
-   /* internal calibrate */
-   rc = scale_internal_calibrate(scale_dev, "init");
-   if (rc) {
-      return rc;
+      if (rc == -EINVAL) {
+         /* no external AVDD, enable internal AVDD-LDO */
+         rc = scale_set_avdd(scale_dev, true);
+         if (rc) {
+            return rc;
+         }
+         rc = scale_read_internal_offset(scale_dev, 4, MIN_ADC_SAMPLES / 2, false, false);
+         if (rc) {
+            return rc;
+         }
+         LOG_INF("ADC %s I2C NAU7802 int. AVDD: %d", scale_dev->channel_name, scale_dev->raw);
+      }
    }
-   /*
-   {
-      uint8_t data = 0;
-      rc = i2c_reg_read_byte(i2c_dev, NAU7802_ADDR, 0x0, &data);
-      LOG_INF("ADC %s I2C NAU7802 reg. 00: %02x", scale_dev->channel_name, data);
-      rc = i2c_reg_read_byte(i2c_dev, NAU7802_ADDR, 0x1, &data);
-      LOG_INF("ADC %s I2C NAU7802 reg. 01: %02x", scale_dev->channel_name, data);
-      rc = i2c_reg_read_byte(i2c_dev, NAU7802_ADDR, 0x2, &data);
-      LOG_INF("ADC %s I2C NAU7802 reg. 02: %02x", scale_dev->channel_name, data);
-      rc = i2c_reg_read_byte(i2c_dev, NAU7802_ADDR, 0x15, &data);
-      LOG_INF("ADC %s I2C NAU7802 reg. 15: %02x", scale_dev->channel_name, data);
-      rc = i2c_reg_read_byte(i2c_dev, NAU7802_ADDR, 0x1B, &data);
-      LOG_INF("ADC %s I2C NAU7802 reg. 1B: %02x", scale_dev->channel_name, data);
-      rc = i2c_reg_read_byte(i2c_dev, NAU7802_ADDR, 0x1C, &data);
-      LOG_INF("ADC %s I2C NAU7802 reg. 1C: %02x", scale_dev->channel_name, data);
-   }
-   */
-   scale_read_external_calibration(scale_dev);
+   scale_mark(scale_dev);
 
    return 0;
 }
@@ -953,43 +1206,34 @@ static int scale_restart_channel(struct scale_config *scale_dev)
 {
    int rc;
 
-   if (!scale_dev || !device_is_ready(scale_dev->i2c_device)) {
+   if (!device_is_ready(scale_dev->i2c_device)) {
       return -ENOTSUP;
    }
+
+   scale_dev->internal_offset = NAU7802_NONE_ADC_VALUE;
    scale_dev->weight = NAU7802_NONE_ADC_VALUE;
    scale_dev->temperature = NAU7802_NONE_ADC_VALUE;
-   if (scale_dev->i2c_ok) {
-      int32_t offset = 0;
-      rc = scale_read_ocal_value(scale_dev, &offset);
-      if (rc) {
-         // reading internal calibration offset failed
-         LOG_INF("ADC %s i2c read int. calibration failed, %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
-         scale_dev->i2c_ok = false;
-      } else if (offset == 0) {
-         // different internal calibration offset => new sensor
-         LOG_INF("ADC %s new sensor.", scale_dev->channel_name);
-         scale_dev->i2c_ok = false;
-      } else if (scale_dev->internal_offset != offset) {
-         // different internal calibration offset => new sensor
-         LOG_INF("ADC %s changed sensor, int. calibration offset changed,  new %d != old %d.",
-                 scale_dev->channel_name, offset, scale_dev->internal_offset);
-         scale_dev->i2c_ok = false;
-      } else {
-         LOG_INF("ADC %s same sensor.", scale_dev->channel_name);
-      }
+
+   rc = scale_check_mark(scale_dev);
+   if (rc < 0) {
+      // no i2c device
+      return rc;
    }
-   if (scale_dev->i2c_ok) {
-      if (scale_dev->external_calibration.divider == 0) {
+
+   if (rc > 0) {
+      // new sensor
+      rc = scale_init_channel(scale_dev);
+   } else {
+      if (scale_dev->setup.divider == 0) {
+         LOG_INF("ADC %s disabled, divider 0.", scale_dev->channel_name);
          scale_suspend(scale_dev);
          return -ENODATA;
       } else {
          rc = scale_resume(scale_dev);
       }
-   } else {
-      scale_dev->i2c_ok = true;
-      rc = scale_init_channel(scale_dev);
    }
    if (rc) {
+      // error
       scale_suspend(scale_dev);
       scale_dev->i2c_ok = false;
       scale_dev->raw = NAU7802_NONE_ADC_VALUE;
@@ -997,126 +1241,104 @@ static int scale_restart_channel(struct scale_config *scale_dev)
    return rc;
 }
 
-static int scale_check_channel(struct scale_config *scale_dev)
-{
-   int rc = scale_restart_channel(scale_dev);
-   if (!rc) {
-      scale_suspend(scale_dev);
-   }
-   return rc;
-}
-
 static int scale_sample_channel(struct scale_config *scale_dev)
 {
    enum calibrate_phase phase = current_calibrate_phase;
-   int max_loops = 0;
-   int min_values = 0;
    int rc = scale_restart_channel(scale_dev);
    if (!rc) {
-      rc = -ENODATA;
       LOG_INF("ADC %s scale start.", scale_dev->channel_name);
-
-      if (CALIBRATE_ZERO == phase || CALIBRATE_CHA_10KG == phase || CALIBRATE_CHB_10KG == phase) {
-         max_loops = MAX_ADC_LOOPS_CALIBRATION;
-         min_values = MIN_ADC_SAMPLES_CALIBRATION;
-         rc = 0;
-      } else if (CALIBRATE_NONE == phase) {
-         max_loops = MAX_ADC_LOOPS;
-         min_values = MIN_ADC_SAMPLES;
-         rc = 0;
-      }
-      if (!rc) {
-         rc = scale_read_channel_value(scale_dev, max_loops, min_values);
+#ifdef HAS_SCALE_B
+      if (CALIBRATE_ZERO == phase || CALIBRATE_CHA_10KG == phase || CALIBRATE_CHB_10KG == phase || CALIBRATE_NONE == phase) {
+#else  /* HAS_SCALE_B */
+      if (CALIBRATE_ZERO == phase || CALIBRATE_CHA_10KG == phase || CALIBRATE_NONE == phase) {
+#endif /* HAS_SCALE_B */
+         scale_dev->internal_offset = scale_dev->raw;
+         /* open inputs */
+         scale_set_short_inputs(scale_dev, false);
+         scale_pause_sample(scale_dev);
+         rc = scale_read_channel_value(scale_dev, MAX_ADC_LOOPS, MIN_ADC_SAMPLES);
          if (!rc) {
             scale_dev->weight = scale_dev->raw;
          }
-      }
-      if (!rc && scale_dev->read_temperature) {
-         rc = scale_read_temperature(scale_dev, MAX_ADC_LOOPS, MIN_ADC_SAMPLES);
-      }
+         if (!rc) {
+            rc = scale_read_internal_offset(scale_dev, 4, MIN_ADC_SAMPLES - (MIN_ADC_SAMPLES / 2), true, true);
+            if (!rc) {
+               scale_dev->weight -= scale_dev->internal_offset;
+               scale_dev->internal_offset /= MIN_ADC_SAMPLES;
+            }
+            scale_dev->weight /= MIN_ADC_SAMPLES;
+         }
 
-      if (rc) {
-         LOG_INF("ADC %s scale channel not ready %d.", scale_dev->channel_name, rc);
-      } else if (scale_dev->raw == NAU7802_NONE_ADC_VALUE) {
-         LOG_INF("ADC %s => invalid (%s)", scale_dev->channel_name, AVDD_DESCRIPTION[scale_dev->source]);
-         rc = -ENODATA;
+         if (!rc && scale_dev->read_temperature) {
+            rc = scale_read_temperature(scale_dev, 4, 2);
+         }
+
+         if (rc) {
+            LOG_INF("ADC %s scale channel not ready %d.", scale_dev->channel_name, rc);
+         } else if (scale_dev->raw == NAU7802_NONE_ADC_VALUE) {
+            LOG_INF("ADC %s => invalid (%s)", scale_dev->channel_name, AVDD_DESCRIPTION[scale_dev->source]);
+            rc = -ENODATA;
+         }
       }
       scale_suspend(scale_dev);
-   } else if (scale_dev->i2c_ok && scale_dev->external_calibration.divider == 0) {
-      LOG_INF("ADC %s scale channel not calibrated.", scale_dev->channel_name);
+   } else if (scale_dev->i2c_ok && scale_dev->setup.divider == 0) {
+      LOG_INF("ADC %s scale channel not setup.", scale_dev->channel_name);
    } else {
       LOG_INF("ADC %s scale channel not available.", scale_dev->channel_name);
    }
    return rc;
 }
 
+#ifdef HAS_SCALE_B
 #ifdef CONFIG_NAU7802_PARALLEL_READ
 
 static K_SEM_DEFINE(scale_ready, 0, 1);
 
-static void scale_check_channel_B_fn(struct k_work *work)
+static void scale_check_mark_B_fn(struct k_work *work)
 {
    (void)work;
-   scale_check_channel(&configs[1]);
+   scale_check_mark(configs[1]);
    k_sem_give(&scale_ready);
 }
 
 static void scale_sample_channel_B_fn(struct k_work *work)
 {
    (void)work;
-   scale_sample_channel(&configs[1]);
+   scale_sample_channel(configs[1]);
    k_sem_give(&scale_ready);
 }
 
-static K_WORK_DEFINE(scale_check_channel_B_work, scale_check_channel_B_fn);
+static K_WORK_DEFINE(scale_check_mark_B_work, scale_check_mark_B_fn);
 static K_WORK_DEFINE(scale_sample_channel_B_work, scale_sample_channel_B_fn);
 
 #endif /* CONFIG_NAU7802_PARALLEL_READ */
-
-static inline uint8_t scale_gain_id(uint8_t gain)
-{
-   switch (gain) {
-      case 1:
-         return 0;
-      case 2:
-         return 1;
-      case 4:
-         return 2;
-      case 8:
-         return 3;
-      case 16:
-         return 4;
-      case 32:
-         return 5;
-      case 64:
-         return 6;
-      case 128:
-         return 7;
-   }
-   return 0;
-}
+#endif /* HAS_SCALE_B */
 
 static int scale_init(void)
 {
-   for (int channel = 0; channel < MAX_ADC_CHANNELS; ++channel) {
-      struct scale_config *scale_dev = &configs[channel];
-      int rc = scale_dev->gain;
-      scale_dev->i2c_ok = true;
-      scale_dev->gain = scale_gain_id(scale_dev->gain);
-      LOG_INF("ADC %s setup gain to %d/%d.", scale_dev->channel_name, rc, scale_dev->gain);
-      rc = scale_init_channel(scale_dev);
+   scale_expansion_port_power(true);
+   for (int channel = 0; channel < max_configs; ++channel) {
+      struct scale_config *scale_dev = configs[channel];
+      int rc = scale_init_channel(scale_dev);
       scale_suspend(scale_dev);
       if (rc) {
          LOG_INF("ADC %s setup failed, %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
          scale_dev->i2c_ok = false;
       }
    }
-
+   scale_expansion_port_power(false);
    return 0;
 }
 
-/* CONFIG_APPLICATION_INIT_PRIORITY + 1*/
-SYS_INIT(scale_init, APPLICATION, 91);
+/* CONFIG_APPLICATION_INIT_PRIORITY + 1 */
+SYS_INIT(scale_init, APPLICATION, CONFIG_NAU7802_INIT_PRIORITY);
+
+static void scales_set_read_temperature(bool read)
+{
+   for (int channel = 0; channel < max_configs; ++channel) {
+      configs[channel]->read_temperature = read;
+   }
+}
 
 int scale_sample(double *valueA, double *valueB, double *temperatureA, double *temperatureB)
 {
@@ -1125,30 +1347,36 @@ int scale_sample(double *valueA, double *valueB, double *temperatureA, double *t
 
    k_mutex_lock(&scale_mutex, K_FOREVER);
    if (CALIBRATE_NONE == current_calibrate_phase) {
+      scale_expansion_port_power(true);
       rc = 0;
-      configs[0].calibrate = NAU7802_CALIBRATE_ON_RESUME;
-      configs[1].calibrate = NAU7802_CALIBRATE_ON_RESUME;
+      scales_set_read_temperature(true);
+
+#ifdef HAS_SCALE_B
 #ifdef CONFIG_NAU7802_PARALLEL_READ
       k_sem_reset(&scale_ready);
       work_submit_to_cmd_queue(&scale_sample_channel_B_work);
 #endif /* CONFIG_NAU7802_PARALLEL_READ */
-      scale_sample_channel(&configs[0]);
-      if (!scale_values_to_doubles(&configs[0], valueA, temperatureA)) {
+#endif /* HAS_SCALE_B */
+      scale_sample_channel(configs[0]);
+      if (!scale_values_to_doubles(configs[0], valueA, temperatureA)) {
          rc |= 1;
       }
+#ifdef HAS_SCALE_B
 #ifdef CONFIG_NAU7802_PARALLEL_READ
       if (k_sem_take(&scale_ready, K_MSEC(5000)) == 0) {
-         if (!scale_values_to_doubles(&configs[1], valueB, temperatureB)) {
+         if (!scale_values_to_doubles(configs[1], valueB, temperatureB)) {
             rc |= 2;
          }
       }
       k_work_cancel(&scale_sample_channel_B_work);
 #else  /* CONFIG_NAU7802_PARALLEL_READ */
-      scale_sample_channel(&configs[1]);
-      if (!scale_values_to_doubles(&configs[1], valueB, temperatureB)) {
+      scale_sample_channel(configs[1]);
+      if (!scale_values_to_doubles(configs[1], valueB, temperatureB)) {
          rc |= 2;
       }
 #endif /* CONFIG_NAU7802_PARALLEL_READ */
+#endif /* HAS_SCALE_B */
+      scale_expansion_port_power(false);
    }
    k_mutex_unlock(&scale_mutex);
    if (-EINPROGRESS == rc) {
@@ -1156,7 +1384,7 @@ int scale_sample(double *valueA, double *valueB, double *temperatureA, double *t
    } else {
       time = k_uptime_get() - time;
       if (rc < 0) {
-         LOG_INF("ADC scale samples failed with %d in %d ms", rc, (int)time);
+         LOG_INF("ADC scale samples failed with %d (%s) in %d ms", rc, strerror(-rc), (int)time);
       } else {
          LOG_INF("ADC scale samples %c/%c in %d ms", rc & 1 ? 'A' : '-', rc & 2 ? 'B' : '-', (int)time);
       }
@@ -1164,49 +1392,71 @@ int scale_sample(double *valueA, double *valueB, double *temperatureA, double *t
    return rc;
 }
 
-static void scale_prepare_calibration(struct scale_config *scale_dev)
+static void scale_calc_calibration(struct scale_config *scale_dev, int reference, int time)
 {
-   scale_dev->previous_offset = scale_dev->external_calibration.offset;
-   scale_dev->previous_divider = scale_dev->external_calibration.divider;
-   scale_dev->external_calibration.divider = 1;
-   scale_dev->external_calibration.offset = 0;
-   scale_dev->calibrate = true;
-}
-
-static void scale_restore_calibration(struct scale_config *scale_dev, bool offset)
-{
-   if (offset) {
-      scale_dev->external_calibration.offset = scale_dev->previous_offset;
-   }
-   scale_dev->external_calibration.divider = scale_dev->previous_divider;
-}
-
-static void scale_calc_calibration(struct scale_config *scale_dev, int time)
-{
-   int32_t weight = scale_dev->weight - scale_dev->external_calibration.offset;
-   scale_dev->external_calibration.divider = NORMALIZE_DIVIDER(((weight * 1000) + (SCALE_CALIBRATION_G / 2) - 1) / SCALE_CALIBRATION_G); // 10.0kg
-   if (scale_dev->external_calibration.divider > 0) {
-      LOG_INF("ADC Scale calibrate %s 10kg, rel: %d, div: %d (%d ms)", scale_dev->channel_name, weight, scale_dev->external_calibration.divider, time);
+   int32_t min_adc_divider = scale_dev->setup.min_divider;
+   int64_t weight = scale_dev->weight - scale_dev->setup.offset;
+   scale_dev->setup.divider = (int32_t)DIV_ROUNDED((weight * 10000 - 1), reference); // ref/10.0kg
+   if (scale_dev->setup.divider < min_adc_divider) {
+      LOG_INF("ADC %s scale disable %dkg, rel: %d, div: %d < %d (%d ms)", scale_dev->channel_name, reference / 1000, (int32_t)weight, scale_dev->setup.divider, min_adc_divider, time);
+      scale_dev->setup.divider = 0;
    } else {
-      LOG_INF("ADC Scale disable %s 10kg, rel: %d (%d ms)", scale_dev->channel_name, weight, time);
+      LOG_INF("ADC %s scale setup %dkg, rel: %d, div: %d (%d ms)", scale_dev->channel_name, reference / 1000, (int32_t)weight, scale_dev->setup.divider, time);
    }
 }
 
-int scale_calibrate(enum calibrate_phase phase)
+#ifdef CONFIG_ADC_SCALE_SETUP
+
+static void scales_load_setup(void)
+{
+   for (int channel = 0; channel < max_configs; ++channel) {
+      scale_load_setup(configs[channel]);
+   }
+}
+
+static void scales_prepare_calibration(void)
+{
+   for (int channel = 0; channel < max_configs; ++channel) {
+      scale_prepare_calibration(configs[channel]);
+   }
+}
+
+static void scales_set_calibration_error(void)
+{
+   for (int channel = 0; channel < max_configs; ++channel) {
+      struct scale_config *scale_dev = configs[channel];
+      scale_dev->setup.offset = 0;
+      scale_dev->setup.calibration_temperature = 0;
+      scale_dev->setup.divider = 0;
+   }
+}
+
+static void scales_suspend(void)
+{
+   for (int channel = 0; channel < max_configs; ++channel) {
+      scale_suspend(configs[channel]);
+   }
+}
+
+static int scale_calibrate(enum calibrate_phase phase)
 {
    int rc = 0;
    int64_t time = k_uptime_get();
-   bool temperature = false;
    bool save = false;
    bool stop = false;
    bool error = false;
 
    k_mutex_lock(&scale_mutex, K_FOREVER);
-   rc = next_calibrate_phase;
-   if (CALIBRATE_DONE == phase) {
-      if (CALIBRATE_NONE == current_calibrate_phase) {
-         rc = CALIBRATE_NONE;
-         phase = CALIBRATE_NONE;
+   if (CALIBRATE_CMD == current_calibrate_phase) {
+      phase = CALIBRATE_CMD;
+      rc = CALIBRATE_NONE;
+   } else {
+      rc = next_calibrate_phase;
+      if (CALIBRATE_DONE == phase) {
+         if (CALIBRATE_NONE == current_calibrate_phase) {
+            rc = CALIBRATE_NONE;
+            phase = CALIBRATE_NONE;
+         }
       }
    }
    if (current_calibrate_phase != phase) {
@@ -1219,26 +1469,29 @@ int scale_calibrate(enum calibrate_phase phase)
       switch (phase) {
          case CALIBRATE_NONE:
             LOG_INF("ADC Scale canceled calibration.");
-            scale_restore_calibration(&configs[0], true);
-            scale_restore_calibration(&configs[1], true);
+            scales_load_setup();
             stop = true;
             break;
          case CALIBRATE_START:
+            scale_expansion_port_power(true);
             LOG_INF("ADC Scale start calibration.");
             current_calibrate_phase = phase;
+#ifdef HAS_SCALE_B
 #ifdef CONFIG_NAU7802_PARALLEL_READ
             k_sem_reset(&scale_ready);
-            work_submit_to_cmd_queue(&scale_check_channel_B_work);
-#endif
-            scale_check_channel(&configs[0]);
+            work_submit_to_cmd_queue(&scale_check_mark_B_work);
+#endif /* CONFIG_NAU7802_PARALLEL_READ */
+#endif /* HAS_SCALE_B */
+            scale_check_mark(configs[0]);
+#ifdef HAS_SCALE_B
 #ifdef CONFIG_NAU7802_PARALLEL_READ
             k_sem_take(&scale_ready, K_MSEC(5000));
             k_work_cancel(&scale_sample_channel_B_work);
 #else  /* CONFIG_NAU7802_PARALLEL_READ */
-            scale_check_channel(&configs[1]);
+            scale_check_mark(configs[1]);
 #endif /* CONFIG_NAU7802_PARALLEL_READ */
-            scale_prepare_calibration(&configs[0]);
-            scale_prepare_calibration(&configs[1]);
+#endif /* HAS_SCALE_B */
+            scales_prepare_calibration();
             rc = CALIBRATE_ZERO;
             next_calibrate_phase = rc;
             current_calibrate_phase = phase;
@@ -1247,66 +1500,77 @@ int scale_calibrate(enum calibrate_phase phase)
             current_calibrate_phase = phase;
             error = true;
             time = k_uptime_get();
+#ifdef HAS_SCALE_B
 #ifdef CONFIG_NAU7802_PARALLEL_READ
             k_sem_reset(&scale_ready);
-            if (configs[1].i2c_ok) {
+            if (configs[1]->i2c_ok) {
                work_submit_to_cmd_queue(&scale_sample_channel_B_work);
             }
 #endif /* CONFIG_NAU7802_PARALLEL_READ */
-            if (!configs[0].i2c_ok || scale_sample_channel(&configs[0])) {
+#endif /* HAS_SCALE_B */
+            if (!configs[0]->i2c_ok || scale_sample_channel(configs[0])) {
                // failure
-               configs[0].external_calibration.divider = 0;
-               configs[0].external_calibration.calibration_temperature = 0;
+               configs[0]->setup.divider = 0;
+               configs[0]->setup.calibration_temperature = 0;
             } else {
-               configs[0].external_calibration.offset = configs[0].weight;
-               configs[0].external_calibration.calibration_temperature = configs[0].temperature;
+               configs[0]->setup.offset = configs[0]->weight;
+               configs[0]->setup.calibration_temperature = configs[0]->temperature;
             }
+#ifdef HAS_SCALE_B
 #ifdef CONFIG_NAU7802_PARALLEL_READ
-            if (configs[1].i2c_ok) {
+            if (configs[1]->i2c_ok) {
                k_sem_take(&scale_ready, K_MSEC(5000));
                k_work_cancel(&scale_sample_channel_B_work);
             }
-            if (!configs[1].i2c_ok || configs[1].raw == NAU7802_NONE_ADC_VALUE) {
+            if (!configs[1]->i2c_ok || configs[1]->raw == NAU7802_NONE_ADC_VALUE) {
 #else  /* CONFIG_NAU7802_PARALLEL_READ */
-            if (scale_read_channel(&configs[1])) {
+            if (scale_sample_channel(configs[1])) {
 #endif /* CONFIG_NAU7802_PARALLEL_READ */
                // failure
-               configs[1].external_calibration.divider = 0;
-               configs[1].external_calibration.calibration_temperature = 0;
+               configs[1]->setup.divider = 0;
+               configs[1]->setup.calibration_temperature = 0;
             } else {
-               configs[1].external_calibration.offset = configs[1].weight;
-               configs[1].external_calibration.calibration_temperature = configs[1].temperature;
+               configs[1]->setup.offset = configs[1]->weight;
+               configs[1]->setup.calibration_temperature = configs[1]->temperature;
             }
+#endif /* HAS_SCALE_B */
             time = k_uptime_get() - time;
+
+#ifdef HAS_SCALE_B
             LOG_INF("ADC Scale calibrate 0, CHA 0x%06x/%.1f, CHB 0x%06x/%.1f. (%d ms)",
-                    configs[0].external_calibration.offset, TEMPERATURE_DOUBLE(configs[0].external_calibration.calibration_temperature),
-                    configs[1].external_calibration.offset, TEMPERATURE_DOUBLE(configs[1].external_calibration.calibration_temperature), (int)time);
-            if (configs[0].i2c_ok && configs[0].external_calibration.divider > 0) {
+                    configs[0]->setup.offset, TEMPERATURE_DOUBLE(configs[0]->setup.calibration_temperature),
+                    configs[1]->setup.offset, TEMPERATURE_DOUBLE(configs[1]->setup.calibration_temperature), (int)time);
+#else  /* HAS_SCALE_B */
+            LOG_INF("ADC Scale calibrate 0, CHA 0x%06x/%.1f (%d ms)",
+                    configs[0]->setup.offset, TEMPERATURE_DOUBLE(configs[0]->setup.calibration_temperature), (int)time);
+#endif /* HAS_SCALE_B */
+
+            if (configs[0]->i2c_ok && configs[0]->setup.divider > 0) {
                // calibrate channel A
                rc = CALIBRATE_CHA_10KG;
                next_calibrate_phase = rc;
                error = false;
-            } else if (configs[1].i2c_ok && configs[1].external_calibration.divider > 0) {
+#ifdef HAS_SCALE_B
+            } else if (configs[1]->i2c_ok && configs[1]->setup.divider > 0) {
                // calibrate channel B
                rc = CALIBRATE_CHB_10KG;
                next_calibrate_phase = rc;
                error = false;
+#endif /* HAS_SCALE_B */
             }
             break;
          case CALIBRATE_CHA_10KG:
             current_calibrate_phase = phase;
-            temperature = configs[0].read_temperature;
-            configs[0].read_temperature = false;
             time = k_uptime_get();
-            rc = scale_sample_channel(&configs[0]);
+            rc = scale_sample_channel(configs[0]);
             time = k_uptime_get() - time;
-            configs[0].read_temperature = temperature;
             if (!rc) {
-               scale_calc_calibration(&configs[0], (int)time);
+               scale_calc_calibration(configs[0], SCALE_CALIBRATION_G, (int)time);
             } else {
                LOG_INF("ADC Scale disable CHA, no sample (%d ms)", (int)time);
             }
-            if (configs[1].i2c_ok && configs[1].external_calibration.divider > 0) {
+#ifdef HAS_SCALE_B
+            if (configs[1]->i2c_ok && configs[1]->setup.divider > 0) {
                rc = CALIBRATE_CHB_10KG;
                next_calibrate_phase = rc;
             } else {
@@ -1315,23 +1579,19 @@ int scale_calibrate(enum calibrate_phase phase)
             break;
          case CALIBRATE_CHB_10KG:
             current_calibrate_phase = phase;
-            temperature = configs[1].read_temperature;
-            configs[1].read_temperature = false;
             time = k_uptime_get();
-            rc = scale_sample_channel(&configs[1]);
+            rc = scale_sample_channel(configs[1]);
             time = k_uptime_get() - time;
-            temperature = configs[1].read_temperature;
             if (!rc) {
-               scale_calc_calibration(&configs[1], (int)time);
+               scale_calc_calibration(configs[1], SCALE_CALIBRATION_G, (int)time);
             } else {
                LOG_INF("ADC Scale disable CHB, no sample (%d ms)", (int)time);
             }
+#endif /* HAS_SCALE_B */
             save = true;
             break;
          case CALIBRATE_DONE:
             if (current_calibrate_phase == CALIBRATE_ZERO) {
-               scale_restore_calibration(&configs[0], false);
-               scale_restore_calibration(&configs[1], false);
                save = true;
             } else if (current_calibrate_phase == CALIBRATE_CHA_10KG) {
                save = true;
@@ -1339,33 +1599,29 @@ int scale_calibrate(enum calibrate_phase phase)
                stop = true;
             }
             break;
+         case CALIBRATE_CMD:
+            // prevent warning
+            break;
       }
       if (error) {
-         configs[0].external_calibration.offset = 0;
-         configs[1].external_calibration.offset = 0;
-         configs[0].external_calibration.calibration_temperature = 0;
-         configs[1].external_calibration.calibration_temperature = 0;
-         configs[0].external_calibration.divider = 0;
-         configs[1].external_calibration.divider = 0;
+         scales_set_calibration_error();
          save = true;
       }
       if (save || stop) {
          current_calibrate_phase = CALIBRATE_NONE;
          next_calibrate_phase = CALIBRATE_START;
          rc = CALIBRATE_NONE;
-         scale_suspend(&configs[0]);
-         scale_suspend(&configs[1]);
+         scales_suspend();
+         scale_expansion_port_power(false);
       }
       if (save) {
-         configs[0].external_calibration.divider = NORMALIZE_DIVIDER(configs[0].external_calibration.divider);
-         configs[1].external_calibration.divider = NORMALIZE_DIVIDER(configs[1].external_calibration.divider);
-
-         scale_save_external_calibration(&configs[0]);
-         scale_save_external_calibration(&configs[1]);
+         for (int channel = 0; channel < max_configs; ++channel) {
+            struct scale_config *scale_dev = configs[channel];
+            scale_save_setup(scale_dev);
+            LOG_INF("ADC Scale %s 0x%06x %d", scale_dev->channel_name, scale_dev->setup.offset, scale_dev->setup.divider);
+         }
 
          LOG_INF("ADC Scale calibration saved.");
-         LOG_INF("ADC Scale CHA 0x%06x %d", configs[0].external_calibration.offset, configs[0].external_calibration.divider);
-         LOG_INF("ADC Scale CHB 0x%06x %d", configs[1].external_calibration.offset, configs[1].external_calibration.divider);
          if (CALIBRATE_DONE != phase) {
             rc = CALIBRATE_DONE;
          }
@@ -1374,10 +1630,12 @@ int scale_calibrate(enum calibrate_phase phase)
    k_mutex_unlock(&scale_mutex);
    return rc;
 }
+#endif /* CONFIG_ADC_SCALE_SETUP */
 
 bool scale_calibrate_setup(void)
 {
    bool request = false;
+#ifdef CONFIG_ADC_SCALE_SETUP   
    int select_mode = CALIBRATE_START;
    int trigger = 0;
 
@@ -1391,9 +1649,11 @@ bool scale_calibrate_setup(void)
          ui_led_op_prio(LED_COLOR_GREEN, LED_BLINKING);
       } else if (select_mode == CALIBRATE_CHA_10KG) {
          ui_led_op_prio(LED_COLOR_BLUE, LED_BLINKING);
+#ifdef HAS_SCALE_B
       } else if (select_mode == CALIBRATE_CHB_10KG) {
          ui_led_op_prio(LED_COLOR_GREEN, LED_BLINKING);
          ui_led_op_prio(LED_COLOR_BLUE, LED_BLINKING);
+#endif /* HAS_SCALE_B */
       }
       trigger = ui_input(K_SECONDS(60));
       if (trigger >= 0) {
@@ -1412,6 +1672,7 @@ bool scale_calibrate_setup(void)
             ui_led_op_prio(LED_COLOR_BLUE, LED_SET);
             select_mode = scale_calibrate(select_mode);
             ui_led_op_prio(LED_COLOR_BLUE, LED_CLEAR);
+#ifdef HAS_SCALE_B
          } else if (select_mode == CALIBRATE_CHB_10KG) {
             LOG_INF("Calibrate CHB 10kg.");
             ui_led_op_prio(LED_COLOR_BLUE, LED_SET);
@@ -1419,6 +1680,7 @@ bool scale_calibrate_setup(void)
             select_mode = scale_calibrate(select_mode);
             ui_led_op_prio(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op_prio(LED_COLOR_GREEN, LED_CLEAR);
+#endif /* HAS_SCALE_B */
          }
          if (select_mode == CALIBRATE_DONE) {
             LOG_INF("Calibration done.");
@@ -1438,11 +1700,12 @@ bool scale_calibrate_setup(void)
    }
    ui_led_op_prio(LED_COLOR_ALL, LED_CLEAR);
    ui_prio(false);
+#endif /* CONFIG_ADC_SCALE_SETUP */   
 
    return request;
 }
 
-int scale_sample_desc(char *buf, size_t len, bool series)
+int scale_sample_desc(char *buf, size_t len)
 {
    double scaleA = 0;
    double scaleB = 0;
@@ -1453,24 +1716,24 @@ int scale_sample_desc(char *buf, size_t len, bool series)
    int start = 0;
    int res = 0;
    int res2 = 0;
-   int rc = 0;
 
    res = scale_sample(&scaleA, &scaleB, &temperatureA, &temperatureB);
    if (0 < res) {
       index += snprintf(buf, len, "Last calibration: ");
-      rc = appl_storage_read_bytes_item(configs[0].storage_config->id, 0, &time, NULL, 0);
-      if (rc > 0) {
+      time = configs[0]->setup.time;
+      if (time) {
          res2 = 1;
          index += snprintf(buf + index, len - index, "A ");
          index += appl_format_time(time, buf + index, len - index);
-         if (configs[0].external_calibration.divider == 0) {
+         if (configs[0]->setup.divider == 0) {
             index += snprintf(buf + index, len - index, " (disabled)");
-         } else if (configs[0].external_calibration.divider == 100 && configs[0].external_calibration.offset == 0) {
+         } else if (configs[0]->setup.divider == 100 && configs[0]->setup.offset == 0) {
             index += snprintf(buf + index, len - index, " (dummy)");
          }
       }
-      rc = appl_storage_read_bytes_item(configs[1].storage_config->id, 0, &time, NULL, 0);
-      if (rc > 0) {
+#ifdef HAS_SCALE_B
+      time = configs[1]->setup.time;
+      if (time) {
          if (res2) {
             index += snprintf(buf + index, len - index, ", ");
          } else {
@@ -1478,12 +1741,13 @@ int scale_sample_desc(char *buf, size_t len, bool series)
          }
          index += snprintf(buf + index, len - index, "B ");
          index += appl_format_time(time, buf + index, len - index);
-         if (configs[1].external_calibration.divider == 0) {
+         if (configs[1]->setup.divider == 0) {
             index += snprintf(buf + index, len - index, " (disabled)");
-         } else if (configs[1].external_calibration.divider == 100 && configs[1].external_calibration.offset == 0) {
+         } else if (configs[1]->setup.divider == 100 && configs[1]->setup.offset == 0) {
             index += snprintf(buf + index, len - index, " (dummy)");
          }
       }
+#endif /* HAS_SCALE_B */
       if (res2) {
          LOG_INF("%s", buf);
          buf[index++] = '\n';
@@ -1492,39 +1756,41 @@ int scale_sample_desc(char *buf, size_t len, bool series)
          index = 0;
       }
 
-      if (series) {
-         index += snprintf(buf + index, len - index, "!");
-         start = index;
-      }
       if (res & 1) {
          index += snprintf(buf + index, len - index, "CHA %.2f kg, %.1f°C", scaleA, temperatureA);
       }
+#ifdef HAS_SCALE_B
       if (index > start) {
          index += snprintf(buf + index, len - index, ", ");
       }
       if (res & 2) {
          index += snprintf(buf + index, len - index, "CHB %.2f kg, %.1f°C", scaleB, temperatureB);
       }
+#endif /* HAS_SCALE_B */
       LOG_INF("%s", &buf[start]);
 #ifdef CONFIG_NAU7802_DUMMY_CALIBRATION
-      if (configs[0].weight != NAU7802_NONE_ADC_VALUE || configs[1].weight != NAU7802_NONE_ADC_VALUE) {
+#ifdef HAS_SCALE_B
+      if (configs[0]->weight != NAU7802_NONE_ADC_VALUE || configs[1]->weight != NAU7802_NONE_ADC_VALUE) {
+#else  /* HAS_SCALE_B */
+      if (configs[0]->weight != NAU7802_NONE_ADC_VALUE) {
+#endif /* HAS_SCALE_B */
          buf[index++] = '\n';
          start = index;
-         if (series) {
-            index += snprintf(buf + index, len - index, "!");
-            start = index;
+         if (configs[0]->weight != NAU7802_NONE_ADC_VALUE) {
+            index += snprintf(buf + index, len - index, "CHA %d/%d/%d/%d raw, %.1f°C",
+                              configs[0]->weight, configs[0]->internal_offset,
+                              configs[0]->setup.offset, configs[0]->setup.divider, temperatureA);
          }
-         if (configs[0].weight != NAU7802_NONE_ADC_VALUE) {
-            index += snprintf(buf + index, len - index, "CHA %d/%d/%d raw, %.1f°C",
-                              configs[0].weight, configs[0].internal_offset, configs[0].external_calibration.divider, temperatureA);
-         }
+#ifdef HAS_SCALE_B
          if (index > start) {
             index += snprintf(buf + index, len - index, ", ");
          }
-         if (configs[1].weight != NAU7802_NONE_ADC_VALUE) {
-            index += snprintf(buf + index, len - index, "CHB %d/%d/%d raw, %.1f°C",
-                              configs[1].weight, configs[1].internal_offset, configs[1].external_calibration.divider, temperatureB);
+         if (configs[1]->weight != NAU7802_NONE_ADC_VALUE) {
+            index += snprintf(buf + index, len - index, "CHB %d/%d/%d/%d raw, %.1f°C",
+                              configs[1]->weight, configs[1]->internal_offset,
+                              configs[1]->setup.offset, configs[1]->setup.divider, temperatureB);
          }
+#endif /* HAS_SCALE_B */
          LOG_INF("%s", &buf[start]);
       }
 #endif /* CONFIG_NAU7802_DUMMY_CALIBRATION */
@@ -1534,90 +1800,264 @@ int scale_sample_desc(char *buf, size_t len, bool series)
 
 #ifdef CONFIG_SH_CMD
 
-#ifdef CONFIG_NAU7802_DUMMY_CALIBRATION
-static void scale_save_dummy_calibration(struct scale_config *scale_dev)
-{
-   LOG_INF("ADC %s dummy calibration.", scale_dev->channel_name);
-   scale_restart_channel(scale_dev);
-   scale_suspend(scale_dev);
-   if (scale_dev->i2c_ok) {
-      scale_dev->external_calibration.offset = 0;
-      scale_dev->external_calibration.calibration_temperature = 0;
-      scale_dev->external_calibration.divider = DUMMY_ADC_DIVIDER;
-      scale_save_external_calibration(scale_dev);
-      LOG_INF("ADC %s dummy calibration saved.", scale_dev->channel_name);
-   } else {
-      LOG_INF("ADC %s scale missing.", scale_dev->channel_name);
-   }
-}
-
-static int sh_cmd_scale_dummy_calibration(const char *parameter)
-{
-   (void)parameter;
-   for (int channel = 0; channel < MAX_ADC_CHANNELS; ++channel) {
-      scale_save_dummy_calibration(&configs[channel]);
-   }
-   return 0;
-}
-
-SH_CMD(scaledummy, NULL, "dummy scale calibation.", sh_cmd_scale_dummy_calibration, NULL, 0);
-
-#endif /* CONFIG_NAU7802_DUMMY_CALIBRATION */
-
 static int sh_cmd_scale(const char *parameter)
 {
    (void)parameter;
 
    char buf[300];
-   scale_sample_desc(buf, sizeof(buf), false);
+   scale_sample_desc(buf, sizeof(buf));
    return 0;
 }
 
-static void scale_dump_calibration(struct scale_config *scale_dev)
+static int scale_start_calibration(struct scale_config *scale_dev)
 {
-   int rc = 0;
-   int64_t time = 0;
-   uint8_t calibration[CALIBRATE_VALUE_SIZE];
-
-   memset(calibration, 0, sizeof(calibration));
-   rc = appl_storage_add(scale_dev->storage_config);
-   if (rc) {
-      LOG_INF("ADC %s storage error %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
-      return;
+   int res = -EBUSY;
+   k_mutex_lock(&scale_mutex, K_FOREVER);
+   if (CALIBRATE_NONE == current_calibrate_phase) {
+      current_calibrate_phase = CALIBRATE_CMD;
+      scale_prepare_calibration(scale_dev);
+      scale_expansion_port_power(true);
    }
-   rc = appl_storage_read_bytes_item(scale_dev->storage_config->id, 0, &time, calibration, sizeof(calibration));
-   if (rc == sizeof(calibration)) {
-      int32_t offset = expand_sign_24((int32_t)sys_get_be24(calibration));
-      int32_t divider = NORMALIZE_DIVIDER(sys_get_be24(&calibration[3]));
-      int32_t temperature = expand_sign_24((int32_t)sys_get_be24(&calibration[6]));
-      uint16_t avref = sys_get_be16(&calibration[9]);
-      char buf[32];
-      appl_format_time(time, buf, sizeof(buf));
-      LOG_INF("ADC %s calibration  %s", scale_dev->channel_name, buf);
-      if (scale_dev->external_calibration.avref == avref) {
-         LOG_INF("ADC %s aref         %7.1f V", scale_dev->channel_name, ((double)avref) / 1000);
-      } else {
-         LOG_INF("ADC %s aref         %7.1f V (system %.1f V)", scale_dev->channel_name,
-                 ((double)avref) / 1000, ((double)scale_dev->external_calibration.avref) / 1000);
-      }
-      LOG_INF("ADC %s offset:      %7d", scale_dev->channel_name, offset);
-      LOG_INF("ADC %s divider:     %7d%s", scale_dev->channel_name, divider, divider == DUMMY_ADC_DIVIDER ? " (dummy)" : "");
-      LOG_INF("ADC %s temperature: %7.1f", scale_dev->channel_name, TEMPERATURE_DOUBLE(temperature));
-   } else if (scale_dev->i2c_ok) {
-      LOG_INF("ADC %s calibration missing.", scale_dev->channel_name);
+   if (CALIBRATE_CMD == current_calibrate_phase) {
+      res = 0;
    } else {
-      LOG_INF("ADC %s I2C error %d (%s).", scale_dev->channel_name, rc, strerror(-rc));
+      LOG_INF("ADC %s busy.", scale_dev->channel_name);
    }
+   k_mutex_unlock(&scale_mutex);
+   return res;
+}
+
+static int scale_finish_calibration(struct scale_config *scale_dev, bool save)
+{
+   int res = -EINVAL;
+   k_mutex_lock(&scale_mutex, K_FOREVER);
+   if (CALIBRATE_CMD == current_calibrate_phase) {
+      if (save) {
+         scale_save_setup(scale_dev);
+         LOG_INF("ADC %s calibration saved.", scale_dev->channel_name);
+      } else {
+         scale_load_setup(scale_dev);
+         LOG_INF("ADC %s calibration canceled.", scale_dev->channel_name);
+      }
+      current_calibrate_phase = CALIBRATE_NONE;
+      scale_suspend(scale_dev);
+      scale_expansion_port_power(false);
+      res = 0;
+   } else {
+      LOG_INF("ADC %s no calibration pending.", scale_dev->channel_name);
+   }
+   k_mutex_unlock(&scale_mutex);
+   return res;
+}
+
+static int scale_sample_calibration(struct scale_config *scale_dev,
+                                    enum calibrate_phase phase, int reference, const char *msg)
+{
+   int res = 0;
+   int64_t time;
+
+   k_mutex_lock(&scale_mutex, K_FOREVER);
+   if (CALIBRATE_CMD != current_calibrate_phase) {
+      LOG_INF("ADC %s busy.", scale_dev->channel_name);
+   } else {
+      current_calibrate_phase = phase;
+      LOG_INF("ADC %s calibrate %s.", scale_dev->channel_name, msg);
+      time = k_uptime_get();
+      res = scale_sample_channel(scale_dev);
+      time = k_uptime_get() - time;
+      if (res) {
+         // failure
+         res = 0;
+         LOG_INF("ADC %s calibrate %s failed.", scale_dev->channel_name, msg);
+      } else {
+         if (CALIBRATE_CHA_10KG == phase) {
+            scale_calc_calibration(scale_dev, reference, (int)time);
+         } else {
+            scale_dev->setup.offset = scale_dev->weight;
+         }
+         scale_dev->setup.calibration_temperature = scale_dev->temperature;
+         res = 1;
+      }
+      current_calibrate_phase = CALIBRATE_CMD;
+   }
+   k_mutex_unlock(&scale_mutex);
+
+   return res;
+}
+
+static int scale_set_calibration_value(struct scale_config *scale_dev, void *value, size_t value_size, bool has_value, int32_t new_value, const char *name)
+{
+   if (!has_value) {
+      LOG_INF("ADC %s: missing %s value", scale_dev->channel_name, name);
+      return -EINVAL;
+   } else {
+      int res = scale_start_calibration(scale_dev);
+      if (!res) {
+         switch (value_size) {
+            case sizeof(uint8_t):
+               *((uint8_t *)value) = (uint8_t)new_value;
+               break;
+            case sizeof(uint16_t):
+               *((uint16_t *)value) = (uint16_t)new_value;
+               break;
+            case sizeof(int32_t):
+               *((int32_t *)value) = (int32_t)new_value;
+               break;
+         }
+         LOG_INF("ADC %s calibration %s: %7d", scale_dev->channel_name, name, new_value);
+         res = scale_finish_calibration(scale_dev, true);
+      }
+      return res;
+   }
+}
+
+static int scale_set_calibration(struct scale_config *scale_dev, const char *parameter)
+{
+   int res = 0;
+   const char *cur = parameter;
+   char name[10];
+
+   memset(name, 0, sizeof(name));
+   cur = parse_next_text(cur, ' ', name, sizeof(name));
+   if (!name[0]) {
+      scale_dump_calibration(scale_dev);
+   } else {
+      char value[10];
+      char *t = value;
+      int32_t num_value = 0;
+      bool has_value = false;
+      struct scale_setup *cal = &scale_dev->setup;
+
+      memset(value, 0, sizeof(value));
+      cur = parse_next_text(cur, ' ', value, sizeof(value));
+      if (value[0]) {
+         num_value = (int32_t)strtol(value, &t, 10);
+         has_value = !*t;
+      }
+
+      if (!stricmp("off", name)) {
+         res = scale_set_calibration_value(scale_dev, &cal->offset, sizeof(cal->offset), has_value, num_value, "offset");
+      } else if (!stricmp("div", name)) {
+         res = scale_set_calibration_value(scale_dev, &cal->divider, sizeof(cal->divider), has_value, num_value, "divider");
+      } else if (!stricmp("av", name)) {
+         res = scale_set_calibration_value(scale_dev, &cal->int_avref, sizeof(cal->int_avref), has_value, num_value, "int. avref");
+      } else if (!stricmp("extav", name)) {
+         res = scale_set_calibration_value(scale_dev, &cal->ext_avref, sizeof(cal->ext_avref), has_value, num_value, "ext. avref");
+      } else if (!stricmp("intosc", name)) {
+         num_value = num_value ? true : false;
+         res = scale_set_calibration_value(scale_dev, &cal->int_osc, sizeof(cal->int_osc), true, num_value, "int. osc.");
+      } else if (!stricmp("pgacap", name)) {
+         num_value = num_value ? true : false;
+         res = scale_set_calibration_value(scale_dev, &cal->pga_cap, sizeof(cal->pga_cap), true, num_value, "PGA cap.");
+      } else if (!stricmp("gain", name)) {
+         res = scale_set_calibration_value(scale_dev, &cal->gain, sizeof(cal->gain), has_value, num_value, "gain");
+      } else if (!stricmp("temp", name)) {
+         res = scale_set_calibration_value(scale_dev, &cal->calibration_temperature, sizeof(cal->calibration_temperature), has_value, num_value, "temperature");
+         if (!res) {
+            LOG_INF("ADC %s calibration temperature %7.1f", scale_dev->channel_name,
+                    TEMPERATURE_DOUBLE(num_value));
+         }
+#ifdef CONFIG_NAU7802_DUMMY_CALIBRATION
+      } else if (!stricmp("dummy", name)) {
+         res = scale_start_calibration(scale_dev);
+         if (!res) {
+            scale_dev->setup.offset = 0;
+            scale_dev->setup.calibration_temperature = 0;
+            scale_dev->setup.divider = DUMMY_ADC_DIVIDER;
+            LOG_INF("ADC %s dummy calibration.", scale_dev->channel_name);
+            res = scale_finish_calibration(scale_dev, true);
+         }
+#endif /* CONFIG_NAU7802_DUMMY_CALIBRATION */
+      } else {
+         if (!stricmp("ref", name)) {
+            num_value = SCALE_CALIBRATION_G;
+            t += 3;
+         } else if (!stricmp("zero", name)) {
+            num_value = 0;
+            t += 4;
+         } else {
+            num_value = (int32_t)strtol(name, &t, 10);
+         }
+         if (!*t) {
+            bool success = false;
+            res = scale_start_calibration(scale_dev);
+            if (!res) {
+               if (num_value == 0) {
+                  if (scale_sample_calibration(scale_dev, CALIBRATE_ZERO, num_value, "zero")) {
+                     num_value = scale_dev->setup.offset;
+                     LOG_INF("ADC %s calibration offset: %7d", scale_dev->channel_name, num_value);
+                     success = true;
+                  }
+               } else {
+                  if (scale_sample_calibration(scale_dev, CALIBRATE_CHA_10KG, num_value, "divider")) {
+                     num_value = scale_dev->setup.divider;
+                     LOG_INF("ADC %s calibration divider: %7d%s", scale_dev->channel_name,
+                             num_value, num_value == DUMMY_ADC_DIVIDER ? " (dummy)" : "");
+                     success = true;
+                  }
+               }
+            }
+            res = scale_finish_calibration(scale_dev, success);
+         } else {
+            LOG_INF("ADC %s: missing reference value", scale_dev->channel_name);
+            res = -EINVAL;
+         }
+      }
+   }
+   return res;
 }
 
 static int sh_cmd_scale_calibration(const char *parameter)
 {
-   (void)parameter;
-   scale_dump_calibration(&configs[0]);
-   scale_dump_calibration(&configs[1]);
+   const char *cur = parameter;
+   char value[10];
+
+   memset(value, 0, sizeof(value));
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+   if (!value[0]) {
+      for (int channel = 0; channel < max_configs; ++channel) {
+         scale_dump_calibration(configs[channel]);
+      }
+   } else {
+      for (int channel = 0; channel < max_configs; ++channel) {
+         if (!stricmp(configs[channel]->channel_name, value)) {
+            return scale_set_calibration(configs[channel], cur);
+         }
+      }
+      if (max_configs == 1) {
+         return scale_set_calibration(configs[0], parameter);
+      } else {
+         LOG_INF("Channel %s not available!", value);
+      }
+   }
    return 0;
 }
 
+static void sh_cmd_scale_calibration_help(void)
+{
+   LOG_INF("> help scalecal:");
+   LOG_INF("  scalecal                : show calibration data of scales.");
+   LOG_INF("  scalecal [CHA|CHB]      : show calibration data of scale A or B.");
+   LOG_INF("  scalecal [CHA|CHB] [av|extav|off|div|temp|gain|intcal|intosc|pgacap] <value>:");
+   LOG_INF("           av <value>     : set calibration int. avref.");
+   LOG_INF("           extav <value>  : set calibration ext. avref.");
+   LOG_INF("           gain <value>   : set calibration gain. 1, 2, 4, 8, 16, 32, 64, 128");
+   LOG_INF("           mindiv <value> : set calibration minimum divider.");
+   LOG_INF("           maxdit <value> : set calibration minimum divider.");
+   LOG_INF("           off <value>    : set calibration offset.");
+   LOG_INF("           div <value>    : set calibration divider (10kg).");
+   LOG_INF("           temp <value>   : set calibration temperature.");
+   LOG_INF("           intosc         : set internal oscilator.");
+   LOG_INF("           pgacap         : set PGA capacitor.");
+   LOG_INF("  scalecal [CHA|CHB] [zero|<reference>]:");
+   LOG_INF("           zero           : measure 0 to calibrate offset.");
+   LOG_INF("           <reference>    : measure <reference> [g] to calibrate divider.");
+   LOG_INF("           [CHA|CHB]      : may be omitted, if only one scale is defined.");
+#ifdef CONFIG_NAU7802_DUMMY_CALIBRATION
+   LOG_INF("  scalecal [CHA|CHB] dummy : set dummy calibration and save it.");
+#endif /* CONFIG_NAU7802_DUMMY_CALIBRATION */
+}
+
 SH_CMD(scale, NULL, "read scale info.", sh_cmd_scale, NULL, 0);
-SH_CMD(scalecal, NULL, "read scale calibration info.", sh_cmd_scale_calibration, NULL, 0);
+SH_CMD(scalecal, NULL, "scale calibration.", sh_cmd_scale_calibration, sh_cmd_scale_calibration_help, 0);
 #endif /* CONFIG_SH_CMD */

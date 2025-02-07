@@ -410,6 +410,10 @@ int appl_storage_add(const struct storage_config *config)
 {
    int rc = 0;
 
+   if (!config) {
+      return -EINVAL;
+   }
+
    LOG_INF("Storage add %s", config->desc);
 
    rc = appl_storage_check_config(config);
