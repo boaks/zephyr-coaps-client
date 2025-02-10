@@ -50,9 +50,19 @@
 		watchdog0 = &wdt0;
 
 		exp-port-enable = &exp_port_enable;
+
 	};
 
 };
+
+&green_led {
+	gpios = <&gpio0 31 0>;
+};
+
+&blue_led {
+	gpios = <&gpio0 30 0>;
+};
+
 
 &bme680 {
 	status = "okay";
