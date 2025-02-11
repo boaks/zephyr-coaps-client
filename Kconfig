@@ -589,23 +589,24 @@ endif
 config EXPANSION_PORT
 	bool "Use expansion port"
 	default y
-	depends on BOARD_THINGY91X_NRF9151_NS
+	depends on BOARD_THINGY91X_NRF9151_NS || BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
 	help
-	   Use Thingy:91X expansion port.
+	   Use Qwiic expansion port. Supported for
+	   Thingy:91X and Conexio Stratus Pro 51
 
 config EXPANSION_PORT_INIT_PRIORITY
 	int "Expansion port init priority"
 	default 87
 	depends on EXPANSION_PORT
 	help
-	   Thingy:91X expansion port init priority.
+	   Qwiic expansion port init priority.
 	   Must be executed before sensor init.
 
 config ENABLE_EXPANSION_PORT
 	bool "Enable expansion port on init"
 	depends on EXPANSION_PORT
 	help
-	   Enable Thingy:91X expansion port.
+	   Enable Qwiic expansion port.
 
 
 config NAU7802_SCALE
