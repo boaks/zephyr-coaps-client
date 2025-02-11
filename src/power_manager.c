@@ -589,6 +589,23 @@ static int adp536x_power_manager_xvy(uint8_t config_register, bool enable)
    return rc;
 }
 
+static int adp536x_power_manager_get_xvy(uint8_t config_register)
+{
+   int rc = -ENOTSUP;
+
+   if (device_is_ready(i2c_spec.bus)) {
+      uint8_t buck_config = 0;
+      rc = adp536x_reg_read(config_register, &buck_config);
+      if (!rc) {
+         /*         LOG_INF("buck_conf: %02x %02x", config_register, buck_config); */
+         rc = (buck_config & 1);
+      } else {
+         LOG_WRN("Failed to read buckbst_cfg.");
+      }
+   }
+   return rc;
+}
+
 int adp536x_power_manager_init(void)
 {
    int rc = -ENOTSUP;
@@ -618,14 +635,20 @@ int adp536x_power_manager_init(void)
 #endif
 
 #ifdef CONFIG_REGULATOR_NPM1300
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay))
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay) || DT_NODE_HAS_STATUS(DT_ALIAS(regulator_3v3), okay))
 
 #include "ui.h"
 #include <zephyr/drivers/regulator.h>
 
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay))
 static const struct device *npm1300_buck2_dev = DEVICE_DT_GET(DT_NODELABEL(npm1300_buck2));
+#else
+static const struct device *npm1300_buck2_dev = DEVICE_DT_GET(DT_ALIAS(regulator_3v3));
+#undef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
+#define HAS_3V3_REGULATOR
+#endif
 
-static int npm1300_buck2_suspend(bool suspend)
+static int npm1300_buck2_enable(bool enable)
 {
    int ret = 0;
 
@@ -633,32 +656,55 @@ static int npm1300_buck2_suspend(bool suspend)
       LOG_WRN("NPM1300 buck2 not ready!");
       return -ENOTSUP;
    }
-   if (suspend) {
-      ret = regulator_disable(npm1300_buck2_dev);
-      if (ret < 0) {
-         LOG_WRN("NPM1300 disable buck2 failed, %d (%s)!", ret, strerror(-ret));
-#ifdef CONFIG_MFD_NPM1300_BUCK2_LED
+   if (enable) {
+      if (regulator_is_enabled(npm1300_buck2_dev)) {
+         LOG_INF("NPM1300 already enabled buck2.");
       } else {
-         ui_led_op(LED_BUCK2, LED_CLEAR);
-#endif
+         while (!ret && !regulator_is_enabled(npm1300_buck2_dev)) {
+            ret = regulator_enable(npm1300_buck2_dev);
+         }
+         if (ret < 0) {
+            LOG_WRN("NPM1300 enable buck2 failed, %d (%s)!", ret, strerror(-ret));
+         } else {
+            LOG_INF("NPM1300 enabled buck2.");
+         }
       }
-   } else {
-      ret = regulator_enable(npm1300_buck2_dev);
-      if (ret < 0) {
-         LOG_WRN("NPM1300 enable buck2 failed, %d (%s)!", ret, strerror(-ret));
 #ifdef CONFIG_MFD_NPM1300_BUCK2_LED
-      } else {
+      if (!ret) {
          ui_led_op(LED_BUCK2, LED_SET);
-#endif
       }
+#endif
+   } else {
+      if (!regulator_is_enabled(npm1300_buck2_dev)) {
+         LOG_INF("NPM1300 already disabled buck2.");
+      } else {
+         while (!ret && regulator_is_enabled(npm1300_buck2_dev)) {
+            ret = regulator_disable(npm1300_buck2_dev);
+         }
+         if (ret < 0) {
+            LOG_WRN("NPM1300 disable buck2 failed, %d (%s)!", ret, strerror(-ret));
+         } else {
+            LOG_INF("NPM1300 disabled buck2.");
+         }
+      }
+#ifdef CONFIG_MFD_NPM1300_BUCK2_LED
+      if (!ret) {
+         ui_led_op(LED_BUCK2, LED_CLEAR);
+      }
+#endif
    }
 
    return ret;
 }
-#else /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay) */
+
+static int npm1300_buck2_enabled(void)
+{
+   return regulator_is_enabled(npm1300_buck2_dev) ? 1 : 0;
+}
+
+#else /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay) || DT_NODE_HAS_STATUS(DT_ALIAS(regulator_3v3), okay) */
 #undef CONFIG_REGULATOR_NPM1300
-#undef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
-#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay) */
+#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay) || DT_NODE_HAS_STATUS(DT_ALIAS(regulator_3v3), okay) */
 #endif /* CONFIG_REGULATOR_NPM1300 */
 
 #ifdef CONFIG_MFD_NPM1300
@@ -698,7 +744,7 @@ static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
       }
 #ifdef CONFIG_REGULATOR_NPM1300
       if (switch_regulator) {
-         npm1300_buck2_suspend(!status);
+         npm1300_buck2_enable(status);
       }
 #endif
    }
@@ -825,6 +871,8 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, cha
 
 #include <zephyr/drivers/sensor.h>
 
+#include "expansion_port.h"
+
 #define PM_NODE_0 DT_NODELABEL(ina219_0)
 #define PM_NODE_1 DT_NODELABEL(ina219_1)
 
@@ -833,48 +881,61 @@ static const struct device *const ina219_1 = DEVICE_DT_GET_OR_NULL(PM_NODE_1);
 
 int power_manager_read_ina219(uint16_t *voltage, uint16_t *current)
 {
-   int rc;
+   int rc = -EINVAL;
+   int rc2 = -EINVAL;
    struct sensor_value value;
    const struct device *ina219 = NULL;
 
-   if (device_is_ready(ina219_0)) {
-      ina219 = ina219_0;
-   } else if (device_is_ready(ina219_1)) {
-      ina219 = ina219_1;
+   if (ina219_0 == NULL && ina219_1 == NULL) {
+      LOG_WRN("No INA219 device available.");
+      return rc;
    }
 
-   if (!ina219) {
-      if (ina219_0 == NULL && ina219_1 == NULL) {
-         LOG_WRN("No INA219 device available.");
-      } else {
-         if (ina219_0) {
-            LOG_WRN("%s device is not ready.", ina219_0->name);
-         }
-         if (ina219_1) {
-            LOG_WRN("%s device is not ready.", ina219_1->name);
-         }
+   expansion_port_power(true);
+
+   if (ina219_0) {
+      pm_device_action_run(ina219_0, PM_DEVICE_ACTION_SUSPEND);
+      rc = pm_device_action_run(ina219_0, PM_DEVICE_ACTION_RESUME);
+      if (!rc || device_is_ready(ina219_0)) {
+         ina219 = ina219_0;
       }
-      return -EINVAL;
+   }
+   if (ina219_1) {
+      pm_device_action_run(ina219_1, PM_DEVICE_ACTION_SUSPEND);
+      rc2 = pm_device_action_run(ina219_1, PM_DEVICE_ACTION_RESUME);
+      if (!rc2 || device_is_ready(ina219_1)) {
+         ina219 = ina219_1;
+      }
+   }
+   if (!ina219) {
+      LOG_WRN("%s device resume failed, %d (%s).", ina219_0->name, rc, strerror(-rc));
+      if (rc != rc2) {
+         LOG_WRN("%s device resume failed, %d (%s).", ina219_0->name, rc2, strerror(-rc2));
+      }
+      expansion_port_power(false);
+      return rc;
    }
 
    rc = sensor_sample_fetch(ina219);
    if (rc) {
       LOG_WRN("Device %s could not fetch sensor data.\n", ina219->name);
-      return rc;
+   } else {
+      rc = sensor_channel_get(ina219, SENSOR_CHAN_VOLTAGE, &value);
+      if (rc) {
+         LOG_WRN("Device %s could not get voltage.\n", ina219->name);
+      } else if (voltage) {
+         *voltage = sensor_value_to_double(&value) * 1000;
+      }
+      rc = sensor_channel_get(ina219, SENSOR_CHAN_CURRENT, &value);
+      if (rc) {
+         LOG_WRN("Device %s could not get current.\n", ina219->name);
+      } else if (current) {
+         *current = sensor_value_to_double(&value) * 1000;
+      }
    }
+   pm_device_action_run(ina219, PM_DEVICE_ACTION_SUSPEND);
+   expansion_port_power(false);
 
-   rc = sensor_channel_get(ina219, SENSOR_CHAN_VOLTAGE, &value);
-   if (rc) {
-      LOG_WRN("Device %s could not get voltage.\n", ina219->name);
-   } else if (voltage) {
-      *voltage = sensor_value_to_double(&value) * 1000;
-   }
-   rc = sensor_channel_get(ina219, SENSOR_CHAN_CURRENT, &value);
-   if (rc) {
-      LOG_WRN("Device %s could not get current.\n", ina219->name);
-   } else if (current) {
-      *current = sensor_value_to_double(&value) * 1000;
-   }
    return rc;
 }
 #endif /* CONFIG_INA219 */
@@ -895,13 +956,6 @@ int power_manager_init(void)
       LOG_WRN("UART0 console not available.");
 #endif
    }
-#ifdef CONFIG_INA219
-   if (device_is_ready(ina219_0)) {
-      power_manager_add_device(ina219_0);
-   } else if (device_is_ready(ina219_1)) {
-      power_manager_add_device(ina219_1);
-   }
-#endif
 
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
    rc = adp536x_power_manager_init();
@@ -924,8 +978,22 @@ int power_manager_3v3(bool enable)
 {
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
    return adp536x_power_manager_xvy(ADP536X_I2C_REG_BUCK_BOOST_CONFIG, enable);
+#elif defined(HAS_3V3_REGULATOR)
+   return npm1300_buck2_enable(enable);
 #else
    (void)enable;
+   return 0;
+#endif
+}
+
+int power_manager_is_3v3_enabled(void)
+{
+
+#ifdef CONFIG_ADP536X_POWER_MANAGEMENT
+   return adp536x_power_manager_get_xvy(ADP536X_I2C_REG_BUCK_BOOST_CONFIG);
+#elif defined(HAS_3V3_REGULATOR)
+   return npm1300_buck2_enabled();
+#else
    return 0;
 #endif
 }
@@ -1010,6 +1078,17 @@ int power_manager_suspend(bool enable)
    k_mutex_lock(&pm_mutex, K_FOREVER);
    pm_suspend = enable;
    res = power_manager_apply();
+   k_mutex_unlock(&pm_mutex);
+
+   return res;
+}
+
+int power_manager_is_suspended(void)
+{
+   int res;
+
+   k_mutex_lock(&pm_mutex, K_FOREVER);
+   res = pm_suspend ? 1 : 0;
    k_mutex_unlock(&pm_mutex);
 
    return res;
