@@ -28,6 +28,8 @@
 		/* alias for sensor with SENSOR_CHAN_ACCEL_XYZ channels */
 		accelerometer-sensor = &lis2dh;
 
+		regulator-3v3 = &reg_3v3;
+
 	};
 
 };
