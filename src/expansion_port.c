@@ -20,16 +20,10 @@
 
 #include "expansion_port.h"
 #include "parse.h"
+#include "power_manager.h"
 #include "sh_cmd.h"
 
-#if DT_NODE_HAS_STATUS(DT_ALIAS(exp_port_enable), okay)
-
-#define POWER_UP_TIME_MS 20
-#define POWER_DOWN_TIME_MS 20
-
-LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
-
-static const struct gpio_dt_spec exp_port_gpio_spec = GPIO_DT_SPEC_GET(DT_ALIAS(exp_port_enable), gpios);
+#if DT_NODE_HAS_STATUS(DT_ALIAS(exp_port_enable), okay) || DT_NODE_HAS_STATUS(DT_ALIAS(regulator_3v3), okay)
 
 enum exp_port_mode {
    EXP_PORT_AUTO,
@@ -40,10 +34,21 @@ enum exp_port_mode {
 static volatile enum exp_port_mode mode = EXP_PORT_AUTO;
 static atomic_t enable_counter = ATOMIC_INIT(0);
 
+LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
+
+#if DT_NODE_HAS_STATUS(DT_ALIAS(exp_port_enable), okay)
+
+#define POWER_UP_TIME_MS 50
+#define POWER_DOWN_TIME_MS 25
+
+static const struct gpio_dt_spec exp_port_gpio_spec = GPIO_DT_SPEC_GET(DT_ALIAS(exp_port_enable), gpios);
+
+#define READY_DEVICE exp_port_gpio_spec.port
+
 static int expansion_port_power_internal(bool enable)
 {
    int ret = -ENOTSUP;
-   if (device_is_ready(exp_port_gpio_spec.port)) {
+   if (device_is_ready(READY_DEVICE)) {
       if (!enable) {
          k_sleep(K_MSEC(POWER_DOWN_TIME_MS));
       }
@@ -55,32 +60,14 @@ static int expansion_port_power_internal(bool enable)
    return ret;
 }
 
-int expansion_port_power(bool enable)
+static int expansion_port_power_get(void)
 {
-   int ret = -ENOTSUP;
-   if (EXP_PORT_AUTO == mode) {
-      bool change = false;
-      if (enable) {
-         change = (atomic_inc(&enable_counter) == 0);
-      } else {
-         change = (atomic_dec(&enable_counter) == 1);
-         if (atomic_get(&enable_counter) < 0) {
-            LOG_WRN("Expansion enable counter released too often!");
-            atomic_clear(&enable_counter);
-         }
-      }
-      if (change) {
-         ret = expansion_port_power_internal(enable);
-      } else {
-         ret = 0;
-      }
-   }
-   return ret;
+   return gpio_pin_get_dt(&exp_port_gpio_spec);
 }
 
 static int expansion_port_init(void)
 {
-   if (device_is_ready(exp_port_gpio_spec.port)) {
+   if (device_is_ready(READY_DEVICE)) {
 #if defined(CONFIG_ENABLE_EXPANSION_PORT)
       gpio_pin_configure_dt(&exp_port_gpio_spec, GPIO_OUTPUT_ACTIVE);
 #else  /* defined(CONFIG_ENABLE_EXPANSION_PORT) */
@@ -91,6 +78,58 @@ static int expansion_port_init(void)
 }
 
 SYS_INIT(expansion_port_init, POST_KERNEL, CONFIG_EXPANSION_PORT_INIT_PRIORITY);
+
+#else /* DT_NODE_HAS_STATUS(DT_ALIAS(exp_port_enable), okay) */
+
+static const struct device *npm1300_buck2_dev = DEVICE_DT_GET(DT_ALIAS(regulator_3v3));
+
+#define READY_DEVICE npm1300_buck2_dev
+
+static inline int expansion_port_power_internal(bool enable)
+{
+   return power_manager_3v3(enable);
+}
+
+static int expansion_port_power_get(void)
+{
+   return power_manager_is_3v3_enabled();
+}
+
+#endif /* DT_NODE_HAS_STATUS(DT_ALIAS(exp_port_enable), okay) */
+
+int expansion_port_power(bool enable)
+{
+   int ret = -ENOTSUP;
+
+#ifdef CONFIG_ENABLE_EXPANSION_PORT
+   (void)enable;
+#else  /* CONFIG_ENABLE_EXPANSION_PORT */
+   if (EXP_PORT_AUTO == mode) {
+      int counter = 0;
+      bool change = false;
+      if (enable) {
+         counter = atomic_inc(&enable_counter);
+         change = (counter == 0);
+      } else {
+         counter = atomic_dec(&enable_counter);
+         change = (counter == 1);
+         if (atomic_get(&enable_counter) < 0) {
+            LOG_WRN("Expansion enable counter released too often!");
+            atomic_clear(&enable_counter);
+         }
+      }
+      if (change) {
+         ret = expansion_port_power_internal(enable);
+         LOG_INF("Expansion %s", enable ? "enabled" : "disabled");
+      } else {
+         LOG_DBG("Expansion %s, counter %d", enable ? "enable" : "disable", counter);
+         ret = 0;
+      }
+   }
+#endif /* CONFIG_ENABLE_EXPANSION_PORT */
+
+   return ret;
+}
 
 #ifdef CONFIG_SH_CMD
 
@@ -103,10 +142,10 @@ static int expansion_port_mode(const char *config)
    memset(value, 0, sizeof(value));
    cur = parse_next_text(cur, ' ', value, sizeof(value));
    if (!value[0]) {
-      if (!device_is_ready(exp_port_gpio_spec.port)) {
+      if (!device_is_ready(READY_DEVICE)) {
          LOG_INF("Expansion port power line not available.");
       } else {
-         res = gpio_pin_get_dt(&exp_port_gpio_spec);
+         res = expansion_port_power_get();
          cur = res > 0 ? "ON" : res < 0 ? "ERR"
                                         : "OFF";
          config = "unknown";
