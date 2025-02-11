@@ -1,0 +1,42 @@
+/*
+ * Copyright (c) 2025 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http: //www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+
+/*
+ * Usage:
+ *
+ * west build -d build_feather_nrf9160_ns -b circuitdojo_feather_nrf9160_ns --pristine -- \
+ *    -DOVERLAY_CONFIG="60min0-prj.conf;at-cmd-prj.conf;hivescale-prj.conf" \
+ *    -DDTC_OVERLAY_FILE="hivescale-feather.overlay" -DCONFIG_BATTERY_TYPE_ENELOOP_2000_MAH=y
+ */
+
+#include "boards/conexio_stratus_pro_nrf9151_ns.overlay"
+
+&i2c2 {
+
+	scale_a: scale@2a {
+		compatible = "nau7802-scale";
+		reg = <0x2a>;
+		avref_mv = <3000>;
+		gain = <64>;
+	};
+
+};
+
+
+/    {
+
+	aliases {
+		scale-a = &scale_a;
+	};
+
+};
