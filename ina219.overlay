@@ -13,9 +13,9 @@
 
 /*
  * Usage: 
- *
+ * 
  * west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- \
- *    -DOVERLAY_CONFIG="60min0-prj.conf;mikroe-prj.conf" -DDTC_OVERLAY_FILE="mikroe219.overlay"
+ *    -DOVERLAY_CONFIG="60min0-prj.conf;mikroe-prj.conf" -DDTC_OVERLAY_FILE="mikroe.overlay;ina219.overlay"
  *
  * Note: the INA219 modules may come with different I2C addresses and with different
  *       SHUNTs. That may require to adapt the DTS description.
@@ -31,9 +31,7 @@
  *   See dts/bindings/sensor/ti,ina219.yaml
  */
 
-#include "mikroe.overlay"
-
-&i2c2 {
+&sensor_i2c {
 	ina219_0: ina219@40 {
 		// GY-INA219, 100 mOhm
 		compatible = "ti,ina219";
@@ -44,6 +42,7 @@
 		badc = <13>;
 		shunt-milliohm = <100>;
 		lsb-microamp = <10>; // max. 300mA
+		status = "okay";
 	};
 
 	ina219_1: ina219@45 {
@@ -56,6 +55,7 @@
 		badc = <13>;
 		shunt-milliohm = <010>;
 		lsb-microamp = <10>; // max. 300mA
+		status = "okay";
 	};
 };
 

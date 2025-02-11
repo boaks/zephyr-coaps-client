@@ -679,6 +679,9 @@ if INA219
 config INA219_MODE_POWER_MANAGER
 	bool "INA219 power manager"
 
+config INA219_ON_EXPANSION_BOARD
+	bool "INA219 on expansion board"
+
 endif # INA219
 
 

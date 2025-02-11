@@ -41,9 +41,13 @@ int power_manager_suspend_device(const struct device *dev);
 
 int power_manager_suspend(bool enable);
 
+int power_manager_is_suspended(void);
+
 int power_manager_pulse(k_timeout_t time);
 
 int power_manager_3v3(bool enable);
+
+int power_manager_is_3v3_enabled(void);
 
 int power_manager_1v8(bool enable);
 
