@@ -728,17 +728,7 @@ static void dtls_coap_success(dtls_app_data_t *app)
    if (time2 < 0) {
       time2 = -1;
    }
-   if (!ui_led_op(LED_COLOR_ALL, LED_CLEAR)) {
-      ui_enable(false);
-   }
 
-   dtls_info("%dms/%dms: success", time1, time2);
-   if (app->retransmission <= COAP_MAX_RETRANSMISSION) {
-      transmissions[app->retransmission]++;
-   }
-
-   connect_time_ms = 0;
-   coap_rtt_ms = 0;
    if (time2 >= 0) {
       if (time1 > 0) {
          connect_time_ms = time1;
@@ -747,6 +737,25 @@ static void dtls_coap_success(dtls_app_data_t *app)
          connect_time_ms = 0;
          coap_rtt_ms = time2;
       }
+   } else {
+      connect_time_ms = 0;
+      coap_rtt_ms = 0;
+   }
+
+   if (coap_rtt_ms > 500) {
+         ui_enable(false);
+   } else {
+      ui_led_op(LED_COLOR_RED, LED_CLEAR);
+      ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
+      ui_led_op(LED_COLOR_GREEN, LED_BLINK);
+   }
+
+   dtls_info("%dms/%dms: success", time1, time2);
+   if (app->retransmission <= COAP_MAX_RETRANSMISSION) {
+      transmissions[app->retransmission]++;
+   }
+
+   if (time2 >= 0) {
       retransmissions = app->retransmission;
       if (retransmissions == 0 && time2 < 4000) {
          modem_set_psm(0);
