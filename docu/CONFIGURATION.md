@@ -7,12 +7,20 @@
 The demo client comes with some configuration values, which are setup using:
 
 ```
+# NCS 2.9.0
+west build -b thingy91/nrf9160/ns -t menuconfig
+
+# NCS 2.6.2
 west build -b thingy91_nrf9160_ns -t menuconfig
 ```
 
 for the console variant, and
 
 ```
+# NCS 2.9.0
+west build -b thingy91/nrf9160/ns -t guiconfig
+
+# NCS 2.6.2
 west build -b thingy91_nrf9160_ns -t guiconfig
 ```
 
@@ -134,7 +142,7 @@ Wakeups 1, 1 s, connected 7 s, asleep 0 s
 - **id=<device-id>** device id, if PSK is not used.
 
 ### Supported on Californium CoAP-S3-Proxy:
-- **series**,  enable series function of s3-proxy.
+(- **series**,  enable series function of s3-proxy. **Obsolete**)
 - **forward**, enable http-proxy forward.
 - **read[=<subpath>]**, read sub-resource. Default subpath is "config".
 - **write[=<subpath>]** write sub-resource. Default subpath is "${now}".
@@ -313,13 +321,22 @@ As mentioned above, overlays are files, which are used to configure a set of fea
 Apply configuration overlays:
 
 ```
+# NCS 2.9.0
+west build -b thingy91/nrf9160/ns --pristine -- -DOVERLAY_CONFIG="bme-prj.conf;60min-prj.conf"
+
+# NCS 2.6.2
 west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="bme-prj.conf;60min-prj.conf"
 ```
 
 With device tree overlay:
 
 ```
+# NCS 2.9.0
+west build -b thingy91/nrf9160/ns --pristine -- -DOVERLAY_CONFIG="sht3x-prj.conf;60min-prj.conf" -DDTC_OVERLAY_FILE="boards/nrf9160dk_nrf9160_ns.overlay;sht3x.overlay"
+
+# NCS 2.6.2
 west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="sht3x-prj.conf;60min-prj.conf" -DDTC_OVERLAY_FILE="boards/nrf9160dk_nrf9160_ns.overlay;sht3x.overlay"
 ```
 
 **Note:** in difference to the "*.conf" files, using a "*.overlay" prevents the board specific project overlay "board/*.overlay" from being used. Therefore add the project board overlay also when using DTC_OVERLAY_FILE.
+
