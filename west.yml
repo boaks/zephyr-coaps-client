@@ -21,7 +21,7 @@ manifest:
     - name: nrf
       repo-path: sdk-nrf
       remote: ncs
-      revision: v2.6.2
+      revision: v2.9.0
       import:
         name-blocklist:
           - matter

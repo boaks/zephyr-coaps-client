@@ -1032,6 +1032,9 @@ static void pdn_handler(uint8_t cid, enum pdn_event event,
       case PDN_EVENT_APN_RATE_CONTROL_OFF:
          LOG_INF("PDN CID %u, rate limit off", cid);
          break;
+      case PDN_EVENT_CTX_DESTROYED:
+         LOG_INF("PDN CID %u, context destroyed", cid);
+         break;
    }
 }
 
@@ -1874,7 +1877,7 @@ void modem_set_scan_time(void)
    k_mutex_unlock(&lte_mutex);
 }
 
-int parse_psm(const char *active_time_str, const char *tau_ext_str,
+int psm_parse(const char *active_time_str, const char *tau_ext_str,
               const char *tau_legacy_str, struct lte_lc_psm_cfg *psm_cfg);
 
 int modem_read_network_info(struct lte_network_info *info, bool callbacks)
@@ -2067,7 +2070,8 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
 
    if (act && tau_ext && tau) {
       struct lte_lc_psm_cfg temp_psm_status = {0, -1};
-      if (!parse_psm(act, tau_ext, tau, &temp_psm_status)) {
+
+      if (!psm_parse(act, tau_ext, tau, &temp_psm_status)) {
          LOG_INF("PSM update: TAU: %d s, Active time: %d s",
                  temp_psm_status.tau, temp_psm_status.active_time);
          lte_set_psm_status(&temp_psm_status);

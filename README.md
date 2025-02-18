@@ -61,7 +61,7 @@ To benefit from the newer modem features, please consider to use the modem firmw
 
 For `nRF9161` and `nRF9151` devices use the modem firmware [2.0.2](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/sip/nrf91x1-sip/nrf91x1-lte-modem-firmware/mfw_nrf91x1_2.0.2.zip) for that. 
 
-`NCS 2.7.0` nor `NCS 2.8.0` is not supported for now.
+`NCS 2.9.0` is experimentally supported.
 
 ## Supported New/Upcoming Devices
 
@@ -180,7 +180,7 @@ In order to be able to build the demo-client, you need to install the developmen
 
 As mentioned at the introduction, the demo is intended as groundwork for your own ideas. 
 
-[Next Steps](./docu/NEXTSTEPS.md)  
+[Next Steps](./docu/NEXTSTEPS.md)
 
 See also [Roadmap](./docu/ROADMAP.md) for the plan of the next months.
 

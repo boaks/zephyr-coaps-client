@@ -13,6 +13,10 @@
 
 / {
 
+	chosen {
+		nordic,modem-trace-uart = &uart1;
+	};
+
 	ins {
 		compatible = "gpio-keys";
 		rx0: uart0_rx {
@@ -64,6 +68,12 @@
 	};
     
 	pmic0: pmic@46 {};
+};
+
+&uart1 {
+	status = "okay";
+	current-speed = < 1000000 >;
+	hw-flow-control;
 };
 
 sensor_i2c: &i2c2 {};
