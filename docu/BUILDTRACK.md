@@ -80,14 +80,36 @@ Change the current directory to "zephyr-coaps-client/coaps-client" (or "<workspa
 
 ```sh
 cd coaps-client
+
+# NCS 2.9.0
+west build -b thingy91/nrf9160/ns
+
+# NCS 2.6.2
 west build -b thingy91_nrf9160_ns
 ```
 
-(For the [nRF9160-DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK) use `west build -b nrf9160dk_nrf9160_ns`, and for the [nRF9160 feather v5](https://www.jaredwolff.com/store/nrf9160-feather/) use `west build -b circuitdojo_feather_nrf9160_ns`.)
+Other boards are also supported, see table below:
+
+| Board | NCS 2.6.2 | NCS 2.9.0 |
+| :- | - | - |
+| Thingy:91 | thingy91_nrf9160_ns | thingy91/nrf9160/ns |
+| Thingy:91X | thingy91x_nrf9151_ns | thingy91x/nrf9151/ns |
+| nRF9160-DK | nrf9160dk_nrf9160_ns | nrf9160dk/nrf9160/ns |
+| nRF9161-DK | nrf9161dk_nrf9161_ns | nrf9161dk/nrf9161/ns |
+| nRF9151-DK | nrf9151dk_nrf9151_ns | nrf9151dk/nrf9151/ns |
+| nRF9160 Feather (v5,v6) | circuitdojo_feather_nrf9160_ns | circuitdojo_feather/nrf9160/ns |
+| nRF9161 Feather (beta) | circuitdojo_feather_nrf9161_ns | circuitdojo_feather_nrf9161/nrf9161/ns |
+| Conexio Stratus Pro nRF9161 | conexio_stratus_pro_nrf9161_ns | conexio_stratus_pro/nrf9161/ns |
+| Conexio Stratus Pro nRF9151 | conexio_stratus_pro_nrf9151_ns | conexio_stratus_pro/nrf9151/ns |
+| MIKROE LTE IoT 4 Click | nRF9160-DK with overlay | nRF9160-DK with overlay |
 
 Starting with v0.10.0 that only builds an image for updates. For an initial image it's required to provide the used credentials with a project specific config file. Therefore use
 
 ```sh
+# NCS 2.9.0
+west build -b thingy91/nrf9160/ns --pristine -- -DOVERLAY_CONFIG="prov-prj.conf"
+
+# NCS 2.6.2
 west build -b thingy91_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="prov-prj.conf"
 ```
 
@@ -108,12 +130,20 @@ See also [Updating Firmware Through External Debug Probe](https://developer.nord
 In some case, e.g. a firmware update with an notebook in the wild, it may be easier to use the `nrfjprog` util of the [nRF Command Line Tools](https://www.nordicsemi.com/Products/Development-tools/nrf-command-line-tools/download).
 
 ```sh
+# NCS 2.9.0
+nrfjprog --program build/merged.hex --sectorerase --verify -r
+
+# NCS 2.6.2
 nrfjprog --program build/zephyr/merged.hex --sectorerase --verify -r
 ```
 
 without `west`. If it's the initial image with the device setup, use 
 
 ```sh
+# NCS 2.9.0
+nrfjprog --program build/merged.hex --chiperase --verify -r
+
+# NCS 2.6.2
 nrfjprog --program build/zephyr/merged.hex --chiperase --verify -r
 ```
 
@@ -176,12 +206,20 @@ Starting with version 0.10.0 the [SETTINGS](https://docs.zephyrproject.org/lates
 The initial image will only apply the settings on the first start after flashing it with `--chiperase`
 
 ```sh
+# NCS 2.9.0
+nrfjprog --program build/merged.hex --chiperase --verify -r
+
+# NCS 2.6.2
 nrfjprog --program build/zephyr/merged.hex --chiperase --verify -r
 ```
 
 When this image is applied afterwards with `--sectorerase`
 
 ```sh
+# NCS 2.9.0
+nrfjprog --program build/merged.hex --sectorerase --verify -r
+
+# NCS 2.6.2
 nrfjprog --program build/zephyr/merged.hex --sectorerase --verify -r
 ```
 
@@ -303,12 +341,20 @@ You may now apply the same resulting "..._full.hex" image to a set of devices. E
 The application comes with a [KConfig](../Kconfig) to configure some functions. Use
 
 ```
+# NCS 2.9.0
+west build -b thingy91/nrf9160/ns -t menuconfig
+
+# NCS 2.6.2
 west build -b thingy91_nrf9160_ns -t menuconfig
 ```
 
 for the console variant, and
 
 ```
+# NCS 2.9.0
+west build -b thingy91/nrf9160/ns -t guiconfig
+
+# NCS 2.6.2
 west build -b thingy91_nrf9160_ns -t guiconfig
 ```
 
@@ -350,6 +396,11 @@ In many cases, the next build requires to use
 
 ```sh
 cd coaps-client
+
+# NCS 2.9.0
+west build -b thingy91/nrf9160/ns --pristine
+
+# NCS 2.6.2
 west build -b thingy91_nrf9160_ns --pristine
 ```
 
@@ -369,3 +420,4 @@ and retry `west build ... --pristine` again.
 
 In some case it may be required to also update the [Zephyr SDK](
 https://docs.zephyrproject.org/latest/develop/getting_started/index.html#install-the-zephyr-sdk). Follow the instructions there and test, if that fixes your issues when updating the NCS version. 
+

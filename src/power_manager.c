@@ -23,10 +23,10 @@
 #include <zephyr/pm/device.h>
 
 #include "appl_settings.h"
+#include "expansion_port.h"
 #include "io_job_queue.h"
 #include "modem_at.h"
 #include "power_manager.h"
-#include "expansion_port.h"
 #include "sh_cmd.h"
 #include "transform.h"
 
@@ -62,25 +62,6 @@ static int power_manager_suspend_realtime_clock(void)
 SYS_INIT(power_manager_suspend_realtime_clock, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY);
 
 #endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay) && defined(CONFIG_DISABLE_REALTIME_CLOCK) */
-
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c2), okay) && defined(CONFIG_DISABLE_BMM350)
-
-// magnetometer
-#define BMM350_I2C_DEVICE DEVICE_DT_GET(DT_NODELABEL(i2c2))
-#define BMM350_REG_OTP_CMD_REG UINT8_C(0x50)
-#define BMM350_OTP_CMD_PWR_OFF_OTP UINT8_C(0x80)
-#define BMM350_START_UP_TIME_FROM_POR 3000
-
-static int power_manager_bmm350_init_minimal(void)
-{
-   k_sleep(K_USEC(BMM350_START_UP_TIME_FROM_POR));
-   uint8_t otp_cmd = BMM350_OTP_CMD_PWR_OFF_OTP;
-   i2c_burst_write(BMM350_I2C_DEVICE, 0x14, BMM350_REG_OTP_CMD_REG, &otp_cmd, 1);
-   return 0;
-}
-
-SYS_INIT(power_manager_bmm350_init_minimal, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY);
-#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(i2c2), okay) && defined(CONFIG_DISABLE_BMM350) */
 
 #define PM_INVALID_INTERNAL_LEVEL 0xffff
 
@@ -1299,13 +1280,13 @@ static int sh_cmd_battery(const char *parameter)
    if (!power_manager_ext(&battery_voltage, &battery_current, &battery_power)) {
       index = snprintf(buf, length, "Ext.Bat.: ");
       if (battery_voltage != PM_INVALID_VOLTAGE) {
-         index += snprintf(buf+index, length-index, "%u mV ", battery_voltage);
+         index += snprintf(buf + index, length - index, "%u mV ", battery_voltage);
       }
       if (battery_current != PM_INVALID_CURRENT) {
-         index += snprintf(buf+index, length-index, "%d mA ", battery_current);
+         index += snprintf(buf + index, length - index, "%d mA ", battery_current);
       }
       if (battery_power != PM_INVALID_POWER) {
-         index += snprintf(buf+index, length-index, "%u mW", battery_power);
+         index += snprintf(buf + index, length - index, "%u mW", battery_power);
       }
       LOG_INF("%s", buf);
    }

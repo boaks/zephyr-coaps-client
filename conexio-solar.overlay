@@ -18,7 +18,7 @@
  *    -DOVERLAY_CONFIG="60min0-prj.conf;uart-prj.conf" -DDTC_OVERLAY_FILE="conexio-solar.overlay"
  */
 
-#include "boards/conexio_stratus_pro_ns.overlay"
+#include "boards/conexio_stratus_pro_nrf9161_ns.overlay"
 
 /	{
 

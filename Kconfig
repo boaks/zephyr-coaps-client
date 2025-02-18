@@ -11,6 +11,20 @@
 # SPDX-License-Identifier: EPL-2.0
 #
 
+# NORMALIZE BOARDS 2.6.4 => 2.9.1
+
+if BOARD_CIRCUITDOJO_FEATHER_NRF9151_NS
+config BOARD_CIRCUITDOJO_FEATHER_NRF9151_NRF9151_NS
+    bool
+	default y
+endif
+
+if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NS
+config BOARD_CIRCUITDOJO_FEATHER_NRF9161_NRF9161_NS
+    bool
+	default y
+endif
+
 config ALL_POWER_OFF
 	bool "Switchign off, only test quiescent current"
 
@@ -556,6 +570,13 @@ config LOCATION_ENABLE_TRIGGER_MESSAGE
 	help
 	   Enable GNSS location to trigger a message
 
+config APPL_ADC
+	bool "Voltage ADC measurement"
+	default n
+	depends on ADC
+	help
+	   Enable ADC measurement
+
 config BATTERY_ADC
 	bool "Battery voltage ADC measurement"
 	default y
@@ -578,14 +599,16 @@ config BATTERY_TYPE_LIPO_1350_MAH
 config BATTERY_TYPE_LIPO_2000_MAH
 	bool "LiPo 2000 mAh"
 	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
-	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NS
+	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NRF9161_NS
+	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9151_NRF9151_NS
 	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
 	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
 
 config BATTERY_TYPE_NIMH_2000_MAH
 	bool "NiMH 2000 mAh"
 	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
-	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NS
+	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NRF9161_NS
+	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9151_NRF9151_NS
 	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
 	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
 
@@ -622,30 +645,35 @@ endif
 config EXPANSION_PORT
 	bool "Use expansion port"
 	default y
-	depends on BOARD_THINGY91X_NRF9151_NS
+	depends on BOARD_THINGY91X_NRF9151_NS || BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS || BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
 	help
-	   Use Thingy:91X expansion port.
+	   Use Qwiic expansion port. Supported for
+	   Thingy:91X, Conexio Stratus Pro 51 and 61
 
 config EXPANSION_PORT_INIT_PRIORITY
 	int "Expansion port init priority"
 	default 87
 	depends on EXPANSION_PORT
 	help
-	   Thingy:91X expansion port init priority.
+	   Qwiic expansion port init priority.
 	   Must be executed before sensor init.
 
 config ENABLE_EXPANSION_PORT
 	bool "Enable expansion port on init"
 	depends on EXPANSION_PORT
 	help
-	   Enable Thingy:91X expansion port.
-
+	   Enable Qwiic expansion port.
 
 config NAU7802_SCALE
 	bool "Enable NAU7802 scale"
 	depends on I2C
 	help
 	   Enable NAU7802 scale.
+
+if NAU7802_SCALE
+
+config NAU7802_SCALE_ON_EXPANSION_BOARD
+	bool "NAU7802 on expansion board"
 
 config NAU7802_PARALLEL_READ
 	bool "Enable parallel channel reads for NAU7802"
@@ -660,10 +688,25 @@ config NAU7802_DUMMY_CALIBRATION
 	default n
 	depends on NAU7802_SCALE
 
+config NAU7802_INIT_PRIORITY
+	int "NAU7802 init priority"
+	default 91
+	depends on NAU7802_SCALE
+	help
+	   NAU7802 init priority.
+	   Must be executed after i2c driver init.
+
+endif # NAU7802_SCALE
+
 config ADC_SCALE
 	bool
 	default y
 	depends on NAU7802_SCALE
+
+config ADC_SCALE_SETUP
+	bool "Enable button setup"
+	default y
+	depends on ADC_SCALE
 
 if SENSOR
 
@@ -689,7 +732,8 @@ if MFD_NPM1300
 
 config MFD_NPM1300_BUCK2_WITH_USB
     bool "Enable/disable npm1300 buck2 with USB"
-    default y if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NS
+	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NRF9161_NS
+	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9151_NRF9151_NS
     depends on REGULATOR_NPM1300
     help
        Enable/disable buck2 (RP2040) when powered by USB.
@@ -711,6 +755,9 @@ if INA219
 
 config INA219_MODE_POWER_MANAGER
 	bool "INA219 power manager"
+
+config INA219_ON_EXPANSION_BOARD
+	bool "INA219 on expansion board"
 
 endif # INA219
 
@@ -817,7 +864,7 @@ endif # BME680_BSEC
 
 config ENVIRONMENT_SENSOR
     bool
-    default y if BME680_BSEC || BME680 || SHT3XD || DS18B20
+    default y if BME680_BSEC || BME680 || SHT3XD || DS18B20 || BME280
 
 if ENVIRONMENT_SENSOR
 
@@ -832,15 +879,15 @@ config TEMPERATURE_OFFSET
 	  self-heating a lot. Therefore the default value of 120 for the Thingy:91
 	  is set to 0.
 
-endif # ENVIRONMENT_SENSOR
-
-if BME680 || SHT3XD || DS18B20
+if !BME680_BSEC
 
 config SAMPLE_INTERVAL_S
 	int "Minimal sample interval for environment sensor in seconds."
-	default 10
+	default 10 
 
-endif # BME680 || SHT3XD || DS18B20
+endif # !BME680_BSEC
+
+endif # ENVIRONMENT_SENSOR
 
 endif # SENSOR
 
@@ -869,11 +916,6 @@ config DISABLE_REALTIME_CLOCK
 	default y
 	depends on I2C && BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
 
-config DISABLE_BMM350
-	bool "Disable BMM350 (Thingy:91X only!)"
-	default y
-	depends on I2C && BOARD_THINGY91X_NRF9151_NS
-
 if FLASH
 config FLASH_APPL_STORAGE
 	bool "Flash support for application storage."
@@ -896,11 +938,13 @@ config APPL_MODEL
 	default "dk2" if BOARD_NRF9161DK_NRF9161_NS
 	default "dk3" if BOARD_NRF9151DK_NRF9151_NS
 	default "ty" if BOARD_THINGY91_NRF9160_NS
+	default "txsc" if BOARD_THINGY91X_NRF9151_NS && ADC_SCALE
 	default "tx" if BOARD_THINGY91X_NRF9151_NS
 	default "sc" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && ADC_SCALE
 	default "bm" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && EXT_BATTERY_ADC
 	default "fh" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
-	default "f1" if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NS
+	default "f1" if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NRF9161_NS
+	default "f51" if BOARD_CIRCUITDOJO_FEATHER_NRF9151_NRF9151_NS
 	default "csp" if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
 	default "cs51" if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
 	help
@@ -912,11 +956,13 @@ config APPL_MODEL_DESCRIPTION
 	default "nRF9161-DK" if BOARD_NRF9161DK_NRF9161_NS
 	default "nRF9151-DK" if BOARD_NRF9151DK_NRF9151_NS
 	default "Thingy:91" if BOARD_THINGY91_NRF9160_NS
+	default "Thingy:91X scale" if BOARD_THINGY91X_NRF9151_NS && ADC_SCALE
 	default "Thingy:91X" if BOARD_THINGY91X_NRF9151_NS
 	default "nRF9160-scale" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && ADC_SCALE
 	default "nRF9160-monitor" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && EXT_BATTERY_ADC
 	default "nRF9160-feather" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
-	default "nRF9161-feather" if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NS
+	default "nRF9161-feather" if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NRF9161_NS
+	default "nRF9151-feather" if BOARD_CIRCUITDOJO_FEATHER_NRF9151_NRF9151_NS
 	default "conexio-nRF9151" if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
 	default "conexio-nRF9161" if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
 	help

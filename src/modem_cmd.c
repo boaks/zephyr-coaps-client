@@ -445,6 +445,7 @@ static int modem_cmd_apnclr(const char *config)
    return res;
 }
 
+#if defined(CONFIG_LTE_LC_NEIGHBOR_CELL_MEAS_MODULE)
 static int modem_cmd_scan(const char *config)
 {
    static struct lte_lc_ncellmeas_params params = {
@@ -556,8 +557,11 @@ static void modem_cmd_rscan_help(void)
    LOG_INF("> help rscan: remote network scan");
    modem_cmd_scan_help_details("rscan");
 }
+#endif /* CONFIG_LTE_LC_NEIGHBOR_CELL_MEAS_MODULE */
 
 #define ROUND_UP_TIME(T, D) (((T) + ((D) - 1)) / (D))
+
+#if defined(CONFIG_LTE_LC_PSM_MODULE)
 
 static int modem_cmd_psm(const char *config)
 {
@@ -695,6 +699,7 @@ static void modem_cmd_psm_help(void)
    LOG_INF("  psm off          : disable PSM.");
    LOG_INF("  psm              : show current PSM status.");
 }
+#endif /* CONFIG_LTE_LC_PSM_MODULE */
 
 static int modem_cmd_rai(const char *config)
 {
@@ -729,6 +734,7 @@ static void modem_cmd_rai_help(void)
    LOG_INF("  rai        : show current RAI status.");
 }
 
+#if defined(CONFIG_LTE_LC_EDRX_MODULE)
 static int modem_cmd_show_edrx(void)
 {
    int res = 0;
@@ -880,6 +886,7 @@ static void modem_cmd_ptw_help(void)
    LOG_INF("                 : sent to the network with the next connection.");
    LOG_INF("  ptw            : show current eDRX status.");
 }
+#endif /* CONFIG_LTE_LC_EDRX_MODULE */
 
 static int modem_cmd_print_bands(const char *bands)
 {
@@ -1170,13 +1177,21 @@ SH_CMD(con, "", "connect modem.", modem_cmd_connect, modem_cmd_connect_help, 0);
 SH_CMD(apn, "", "modem APN.", modem_cmd_apn, modem_cmd_apn_help, 0);
 SH_CMD(apnclr, "", "clear modem APN, use default of SIM card.", modem_cmd_apnclr, NULL, 0);
 
+#if defined(CONFIG_LTE_LC_NEIGHBOR_CELL_MEAS_MODULE)
 SH_CMD(scan, "AT%NCELLMEAS", "network scan.", modem_cmd_scan, modem_cmd_scan_help, 0);
 SH_CMD(rscan, "", "remote network scan.", modem_cmd_rscan, modem_cmd_rscan_help, 0);
+#endif /* CONFIG_LTE_LC_NEIGHBOR_CELL_MEAS_MODULE */
 
 SH_CMD(band, "", "configure bands.", modem_cmd_band, modem_cmd_band_help, 0);
+
+#if defined(CONFIG_LTE_LC_EDRX_MODULE)
 SH_CMD(edrx, "", "configure eDRX.", modem_cmd_edrx, modem_cmd_edrx_help, 0);
 SH_CMD(ptw, "", "configure paging time window.", modem_cmd_ptw, modem_cmd_ptw_help, 0);
+#endif /* CONFIG_LTE_LC_EDRX_MODULE */
+
+#if defined(CONFIG_LTE_LC_PSM_MODULE)
 SH_CMD(psm, "", "configure PSM.", modem_cmd_psm, modem_cmd_psm_help, 0);
+#endif /* CONFIG_LTE_LC_PSM_MODULE */
 
 SH_CMD(rai, "", "configure RAI.", modem_cmd_rai, modem_cmd_rai_help, 0);
 
