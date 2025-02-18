@@ -17,6 +17,12 @@ The device tree of the mobile-beehive-scale is configure in the [hivescale-feath
 To build the mobile-beehive-scale use:
 
 ```
+# NCS 2.9.0
+west build -d build_feather_nrf9160_ns -b circuitdojo_feather/nrf9160/ns --pristine -- \
+   -DOVERLAY_CONFIG="60min0-prj.conf;at-cmd-prj.conf;hivescale-prj.conf" \
+   -DDTC_OVERLAY_FILE="hivescale-feather.overlay" -DCONFIG_BATTERY_TYPE_ENELOOP_2000_MAH=y
+
+# NCS 2.6.2
 west build -d build_feather_nrf9160_ns -b circuitdojo_feather_nrf9160_ns --pristine -- \
    -DOVERLAY_CONFIG="60min0-prj.conf;at-cmd-prj.conf;hivescale-prj.conf" \
    -DDTC_OVERLAY_FILE="hivescale-feather.overlay" -DCONFIG_BATTERY_TYPE_ENELOOP_2000_MAH=y
