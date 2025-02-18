@@ -401,7 +401,7 @@ int environment_get_temperature(double *value)
 {
    int err = environment_sensor_read(&temperature_sensor, value, NULL, NULL);
    if (!err) {
-      *value -= temperature_offset; /* compensate self heating */
+      *value -= (double) temperature_offset; /* compensate self heating */
    }
    return err;
 }

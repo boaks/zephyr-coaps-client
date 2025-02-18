@@ -859,7 +859,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
                mode = "NB-IoT";
             }
             LOG_INF("eDRX cell update: %s, eDRX: %.2fs, PTW: %.2fs",
-                    mode, evt->edrx_cfg.edrx, evt->edrx_cfg.ptw);
+                    mode, (double)evt->edrx_cfg.edrx, (double)evt->edrx_cfg.ptw);
             lte_set_edrx_status(&evt->edrx_cfg);
             break;
          }
@@ -2060,7 +2060,7 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
       t = NULL;
       int edrx_code = strtol(edrx, &t, 2);
       if (t > edrx) {
-         float edrx_time = modem_get_edrx_multiplier(edrx_code) * 5.12F;
+         double edrx_time = modem_get_edrx_multiplier(edrx_code) * 5.12F;
          LOG_INF("eDRX net: %s => %0.2fs", edrx, edrx_time);
       }
    }
@@ -2539,7 +2539,7 @@ int modem_set_edrx(int16_t edrx_time_s)
          }
       }
       print_bin(edrx, 4, edrx_code);
-      LOG_INF("eDRX enable, %.2f s", (modem_get_edrx_multiplier(edrx_code) * 5.12F));
+      LOG_INF("eDRX enable, %.2f s", (modem_get_edrx_multiplier(edrx_code) * 5.12));
       res2 = modem_at_cmdf(NULL, 0, NULL, "AT+CEDRXS=2,5,\"%s\"", edrx);
       res = modem_at_cmdf(NULL, 0, NULL, "AT+CEDRXS=2,4,\"%s\"", edrx);
       if (res2 < 0) {
@@ -2585,9 +2585,9 @@ int modem_print_edrx(const char *desc, struct lte_lc_edrx_cfg *edrx_cfg, char *b
       if (edrx_cfg->edrx < 1.0F) {
          return snprintf(buf, len, "eDRX %s%s%s disabled.", desc, sep, mode);
       } else if (edrx_cfg->ptw < 1.0F) {
-         return snprintf(buf, len, "eDRX %s%s%s %.2fs", desc, sep, mode, edrx_cfg->edrx);
+         return snprintf(buf, len, "eDRX %s%s%s %.2fs", desc, sep, mode, (double) edrx_cfg->edrx);
       } else {
-         return snprintf(buf, len, "eDRX %s%s%s %.2fs, ptw %.2fs", desc, sep, mode, edrx_cfg->edrx, edrx_cfg->ptw);
+         return snprintf(buf, len, "eDRX %s%s%s %.2fs, ptw %.2fs", desc, sep, mode, (double) edrx_cfg->edrx, (double) edrx_cfg->ptw);
       }
    }
    return 0;
