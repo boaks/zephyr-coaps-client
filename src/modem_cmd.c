@@ -445,6 +445,7 @@ static int modem_cmd_apnclr(const char *config)
    return res;
 }
 
+#if defined(CONFIG_LTE_LC_NEIGHBOR_CELL_MEAS_MODULE)
 static int modem_cmd_scan(const char *config)
 {
    static struct lte_lc_ncellmeas_params params = {
@@ -556,8 +557,11 @@ static void modem_cmd_rscan_help(void)
    LOG_INF("> help rscan: remote network scan");
    modem_cmd_scan_help_details("rscan");
 }
+#endif /* CONFIG_LTE_LC_NEIGHBOR_CELL_MEAS_MODULE */
 
 #define ROUND_UP_TIME(T, D) (((T) + ((D) - 1)) / (D))
+
+#if defined(CONFIG_LTE_LC_PSM_MODULE)
 
 static int modem_cmd_psm(const char *config)
 {
@@ -695,6 +699,7 @@ static void modem_cmd_psm_help(void)
    LOG_INF("  psm off          : disable PSM.");
    LOG_INF("  psm              : show current PSM status.");
 }
+#endif /* CONFIG_LTE_LC_PSM_MODULE */
 
 static int modem_cmd_rai(const char *config)
 {
@@ -729,6 +734,75 @@ static void modem_cmd_rai_help(void)
    LOG_INF("  rai        : show current RAI status.");
 }
 
+#if defined(CONFIG_LTE_LC_EDRX_MODULE)
+static int modem_cmd_show_edrx(void)
+{
+   int res = 0;
+   struct lte_lc_edrx_cfg edrx_cfg_net;
+   struct lte_lc_edrx_cfg edrx_cfg_cell;
+   char value[16];
+   char buf[64];
+   char line[64];
+   long type = 0;
+   const char *cur = buf;
+
+   memset(line, 0, sizeof(line));
+   modem_get_edrx_status(&edrx_cfg_cell);
+   res = lte_lc_edrx_get(&edrx_cfg_net);
+   if (!res && (edrx_cfg_net.mode == edrx_cfg_cell.mode &&
+                edrx_cfg_net.edrx == edrx_cfg_cell.edrx &&
+                edrx_cfg_net.ptw == edrx_cfg_cell.ptw)) {
+      modem_print_edrx("cell/net", &edrx_cfg_net, line, sizeof(line) - 1);
+      LOG_INF("%s", line);
+   } else {
+      modem_print_edrx("cell", &edrx_cfg_cell, line, sizeof(line) - 1);
+      LOG_INF("%s", line);
+      if (!res) {
+         modem_print_edrx("net", &edrx_cfg_net, line, sizeof(line) - 1);
+         LOG_INF("%s", line);
+      }
+   }
+   memset(buf, 0, sizeof(buf));
+   res = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CEDRXS?");
+   while (res > 0) {
+      res = strstart(cur, "+CEDRXS: ", true);
+      if (res > 0) {
+         type = 0;
+         memset(value, 0, sizeof(value));
+         cur = parse_next_long(cur + res, 10, &type);
+         if (*cur == ',') {
+            ++cur;
+            cur = parse_next_qtext(cur, '"', value, sizeof(value));
+            long edrx_code = strtol(value, NULL, 2);
+            edrx_cfg_net.ptw = 0.0F;
+            edrx_cfg_net.edrx = modem_get_edrx_multiplier(edrx_code) * 5.12F;
+            edrx_cfg_net.mode = LTE_LC_LTE_MODE_NONE;
+            switch (type) {
+               case 4:
+                  edrx_cfg_net.mode = LTE_LC_LTE_MODE_LTEM;
+                  break;
+               case 5:
+                  edrx_cfg_net.mode = LTE_LC_LTE_MODE_NBIOT;
+                  break;
+            }
+            modem_print_edrx("req", &edrx_cfg_net, line, sizeof(line) - 1);
+            LOG_INF("%s", line);
+         } else {
+            // skip
+            res = strcspn(cur, "\n\r");
+            if (res > 0) {
+               cur += res;
+            }
+         }
+         res = strspn(cur, "\n\r");
+         if (res > 0) {
+            cur += res;
+         }
+      }
+   }
+   return res;
+}
+
 static int modem_cmd_edrx(const char *config)
 {
    int res = 1;
@@ -739,67 +813,7 @@ static int modem_cmd_edrx(const char *config)
    memset(value, 0, sizeof(value));
    cur = parse_next_text(cur, ' ', value, sizeof(value));
    if (!value[0]) {
-      struct lte_lc_edrx_cfg edrx_cfg_net;
-      struct lte_lc_edrx_cfg edrx_cfg_cell;
-      char buf[64];
-      char line[64];
-      long type = 0;
-      const char *cur = buf;
-
-      memset(line, 0, sizeof(line));
-      modem_get_edrx_status(&edrx_cfg_cell);
-      res = lte_lc_edrx_get(&edrx_cfg_net);
-      if (!res && (edrx_cfg_net.mode == edrx_cfg_cell.mode &&
-                   edrx_cfg_net.edrx == edrx_cfg_cell.edrx &&
-                   edrx_cfg_net.ptw == edrx_cfg_cell.ptw)) {
-         modem_print_edrx("cell/net", &edrx_cfg_net, line, sizeof(line) - 1);
-         LOG_INF("%s", line);
-      } else {
-         modem_print_edrx("cell", &edrx_cfg_cell, line, sizeof(line) - 1);
-         LOG_INF("%s", line);
-         if (!res) {
-            modem_print_edrx("net", &edrx_cfg_net, line, sizeof(line) - 1);
-            LOG_INF("%s", line);
-         }
-      }
-      memset(buf, 0, sizeof(buf));
-      res = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CEDRXS?");
-      while (res > 0) {
-         res = strstart(cur, "+CEDRXS: ", true);
-         if (res > 0) {
-            type = 0;
-            memset(value, 0, sizeof(value));
-            cur = parse_next_long(cur + res, 10, &type);
-            if (*cur == ',') {
-               ++cur;
-               cur = parse_next_qtext(cur, '"', value, sizeof(value));
-               long edrx_code = strtol(value, NULL, 2);
-               edrx_cfg_net.ptw = 0.0F;
-               edrx_cfg_net.edrx = modem_get_edrx_multiplier(edrx_code) * 5.12F;
-               edrx_cfg_net.mode = LTE_LC_LTE_MODE_NONE;
-               switch (type) {
-                  case 4:
-                     edrx_cfg_net.mode = LTE_LC_LTE_MODE_LTEM;
-                     break;
-                  case 5:
-                     edrx_cfg_net.mode = LTE_LC_LTE_MODE_NBIOT;
-                     break;
-               }
-               modem_print_edrx("req", &edrx_cfg_net, line, sizeof(line) - 1);
-               LOG_INF("%s", line);
-            } else {
-               // skip
-               res = strcspn(cur, "\n\r");
-               if (res > 0) {
-                  cur += res;
-               }
-            }
-            res = strspn(cur, "\n\r");
-            if (res > 0) {
-               cur += res;
-            }
-         }
-      }
+      res = modem_cmd_show_edrx();
    } else {
       if (stricmp("off", value)) {
          res = sscanf(config, "%u", &edrx_time);
@@ -810,7 +824,7 @@ static int modem_cmd_edrx(const char *config)
             enum lte_power_state state;
             modem_get_power_state(&state);
             if (state == LTE_POWER_STATE_SLEEPING) {
-               LOG_INF("Sleeping, sent eDRX to network with next connection.");
+               LOG_INF("Sleeping, send eDRX to network with next connection.");
             }
          }
       } else {
@@ -825,13 +839,54 @@ static void modem_cmd_edrx_help(void)
 {
    LOG_INF("> help edrx:");
    LOG_INF("  edrx <edrx-time> : request eDRX time.");
-   LOG_INF("     <edrx-time>   : eDRX time in s.");
+   LOG_INF("       <edrx-time> : eDRX time in s.");
    LOG_INF("                   : 0 to disable eDRX.");
    LOG_INF("                   : If modem is sleeping, the eDRX settings will be");
    LOG_INF("                   : sent to the network with the next connection.");
    LOG_INF("  edrx off         : disable eDRX.");
    LOG_INF("  edrx             : show current eDRX status.");
 }
+
+static int modem_cmd_ptw(const char *config)
+{
+   int res = 1;
+   unsigned int ptw_time = 0;
+   const char *cur = config;
+   char value[16];
+
+   memset(value, 0, sizeof(value));
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+   if (!value[0]) {
+      res = modem_cmd_show_edrx();
+   } else {
+      res = sscanf(config, "%u", &ptw_time);
+      if (res == 1) {
+         res = modem_set_ptw(ptw_time);
+         if (!res) {
+            enum lte_power_state state;
+            modem_get_power_state(&state);
+            if (state == LTE_POWER_STATE_SLEEPING) {
+               LOG_INF("Sleeping, send ptw to network with next connection.");
+            }
+         }
+      } else {
+         res = -EINVAL;
+      }
+   }
+
+   return res;
+}
+
+static void modem_cmd_ptw_help(void)
+{
+   LOG_INF("> help ptw:");
+   LOG_INF("  ptw <ptw-time> : request paging time window.");
+   LOG_INF("      <ptw-time> : paging time window in s.");
+   LOG_INF("                 : If modem is sleeping, the ptw settings will be");
+   LOG_INF("                 : sent to the network with the next connection.");
+   LOG_INF("  ptw            : show current eDRX status.");
+}
+#endif /* CONFIG_LTE_LC_EDRX_MODULE */
 
 static int modem_cmd_print_bands(const char *bands)
 {
@@ -1122,12 +1177,22 @@ SH_CMD(con, "", "connect modem.", modem_cmd_connect, modem_cmd_connect_help, 0);
 SH_CMD(apn, "", "modem APN.", modem_cmd_apn, modem_cmd_apn_help, 0);
 SH_CMD(apnclr, "", "clear modem APN, use default of SIM card.", modem_cmd_apnclr, NULL, 0);
 
+#if defined(CONFIG_LTE_LC_NEIGHBOR_CELL_MEAS_MODULE)
 SH_CMD(scan, "AT%NCELLMEAS", "network scan.", modem_cmd_scan, modem_cmd_scan_help, 0);
 SH_CMD(rscan, "", "remote network scan.", modem_cmd_rscan, modem_cmd_rscan_help, 0);
+#endif /* CONFIG_LTE_LC_NEIGHBOR_CELL_MEAS_MODULE */
 
 SH_CMD(band, "", "configure bands.", modem_cmd_band, modem_cmd_band_help, 0);
+
+#if defined(CONFIG_LTE_LC_EDRX_MODULE)
 SH_CMD(edrx, "", "configure eDRX.", modem_cmd_edrx, modem_cmd_edrx_help, 0);
+SH_CMD(ptw, "", "configure paging time window.", modem_cmd_ptw, modem_cmd_ptw_help, 0);
+#endif /* CONFIG_LTE_LC_EDRX_MODULE */
+
+#if defined(CONFIG_LTE_LC_PSM_MODULE)
 SH_CMD(psm, "", "configure PSM.", modem_cmd_psm, modem_cmd_psm_help, 0);
+#endif /* CONFIG_LTE_LC_PSM_MODULE */
+
 SH_CMD(rai, "", "configure RAI.", modem_cmd_rai, modem_cmd_rai_help, 0);
 
 SH_CMD(remo, "", "reduced mobility.", modem_cmd_reduced_mobility, modem_cmd_reduced_mobility_help, 0);

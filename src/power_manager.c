@@ -63,25 +63,6 @@ SYS_INIT(power_manager_suspend_realtime_clock, POST_KERNEL, CONFIG_SENSOR_INIT_P
 
 #endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay) && defined(CONFIG_DISABLE_REALTIME_CLOCK) */
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c2), okay) && defined(CONFIG_DISABLE_BMM350)
-
-// magnetometer
-#define BMM350_I2C_DEVICE DEVICE_DT_GET(DT_NODELABEL(i2c2))
-#define BMM350_REG_OTP_CMD_REG UINT8_C(0x50)
-#define BMM350_OTP_CMD_PWR_OFF_OTP UINT8_C(0x80)
-#define BMM350_START_UP_TIME_FROM_POR 3000
-
-static int power_manager_bmm350_init_minimal(void)
-{
-   k_sleep(K_USEC(BMM350_START_UP_TIME_FROM_POR));
-   uint8_t otp_cmd = BMM350_OTP_CMD_PWR_OFF_OTP;
-   i2c_burst_write(BMM350_I2C_DEVICE, 0x14, BMM350_REG_OTP_CMD_REG, &otp_cmd, 1);
-   return 0;
-}
-
-SYS_INIT(power_manager_bmm350_init_minimal, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY);
-#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(i2c2), okay) && defined(CONFIG_DISABLE_BMM350) */
-
 #define PM_INVALID_INTERNAL_LEVEL 0xffff
 
 #define VOLTAGE_MIN_INTERVAL_MILLIS 10000

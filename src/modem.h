@@ -166,6 +166,8 @@ bool modem_uses_preference(void);
 
 int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx);
 
+int modem_get_edrx_interval_ms(void);
+
 int modem_get_psm_status(struct lte_lc_psm_cfg *psm);
 
 int modem_get_rai_status(enum lte_network_rai *rai);
@@ -209,6 +211,8 @@ int modem_set_psm(int16_t active_time_s);
 int modem_set_rai_mode(enum rai_mode mode, int socket);
 
 int modem_set_edrx(int16_t edrx_time_s);
+
+int modem_set_ptw(int16_t ptw_time_s);
 
 void modem_lock_psm(bool on);
 
