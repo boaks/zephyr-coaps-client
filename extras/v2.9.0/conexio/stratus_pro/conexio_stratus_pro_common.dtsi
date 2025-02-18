@@ -1,0 +1,247 @@
+/*
+ * Copyright (c) 2024 Conexio Technologies, Inc
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#include "conexio_stratus_pro_common-pinctrl.dtsi"
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+
+/ {
+	model = "Conexio Stratus Pro";
+	compatible = "conexio,stratus_pro";
+
+	chosen {
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+		zephyr,uart-mcumgr = &uart0;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		led0: led_0 {
+			gpios = <&gpio0 25 GPIO_ACTIVE_HIGH>;
+			label = "LED";
+		};
+	};
+
+	pwmleds {
+		compatible = "pwm-leds";
+		pwm_led0: pwm_led_0 {
+			pwms = <&pwm0 0 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
+		};
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+		button0: button_0 {
+			gpios = <&gpio0 31 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "Mode button";
+			zephyr,code = <INPUT_KEY_0>;
+		};
+	};
+
+	stratus_header: connector {
+		compatible = "conexio-stratus-header";
+		#gpio-cells = <2>;
+		gpio-map-mask = <0xffffffff 0xffffffc0>;
+		gpio-map-pass-thru = <0 0x3f>;
+		gpio-map = <0 0 &gpio0 0 0>,	/* D0 */
+			   <1 0 &gpio0 1 0>,	/* D1 */
+			   <2 0 &gpio0 2 0>,	/* D2 */
+			   <3 0 &gpio0 3 0>,	/* D3 */
+			   <4 0 &gpio0 4 0>,	/* D4 */
+			   <5 0 &gpio0 5 0>,	/* D5 */
+			   <6 0 &gpio0 6 0>,	/* D6 */
+			   <7 0 &gpio0 7 0>,	/* D7/SCL */
+			   <8 0 &gpio0 8 0>,	/* D8/SDA */
+			   <9 0 &gpio0 9 0>,	/* D9 */
+			   <10 0 &gpio0 10 0>,	/* D10 */
+			   <11 0 &gpio0 11 0>,	/* D11 */
+			   <12 0 &gpio0 12 0>,	/* D12 */
+			   <13 0 &gpio0 13 0>,	/* D13/A0 */
+			   <14 0 &gpio0 14 0>,	/* D14/A1 */
+			   <15 0 &gpio0 15 0>,	/* D15/A2 */
+			   <16 0 &gpio0 16 0>,	/* D16/A3 */
+			   <17 0 &gpio0 17 0>,	/* D17/A4 */
+			   <18 0 &gpio0 18 0>,	/* D18 */
+			   <19 0 &gpio0 19 0>,	/* D19/SCK */
+			   <20 0 &gpio0 20 0>,	/* D20/MISO */
+			   <21 0 &gpio0 21 0>,	/* D21/MOSI */
+			   <22 0 &gpio0 22 0>,	/* D22/CS */
+			   <23 0 &gpio0 23 0>,	/* D23 */
+			   <24 0 &gpio0 24 0>,	/* D24 */
+			   /* 25 internally connected */
+			   <26 0 &gpio0 26 0>,	/* D26 */
+			   <27 0 &gpio0 27 0>,	/* D27/RX */
+			   <28 0 &gpio0 28 0>;	/* D28/TX */
+	};
+
+	/* These aliases are provided for compatibility with samples */
+	aliases {
+		led0 = &led0;
+		pwm-led0 = &pwm_led0;
+		sw0 = &button0;
+		bootloader-led0 = &led0;
+		mcuboot-button0 = &button0;
+		mcuboot-led0 = &led0;
+		watchdog0 = &wdt0;
+	};
+
+	sensor-pwr-ctrl {
+		compatible = "regulator-fixed";
+		regulator-name = "sensor-power";
+		enable-gpios = <&gpio0 26 GPIO_ACTIVE_HIGH>;
+		regulator-boot-on;
+	};
+};
+
+&adc {
+	status = "okay";
+};
+
+&gpiote {
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&uart0 {
+	status = "okay";
+	current-speed = <115200>;
+	pinctrl-0 = <&uart0_default>;
+	pinctrl-1 = <&uart0_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&i2c2 {
+	compatible = "nordic,nrf-twim";
+	status = "okay";
+	pinctrl-0 = <&i2c2_default>;
+	pinctrl-1 = <&i2c2_sleep>;
+	pinctrl-names = "default", "sleep";
+	clock-frequency = <I2C_BITRATE_FAST>;
+
+	pmic_main: npm1300@6b {
+		compatible = "nordic,npm1300";
+		reg = <0x6b>;
+		pmic_charger: charger {
+			compatible = "nordic,npm1300-charger";
+			term-microvolt = <4150000>;
+			term-warm-microvolt = <4000000>;
+			current-microamp = <800000>;
+			dischg-limit-microamp = <1000000>;
+			vbus-limit-microamp = <1000000>;
+			thermistor-ohms = <10000>;
+			thermistor-beta = <3380>;
+			charging-enable;
+		};
+		regulators {
+			compatible = "nordic,npm1300-regulator";
+			/* Main 1.8 V regulator, for VDD_GPIO */
+			reg_1v8: BUCK1 {
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-boot-on;
+			};
+			/* 3.3 V regulator, for QWIIC and GPS LNA */
+			reg_3v3: BUCK2 {
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-boot-on;
+			};
+		};
+	};
+
+	lis2dh: lis2dh@18 {
+		compatible = "st,lis2dh";
+		reg = <0x18>;
+		irq-gpios = <&gpio0 29 GPIO_ACTIVE_HIGH>;
+		disconnect-sdo-sa0-pull-up;
+	};
+
+	eeprom0: eeprom@50 {
+		/* 24CW160 (16 kbit eeprom) */
+		/* 0x8000 config register not accessible! If required, set size to 64K */
+		compatible = "atmel,at24";
+		reg = <0x50>;
+		size = <DT_SIZE_K(2)>;
+		pagesize = <32>;
+		address-width = <16>;
+		timeout = <5>;
+	};
+};
+
+&pwm0 {
+	status = "okay";
+	pinctrl-0 = <&pwm0_default>;
+	pinctrl-1 = <&pwm0_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+edge_connector_spi: &spi3 {
+	compatible = "nordic,nrf-spim";
+	status = "disabled";
+	cs-gpios = <&gpio0 17 GPIO_ACTIVE_LOW>; // Used for WiFi CS
+	pinctrl-0 = <&spi3_default>;
+	pinctrl-1 = <&spi3_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x00000000 0x10000>;
+		};
+		slot0_partition: partition@10000 {
+			label = "image-0";
+		};
+		slot0_ns_partition: partition@50000 {
+			label = "image-0-nonsecure";
+		};
+		slot1_partition: partition@80000 {
+			label = "image-1";
+		};
+		slot1_ns_partition: partition@c0000 {
+			label = "image-1-nonsecure";
+		};
+		scratch_partition: partition@f0000 {
+			label = "image-scratch";
+			reg = <0x000f0000 0xa000>;
+		};
+		storage_partition: partition@fa000 {
+			label = "storage";
+			reg = <0x000fa000 0x00006000>;
+		};
+	};
+};
+
+/ {
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		sram0_s: image_s@20000000 {
+			/* Secure image memory */
+		};
+
+		sram0_modem: image_modem@20016000 {
+			/* Modem (shared) memory */
+		};
+
+		sram0_ns: image_ns@20020000 {
+			/* Non-Secure image memory */
+		};
+	};
+};
+
+/* Include partition configuration file */
+#include "conexio_stratus_pro_partition_conf.dtsi"

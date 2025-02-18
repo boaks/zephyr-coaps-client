@@ -1,0 +1,12 @@
+board:
+  name: circuitdojo_feather_nrf9151
+  vendor: circuitdojo
+  socs:
+    - name: nrf9151
+      variants:
+        - name: ns
+  revision:
+    format: number
+    default: "1"
+    revisions:
+      - name: "1"

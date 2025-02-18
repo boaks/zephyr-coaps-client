@@ -56,7 +56,11 @@ static void uart_enable_rx_fn(struct k_work *work);
 static void uart_pause_tx_fn(struct k_work *work);
 static int uart_init(void);
 
-static const struct device *const uart_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
+#if defined(CONFIG_SERIAL) && DT_HAS_CHOSEN(zephyr_console) && DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_console), okay)
+static const struct device *const uart_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
+#else  /* CONFIG_SERIAL */
+#error "missing console uart!"
+#endif /* CONFIG_SERIAL */
 
 static char uart_cmd_buf[CONFIG_UART_CMD_MAX_LEN];
 static int uart_rx_buf_id = 0;

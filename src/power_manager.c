@@ -63,25 +63,6 @@ SYS_INIT(power_manager_suspend_realtime_clock, POST_KERNEL, CONFIG_SENSOR_INIT_P
 
 #endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay) && defined(CONFIG_DISABLE_REALTIME_CLOCK) */
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c2), okay) && defined(CONFIG_DISABLE_BMM350)
-
-// magnetometer
-#define BMM350_I2C_DEVICE DEVICE_DT_GET(DT_NODELABEL(i2c2))
-#define BMM350_REG_OTP_CMD_REG UINT8_C(0x50)
-#define BMM350_OTP_CMD_PWR_OFF_OTP UINT8_C(0x80)
-#define BMM350_START_UP_TIME_FROM_POR 3000
-
-static int power_manager_bmm350_init_minimal(void)
-{
-   k_sleep(K_USEC(BMM350_START_UP_TIME_FROM_POR));
-   uint8_t otp_cmd = BMM350_OTP_CMD_PWR_OFF_OTP;
-   i2c_burst_write(BMM350_I2C_DEVICE, 0x14, BMM350_REG_OTP_CMD_REG, &otp_cmd, 1);
-   return 0;
-}
-
-SYS_INIT(power_manager_bmm350_init_minimal, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY);
-#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(i2c2), okay) && defined(CONFIG_DISABLE_BMM350) */
-
 #define PM_INVALID_INTERNAL_LEVEL 0xffff
 
 #define VOLTAGE_MIN_INTERVAL_MILLIS 10000
@@ -125,7 +106,11 @@ static void suspend_devices(bool suspend)
    }
 }
 
-static const struct device *const uart_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
+#if defined(CONFIG_SERIAL) && DT_HAS_CHOSEN(zephyr_console) && DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_console), okay)
+static const struct device *const uart_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
+#else  /* CONFIG_SERIAL */
+static const struct device *const uart_dev = NULL;
+#endif /* CONFIG_SERIAL */
 
 #ifdef CONFIG_SUSPEND_UART
 #if defined(CONFIG_UART_CONSOLE) && !defined(CONFIG_CONSOLE_SUBSYS)
@@ -1036,14 +1021,21 @@ int power_manager_init(void)
    calculate_forecast(&now, PM_INVALID_INTERNAL_LEVEL, CHARGING_TRICKLE);
 
    if (device_is_ready(uart_dev)) {
-#if defined(CONFIG_UART_ASYNC_API) && !defined(CONFIG_UART_RECEIVER)
+#ifndef CONFIG_UART_CONSOLE
+      power_manager_suspend_device(uart_dev);
+#elif defined(CONFIG_UART_ASYNC_API) && !defined(CONFIG_UART_RECEIVER)
       uart_rx_disable(uart_dev);
-#endif
+#endif /* CONFIG_UART_ASYNC_API  && !CONFIG_UART_RECEIVER */
    } else {
 #if defined(CONFIG_SUSPEND_UART) && defined(CONFIG_UART_CONSOLE) && !defined(CONFIG_CONSOLE_SUBSYS)
       LOG_WRN("UART0 console not available.");
 #endif
    }
+
+#if defined(CONFIG_SERIAL) && !defined(CONFIG_NRF_MODEM_LIB_TRACE) && DT_HAS_CHOSEN(nordic_modem_trace_uart)
+   power_manager_suspend_device(DEVICE_DT_GET(DT_CHOSEN(nordic_modem_trace_uart)));
+#endif /* !CONFIG_SERIAL && !CONFIG_NRF_MODEM_LIB_TRACE && DT_HAS_CHOSEN(nordic_modem_trace_uart) */
+
 
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
    rc = adp536x_power_manager_init();

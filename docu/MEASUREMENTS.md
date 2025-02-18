@@ -58,6 +58,10 @@ Using the [add-tcp branch](https://github.com/boaks/zephyr-coaps-client/tree/add
 To build the `protocol flavors application` add the [protocols-prj.conf](../protocols-prj.conf) overlay to your build.
 
 ```
+# NCS 2.9.0
+west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk/nrf9160/ns --pristine -- -DOVERLAY_CONFIG="protocols-prj.conf" -DCONFIG_NRF_MODEM_LIB_TRACE=y
+
+# NCS 2.6.2
 west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- -DOVERLAY_CONFIG="protocols-prj.conf" -DCONFIG_NRF_MODEM_LIB_TRACE=y
 ```
 
