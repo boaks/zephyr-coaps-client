@@ -11,12 +11,17 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+
+/	{
+
+	chosen {
+		nordic,modem-trace-uart = &uart1;
+	};
+
 /*
  * Add outputs for LTE states "RRC connected" "LTE ready"
  * (ready := connected, PDN active, registered). 
  */ 
-
-/	{
 
 	outs {
 		compatible = "gpio-leds";
@@ -50,8 +55,11 @@
 
 };
 
-&gd25wb256 {
-//	status = "okay";
+&uart1 {
+	status = "okay";
+	hw-flow-control;
+	// important for trace uart!
+	current-speed = < 1000000 >;
 };
 
 sensor_i2c: &i2c2 {};
