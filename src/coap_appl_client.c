@@ -264,9 +264,13 @@ int coap_appl_client_parse_data(uint8_t *data, size_t len)
    return res;
 }
 
+#define MIN_VALID_CURRENT 5
+
 int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
 {
-   uint16_t battery_voltage = 0xffff;
+   uint16_t battery_voltage = PM_INVALID_VOLTAGE;
+   int16_t battery_current = PM_INVALID_CURRENT;
+   uint16_t battery_power = PM_INVALID_POWER;
    struct lte_modem_info modem_info;
    int64_t uptime;
    int index = 0;
@@ -332,9 +336,24 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
       start = index;
    }
 
-   err = power_manager_voltage_ext(&battery_voltage);
+   err = power_manager_ext(&battery_voltage, &battery_current, &battery_power);
    if (!err) {
-      index += snprintf(buf + index, len - index, "!Ext.Bat.: %u mV", battery_voltage);
+      bool power = true;
+      index += snprintf(buf + index, len - index, "Ext.Bat.: ");
+      if (battery_voltage != PM_INVALID_VOLTAGE) {
+         index += snprintf(buf + index, len - index, "%u mV ", battery_voltage);
+      }
+      if (battery_current != PM_INVALID_CURRENT) {
+         power = battery_current < -MIN_VALID_CURRENT || battery_current > MIN_VALID_CURRENT;
+         if (power) {
+            index += snprintf(buf + index, len - index, "%d mA ", battery_current);
+         }
+      }
+      if (power && battery_power != PM_INVALID_POWER) {
+         index += snprintf(buf + index, len - index, "%u mW ", battery_power);
+      }
+      --index;
+      buf[index] = 0;
       dtls_info("%s", buf + start);
       buf[index++] = '\n';
       start = index;

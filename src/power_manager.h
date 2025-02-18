@@ -29,6 +29,8 @@ typedef enum {
 } power_manager_status_t;
 
 #define PM_INVALID_VOLTAGE 0xffff
+#define PM_INVALID_POWER 0xffff
+#define PM_INVALID_CURRENT 0x7fff
 #define PM_INVALID_LEVEL 0xff
 
 int power_manager_init(void);
@@ -48,6 +50,8 @@ int power_manager_1v8(bool enable);
 int power_manager_voltage(uint16_t *voltage);
 
 int power_manager_voltage_ext(uint16_t *voltage);
+
+int power_manager_ext(uint16_t *voltage, int16_t *current, uint16_t *power);
 
 int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status, int16_t *forecast);
 

@@ -26,6 +26,7 @@
 #include "io_job_queue.h"
 #include "modem_at.h"
 #include "power_manager.h"
+#include "expansion_port.h"
 #include "sh_cmd.h"
 #include "transform.h"
 
@@ -831,7 +832,7 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, cha
 static const struct device *const ina219_0 = DEVICE_DT_GET_OR_NULL(PM_NODE_0);
 static const struct device *const ina219_1 = DEVICE_DT_GET_OR_NULL(PM_NODE_1);
 
-int power_manager_read_ina219(uint16_t *voltage, uint16_t *current)
+static int power_manager_read_ina219(uint16_t *voltage, int16_t *current, uint16_t *power)
 {
    int rc;
    struct sensor_value value;
@@ -859,22 +860,46 @@ int power_manager_read_ina219(uint16_t *voltage, uint16_t *current)
 
    rc = sensor_sample_fetch(ina219);
    if (rc) {
-      LOG_WRN("Device %s could not fetch sensor data.\n", ina219->name);
-      return rc;
+      LOG_WRN("Device %s could not fetch sensor data.", ina219->name);
+   } else {
+      uint16_t vol = PM_INVALID_VOLTAGE;
+      uint16_t pow = PM_INVALID_POWER;
+      int16_t cur = PM_INVALID_CURRENT;
+      rc = sensor_channel_get(ina219, SENSOR_CHAN_VOLTAGE, &value);
+      if (rc) {
+         LOG_WRN("Device %s could not get voltage.", ina219->name);
+      } else {
+         vol = sensor_value_to_double(&value) * 1000;
+         LOG_DBG("Ext. voltage %u mV.", vol);
+      }
+      if (voltage) {
+         *voltage = vol;
+      }
+      rc = sensor_channel_get(ina219, SENSOR_CHAN_CURRENT, &value);
+      if (rc) {
+         LOG_WRN("Device %s could not get current.\n", ina219->name);
+      } else {
+         cur = sensor_value_to_double(&value) * 1000;
+         LOG_DBG("Ext. current %d mA.", cur);
+      }
+      if (current) {
+         *current = cur;
+      }
+      rc = sensor_channel_get(ina219, SENSOR_CHAN_POWER, &value);
+      if (rc) {
+         LOG_WRN("Device %s could not get power.\n", ina219->name);
+      } else {
+         pow = sensor_value_to_double(&value) * 1000;
+         LOG_DBG("Ext. power %u mW.", pow);
+      }
+      if (power) {
+         *power = pow;
+      }
    }
 
-   rc = sensor_channel_get(ina219, SENSOR_CHAN_VOLTAGE, &value);
-   if (rc) {
-      LOG_WRN("Device %s could not get voltage.\n", ina219->name);
-   } else if (voltage) {
-      *voltage = sensor_value_to_double(&value) * 1000;
-   }
-   rc = sensor_channel_get(ina219, SENSOR_CHAN_CURRENT, &value);
-   if (rc) {
-      LOG_WRN("Device %s could not get current.\n", ina219->name);
-   } else if (current) {
-      *current = sensor_value_to_double(&value) * 1000;
-   }
+   pm_device_action_run(ina219, PM_DEVICE_ACTION_SUSPEND);
+   expansion_port_power(false);
+
    return rc;
 }
 #endif /* CONFIG_INA219 */
@@ -1109,7 +1134,18 @@ int power_manager_voltage_ext(uint16_t *voltage)
 #ifdef CONFIG_BATTERY_ADC
    rc = battery2_sample(voltage);
 #elif defined(CONFIG_INA219) && !defined(CONFIG_INA219_MODE_POWER_MANAGER)
-   rc = power_manager_read_ina219(voltage, NULL);
+   rc = power_manager_read_ina219(voltage, NULL, NULL);
+#endif
+   return rc;
+}
+
+int power_manager_ext(uint16_t *voltage, int16_t *current, uint16_t *power)
+{
+   int rc = -ENODEV;
+#ifdef CONFIG_BATTERY_ADC
+   rc = battery2_sample(voltage);
+#elif defined(CONFIG_INA219) && !defined(CONFIG_INA219_MODE_POWER_MANAGER)
+   rc = power_manager_read_ina219(voltage, current, power);
 #endif
    return rc;
 }
@@ -1240,13 +1276,27 @@ static int sh_cmd_battery(const char *parameter)
 {
    (void)parameter;
    char buf[128];
+   size_t length = sizeof(buf);
+   int index = 0;
    uint16_t battery_voltage = PM_INVALID_VOLTAGE;
+   int16_t battery_current = PM_INVALID_CURRENT;
+   uint16_t battery_power = PM_INVALID_POWER;
 
    if (power_manager_status_desc(buf, sizeof(buf))) {
       LOG_INF("%s", buf);
    }
-   if (!power_manager_voltage_ext(&battery_voltage)) {
-      LOG_INF("Ext.Bat.: %u mV", battery_voltage);
+   if (!power_manager_ext(&battery_voltage, &battery_current, &battery_power)) {
+      index = snprintf(buf, length, "Ext.Bat.: ");
+      if (battery_voltage != PM_INVALID_VOLTAGE) {
+         index += snprintf(buf+index, length-index, "%u mV ", battery_voltage);
+      }
+      if (battery_current != PM_INVALID_CURRENT) {
+         index += snprintf(buf+index, length-index, "%d mA ", battery_current);
+      }
+      if (battery_power != PM_INVALID_POWER) {
+         index += snprintf(buf+index, length-index, "%u mW", battery_power);
+      }
+      LOG_INF("%s", buf);
    }
    return 0;
 }
