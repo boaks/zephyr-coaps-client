@@ -458,6 +458,14 @@ config LOG_BACKEND_UART_MANAGER_AUTOSTART
    depends on LOG_BACKEND_UART_MANAGER
    default y
 
+config LOG_BACKEND_UART_THROTTLE
+   bool "Throttle UART log backend"
+   depends on LOG_BACKEND_UART_MANAGER
+   default y if BOARD_THINGY91X_NRF9151_NS
+    help
+      Throttle UART log backend. Thingy:91X connectivity
+	  bridge seems to has some issues.
+
 config UART_UPDATE
     bool "Support firmware update via UART cmd."
 	default y

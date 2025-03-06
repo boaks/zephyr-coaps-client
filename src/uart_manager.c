@@ -415,9 +415,15 @@ static void uart_log_process(const struct log_backend *const backend,
             cbpprintf(uart_tx_out_func, NULL, package);
          }
          uart_tx_out_flush();
+#ifdef CONFIG_LOG_BACKEND_UART_THROTTLE
+         k_sleep(K_MSEC(4));
+#endif /* CONFIG_LOG_BACKEND_UART_THROTTLE */
          if (dlen) {
             uart_log_dump_hex(prefix, data, dlen);
             uart_tx_out_flush();
+#ifdef CONFIG_LOG_BACKEND_UART_THROTTLE
+            k_sleep(K_MSEC(4));
+#endif /* CONFIG_LOG_BACKEND_UART_THROTTLE */
          }
       }
    }
