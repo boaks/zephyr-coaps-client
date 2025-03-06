@@ -270,6 +270,14 @@ static const struct sh_cmd_entry *sh_cmd_get(const char *cmd)
    return NULL;
 }
 
+#ifdef CONFIG_LOG_BACKEND_UART_THROTTLE
+#define PAUSE_HELP 6
+#define PAUSE_MS 40
+#else /* CONFIG_LOG_BACKEND_UART_THROTTLE */
+#define PAUSE_HELP 10
+#define PAUSE_MS 25
+#endif /* CONFIG_LOG_BACKEND_UART_THROTTLE */
+
 static int sh_cmd_help(const char *parameter)
 {
    bool full = false;
@@ -320,8 +328,8 @@ static int sh_cmd_help(const char *parameter)
          }
          LOG_INF("  %-*s: %s%s", sh_cmd_max_length, e->cmd, e->help, details);
          ++counter;
-         if ((counter & 0xf) == 0) {
-            k_sleep(K_MSEC(50));
+         if ((counter % PAUSE_HELP) == 0) {
+            k_sleep(K_MSEC(PAUSE_MS));
          }
       }
    }
@@ -341,7 +349,7 @@ static int sh_cmd_help(const char *parameter)
 #endif /* CONFIG_SH_CMD_UNLOCK */
             }
             LOG_INF("");
-            k_sleep(K_MSEC(50));
+            k_sleep(K_MSEC(PAUSE_MS * 2));
             e->help_handler();
          }
       }
