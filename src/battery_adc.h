@@ -41,4 +41,4 @@ int battery_sample(uint16_t* voltage);
  */
 int battery2_sample(uint16_t* voltage);
 
-#endif /* APPLICATION_BATTERY_H_ */
+#endif /* BATTERY_ADC_H_ */
