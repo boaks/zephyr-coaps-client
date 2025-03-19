@@ -291,6 +291,31 @@ config UDP_EDRX_ENABLE
 	bool "Enable LTE eDRX"
 	default y
 
+config UDP_EDRX_WAKEUP_ENABLE
+	bool "Enable UDP wakeup in eDRX phase"
+	default y
+
+if (UDP_EDRX_WAKEUP_ENABLE)
+
+config UDP_EDRX_WAKEUP_PORT
+	int "UDP port for wakeup"
+	default 15684
+
+config UDP_EDRX_WAKEUP_TIMEOUT
+	int "Wakeup on connect timeout"
+	default 1
+	help
+	  In some networks the data is only received, if it was
+	  send in a eDRX period specific time windows (10s before
+	  the receivers are turned onf). In cases, when the data 
+	  is dropped by the mobile network, the modem still goes
+	  into RRC active mode. This timeout waits on RRC active
+	  to receive data. If no data coudl be received it triggers
+	  a message with "connect". 0 to disable a wakeup optional
+	  RRC active only.
+
+endif
+
 config STATIONARY_MODE_ENABLE
 	bool "Enable LTE stationary mode"
 	default n
@@ -688,8 +713,6 @@ config INA219_MODE_POWER_MANAGER
 	bool "INA219 power manager"
 
 endif # INA219
-
-
 
 choice BATTERY_VOLTAGE_SOURCE
 	prompt "Battery voltage source"

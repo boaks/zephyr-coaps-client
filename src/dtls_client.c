@@ -120,7 +120,10 @@ typedef struct dtls_app_data_t {
    dtls_app_result_handler result_handler;
    int fd;
    int protocol;
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+   int fd2;
    uint16_t port;
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
    uint8_t keep_connection : 1;
    uint8_t send_request_pending : 1;
    uint8_t dtls_pending : 1;
@@ -158,6 +161,14 @@ typedef struct dtls_app_data_t {
 #define APN_RATE_LIMIT_RESTART 11
 #define SETUP_MODE 12
 
+#define APPL_READY 13
+#define APPL_INITIAL_SUCCESS 14
+
+#define TRIGGER_SEND 15
+#define TRIGGER_DURATION 16
+#define TRIGGER_RECV 17
+#define TRIGGER_WAKEUP 18
+
 static atomic_t general_states = ATOMIC_INIT(0);
 
 static atomic_t lte_connections = ATOMIC_INIT(0);
@@ -166,12 +177,9 @@ static atomic_t connected_time = ATOMIC_INIT(0);
 
 static dtls_app_data_t app_data_context;
 
-static bool initial_success = false;
 static unsigned int current_failures = 0;
 static unsigned int handled_failures = 0;
 
-static volatile bool appl_ready = false;
-static volatile int trigger_duration = 0;
 static volatile search_trigger_t trigger_search = NO_SEARCH;
 
 static volatile bool lte_power_off = false;
@@ -252,8 +260,20 @@ static void dtls_log_state(void)
    } else {
       index = snprintf(buf, sizeof(buf), "not registered");
    }
+   if (atomic_test_bit(&general_states, TRIGGER_SEND)) {
+      index += snprintf(&buf[index], sizeof(buf) - index, ", trigger send");
+   }
+   if (atomic_test_bit(&general_states, TRIGGER_RECV)) {
+      index += snprintf(&buf[index], sizeof(buf) - index, ", trigger recv");
+   }
+   if (atomic_test_bit(&general_states, TRIGGER_DURATION)) {
+      index += snprintf(&buf[index], sizeof(buf) - index, ", trigger duration");
+   }
    if (atomic_test_bit(&general_states, LTE_SLEEPING)) {
       index += snprintf(&buf[index], sizeof(buf) - index, ", modem sleeping");
+   }
+   if (atomic_test_bit(&general_states, LTE_SOCKET_ERROR)) {
+      index += snprintf(&buf[index], sizeof(buf) - index, ", socket error");
    }
    if (atomic_test_bit(&general_states, LTE_SOCKET_ERROR)) {
       index += snprintf(&buf[index], sizeof(buf) - index, ", socket error");
@@ -307,7 +327,7 @@ static int dtls_low_voltage(const k_timeout_t timeout)
    const int64_t start_time_low_voltage = k_uptime_get();
    int64_t timeout_ms = k_ticks_to_ms_floor64(timeout.ticks);
 
-   while (!trigger_duration) {
+   while (!atomic_test_bit(&general_states, TRIGGER_DURATION)) {
       uint16_t battery_voltage = 0xffff;
       power_manager_status_t battery_status = POWER_UNKNOWN;
 
@@ -332,8 +352,11 @@ static int dtls_low_voltage(const k_timeout_t timeout)
 
 int get_local_address(uint8_t *buf, size_t length)
 {
+   int rc = 0;
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
    struct lte_network_info info;
-   int rc = modem_get_network_info(&info);
+
+   rc = modem_get_network_info(&info);
    if (!rc && buf && length) {
       rc = strlen(info.local_ip);
       memcpy(buf, info.local_ip, rc);
@@ -341,12 +364,17 @@ int get_local_address(uint8_t *buf, size_t length)
       rc += snprintf(&buf[rc], length - rc, "%u", app_data_context.port);
       dtls_info("dtls: recv. address: %s", buf);
    }
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
    return rc;
 }
 
 int get_receive_interval(void)
 {
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
    return modem_get_recv_interval_ms();
+#else  /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+   return 0;
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
 }
 
 int get_send_interval(void)
@@ -416,7 +444,7 @@ static void restart(int error, bool factoryReset)
 
 static void check_restart(void)
 {
-   if (trigger_duration) {
+   if (atomic_test_bit(&general_states, TRIGGER_DURATION)) {
       // Thingy:91 and nRF9160 feather will restart
       // nRF9160-DK restart with button2 also pressed
       int ui = ui_config();
@@ -427,7 +455,7 @@ static void check_restart(void)
          dtls_info("> modem restart");
          restart(ERROR_CODE_REBOOT_MANUAL, false);
       }
-      trigger_duration = 0;
+      atomic_clear_bit(&general_states, TRIGGER_DURATION);
    }
 }
 
@@ -488,13 +516,19 @@ static void close_socket(dtls_app_data_t *app)
       modem_set_rai_mode(RAI_MODE_OFF, app->fd);
       (void)close(app->fd);
       app->fd = -1;
+   }
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+   if (app->fd2 >= 0) {
+      (void)close(app->fd2);
+      app->fd2 = -1;
       app->port = 0;
    }
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
 }
 
 static bool reopen_socket(dtls_app_data_t *app, const char *loc)
 {
-   struct sockaddr_in listen_addr;
+   const struct timeval tv = {.tv_sec = 1};
    int rc = 0;
    bool ready = atomic_test_bit(&general_states, LTE_READY);
 
@@ -517,21 +551,14 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
       restart(ERROR_CODE(ERROR_CODE_OPEN_SOCKET, errno), false);
    }
    ++sockets;
+   rc = setsockopt(app->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+   if (rc) {
+      dtls_warn("> %s, set timeout for socket failed, errno %d (%s)",
+                loc, errno, strerror(errno));
+   }
+
    modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
 
-   app->port = 15684;
-   memset(&listen_addr, 0, sizeof(listen_addr));
-   listen_addr.sin_family = AF_INET;
-   listen_addr.sin_port = htons(app->port);
-   listen_addr.sin_addr.s_addr = INADDR_ANY;
-
-   rc = bind(app->fd, (struct sockaddr *)&listen_addr, sizeof(listen_addr));
-   if (rc) {
-      dtls_warn("> %s, bind socket failed, errno %d (%s)",
-                loc, errno, strerror(errno));
-   } else {
-      dtls_info("> %s, bind socket to port: %u", loc, app->port);
-   }
 #ifdef CONFIG_UDP_USE_CONNECT
    // using SO_RAI_NO_DATA requires a destination, for what ever
    rc = connect(app->fd, (struct sockaddr *)&app->destination.addr.sin, sizeof(struct sockaddr_in));
@@ -542,6 +569,38 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
 #endif
    modem_set_rai_mode(RAI_MODE_OFF, app->fd);
    dtls_info("> %s, reopened socket.", loc);
+
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+   app->fd2 = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+   if (app->fd2 < 0) {
+      dtls_warn("> %s, reopen UDP wakeup socket failed, %d, errno %d (%s), restart",
+                loc, app->fd2, errno, strerror(errno));
+   } else {
+      struct sockaddr_in listen_addr;
+
+      app->port = CONFIG_UDP_EDRX_WAKEUP_PORT;
+      memset(&listen_addr, 0, sizeof(listen_addr));
+
+      rc = setsockopt(app->fd2, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+      if (rc) {
+         dtls_warn("> %s, set timeout for wakeup socket failed, errno %d (%s)",
+                   loc, errno, strerror(errno));
+      }
+
+      listen_addr.sin_family = AF_INET;
+      listen_addr.sin_port = htons(app->port);
+      listen_addr.sin_addr.s_addr = INADDR_ANY;
+
+      rc = bind(app->fd2, (struct sockaddr *)&listen_addr, sizeof(listen_addr));
+      if (rc) {
+         dtls_warn("> %s, bind wakeup socket failed, errno %d (%s)",
+                   loc, errno, strerror(errno));
+      } else {
+         dtls_info("> %s, bind wakeup socket to port: %u", loc, app->port);
+      }
+   }
+#endif
+
    return true;
 }
 
@@ -558,24 +617,29 @@ static int check_socket(dtls_app_data_t *app)
    return error;
 }
 
-static inline bool dtls_no_pending_request(void)
+static inline bool dtls_pending_request(request_state_t state)
 {
-   request_state_t state = app_data_context.request_state;
-   return (state == NONE) || (state == WAIT_SUSPEND);
+   return (NONE != state) && (WAIT_SUSPEND != state);
 }
 
-static void dtls_trigger(const char *cause)
+static inline bool dtls_no_pending_request(request_state_t state)
+{
+   return !dtls_pending_request(state);
+}
+
+static void dtls_trigger(const char *cause, bool send)
 {
    if (appl_reboots()) {
       return;
    }
-   if (trigger_duration) {
+   if (atomic_test_bit(&general_states, TRIGGER_DURATION)) {
       modem_interrupt_wait();
    }
-   if (dtls_no_pending_request()) {
+   if (dtls_no_pending_request(app_data_context.request_state)) {
       // read battery status before modem wakes up
       power_manager_status(NULL, NULL, NULL, NULL);
-      dtls_info("trigger message %s", cause);
+      dtls_info("trigger %s%s", cause, send ? " send message" : "");
+      atomic_set_bit_to(&general_states, TRIGGER_SEND, send);
       k_sem_give(&dtls_trigger_msg);
    }
 }
@@ -587,18 +651,22 @@ static bool dtls_trigger_pending(void)
 
 static void dtls_manual_trigger(int duration)
 {
+   bool send = false;
+
    if (atomic_test_bit(&general_states, SETUP_MODE)) {
       return;
    }
 
-   if (!appl_ready) {
-      trigger_duration = 0;
+   if (atomic_test_bit(&general_states, APPL_READY) && duration) {
+      atomic_set_bit(&general_states, TRIGGER_DURATION);
    } else {
-      trigger_duration = duration;
+      atomic_clear_bit(&general_states, TRIGGER_DURATION);
+      send = true;
    }
+
    // LEDs for manual trigger
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
-   dtls_trigger("manual");
+   dtls_trigger("manual", send);
 
    if (!atomic_test_bit(&general_states, LTE_READY)) {
       trigger_search = MANUAL_SEARCH;
@@ -610,9 +678,9 @@ static void dtls_cmd_trigger(const char *source, bool led, int mode)
 {
    bool ready = atomic_test_bit(&general_states, LTE_READY);
    if (mode & 1) {
-      if (dtls_no_pending_request()) {
+      if (dtls_no_pending_request(app_data_context.request_state)) {
          ui_enable(led);
-         dtls_trigger(source);
+         dtls_trigger(source, true);
          if (!ready && !(mode & 2)) {
             dtls_info("%s: no network ...", source);
          }
@@ -622,7 +690,7 @@ static void dtls_cmd_trigger(const char *source, bool led, int mode)
          dtls_info("%s: busy, searching network", source);
       }
    }
-   if (!ready && mode & 2) {
+   if (!ready && (mode & 2)) {
       ui_enable(led);
       trigger_search = CMD_SEARCH;
       k_sem_give(&dtls_trigger_search);
@@ -637,10 +705,10 @@ static void dtls_timer_trigger_fn(struct k_work *work)
 {
    long interval = atomic_get(&send_interval);
 
-   if (dtls_no_pending_request()) {
+   if (dtls_no_pending_request(app_data_context.request_state)) {
       // no LEDs for time trigger
       ui_enable(false);
-      dtls_trigger("scheduled");
+      dtls_trigger("timer", true);
    } else {
       long next_interval = interval;
       if (next_interval & 0xffffff000000) {
@@ -718,6 +786,7 @@ static void dtls_coap_next(dtls_app_data_t *app, int interval)
 
    if (pending) {
       // send pending custom request
+      atomic_set_bit(&general_states, TRIGGER_SEND);
       k_sem_give(&dtls_trigger_msg);
    } else {
       k_sem_reset(&dtls_trigger_msg);
@@ -852,8 +921,7 @@ static void dtls_coap_success(dtls_app_data_t *app)
    }
    // reset failures on success
    dtls_coap_clear_failures();
-   if (!initial_success) {
-      initial_success = true;
+   if (!atomic_test_and_set_bit(&general_states, APPL_INITIAL_SUCCESS)) {
 #ifdef CONFIG_UPDATE
       appl_update_image_verified();
 #endif
@@ -887,7 +955,7 @@ static void dtls_coap_failure(dtls_app_data_t *app, const char *cause)
    }
    dtls_info("%dms/%dms: failure, %s", time1, time2, cause);
    failures++;
-   if (initial_success) {
+   if (!atomic_test_bit(&general_states, APPL_INITIAL_SUCCESS)) {
       int f = dtls_coap_inc_failures();
       dtls_info("current failures %d.", f);
    }
@@ -966,7 +1034,7 @@ read_from_peer(dtls_app_data_t *app, session_t *session, uint8 *data, size_t len
       case PARSE_IGN:
          break;
       case PARSE_RST:
-         if (NONE != app->request_state && WAIT_SUSPEND != app->request_state) {
+         if (dtls_pending_request(app->request_state)) {
             app->response_time = k_uptime_get();
             dtls_coap_failure(app, "rst");
          }
@@ -977,7 +1045,7 @@ read_from_peer(dtls_app_data_t *app, session_t *session, uint8 *data, size_t len
          }
          break;
       case PARSE_RESPONSE:
-         if (NONE != app->request_state && WAIT_SUSPEND != app->request_state) {
+         if (dtls_pending_request(app->request_state)) {
             app->response_time = k_uptime_get();
             dtls_coap_success(app);
          }
@@ -1200,6 +1268,32 @@ recvfrom_peer(dtls_app_data_t *app, dtls_context_t *ctx)
    }
 }
 
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+static int
+recvfrom_peer2(dtls_app_data_t *app)
+{
+   int result;
+   struct sockaddr_in sin;
+   socklen_t sin_len = sizeof(sin);
+
+   memset(&sin, 0, sizeof(sin));
+   memset(appl_buffer, 0, sizeof(appl_buffer));
+   dtls_info("recvfrom_peer2 ...");
+   result = recvfrom(app->fd2, appl_buffer, MAX_APPL_BUF, 0,
+                     (struct sockaddr *)&sin, &sin_len);
+   if (result < 0) {
+      dtls_warn("recv_from_peer2 failed: errno %d (%s)", result, strerror(errno));
+      return result;
+   }
+   atomic_clear_bit(&general_states, TRIGGER_WAKEUP);
+   dtls_info("received_from_peer2 %d bytes", result);
+   if ((result == 2 || result == 3) && memcmp(appl_buffer, "up", 2) == 0) {
+      dtls_cmd_trigger("wakeup", false, 1);
+   }
+   return result;
+}
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+
 static int
 sendto_peer(dtls_app_data_t *app, struct dtls_context_t *ctx)
 {
@@ -1365,7 +1459,7 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
          if (active) {
             ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op(LED_COLOR_GREEN, LED_SET);
-         } else if (NONE == app_data_context.request_state || WAIT_SUSPEND == app_data_context.request_state) {
+         } else if (dtls_no_pending_request(app_data_context.request_state)) {
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
             ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
          }
@@ -1375,7 +1469,17 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
             atomic_set(&connected_time, now);
             atomic_inc(&lte_connections);
             atomic_set_bit(&general_states, LTE_CONNECTED_SEND);
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+            if (!app_data_context.dtls_flight && NONE == app_data_context.request_state && atomic_test_bit(&general_states, APPL_READY)) {
+               atomic_set_bit(&general_states, TRIGGER_RECV);
+               dtls_trigger("connect", false);
+            }
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
          }
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+      } else {
+         atomic_clear_bit(&general_states, TRIGGER_WAKEUP);
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
       }
    } else if (type == LTE_STATE_SLEEPING) {
       if (active) {
@@ -1449,7 +1553,7 @@ static bool dtls_setup_mode(void)
    }
    k_sem_reset(&dtls_trigger_msg);
    if (request) {
-      dtls_trigger("setup");
+      dtls_trigger("setup", true);
    }
    atomic_clear_bit(&general_states, SETUP_MODE);
 
@@ -1474,7 +1578,7 @@ static int dtls_network_searching(const k_timeout_t timeout)
    int trigger = MANUAL_SEARCH;
    int swap_state = 1;
 
-   while (!trigger_duration) {
+   while (!atomic_test_bit(&general_states, TRIGGER_DURATION)) {
       int64_t now = k_uptime_get();
       long time = atomic_get(&not_ready_time);
 
@@ -1597,11 +1701,17 @@ static long dtls_calculate_reboot_timeout(int reboot)
 
 static int dtls_loop(dtls_app_data_t *app, int reboot)
 {
-   struct pollfd udp_poll;
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+   struct pollfd udp_poll[2];
+#else  /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+   struct pollfd udp_poll[1];
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+
    dtls_context_t *dtls_context = NULL;
    const char *reopen_cause = NULL;
    int result;
    int loops = 0;
+   int udp_ports_to_poll = 1;
    long time;
    long reboot_timeout = dtls_calculate_reboot_timeout(reboot);
    bool restarting_modem = false;
@@ -1668,9 +1778,9 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
 #endif
       watchdog_feed();
 
-      if (!initial_success &&
+      if (!atomic_test_bit(&general_states, APPL_INITIAL_SUCCESS) &&
           k_uptime_get() > reboot_timeout) {
-         // no initial_success for 4 hours / 1 day => reboot
+         // no initial success for 4 hours / 1 day => reboot
          ++reboot;
          dtls_info("> No initial success, reboot %d.", reboot);
          restart(ERROR_CODE(ERROR_CODE_INIT_NO_SUCCESS, reboot), true);
@@ -1728,7 +1838,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
             if (strategy & DTLS_CLIENT_RETRY_STRATEGY_DTLS_HANDSHAKE) {
                dtls_info("handle failure %d. new DTLS handshake.", f);
                dtls_pending(app);
-               dtls_trigger("retry handshake");
+               dtls_trigger("retry handshake", true);
             }
             if (strategy & DTLS_CLIENT_RETRY_STRATEGY_OFF) {
                dtls_info("handle failure %d. switch modem off.", f);
@@ -1749,11 +1859,13 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
          }
       }
 #ifdef CONFIG_ADC_SCALE
-      if (trigger_duration) {
-         trigger_duration = dtls_setup_mode();
+      if (atomic_test_bit(&general_states, TRIGGER_DURATION)) {
+         if (!dtls_setup_mode()) {
+            atomic_clear_bit(&general_states, TRIGGER_DURATION);
+         }
       }
 #endif
-      if (trigger_duration) {
+      if (atomic_test_bit(&general_states, TRIGGER_DURATION)) {
          restarting_modem = true;
       }
 
@@ -1764,7 +1876,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
             if (!reopen_cause) {
                reopen_cause = "restart modem";
             }
-            dtls_trigger("restart modem");
+            dtls_trigger("restart modem", true);
          }
          restarting_modem_power_off = false;
       }
@@ -1798,13 +1910,24 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
          }
          reopen_cause = NULL;
       }
-      udp_poll.fd = app->fd;
-      udp_poll.events = POLLIN;
-      udp_poll.revents = 0;
-
+      udp_ports_to_poll = 1;
+      udp_poll[0].fd = app->fd;
+      udp_poll[0].events = POLLIN;
+      udp_poll[0].revents = 0;
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+      if (app->fd2 >= 0) {
+         ++udp_ports_to_poll;
+         udp_poll[1].fd = app->fd2;
+         udp_poll[1].events = POLLIN;
+         udp_poll[1].revents = 0;
+      } else {
+         udp_poll[1].fd = -1;
+         udp_poll[1].events = 0;
+         udp_poll[1].revents = 0;
+      }
+#endif /*CONFIG_UDP_EDRX_WAKEUP_ENABLE */
 #ifdef CONFIG_COAP_UPDATE
-      if (app->request_state == WAIT_SUSPEND ||
-          app->request_state == NONE) {
+      if (dtls_no_pending_request(app->request_state)) {
          bool pending = appl_update_coap_pending();
          if (pending) {
             if (!appl_update_coap_pending_next() &&
@@ -1836,7 +1959,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   if (download) {
                      dtls_info("download request");
                   } else {
-                     dtls_trigger("download status report");
+                     dtls_trigger("download status report", true);
                   }
                } else {
                   dtls_info("manual download status report");
@@ -1864,10 +1987,30 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
             dtls_coap_set_request_state("download canceled", app, WAIT_SUSPEND);
          }
       }
-#endif
+#endif /* CONFIG_COAP_UPDATE */
+
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+      if (atomic_test_and_clear_bit(&general_states, TRIGGER_RECV) && NONE == app->request_state) {
+         dtls_coap_set_request_state("incoming connect", app, WAIT_SUSPEND);
+         atomic_set_bit(&general_states, TRIGGER_WAKEUP);
+         loops = 0;
+      }
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
 
       if (app->request_state != NONE) {
-         result = poll(&udp_poll, 1, 1000);
+         result = poll(udp_poll, udp_ports_to_poll, 1000);
+#if defined(CONFIG_UDP_EDRX_WAKEUP_TIMEOUT)
+         if (atomic_test_bit(&general_states, TRIGGER_WAKEUP) && !result) {
+            // no data received
+            if (CONFIG_UDP_EDRX_WAKEUP_TIMEOUT <= loops) {
+               atomic_clear_bit(&general_states, TRIGGER_WAKEUP);
+               dtls_coap_set_request_state("no incoming data", app, NONE);
+               if (CONFIG_UDP_EDRX_WAKEUP_TIMEOUT > 0) {
+                  dtls_cmd_trigger("connect", false, 1);
+               }
+            }
+         }
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
       } else {
 #ifdef CONFIG_COAP_WAIT_ON_POWERMANAGER
          if (0xffff == battery_voltage || 0 == battery_voltage) {
@@ -1880,15 +2023,18 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                dtls_info("Power-manager ready: %umV", battery_voltage);
             }
          }
-#endif
+#endif /* CONFIG_COAP_WAIT_ON_POWERMANAGER */
          result = 0;
          dtls_power_management();
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
-            if (!trigger_duration) {
+            if (atomic_test_and_clear_bit(&general_states, TRIGGER_SEND)) {
                int res = get_send_interval();
                dtls_coap_set_request_state("trigger", app, SEND);
                dtls_power_management();
                ui_led_op(LED_APPLICATION, LED_SET);
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+               atomic_clear_bit(&general_states, TRIGGER_WAKEUP);
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
                if (res > 0) {
                   work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(res));
                }
@@ -1909,7 +2055,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   app->result_handler = dtls_app_prov_result_handler;
                   app->rai = 0;
                } else
-#endif
+#endif /* CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
                {
                   app->no_response = (coap_send_flags_next & COAP_SEND_FLAG_NO_RESPONSE) ? 1 : 0;
                   k_mutex_lock(&send_buffer_mutex, K_FOREVER);
@@ -1930,9 +2076,9 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   if (app->download_progress == DOWNLOAD_PROGRESS_LAST_STATUS_MESSAGE) {
                      app->download_progress = DOWNLOAD_PROGRESS_REBOOT;
                   }
-#else
+#else  /* CONFIG_COAP_UPDATE */
                   app->rai = 1;
-#endif
+#endif /* CONFIG_COAP_UPDATE */
                }
                if (res < 0) {
                   dtls_coap_failure(app, "prepare post");
@@ -2043,7 +2189,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
             dtls_info("%s wait state %d, %d s", type, app->request_state, loops);
          }
       } else { /* ok */
-         if (udp_poll.revents & POLLIN) {
+         if (udp_poll[0].revents & POLLIN) {
             uint8_t flight = app->dtls_flight;
             recvfrom_peer(app, dtls_context);
             if (flight && flight < app->dtls_flight) {
@@ -2062,8 +2208,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                app->start_time = k_uptime_get();
                sendto_peer(app, dtls_context);
             }
-            if (!lte_power_on_off && app->rai &&
-                (app->request_state == NONE || app->request_state == WAIT_SUSPEND)) {
+            if (!lte_power_on_off && app->rai && dtls_no_pending_request(app->request_state)) {
                modem_set_rai_mode(RAI_MODE_NOW, app->fd);
             }
             if (app->request_state == NONE &&
@@ -2073,12 +2218,22 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                dtls_pending(app);
                ui_led_op(LED_DTLS, LED_CLEAR);
             }
-         } else if (udp_poll.revents & (POLLERR | POLLNVAL)) {
-            dtls_info("Poll: 0x%x", udp_poll.revents);
+         } else if (udp_poll[0].revents & (POLLERR | POLLNVAL)) {
+            dtls_info("Poll: 0x%x", udp_poll[0].revents);
             if (check_socket(app)) {
                k_sleep(K_MSEC(1000));
             }
          }
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+         if (udp_ports_to_poll > 1 && udp_poll[1].revents & POLLIN) {
+            recvfrom_peer2(app);
+         } else if (udp_poll[1].revents & (POLLERR | POLLNVAL)) {
+            dtls_info("Poll2: 0x%x", udp_poll[1].revents);
+            if (check_socket(app)) {
+               k_sleep(K_MSEC(1000));
+            }
+         }
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
       }
    }
 
@@ -2169,7 +2324,7 @@ static int sh_cmd_send(const char *parameter)
    size_t len = strlen(parameter);
    LOG_INF(">> send %s", parameter);
 
-   if (!dtls_no_pending_request()) {
+   if (dtls_pending_request(app_data_context.request_state)) {
       dtls_info("Busy, request pending ... (state %d)", app_data_context.request_state);
       return -EBUSY;
    }
@@ -2648,12 +2803,12 @@ int main(void)
 #endif
 
    if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), true) != 0) {
-      appl_ready = true;
+      atomic_set_bit(&general_states, APPL_READY);
       if (dtls_network_searching(K_MINUTES(CONFIG_MODEM_SEARCH_TIMEOUT_REBOOT))) {
          restart(ERROR_CODE_INIT_NO_LTE, false);
       }
    }
-   appl_ready = true;
+   atomic_set_bit(&general_states, APPL_READY);
    coap_client_init();
 
    appl_settings_get_destination(app_data_context.host, sizeof(app_data_context.host));
@@ -2666,7 +2821,7 @@ int main(void)
    }
    init_destination(&app_data_context);
 
-   dtls_trigger("initial message");
+   dtls_trigger("initial message", true);
    dtls_loop(&app_data_context, (reset_cause & FLAG_REBOOT_RETRY) ? ERROR_DETAIL(reboot_cause) : 0);
 
    return 0;
