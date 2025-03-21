@@ -268,7 +268,7 @@ int coap_appl_client_parse_data(uint8_t *data, size_t len)
 
 #define MIN_VALID_CURRENT 5
 
-int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
+int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags, const char *trigger)
 {
    uint16_t battery_voltage = PM_INVALID_VOLTAGE;
    int16_t battery_current = PM_INVALID_CURRENT;
@@ -309,6 +309,13 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
    buf[index++] = '\n';
    start = index;
 
+   if (trigger) {
+      index += snprintf(buf + index, len - index, "%s", trigger);
+      dtls_info("%s", buf + start);
+      buf[index++] = '\n';
+      start = index;
+   }
+
    if ((flags & COAP_SEND_FLAG_INITIAL) || !(flags & COAP_SEND_FLAG_MINIMAL)) {
 
       memset(&modem_info, 0, sizeof(modem_info));
@@ -329,9 +336,8 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
    }
 #endif
 
-   err = power_manager_status_desc(&buf[index + 1], len - index - 1);
+   err = power_manager_status_desc(buf + index, len - index);
    if (err) {
-      buf[index++] = '!';
       index += err;
       dtls_info("%s", buf + start);
       buf[index++] = '\n';
@@ -361,7 +367,7 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
       start = index;
    }
 
-   if ((flags & COAP_SEND_FLAG_INITIAL) || !(flags & COAP_SEND_FLAG_MINIMAL)) {
+   if ((flags & COAP_SEND_FLAG_INITIAL) || !(flags & COAP_SEND_FLAG_MINIMAL)) {     
       err = appl_reboot_cause_description(0, 0, buf + index, len - index);
       if (err > 0) {
          dtls_info("%s", buf + start);
@@ -381,8 +387,9 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags)
          index = start;
       }
    }
+
    if (connect_time_ms > 0 || coap_rtt_ms > 0) {
-      index += snprintf(buf + index, len - index, "!RETRANS: %u", retransmissions);
+      index += snprintf(buf + index, len - index, "RETRANS: %u", retransmissions);
       if (coap_rtt_ms > 0) {
          index += snprintf(buf + index, len - index, ", RTT: %u ms", coap_rtt_ms);
       }
@@ -563,7 +570,7 @@ int coap_appl_client_prepare_net_stats(char *buf, size_t len, int flags)
    if (modem_get_coverage_enhancement_info(&params.ce_info) >= 0) {
       if (params.ce_info.ce_supported) {
 
-         index = snprintf(buf, len, "!CE: down: %u, up: %u",
+         index = snprintf(buf, len, "CE: down: %u, up: %u",
                           params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
          if (params.ce_info.rsrp < INVALID_SIGNAL_VALUE) {
             index += snprintf(buf + index, len - index, ", RSRP: %d dBm",
@@ -649,7 +656,6 @@ int coap_appl_client_prepare_env_info(char *buf, size_t len, int flags)
       res = 1;
    }
    if (res > 0) {
-      buf[index++] = '!';
       index += coap_appl_client_prepare_env_history(values, res, 2, buf + index, len - index);
       index += snprintf(buf + index, len - index, " C");
       dtls_info("%s", buf);
@@ -668,7 +674,6 @@ int coap_appl_client_prepare_env_info(char *buf, size_t len, int flags)
          buf[index++] = '\n';
       }
       start = index;
-      buf[index++] = '!';
       index += coap_appl_client_prepare_env_history(values, res, 2, buf + index, len - index);
       index += snprintf(buf + index, len - index, " %%H");
       dtls_info("%s", buf + start);
@@ -687,7 +692,6 @@ int coap_appl_client_prepare_env_info(char *buf, size_t len, int flags)
          buf[index++] = '\n';
       }
       start = index;
-      buf[index++] = '!';
       index += coap_appl_client_prepare_env_history(values, res, 0, buf + index, len - index);
       index += snprintf(buf + index, len - index, " hPa");
       dtls_info("%s", buf + start);
@@ -702,7 +706,6 @@ int coap_appl_client_prepare_env_info(char *buf, size_t len, int flags)
          buf[index++] = '\n';
       }
       start = index;
-      buf[index++] = '!';
       for (history_index = 0; history_index < int_value; ++history_index) {
          index += snprintf(buf + index, len - index, "%d;%d,", IAQ_VALUE(iaqs[history_index]), IAQ_ACCURANCY(iaqs[history_index]));
       }
@@ -722,7 +725,6 @@ int coap_appl_client_prepare_env_info(char *buf, size_t len, int flags)
    }
 #else  /* CONFIG_ENVIRONMENT_SENSOR */
 
-   buf[index++] = '!';
    res = modem_at_cmd(buf + index, len - index, "%XTEMP: ", "AT%XTEMP?");
    if (res > 0) {
       index += res;
@@ -818,7 +820,7 @@ int coap_appl_client_prepare_location_info(char *buf, size_t len, int flags)
          }
 #endif
       }
-      index += snprintf(buf + index, len - index, "%s!GNSS.3=%.06f,%.06f,%.01f,%.02f,%.01f",
+      index += snprintf(buf + index, len - index, "%sGNSS.3=%.06f,%.06f,%.01f,%.02f,%.01f",
                         res ? "*" : "",
                         result.position.latitude, result.position.longitude, result.position.accuracy,
                         result.position.altitude, result.position.altitude_accuracy);
@@ -834,7 +836,7 @@ int coap_appl_client_prepare_location_info(char *buf, size_t len, int flags)
    return index;
 }
 
-int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
+int coap_appl_client_prepare_post(char *buf, size_t len, int flags, const char *trigger)
 {
    int err;
    int index = 0;
@@ -850,7 +852,7 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
       index = len;
    } else {
       if (flags & COAP_SEND_FLAG_MODEM_INFO) {
-         err = coap_appl_client_prepare_modem_info(buf, len, flags);
+         err = coap_appl_client_prepare_modem_info(buf, len, flags, trigger);
          if (err > 0) {
             index = start + err;
          }
@@ -1100,7 +1102,7 @@ static int sh_cmd_net(const char *parameter)
 static int sh_cmd_dev(const char *parameter)
 {
    (void)parameter;
-   return coap_appl_client_prepare_modem_info(cmd_buf, sizeof(cmd_buf), 0);
+   return coap_appl_client_prepare_modem_info(cmd_buf, sizeof(cmd_buf), 0, NULL);
 }
 
 static int sh_cmd_env(const char *parameter)

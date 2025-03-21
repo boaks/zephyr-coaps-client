@@ -82,7 +82,7 @@
 
 int coap_appl_client_parse_data(uint8_t *data, size_t len);
 
-int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags);
+int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags, const char *trigger);
 
 int coap_appl_client_prepare_sim_info(char *buf, size_t len, int flags);
 
@@ -92,7 +92,7 @@ int coap_appl_client_prepare_net_stats(char *buf, size_t len, int flags);
 
 int coap_appl_client_prepare_env_info(char *buf, size_t len, int flags);
 
-int coap_appl_client_prepare_post(char *buf, size_t len, int flags);
+int coap_appl_client_prepare_post(char *buf, size_t len, int flags, const char* trigger);
 
 int coap_appl_client_message(const uint8_t **buffer);
 
