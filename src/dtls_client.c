@@ -195,6 +195,7 @@ static uint8_t appl_buffer[MAX_APPL_BUF];
 #define MAX_SEND_BUF 1024
 static uint8_t send_buffer[MAX_SEND_BUF];
 static volatile size_t send_buffer_len = 0;
+static const char *send_trigger = NULL;
 static K_MUTEX_DEFINE(send_buffer_mutex);
 
 #define RTT_SLOTS 9
@@ -617,6 +618,13 @@ static int check_socket(dtls_app_data_t *app)
    return error;
 }
 
+static void dtls_set_send_trigger(const char *trigger)
+{
+   k_mutex_lock(&send_buffer_mutex, K_FOREVER);
+   send_trigger = trigger;
+   k_mutex_unlock(&send_buffer_mutex);
+}
+
 static inline bool dtls_pending_request(request_state_t state)
 {
    return (NONE != state) && (WAIT_SUSPEND != state);
@@ -662,6 +670,7 @@ static void dtls_manual_trigger(int duration)
    } else {
       atomic_clear_bit(&general_states, TRIGGER_DURATION);
       send = true;
+      dtls_set_send_trigger("button");
    }
 
    // LEDs for manual trigger
@@ -680,6 +689,7 @@ static void dtls_cmd_trigger(const char *source, bool led, int mode)
    if (mode & 1) {
       if (dtls_no_pending_request(app_data_context.request_state)) {
          ui_enable(led);
+         dtls_set_send_trigger(source);
          dtls_trigger(source, true);
          if (!ready && !(mode & 2)) {
             dtls_info("%s: no network ...", source);
@@ -708,6 +718,7 @@ static void dtls_timer_trigger_fn(struct k_work *work)
    if (dtls_no_pending_request(app_data_context.request_state)) {
       // no LEDs for time trigger
       ui_enable(false);
+      dtls_set_send_trigger("timer");
       dtls_trigger("timer", true);
    } else {
       long next_interval = interval;
@@ -1959,6 +1970,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   if (download) {
                      dtls_info("download request");
                   } else {
+                     dtls_set_send_trigger("download status");
                      dtls_trigger("download status report", true);
                   }
                } else {
@@ -2061,14 +2073,14 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   k_mutex_lock(&send_buffer_mutex, K_FOREVER);
                   if (send_buffer_len) {
                      res = coap_appl_client_prepare_post(send_buffer, send_buffer_len,
-                                                         coap_send_flags_next | COAP_SEND_FLAG_SET_PAYLOAD);
+                                                         coap_send_flags_next | COAP_SEND_FLAG_SET_PAYLOAD, NULL);
                      send_buffer_len = 0;
-                     k_mutex_unlock(&send_buffer_mutex);
                   } else {
-                     k_mutex_unlock(&send_buffer_mutex);
                      memset(appl_buffer, 0, sizeof(appl_buffer));
-                     res = coap_appl_client_prepare_post(appl_buffer, sizeof(appl_buffer), coap_send_flags_next);
+                     res = coap_appl_client_prepare_post(appl_buffer, sizeof(appl_buffer), coap_send_flags_next, send_trigger);
+                     send_trigger = NULL;
                   }
+                  k_mutex_unlock(&send_buffer_mutex);
                   app->coap_handler = coap_appl_client_handler;
                   app->result_handler = dtls_app_coap_result_handler;
 #ifdef CONFIG_COAP_UPDATE
@@ -2821,6 +2833,7 @@ int main(void)
    }
    init_destination(&app_data_context);
 
+   dtls_set_send_trigger("initial message");
    dtls_trigger("initial message", true);
    dtls_loop(&app_data_context, (reset_cause & FLAG_REBOOT_RETRY) ? ERROR_DETAIL(reboot_cause) : 0);
 
