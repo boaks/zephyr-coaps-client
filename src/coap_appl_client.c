@@ -56,6 +56,8 @@
 #define CUSTOM_COAP_OPTION_READ_RESPONSE_CODE 0xfdf0
 #define CUSTOM_COAP_OPTION_INTERVAL 0xfdf4
 #define CUSTOM_COAP_OPTION_FORWARD_RESPONSE_CODE 0xfdf8
+#define CUSTOM_COAP_OPTION_RECV_INTERVAL 0xfdfc
+#define CUSTOM_COAP_OPTION_RECV_ADDRESS 0xfe00
 
 static COAP_CONTEXT(appl_context, 1280);
 
@@ -513,14 +515,17 @@ int coap_appl_client_prepare_net_info(char *buf, size_t len, int flags)
             index += snprintf(buf + index, len - index, "PSM: n.a.");
          }
       }
+      memset(&params, 0, sizeof(params));
+      if (modem_get_rai_status(&params.rai_info) == 0 && params.rai_info != LTE_NETWORK_RAI_UNKNOWN) {
+         if (index > start) {
+            index += snprintf(buf + index, len - index, ", ");
+         }
+         index += snprintf(buf + index, len - index, "%s", modem_get_rai_description(params.rai_info));
+      }
       time = modem_get_release_time();
       if (time >= 0) {
          if (index > start) {
             index += snprintf(buf + index, len - index, ", ");
-         }
-         memset(&params, 0, sizeof(params));
-         if (modem_get_rai_status(&params.rai_info) == 0 && params.rai_info != LTE_NETWORK_RAI_UNKNOWN) {
-            index += snprintf(buf + index, len - index, "%s, ", modem_get_rai_description(params.rai_info));
          }
          index += snprintf(buf + index, len - index, "Released: %d ms", time);
       }
@@ -1006,6 +1011,24 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags)
       if (err < 0) {
          dtls_warn("Failed to encode CoAP interval option, %d", err);
          return err;
+      }
+   }
+
+   err = get_receive_interval();
+   if (err > 0) {
+
+      err = coap_append_option_int(&request, CUSTOM_COAP_OPTION_RECV_INTERVAL, err);
+      if (err < 0) {
+         dtls_warn("Failed to encode CoAP recv. interval option, %d", err);
+         return err;
+      }
+      err = get_local_address(value, sizeof(value));
+      if (err > 0) {
+         err = coap_packet_append_option(&request, CUSTOM_COAP_OPTION_RECV_ADDRESS, value, err);
+         if (err < 0) {
+            dtls_warn("Failed to encode local address option, %d", err);
+            return err;
+         }
       }
    }
 
