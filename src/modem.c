@@ -12,6 +12,7 @@
  */
 
 #include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,6 +89,7 @@ static int psm_rat = -1;
 
 static int rai_lock = 0;
 static int16_t requested_edrx_time_s = 0;
+static int16_t requested_ptw_time_s = 0;
 
 static uint32_t lte_starts = 0;
 static uint32_t lte_searchs = 0;
@@ -113,6 +115,7 @@ static int64_t scan_time = 0;
 #define AS_RAI_MAX_DELAY 3000
 
 static volatile enum rai_mode rai_current_mode = RAI_MODE_OFF;
+static volatile enum lte_network_rai rai_network_state = LTE_NETWORK_RAI_UNKNOWN;
 static volatile int rai_time = -1;
 
 #define SUSPEND_DELAY_MILLIS 100
@@ -579,6 +582,34 @@ static void modem_monitor_handler(const char *notif)
                LOG_INF("LTE +CEREG: rejected, cause %d", code);
             }
          }
+      } else {
+         len = strstart(notif, "%RAI:", false);
+         if (len > 0) {
+            const char *cur = parse_next_chars(notif + len, ',', 2);
+            len = strlen(cur);
+            if (3 <= len) {
+               const char *desc = "RAI not";
+               enum lte_network_rai state = LTE_NETWORK_NO_RAI;
+               bool as_rai = '1' == *cur;
+               bool cp_rai = '1' == *(cur + 2);
+
+               if (as_rai && cp_rai) {
+                  desc = "AS-RAI and CP-RAI";
+                  state = LTE_NETWORK_AS_AND_CP_RAI;
+               } else if (as_rai) {
+                  desc = "AS-RAI";
+                  state = LTE_NETWORK_AS_RAI;
+               } else if (cp_rai) {
+                  desc = "CP-RAI";
+                  state = LTE_NETWORK_CP_RAI;
+               }
+               LOG_INF("%s supported by network.", desc);
+
+               k_mutex_lock(&lte_mutex, K_FOREVER);
+               rai_network_state = state;
+               k_mutex_unlock(&lte_mutex);
+            }
+         }
       }
    }
 }
@@ -911,32 +942,44 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          lte_update_cell(evt->cell.tac, evt->cell.id);
          break;
       case LTE_LC_EVT_MODEM_SLEEP_ENTER:
-         if (evt->modem_sleep.type == LTE_LC_MODEM_SLEEP_PSM) {
-         } else if (evt->modem_sleep.type == LTE_LC_MODEM_SLEEP_RF_INACTIVITY) {
-            LOG_INF("LTE modem sleeps rf inactive");
-            break;
-         } else if (evt->modem_sleep.type == LTE_LC_MODEM_SLEEP_LIMITED_SERVICE) {
-            LOG_INF("LTE modem sleeps limited service");
-            break;
-         } else if (evt->modem_sleep.type == LTE_LC_MODEM_SLEEP_FLIGHT_MODE) {
-            LOG_INF("LTE modem sleeps flight mode");
-            break;
-         } else if (evt->modem_sleep.type == LTE_LC_MODEM_SLEEP_PROPRIETARY_PSM) {
-         }
-         if (phase == 3) {
-            int64_t time = now - phase_start_time;
-            lte_add_asleep(time);
-            bool delayed = active_time >= 0 && MSEC_TO_SEC(time) > (active_time + 5);
-            if (delayed) {
-               lte_inc_psm_delays(time);
+         {
+            const char *mode = "";
+            switch (evt->modem_sleep.type) {
+               case LTE_LC_MODEM_SLEEP_PSM:
+                  mode = "(PSM)";
+                  break;
+               case LTE_LC_MODEM_SLEEP_RF_INACTIVITY:
+                  mode = "(RF inactive)";
+                  phase = 0;
+                  break;
+               case LTE_LC_MODEM_SLEEP_LIMITED_SERVICE:
+                  mode = "(limited service)";
+                  phase = 0;
+                  break;
+               case LTE_LC_MODEM_SLEEP_FLIGHT_MODE:
+                  mode = "(flight mode)";
+                  phase = 0;
+                  break;
+               case LTE_LC_MODEM_SLEEP_PROPRIETARY_PSM:
+                  mode = "(proprietary PSM)";
+                  phase = 0;
+                  break;
             }
-            LOG_INF("LTE modem sleeps after %lld ms idle%s", time, delayed ? ", delayed" : "");
-         } else {
-            LOG_INF("LTE modem sleeps");
+            if (phase == 3) {
+               int64_t time = now - phase_start_time;
+               lte_add_asleep(time);
+               bool delayed = active_time >= 0 && MSEC_TO_SEC(time) > (active_time + 5);
+               if (delayed) {
+                  lte_inc_psm_delays(time);
+               }
+               LOG_INF("LTE modem sleeps after %lld ms idle%s %s", time, delayed ? ", delayed" : "", mode);
+            } else {
+               LOG_INF("LTE modem sleeps %s", mode);
+            }
+            phase = 0;
+            lte_network_sleeping_set(true);
+            break;
          }
-         phase = 0;
-         lte_network_sleeping_set(true);
-         break;
       case LTE_LC_EVT_MODEM_SLEEP_EXIT:
          phase = 1;
          phase_start_time = now;
@@ -1103,14 +1146,19 @@ static void modem_on_cfun(enum lte_lc_func_mode mode, void *ctx)
    if (mode == LTE_LC_FUNC_MODE_NORMAL ||
        mode == LTE_LC_FUNC_MODE_ACTIVATE_LTE) {
       int16_t edrx_time_s = 0;
+      int16_t ptw_time_s = 0;
       k_mutex_lock(&lte_mutex, K_FOREVER);
       ++lte_starts;
       atomic_clear_bit(&modem_states, MODEM_LOW_POWER);
       edrx_status.mode = LTE_LC_LTE_MODE_NONE;
       edrx_time_s = requested_edrx_time_s;
+      ptw_time_s = requested_ptw_time_s;
       k_mutex_unlock(&lte_mutex);
       if (edrx_time_s) {
          modem_set_edrx(edrx_time_s);
+      }
+      if (ptw_time_s) {
+         modem_set_ptw(ptw_time_s);
       }
       modem_read_network_info(NULL, true);
       return;
@@ -1200,6 +1248,8 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       atomic_clear_bit(&modem_states, MODEM_READY);
       lte_initial_config = config;
       lte_state_change_handler = state_handler;
+      rai_time = -1;
+      rai_network_state = LTE_NETWORK_RAI_UNKNOWN;
       k_mutex_unlock(&lte_mutex);
 #ifdef CONFIG_NRF_MODEM_LIB_TRACE
       LOG_INF("Modem trace enabled");
@@ -1383,21 +1433,20 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          }
       }
 
+      {
+         /** Release Assistance Indication  */
+         int mode = 0; // disable
 #ifdef CONFIG_AS_RAI_ON
-      /** Release Assistance Indication  */
-      err = modem_at_cmd(buf, sizeof(buf), "%RAI: ", "AT%RAI=1");
-      if (err < 0) {
-         LOG_WRN("Failed to enable access stratum RAI, err %d", err);
-      } else {
-         LOG_INF("Access stratum RAI enabled");
-      }
-#else  /* CONFIG_AS_RAI_ON */
-      /** Release Assistance Indication  */
-      err = modem_at_cmd(buf, sizeof(buf), "%RAI: ", "AT%RAI=0");
-      if (err < 0) {
-         LOG_WRN("Failed to disable access stratum RAI, err %d", err);
-      }
+         // enable or enable with notifications fro mfw 2.x.y
+         mode = atomic_test_bit(&modem_states, MODEM_FIRMWARE_2) ? 2 : 1;
 #endif /* CONFIG_AS_RAI_ON */
+         err = modem_at_cmdf(buf, sizeof(buf), "%RAI: ", "AT%%RAI=%d", mode);
+         if (err < 0) {
+            LOG_WRN("Failed to set RAI %d, err %d (%s)", mode, err, strerror(-err));
+         } else {
+            LOG_INF("Set RAI %d", mode);
+         }
+      }
 
 #ifdef CONFIG_RAI_OFF
       LOG_INF("No AS- nor CP-RAI mode configured!");
@@ -1585,6 +1634,8 @@ int modem_start(const k_timeout_t timeout, bool save)
    memset(&network_info, 0, sizeof(network_info));
    network_info.plmn_lock = err;
    memset(&ce_info, 0, sizeof(ce_info));
+   rai_time = -1;
+   rai_network_state = LTE_NETWORK_RAI_UNKNOWN;
    k_mutex_unlock(&lte_mutex);
 
    modem_init_rai();
@@ -1699,6 +1750,25 @@ int modem_get_edrx_status(struct lte_lc_edrx_cfg *edrx)
    return res;
 }
 
+int modem_get_recv_interval_ms(void)
+{
+   int res = -ENODATA;
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (0 > psm_status.active_time) {
+      // psm off
+      if (LTE_LC_LTE_MODE_NONE == edrx_status.mode) {
+         // no edrx
+         res = 2560;
+      } else {
+         // edrx
+         res = round(edrx_status.edrx * 100.0F);
+         res *= 10;
+      }
+   }
+   k_mutex_unlock(&lte_mutex);
+   return res;
+}
+
 int modem_get_psm_status(struct lte_lc_psm_cfg *psm)
 {
    int res = 0;
@@ -1721,24 +1791,30 @@ int modem_get_rai_status(enum lte_network_rai *rai)
    enum lte_network_rai state = LTE_NETWORK_RAI_UNKNOWN;
    int res = 0;
    int time = -1;
-   int factor = modem_get_time_scale();
 
    k_mutex_lock(&lte_mutex, K_FOREVER);
+   state = rai_network_state;
    if (psm_status.active_time >= 0) {
       time = rai_time;
    }
    k_mutex_unlock(&lte_mutex);
-   if (factor > 100) {
-      time = (time * 100) / factor;
-   }
-   if (time < 0) {
-      res = -ENODATA;
-   } else if (time < CP_RAI_MAX_DELAY) {
-      state = LTE_NETWORK_CP_RAI;
-   } else if (time < AS_RAI_MAX_DELAY) {
-      state = LTE_NETWORK_AS_RAI;
-   } else {
-      state = LTE_NETWORK_NO_RAI;
+   if (state == LTE_NETWORK_RAI_UNKNOWN) {
+      // mfw 1.3.x support, guess RAI from release time
+      if (time < 0) {
+         res = -ENODATA;
+      } else {
+         int factor = modem_get_time_scale();
+         if (factor > 100) {
+            time = (time * 100) / factor;
+         }
+         if (time < CP_RAI_MAX_DELAY) {
+            state = LTE_NETWORK_CP_RAI;
+         } else if (time < AS_RAI_MAX_DELAY) {
+            state = LTE_NETWORK_AS_RAI;
+         } else {
+            state = LTE_NETWORK_NO_RAI;
+         }
+      }
    }
    if (rai) {
       *rai = state;
@@ -2532,14 +2608,16 @@ int modem_set_edrx(int16_t edrx_time_s)
       int edrx_code = 0;
       char edrx[5] = "0000";
       float time = edrx_time_s;
+      float edrx_time = 0.0F;
 
-      for (edrx_code = 0; edrx_code < 15; ++edrx_code) {
-         if (time <= (modem_get_edrx_multiplier(edrx_code) * 5.12F)) {
+      for (edrx_code = 0;; ++edrx_code) {
+         edrx_time = modem_get_edrx_multiplier(edrx_code) * 5.12F;
+         if (time <= edrx_time || edrx_code >= 15) {
             break;
          }
       }
       print_bin(edrx, 4, edrx_code);
-      LOG_INF("eDRX enable, %.2f s", (modem_get_edrx_multiplier(edrx_code) * 5.12));
+      LOG_INF("eDRX enable, %.2f s", (double)edrx_time);
       res2 = modem_at_cmdf(NULL, 0, NULL, "AT+CEDRXS=2,5,\"%s\"", edrx);
       res = modem_at_cmdf(NULL, 0, NULL, "AT+CEDRXS=2,4,\"%s\"", edrx);
       if (res2 < 0) {
@@ -2585,12 +2663,51 @@ int modem_print_edrx(const char *desc, struct lte_lc_edrx_cfg *edrx_cfg, char *b
       if (edrx_cfg->edrx < 1.0F) {
          return snprintf(buf, len, "eDRX %s%s%s disabled.", desc, sep, mode);
       } else if (edrx_cfg->ptw < 1.0F) {
-         return snprintf(buf, len, "eDRX %s%s%s %.2fs", desc, sep, mode, (double) edrx_cfg->edrx);
+         return snprintf(buf, len, "eDRX %s%s%s %.2fs", desc, sep, mode, (double)edrx_cfg->edrx);
       } else {
-         return snprintf(buf, len, "eDRX %s%s%s %.2fs, ptw %.2fs", desc, sep, mode, (double) edrx_cfg->edrx, (double) edrx_cfg->ptw);
+         return snprintf(buf, len, "eDRX %s%s%s %.2fs, ptw %.2fs", desc, sep, mode, (double)edrx_cfg->edrx, (double)edrx_cfg->ptw);
       }
    }
    return 0;
+}
+
+int modem_set_ptw(int16_t ptw_time_s)
+{
+   int res = 0;
+   int res2 = 0;
+   int ptw_code = 0;
+   char ptw[5] = "0000";
+   float time = ptw_time_s;
+   float ptw_time = 0.0F;
+
+   for (ptw_code = 0;; ++ptw_code) {
+      ptw_time = (ptw_code + 1) * 1.28F;
+      if (time <= ptw_time || ptw_code >= 15) {
+         break;
+      }
+   }
+   print_bin(ptw, 4, ptw_code);
+   LOG_INF("LTE-M PTW %.2f s", (double)ptw_time);
+   res = modem_at_cmdf(NULL, 0, NULL, "AT%%XPTW=4,\"%s\"", ptw);
+
+   for (ptw_code = 0;; ++ptw_code) {
+      ptw_time = (ptw_code + 1) * 2.56F;
+      if (time <= ptw_time || ptw_code >= 15) {
+         break;
+      }
+   }
+   print_bin(ptw, 4, ptw_code);
+   LOG_INF("NB-IoT PTW %.2f s", (double)ptw_time);
+   res2 = modem_at_cmdf(NULL, 0, NULL, "AT%%XPTW=5,\"%s\"", ptw);
+   if (res2 < 0) {
+      return res2;
+   }
+   if (res >= 0) {
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      requested_ptw_time_s = ptw_time_s;
+      k_mutex_unlock(&lte_mutex);
+   }
+   return res < 0 ? res : 0;
 }
 
 void modem_lock_psm(bool on)
