@@ -490,14 +490,14 @@ static void uart_enable_rx_fn(struct k_work *work)
       atomic_clear_bit(&uart_state, UART_SUSPENDED);
 #ifdef CONFIG_UART_LED
       ui_led_op(LED_UART, LED_SET);
-#endif
+#endif /* CONFIG_UART_LED */
    } else if (err == 0) {
       if (k_uptime_get() > 10000 && !uart_tx_pending()) {
          // early suspend seems to crash
          atomic_set_bit(&uart_state, UART_SUSPENDED);
 #ifdef CONFIG_UART_LED
          ui_led_op(LED_UART, LED_CLEAR);
-#endif
+#endif /* CONFIG_UART_LED */
          pm_device_action_run(uart_dev, PM_DEVICE_ACTION_SUSPEND);
          uart_tx_ready();
       }

@@ -55,13 +55,13 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160) and [nRF916
 | [Nordic Semiconductor, nRF9151 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9151-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png) |
 | [Nordic Semiconductor, Thingy:91X](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91-X)<br>Works "out-of-the-box" in the "wild". Comes with selection of sensors (environment, motion) and a 32MB flash. A QWIIC connector enables to add custom sensors. | [<img src="./docu/thingy91x.jpg" width="300"/>](./docu/thingy91x.jpg) |
                                              
-The demo works with [ncs-2.6.2](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.2).
+The demo works with [ncs-2.6.4](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.4).
 
 To benefit from the newer modem features, please consider to use the modem firmware [1.3.7](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.7.zip) for `nRF9160` based device. See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
 For `nRF9161` and `nRF9151` devices use the modem firmware [2.0.2](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/sip/nrf91x1-sip/nrf91x1-lte-modem-firmware/mfw_nrf91x1_2.0.2.zip) for that. 
 
-`NCS 2.7.0` nor `NCS 2.8.0` is not supported for now.
+`NCS 2.7.0` nor `NCS 2.8.0` is not supported. For experimental support of `NCS 2.9.1` see branch `NCS_2_9_x` (using this app with NCS 2.9.1 has currently a 400µA higher quiescent current!).
 
 ## Supported New/Upcoming Devices
 
