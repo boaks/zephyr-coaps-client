@@ -178,6 +178,8 @@ const char *modem_get_rai_description(enum lte_network_rai rai)
          return "CP-RAI";
       case LTE_NETWORK_AS_RAI:
          return "AS-RAI";
+         case LTE_NETWORK_AS_AND_CP_RAI:
+         return "CP/AS-RAI";
       default:
          break;
    }
