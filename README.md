@@ -61,7 +61,7 @@ To benefit from the newer modem features, please consider to use the modem firmw
 
 For `nRF9161` and `nRF9151` devices use the modem firmware [2.0.2](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/sip/nrf91x1-sip/nrf91x1-lte-modem-firmware/mfw_nrf91x1_2.0.2.zip) for that. 
 
-`NCS 2.7.0` nor `NCS 2.8.0` is not supported. For experimental support of `NCS 2.9.1` see branch `NCS_2_9_x` (using this app with NCS 2.9.1 has currently a 400µA higher quiescent current!).
+`NCS 2.7.0` nor `NCS 2.8.0` is not supported. For experimental support of `NCS 2.9.1` see branch `NCS_2_9_x`.
 
 ## Supported New/Upcoming Devices
 
