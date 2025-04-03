@@ -1,0 +1,3 @@
+# sudo cp 50* /etc/udev/rules.d
+# 2e8a:000c Raspberry Pi Debug Probe (CMSIS-DAP)
+SUBSYSTEM=="usb", ATTR{idVendor}=="2e8a", ATTR{idProduct}=="000c", MODE:="666"

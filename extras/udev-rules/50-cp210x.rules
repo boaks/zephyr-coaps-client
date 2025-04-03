@@ -1,0 +1,3 @@
+# sudo cp 50* /etc/udev/rules.d
+# 10c4:ea60 Silicon Labs CP210x UART Bridge
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", GROUP="dialout", MODE="0666"
