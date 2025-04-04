@@ -97,13 +97,20 @@ Other boards are also supported, see table below:
 | nRF9160-DK | nrf9160dk_nrf9160_ns | nrf9160dk/nrf9160/ns |
 | nRF9161-DK | nrf9161dk_nrf9161_ns | nrf9161dk/nrf9161/ns |
 | nRF9151-DK | nrf9151dk_nrf9151_ns | nrf9151dk/nrf9151/ns |
-| nRF9160 Feather (v5,v6) | circuitdojo_feather_nrf9160_ns | circuitdojo_feather/nrf9160/ns |
-| nRF9161 Feather (beta) | circuitdojo_feather_nrf9161_ns | circuitdojo_feather_nrf9161/nrf9161/ns |
+| nRF9160 Feather (v5 and newer) | circuitdojo_feather_nrf9160_ns | circuitdojo_feather/nrf9160/ns |
+| nRF9151 Feather | circuitdojo_feather_nrf9151_ns | circuitdojo_feather_nrf9151/nrf9151/ns |
 | Conexio Stratus Pro nRF9161 | conexio_stratus_pro_nrf9161_ns | conexio_stratus_pro/nrf9161/ns |
 | Conexio Stratus Pro nRF9151 | conexio_stratus_pro_nrf9151_ns | conexio_stratus_pro/nrf9151/ns |
+| Makerdiary nRF9151 Connect Kit | -- not supported -- | nrf9151_connectkit/nrf9151/ns |
 | MIKROE LTE IoT 4 Click | nRF9160-DK with overlay | nRF9160-DK with overlay |
 
-Starting with v0.10.0 that only builds an image for updates. For an initial image it's required to provide the used credentials with a project specific config file. Therefore use
+If the build is successful, the SDK installation was also successful.
+
+**Note:** Starting with v0.10.0 this only builds an image for updates. 
+
+#### Initial Image (with credentials)
+
+For an initial image it's required to provide the used credentials with a project specific config file. Therefore use
 
 ```sh
 # NCS 2.9.0
@@ -152,6 +159,8 @@ If you want to protect the firmware from being read via jlink, use
 ```sh
 nrfjprog --rbp all
 ```
+
+(To use `probe-rs` instead of `nrfjprog` see [../extras/README](../extras/README.md#flashing-new-boards-with-ocd-support).)
 
 ## Run It
 
