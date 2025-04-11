@@ -789,7 +789,7 @@ static void dtls_coap_next(dtls_app_data_t *app, int interval)
 #endif
 
    memset(appl_buffer, 0, sizeof(appl_buffer));
-   dtls_coap_set_request_state("next request", app, WAIT_SUSPEND);
+   dtls_coap_set_request_state("next request", app, lte_power_off ? NONE : WAIT_SUSPEND);
 
    k_mutex_lock(&send_buffer_mutex, K_FOREVER);
    pending = send_buffer_len > 0;
@@ -1798,7 +1798,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
       }
 
       network_not_found = false;
-      if (!atomic_test_bit(&general_states, LTE_READY) || app->fd < 0) {
+      if (!lte_power_off && (!atomic_test_bit(&general_states, LTE_READY) || app->fd < 0)) {
          if (dtls_network_searching(K_MINUTES(CONFIG_MODEM_SEARCH_TIMEOUT_RESTART))) {
             network_not_found = true;
             f = dtls_coap_inc_failures();
@@ -1892,13 +1892,13 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
          restarting_modem_power_off = false;
       }
 
-      if (!atomic_test_bit(&general_states, LTE_READY)) {
+      if (!lte_power_off && !atomic_test_bit(&general_states, LTE_READY)) {
          dtls_info("Modem not ready.");
          k_sleep(K_MSEC(1000));
          continue;
       }
 
-      if (check_socket(app)) {
+      if (!lte_power_off && check_socket(app)) {
          if (!reopen_cause) {
             reopen_cause = "check";
          }
@@ -2611,6 +2611,36 @@ static void sh_cmd_coap_sendflags_help(void)
    }
 }
 
+static int sh_cmd_onoff(const char *parameter)
+{
+   ARG_UNUSED(parameter);
+   int res = 0;
+   long value = lte_power_on_off ? 1 : 0;
+   const char *cur = parameter;
+
+   if (cur[0]) {
+      cur = parse_next_long_text(cur, ' ', 0, &value);
+      if (cur != parameter) {
+         lte_power_on_off = value ? true : false;
+      } else {
+         LOG_INF("onoff '%s', value not supported!", parameter);
+         res = -EINVAL;
+      }
+   } else {
+      LOG_INF("onoff %d", (int)value);
+   }
+
+   return 0;
+}
+
+static void sh_cmd_onoff_help(void)
+{
+   LOG_INF("> help onoff:");
+   LOG_INF("  onoff                  : show on/off mode.");
+   LOG_INF("  onoff 1                : enable on/off mode.");
+   LOG_INF("  onoff 0                : disable on/off mode.");
+}
+
 static int sh_cmd_restart(const char *parameter)
 {
    ARG_UNUSED(parameter);
@@ -2661,11 +2691,14 @@ static void sh_cmd_dtls_help(void)
    LOG_INF("  dtls reset : reset dtls session.");
 }
 
+
+
 SH_CMD(send, NULL, "send message.", sh_cmd_send, sh_cmd_send_help, 0);
 SH_CMD(sendresult, NULL, "send result message.", sh_cmd_send_result, NULL, 0);
 SH_CMD(interval, NULL, "send interval.", sh_cmd_send_interval, sh_cmd_send_interval_help, 0);
 SH_CMD(timeout, NULL, "initial coap timeout.", sh_cmd_coap_timeout, sh_cmd_send_coap_timeout_help, 0);
 SH_CMD(sendflags, NULL, "sendflags.", sh_cmd_coap_sendflags, sh_cmd_coap_sendflags_help, 0);
+SH_CMD(onoff, NULL, "on/off mode.", sh_cmd_onoff, sh_cmd_onoff_help, 0);
 SH_CMD(restart, NULL, "try to switch off the modem and restart device.", sh_cmd_restart, NULL, 0);
 SH_CMD(dest, NULL, "show destination.", sh_cmd_destination, NULL, 0);
 SH_CMD(time, NULL, "show system time.", sh_cmd_time, NULL, 0);
