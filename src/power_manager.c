@@ -1312,9 +1312,23 @@ static int sh_cmd_battery(const char *parameter)
    return 0;
 }
 
+static int sh_cmd_battery_forecast_reset(const char *parameter)
+{
+   (void) parameter;
+   int64_t now = 0;
+
+   k_mutex_lock(&pm_mutex, K_FOREVER);
+   now = k_uptime_get();
+   calculate_forecast(&now, PM_INVALID_INTERNAL_LEVEL, CHARGING_TRICKLE);
+   k_mutex_unlock(&pm_mutex);
+
+   return 0;
+}
+
 #ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_MODEM
 SH_CMD(bat, "", "read battery status.", sh_cmd_battery, NULL, 0);
 #else
 SH_CMD(bat, NULL, "read battery status.", sh_cmd_battery, NULL, 0);
 #endif
+SH_CMD(batreset, NULL, "reset battery forecast.", sh_cmd_battery_forecast_reset, NULL, 0);
 #endif /* CONFIG_SH_CMD */
