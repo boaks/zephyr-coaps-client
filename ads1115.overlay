@@ -1,0 +1,78 @@
+/*
+ * Copyright (c) 2025 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0 or Apache-2.0
+ */
+
+/*
+ * Usage: 
+ *
+ * west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- \
+ *    -DOVERLAY_CONFIG="60min0-prj.conf;mikroe-prj.conf" -DDTC_OVERLAY_FILE="mikroe.overlay"
+ */
+
+/ {
+	zephyr,user {
+		io-channels = <&ads1115 0>, <&ads1115 1>;
+	};
+};
+
+&i2c2 {
+	clock-frequency = <I2C_BITRATE_FAST>;
+
+	bme280: bme280@77 {
+		status = "okay";
+		compatible = "bosch,bme280";
+		reg = <0x77>;
+	};
+
+	ads1115: ads1115@48 {
+		status = "okay";
+		compatible = "ti,ads1115";
+		reg = <0x48>;
+		#io-channel-cells = <1>;
+		#address-cells = < 1 >;
+		#size-cells = < 0 >;
+
+		channel@0 {
+			reg = <0>;
+			zephyr,gain = "ADC_GAIN_1";
+			zephyr,reference = "ADC_REF_INTERNAL";
+			zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+			zephyr,resolution = < 15 >;
+			zephyr,input-positive = <0>;
+		};
+
+		channel@1 {
+			reg = <1>;
+			zephyr,gain = "ADC_GAIN_1_2";
+			zephyr,reference = "ADC_REF_INTERNAL";
+			zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+			zephyr,resolution = < 15 >;
+			zephyr,input-positive = <1>;
+		};
+
+	};
+	
+};
+
+/ {
+
+	aliases {
+		/* alias for sensor with SENSOR_CHAN_AMBIENT_TEMP channel */
+		temperature-sensor = &bme280;
+		/* alias for sensor with SENSOR_CHAN_HUMIDITY channel */
+		humidity-sensor = &bme280;
+		/* alias for sensor with SENSOR_CHAN_PRESS channel */
+		pressure-sensor = &bme280;
+	};
+
+};
+
