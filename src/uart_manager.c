@@ -56,7 +56,11 @@ static void uart_enable_rx_fn(struct k_work *work);
 static void uart_pause_tx_fn(struct k_work *work);
 static int uart_init(void);
 
-static const struct device *const uart_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
+#if defined(CONFIG_SERIAL) && DT_HAS_CHOSEN(zephyr_console) && DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_console), okay)
+static const struct device *const uart_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
+#else  /* CONFIG_SERIAL */
+#error "missing console uart!"
+#endif /* CONFIG_SERIAL */
 
 static char uart_cmd_buf[CONFIG_UART_CMD_MAX_LEN];
 static int uart_rx_buf_id = 0;
@@ -400,9 +404,9 @@ static void uart_log_process(const struct log_backend *const backend,
          }
 #endif
          if (level) {
-            int cycles = sys_clock_hw_cycles_per_sec();
+            uint32_t cycles = sys_clock_hw_cycles_per_sec();
             log_timestamp_t seconds = (msg->log.hdr.timestamp / cycles) % 100;
-            log_timestamp_t milliseconds = (msg->log.hdr.timestamp * 1000 / cycles) % 1000;
+            log_timestamp_t milliseconds = ((msg->log.hdr.timestamp % cycles) * 1000 / cycles);
             if (uart_update_pending()) {
                level = 'u';
             } else if (sh_busy()) {
