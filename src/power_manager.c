@@ -125,7 +125,11 @@ static void suspend_devices(bool suspend)
    }
 }
 
-static const struct device *const uart_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_console));
+#if defined(CONFIG_SERIAL) && DT_HAS_CHOSEN(zephyr_console) && DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_console), okay)
+static const struct device *const uart_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
+#else  /* CONFIG_SERIAL */
+static const struct device *const uart_dev = NULL;
+#endif /* CONFIG_SERIAL */
 
 #ifdef CONFIG_SUSPEND_UART
 #if defined(CONFIG_UART_CONSOLE) && !defined(CONFIG_CONSOLE_SUBSYS)
@@ -626,7 +630,7 @@ int adp536x_power_manager_init(void)
 
 static const struct device *npm1300_buck2_dev = DEVICE_DT_GET(DT_NODELABEL(npm1300_buck2));
 
-static int npm1300_buck2_suspend(bool suspend)
+static int npm1300_buck2_enable(bool enable)
 {
    int ret = 0;
 
@@ -634,22 +638,22 @@ static int npm1300_buck2_suspend(bool suspend)
       LOG_WRN("NPM1300 buck2 not ready!");
       return -ENOTSUP;
    }
-   if (suspend) {
-      ret = regulator_disable(npm1300_buck2_dev);
-      if (ret < 0) {
-         LOG_WRN("NPM1300 disable buck2 failed, %d (%s)!", ret, strerror(-ret));
-#ifdef CONFIG_MFD_NPM1300_BUCK2_LED
-      } else {
-         ui_led_op(LED_BUCK2, LED_CLEAR);
-#endif
-      }
-   } else {
+   if (enable) {
       ret = regulator_enable(npm1300_buck2_dev);
       if (ret < 0) {
          LOG_WRN("NPM1300 enable buck2 failed, %d (%s)!", ret, strerror(-ret));
 #ifdef CONFIG_MFD_NPM1300_BUCK2_LED
       } else {
          ui_led_op(LED_BUCK2, LED_SET);
+#endif
+      }
+   } else {
+      ret = regulator_disable(npm1300_buck2_dev);
+      if (ret < 0) {
+         LOG_WRN("NPM1300 disable buck2 failed, %d (%s)!", ret, strerror(-ret));
+#ifdef CONFIG_MFD_NPM1300_BUCK2_LED
+      } else {
+         ui_led_op(LED_BUCK2, LED_CLEAR);
 #endif
       }
    }
@@ -699,7 +703,7 @@ static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
       }
 #ifdef CONFIG_REGULATOR_NPM1300
       if (switch_regulator) {
-         npm1300_buck2_suspend(!status);
+         npm1300_buck2_enable(status);
       }
 #endif
    }
@@ -912,14 +916,21 @@ int power_manager_init(void)
    calculate_forecast(&now, PM_INVALID_INTERNAL_LEVEL, CHARGING_TRICKLE);
 
    if (device_is_ready(uart_dev)) {
-#if defined(CONFIG_UART_ASYNC_API) && !defined(CONFIG_UART_RECEIVER)
+#ifndef CONFIG_UART_CONSOLE
+      power_manager_suspend_device(uart_dev);
+#elif defined(CONFIG_UART_ASYNC_API) && !defined(CONFIG_UART_RECEIVER)
       uart_rx_disable(uart_dev);
-#endif
+#endif /* CONFIG_UART_ASYNC_API  && !CONFIG_UART_RECEIVER */
    } else {
 #if defined(CONFIG_SUSPEND_UART) && defined(CONFIG_UART_CONSOLE) && !defined(CONFIG_CONSOLE_SUBSYS)
       LOG_WRN("UART0 console not available.");
 #endif
    }
+
+#if defined(CONFIG_SERIAL) && !defined(CONFIG_NRF_MODEM_LIB_TRACE) && DT_HAS_CHOSEN(nordic_modem_trace_uart)
+   power_manager_suspend_device(DEVICE_DT_GET(DT_CHOSEN(nordic_modem_trace_uart)));
+#endif /* !CONFIG_SERIAL && !CONFIG_NRF_MODEM_LIB_TRACE && DT_HAS_CHOSEN(nordic_modem_trace_uart) */
+
 #ifdef CONFIG_INA219
    if (device_is_ready(ina219_0)) {
       power_manager_add_device(ina219_0);
