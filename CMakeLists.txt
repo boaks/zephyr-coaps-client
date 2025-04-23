@@ -61,6 +61,8 @@ target_sources_ifdef(CONFIG_ENVIRONMENT_SENSOR app PRIVATE src/environment_senso
 
 target_sources_ifdef(CONFIG_SHT21 app PRIVATE src/environment_sht21.c src/environment_history.c)
 
+target_sources_ifdef(CONFIG_APPL_ADC app PRIVATE src/appl_adc.c)
+
 target_sources_ifdef(CONFIG_BATTERY_ADC app PRIVATE src/battery_adc.c)
 
 target_sources_ifdef(CONFIG_NAU7802_SCALE app PRIVATE src/nau7802.c src/appl_storage.c src/appl_storage_config.c)
