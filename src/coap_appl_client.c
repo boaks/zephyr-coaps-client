@@ -46,6 +46,10 @@
 #include "nau7802.h"
 #endif
 
+#ifdef CONFIG_ADC_SENSOR
+#include "appl_adc.h"
+#endif /* CONFIG_ADC_SENSOR */
+
 #define APP_COAP_LOG_PAYLOAD_SIZE 128
 
 #define COAP_OPTION_NO_RESPONSE 0x102
@@ -366,6 +370,16 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags, const 
       buf[index++] = '\n';
       start = index;
    }
+
+#ifdef CONFIG_ADC_SENSOR
+   err = appl_adc_sample_desc(buf + index, len - index);
+   if (err > 0) {
+      dtls_info("%s", buf + start);
+      index += err;
+      buf[index++] = '\n';
+      start = index;
+   }
+#endif /* CONFIG_ADC_SENSOR */
 
    if ((flags & COAP_SEND_FLAG_INITIAL) || !(flags & COAP_SEND_FLAG_MINIMAL)) {
       err = appl_reboot_cause_description(0, 0, buf + index, len - index);

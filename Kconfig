@@ -769,6 +769,19 @@ config ADC_SCALE_SETUP
 	default y
 	depends on ADC_SCALE
 
+
+config ADC_SENSOR
+	bool "Enable ADC sensor"
+	depends on I2C
+    default y if "$(dt_alias_enabled,adc-sensor)"
+	help
+	   Enable ADC sensor.
+
+config ADC_SENSOR_CHANNEL_0_MUX
+	bool "Use channel 0 for MUX"
+	depends on ADC_SENSOR
+    default y if "$(dt_nodelabel_enabled,ads1115)"
+
 if SENSOR
 
 if ADP536X
