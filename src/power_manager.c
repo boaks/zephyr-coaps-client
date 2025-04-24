@@ -609,7 +609,27 @@ int adp536x_power_manager_init(void)
 #include "ui.h"
 #include <zephyr/drivers/regulator.h>
 
-static const struct device *npm1300_buck2_dev = DEVICE_DT_GET(DT_NODELABEL(npm1300_buck2));
+#define REGULATOR_NODE DT_NODELABEL(npm1300_buck2)
+
+#if defined(CONFIG_MFD_NPM1300_BUCK2_WITH_USB) && DT_PROP_LEN(DT_INST(0, nordic_npm1300), host_int_gpios)
+#define MFD_NPM1300_BUCK2_WITH_USB_INT
+#endif /* DT_PROP_LEN(DT_INST(0, nordic_npm1300), host_int_gpios) */
+
+static const struct device *npm1300_buck2_dev = DEVICE_DT_GET(REGULATOR_NODE);
+
+static int npm1300_buck2_enabled(void)
+{
+   return regulator_is_enabled(npm1300_buck2_dev) ? 1 : 0;
+}
+
+#if DT_PROP(REGULATOR_NODE, regulator_always_on)
+
+static int npm1300_buck2_enable(bool enable)
+{
+   return 0;
+}
+
+#else /* regulator_always_on */
 
 static int npm1300_buck2_enable(bool enable)
 {
@@ -619,28 +639,49 @@ static int npm1300_buck2_enable(bool enable)
       LOG_WRN("NPM1300 buck2 not ready!");
       return -ENOTSUP;
    }
+
    if (enable) {
-      ret = regulator_enable(npm1300_buck2_dev);
-      if (ret < 0) {
-         LOG_WRN("NPM1300 enable buck2 failed, %d (%s)!", ret, strerror(-ret));
-#ifdef CONFIG_MFD_NPM1300_BUCK2_LED
+      if (regulator_is_enabled(npm1300_buck2_dev)) {
+         LOG_INF("NPM1300 already enabled buck2.");
       } else {
+         while (!ret && !regulator_is_enabled(npm1300_buck2_dev)) {
+            ret = regulator_enable(npm1300_buck2_dev);
+         }
+         if (ret < 0) {
+            LOG_WRN("NPM1300 enable buck2 failed, %d (%s)!", ret, strerror(-ret));
+         } else {
+            LOG_INF("NPM1300 enabled buck2.");
+         }
+      }
+#ifdef CONFIG_MFD_NPM1300_BUCK2_LED
+      if (!ret) {
          ui_led_op(LED_BUCK2, LED_SET);
-#endif
       }
+#endif
    } else {
-      ret = regulator_disable(npm1300_buck2_dev);
-      if (ret < 0) {
-         LOG_WRN("NPM1300 disable buck2 failed, %d (%s)!", ret, strerror(-ret));
-#ifdef CONFIG_MFD_NPM1300_BUCK2_LED
+      if (!regulator_is_enabled(npm1300_buck2_dev)) {
+         LOG_INF("NPM1300 already disabled buck2.");
       } else {
-         ui_led_op(LED_BUCK2, LED_CLEAR);
-#endif
+         while (!ret && regulator_is_enabled(npm1300_buck2_dev)) {
+            ret = regulator_disable(npm1300_buck2_dev);
+         }
+         if (ret < 0) {
+            LOG_WRN("NPM1300 disable buck2 failed, %d (%s)!", ret, strerror(-ret));
+         } else {
+            LOG_INF("NPM1300 disabled buck2.");
+         }
       }
+#ifdef CONFIG_MFD_NPM1300_BUCK2_LED
+      if (!ret) {
+         ui_led_op(LED_BUCK2, LED_CLEAR);
+      }
+#endif
    }
 
    return ret;
 }
+#endif /* regulator_always_on */
+
 #else /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay) */
 #undef CONFIG_REGULATOR_NPM1300
 #undef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
@@ -662,9 +703,10 @@ static const struct device *npm1300_mfd_dev = DEVICE_DT_GET(DT_INST(0, nordic_np
 
 static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
 {
-#ifndef CONFIG_REGULATOR_NPM1300
+#ifndef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
    (void)switch_regulator;
-#endif
+#endif /* !CONFIG_MFD_NPM1300_BUCK2_WITH_USB */
+
    int ret = 0;
    uint8_t status = 0;
 
@@ -682,15 +724,30 @@ static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
       if (usb) {
          *usb = status;
       }
-#ifdef CONFIG_REGULATOR_NPM1300
+#ifdef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
       if (switch_regulator) {
          npm1300_buck2_enable(status);
       }
-#endif
+#endif /* CONFIG_MFD_NPM1300_BUCK2_WITH_USB */
    }
 
    return ret;
 }
+
+#ifdef MFD_NPM1300_BUCK2_WITH_USB_INT
+
+static void npm1300_event_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
+{
+   if (pins & BIT(NPM1300_EVENT_VBUS_DETECTED)) {
+      LOG_INF("PM Vbus connected");
+      npm1300_buck2_enable(true);
+   } else if (pins & BIT(NPM1300_EVENT_VBUS_REMOVED)) {
+      LOG_INF("PM Vbus removed");
+      npm1300_buck2_enable(false);
+   }
+}
+
+#endif /* MFD_NPM1300_BUCK2_WITH_USB_INT */
 
 static int npm1300_mfd_init(void)
 {
@@ -700,6 +757,26 @@ static int npm1300_mfd_init(void)
       LOG_WRN("NPM1300 mfd not ready!");
       return -ENOTSUP;
    }
+#ifdef REGULATOR_NODE
+   if (npm1300_buck2_enabled()) {
+#ifdef CONFIG_MFD_NPM1300_BUCK2_LED
+      ui_led_op(LED_BUCK2, LED_SET);
+#endif
+   }
+#endif /* REGULATOR_NODE */
+
+#ifdef MFD_NPM1300_BUCK2_WITH_USB_INT
+   static struct gpio_callback event_cb;
+
+   gpio_init_callback(&event_cb, npm1300_event_callback,
+                      BIT(NPM1300_EVENT_VBUS_DETECTED) |
+                          BIT(NPM1300_EVENT_VBUS_REMOVED));
+
+   ret = mfd_npm1300_add_callback(npm1300_mfd_dev, &event_cb);
+   if (ret) {
+      LOG_WRN("NPM1300 mfd set callback failed %d (%s)!", ret, strerror(-ret));
+   }
+#endif /* MFD_NPM1300_BUCK2_WITH_USB_INT */
 
 #ifdef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
    ret = npm1300_mfd_detect_usb(NULL, true);
@@ -1016,6 +1093,11 @@ static int power_manager_apply(void)
 #ifdef CONFIG_SUSPEND_3V3
       power_manager_3v3(!suspend);
 #endif
+#ifndef MFD_NPM1300_BUCK2_WITH_USB_INT
+#ifdef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
+      npm1300_mfd_detect_usb(NULL, true);
+#endif /* CONFIG_MFD_NPM1300_BUCK2_WITH_USB */
+#endif /* MFD_NPM1300_BUCK2_WITH_USB_INT */
    }
    return 0;
 }
@@ -1295,7 +1377,7 @@ static int sh_cmd_battery(const char *parameter)
 
 static int sh_cmd_battery_forecast_reset(const char *parameter)
 {
-   (void) parameter;
+   (void)parameter;
    int64_t now = 0;
 
    k_mutex_lock(&pm_mutex, K_FOREVER);
