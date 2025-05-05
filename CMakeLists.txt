@@ -11,7 +11,7 @@
 # SPDX-License-Identifier: EPL-2.0
 #
 
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.29.0)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 
@@ -127,7 +127,7 @@ if (COPY_PREBUILDS_FULL)
    if (EXISTS "${CMAKE_BINARY_DIR}/zephyr/merged.hex")
       file(COPY_FILE ${CMAKE_BINARY_DIR}/zephyr/merged.hex ${CMAKE_BINARY_DIR}/../prebuild/${BOARD}_full.hex)
    else()
-      message(NOTICE "missing ${CMAKE_BINARY_DIR}/zephyr/merged.hex")
+      message(FATAL_ERROR "missing ${CMAKE_BINARY_DIR}/zephyr/merged.hex")
    endif()
 endif()
 
@@ -141,12 +141,12 @@ if (COPY_PREBUILDS_UPDATE)
    if (EXISTS "${CMAKE_BINARY_DIR}/zephyr/app_update.bin")
       file(COPY_FILE ${CMAKE_BINARY_DIR}/zephyr/app_update.bin ${CMAKE_BINARY_DIR}/../prebuild/${BOARD}_app_update.bin)
    else()
-      message(NOTICE "missing ${CMAKE_BINARY_DIR}/zephyr/app_update.bin")
+      message(FATAL_ERROR "missing ${CMAKE_BINARY_DIR}/zephyr/app_update.bin")
    endif()
    if (EXISTS "${CMAKE_BINARY_DIR}/zephyr/app_signed.hex")
-      file(COPY_FILE ${CMAKE_BINARY_DIR}/zephyr/app_signed.hex ${CMAKE_BINARY_DIR}/../prebuild/${BOARD}_app_signed.hex)
+      file(COPY_FILE ${CMAKE_BINARY_DIR}/zephyr/app_signed.hex ${CMAKE_BINARY_DIR}/../prebuild/${BOARD}_app_update.hex)
    else()
-      message(NOTICE "missing ${CMAKE_BINARY_DIR}/zephyr/app_signed.hex")
+      message(FATAL_ERROR "missing ${CMAKE_BINARY_DIR}/zephyr/app_signed.hex")
    endif()
 endif()
 

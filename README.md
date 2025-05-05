@@ -4,7 +4,7 @@
 
 ## Reliable - Efficient - Encrypted
 
-Version 0.12.0 - April 2025
+Version 0.12.0 - May 2025
 
 This [zephyr](https://www.zephyrproject.org/) client demonstrates to use coaps ([CoAP](https://tools.ietf.org/html/rfc7252) over [DTLS 1.2](https://tools.ietf.org/html/rfc6347)) with the [Eclipse/TinyDtls Library](https://github.com/eclipse/tinydtls). In combination with [Eclipse/Californium](https://github.com/eclipse/californium) as Cloud-Server, it enables a device to use [DTLS 1.2 Connection ID](https://tools.ietf.org/html/rfc9146), which obsolete the commonly used frequently DTLS handshakes and eliminates that expensive overhead.
 Reducing the messages exchange mostly down to two ip-messages (one request, one response), it enables your device for
@@ -62,10 +62,11 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160), [nRF9161](
 
 See [extras/README](./extras/README.md) for more information.
 
-The demo works with [ncs-2.9.1](https://github.com/nrfconnect/sdk-nrf/tree/v2.9.1) or [ncs-2.6.4](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.4). Use either the [ncs_2_9_x](https://github.com/boaks/zephyr-coaps-client/tree/ncs_2_9_x) or the [ncs_2_6_x](https://github.com/boaks/zephyr-coaps-client/tree/ncs_2_6_x) branch to build the clients.
+The demo works with [ncs-2.9.1](https://github.com/nrfconnect/sdk-nrf/tree/v2.9.1). 
+If [ncs-2.6.4](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.4) is required, you may use the [ncs_2_6_x](https://github.com/boaks/zephyr-coaps-client/tree/ncs_2_6_x) branch to build the clients, but the future development will be for v2.9.1 or newer.
                                              
 Neither `NCS 2.7.0` nor `NCS 2.8.0` are supported.
-
+ 
 To benefit from the newer modem features, please consider to use the modem firmware [1.3.7](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.7.zip) for `nRF9160` based device. See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
 For `nRF9161` and `nRF9151` devices use the modem firmware [2.0.2](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/sip/nrf91x1-sip/nrf91x1-lte-modem-firmware/mfw_nrf91x1_2.0.2.zip) for that. 
@@ -158,35 +159,16 @@ In order to use this demo with a `Conexio Stratus Pro nRF9161 or nRF9151`, you n
 
 **Note:** the `Conexio Stratus Pro` uses 1.8V VDD and requires the Jlink to support 1.8V as well. Not all Jlinks supporting that, ensure you get a right one! If the `nRF9160-DK` is used, ensure you select 1.8V for VDD-IO (SW9 on the DK).
 
-## Required HW-Tools for nRF9160-DK
+## Required HW-Tools for nRF9160-DK, nRF9161-DK or nRF9151-DK
 
-In order to use this demo with a `nRF9160-DK`, you need:
+In order to use this demo with a `nRF9160-DK`, `nRF9161-DK`, or `nRF9151-DK`, you need:
 
-- a `nRF9160-DK` (maybe better two ;-)).
+- a `nRF9160-DK`, `nRF9161-DK`, or `nRF9151-DK` (maybe better two ;-)).
 - the `nRF9160-DK` is usually shipped with a SIM card. Check, if that covers your [area/country](https://www.nordicsemi.com/-/media/Software-and-other-downloads/3rd-party/iBasis-simplified-coverage-map-for-web.pdf). If not, you need a SIM card for your area/country. (Sometimes the `nRF9160-DK` is shipped with an expired SIM card. Then you will need also an other one.)
-- the `nRF9160-DK` comes with a internal debug probe to flash the device. No additional equipment is required.
+- the `nRF9151-DK` and `nRF9161-DK` is usually shipped with a Onomondo SIM card and provides a 30 days test free of charge. Check, if that covers your [area/country](https://onomondo.com/product/coverage/). If not, or you need connectivity for longer, you need a SIM card for your area/country or a subscription from Onomondo.
+- the `nRF9160-DK`, `nRF9161-DK`, and `nRF9151-DK` comes with a internal debug probe to flash the device. No additional equipment is required.
 
-**Note:** the `nRF9160-DK` is a great tool to develop apps for the `nRF9160` on your desk. For the "wild", a `Thingy:91/X`, a `nRF9160/51 feather` or `Conexio Stratus Pro nRF9161/51` a  does a better job.
-
-## Required HW-Tools for nRF9161-DK
-
-In order to use this demo with a `nRF9161-DK`, you need:
-
-- a `nRF9161-DK` (maybe better two ;-)).
-- the `nRF9161-DK` is usually shipped with a Onomondo SIM card and provides a 30 days test free of charge. Check, if that covers your [area/country](https://onomondo.com/product/coverage/). If not, or you need connectivity for longer, you need a SIM card for your area/country or a subscription from Onomondo.
-- the `nRF9161-DK` comes with a internal debug probe to flash the device. No additional equipment is required.   
-
-**Note:** the `nRF9161-DK` is a great tool to develop apps for the `nRF9161` on your desk.  For the "wild", a `Thingy:91/X`, a `nRF9160/51 feather` or `Conexio Stratus Pro nRF9161/51` a  does a better job.
-
-## Required HW-Tools for nRF9151-DK
-
-In order to use this demo with a `nRF9151-DK`, you need:
-
-- a `nRF9151-DK` (maybe better two ;-)).
-- the `nRF9151-DK` is usually shipped with a Onomondo SIM card and provides a 30 days test free of charge. Check, if that covers your [area/country](https://onomondo.com/product/coverage/). If not, or you need connectivity for longer, you need a SIM card for your area/country or a subscription from Onomondo.
-- the `nRF9151-DK` comes with a internal debug probe to flash the device. No additional equipment is required.   
-
-**Note:** the `nRF9151-DK` is a great tool to develop apps for the `nRF9151` on your desk.  For the "wild", a `Thingy:91/X`, a `nRF9160/51 feather` or `Conexio Stratus Pro nRF9161/51` a  does a better job.
+**Note:** the `nRF9160-DK`, `nRF9161-DK`, or `nRF9151-DK` is a great tool to develop apps for the `nRF9160/61/51` on your desk. For the "wild", a `Thingy:91/X`, a `nRF9160/51 feather` or a `Conexio Stratus Pro nRF9161/51` does a better job.
 
 ## Run It - Fast Track
 

@@ -13,7 +13,17 @@ sudo udevadm control --reload-rules
 
 Please unplug and plug the device again.
 
-## CP210x - USB connector for nRF9160 feather 
+## nRF-USB - USB connector for most Nordic devices
+
+[nrf-udev_1.0.1-all.deb](https://github.com/NordicSemiconductor/nrf-udev/releases)
+
+Download the `.deb` and install it with
+
+```
+sudo apt install ./nrf-udev_1.0.1-all.deb
+```
+
+## CP210x - USB connector for nRF9160 feather & Conexio Stratus Pro
 
 [50-cp210x.rules](./50-cp210x.rules) 
 
@@ -24,23 +34,4 @@ Please unplug and plug the device again.
 ## CMSIS-DAP - USB Raspberry Pi Debug Probe (nRF9161/51 feather)
 
 [50-raspi-probe.rules](./50-raspi-probe.rules)
-
-## Use CMSIS-DAP with pyocd
-
-To use CMSIS-DAP to flash a device, please adjust first the permissions by copying the rules files as described above.
-
-To flash the application, you may either use `west` and `pyocd` as runner or `pyocd` directly.
-
-```
-west flash --runner pyocd
-```
-
-or
- 
-```
-# application
-pyocd load -t nrf91 <application.hex>
-# modem firmware
-pyocd cmd -t nrf91 -c 'nrf91-update-modem-fw -f mfw_nrf91x1_2.0.2.zip'# application
-```
 
