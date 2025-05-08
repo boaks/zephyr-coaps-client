@@ -2400,6 +2400,13 @@ static int sh_cmd_send_result(const char *parameter)
    return 0;
 }
 
+static int sh_cmd_send_alert(const char *parameter)
+{
+   LOG_INF(">> send alert");
+   dtls_cmd_trigger("alert", false, 3);
+   return 0;
+}
+
 static int sh_cmd_send_interval(const char *parameter)
 {
    int res = 0;
@@ -2747,6 +2754,7 @@ static void sh_cmd_dtls_help(void)
 
 SH_CMD(send, NULL, "send message.", sh_cmd_send, sh_cmd_send_help, 0);
 SH_CMD(sendresult, NULL, "send result message.", sh_cmd_send_result, NULL, 0);
+SH_CMD(sendalert, NULL, "send alert message.", sh_cmd_send_alert, NULL, 0);
 SH_CMD(interval, NULL, "send interval.", sh_cmd_send_interval, sh_cmd_send_interval_help, 0);
 SH_CMD(timeout, NULL, "initial coap timeout.", sh_cmd_coap_timeout, sh_cmd_send_coap_timeout_help, 0);
 SH_CMD(ewoc, NULL, "edrx wakeup on connect timeout.", sh_cmd_edrx_wakeup_on_connect_timeout, sh_cmd_edrx_wakeup_on_connect_timeout_help, 0);

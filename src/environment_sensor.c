@@ -11,11 +11,15 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include <stdio.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
 #include "environment_sensor.h"
+#include "io_job_queue.h"
+#include "parse.h"
+#include "sh_cmd.h"
 
 #if defined(CONFIG_ENVIRONMENT_SENSOR)
 
@@ -317,6 +321,11 @@ int environment_sensor_fetch(bool force)
             }
             if (dev) {
                err = sensor_sample_fetch_chan(dev, SENSOR_CHAN_ALL);
+#ifdef CONFIG_ENVIRONMENT_PRESSURE_DELTA
+               if (err == -EAGAIN) {
+                  err = 0;
+               }
+#endif /* CONFIG_ENVIRONMENT_PRESSURE_DELTA  */
                if (err) {
                   break;
                }
@@ -335,6 +344,76 @@ static int environment_sensor_init(const struct device *dev)
    }
    return 0;
 }
+
+#if CONFIG_ENVIRONMENT_PRESSURE_DELTA > 0
+
+static void environment_monitor_fn(struct k_work *work);
+
+static K_WORK_DELAYABLE_DEFINE(environment_monitor_work, environment_monitor_fn);
+
+static int environment_monitor_interval = CONFIG_ENVIRONMENT_PRESSURE_INTERVAL_MS;
+static int environment_monitor_threshold = CONFIG_ENVIRONMENT_PRESSURE_DELTA;
+
+// 10 min
+#define SUPPRESS_SECONDS (60 * 10)
+
+static void environment_monitor_fn(struct k_work *work)
+{
+   static int loop = 0;
+   static double last = 0.0;
+   static int suppress = 0;
+
+   double threshold = environment_monitor_threshold / 1000.0;
+   struct sensor_value data = {0, 0};
+#if defined(CONFIG_BME680)
+   enum sensor_channel channel = SENSOR_CHAN_ALL;
+#else
+   enum sensor_channel channel = pressure_sensor.channel;
+#endif
+
+   int err = sensor_sample_fetch_chan(pressure_sensor.dev, channel);
+
+   if (err) {
+      if (pressure_sensor.dev) {
+         LOG_INF("Can't fetch channel %d from %s", pressure_sensor.channel, pressure_sensor.dev->name);
+      }
+   } else {
+      err = sensor_channel_get(pressure_sensor.dev, pressure_sensor.channel, &data);
+      if (err) {
+         if (pressure_sensor.dev) {
+            LOG_INF("Can't get channel %d from %s", pressure_sensor.channel, pressure_sensor.dev->name);
+         }
+      } else {
+         double value = sensor_value_to_double(&data);
+         double delta = loop ? value - last : 0.0;
+
+         last = value;
+         loop++;
+         if (delta < -threshold || delta > threshold) {
+            LOG_WRN("P: %3.3f (d %3.3f) alert!", value, delta);
+            loop = 0;
+            if (!suppress) {
+               sh_cmd_execute("sendalert");
+               sh_cmd_append("led red blinking", K_MSEC(10000));
+               sh_cmd_append("led red off", K_MSEC(10000));
+            }
+            suppress = (SUPPRESS_SECONDS * 100) / environment_monitor_interval;
+         } else if (loop > 10) {
+            if (suppress > 0) {
+               LOG_INF("P: %3.3f (d %3.3f) (suppress %d s)", value, delta, (suppress * environment_monitor_interval) / 100);
+               --suppress;
+            } else {
+               LOG_INF("P: %3.3f (d %3.3f)", value, delta);
+            }
+            loop = 1;
+         }
+      }
+   }
+   if (environment_monitor_interval) {
+      work_reschedule_for_io_queue(&environment_monitor_work, K_MSEC(environment_monitor_interval));
+   }
+}
+#endif /* CONFIG_ENVIRONMENT_PRESSURE_DELTA */
 
 int environment_init(void)
 {
@@ -361,6 +440,10 @@ int environment_init(void)
    }
    environment_sensor_fetch(true);
    environment_init_history();
+
+#if CONFIG_ENVIRONMENT_PRESSURE_DELTA > 0
+   work_reschedule_for_io_queue(&environment_monitor_work, K_MSEC(500));
+#endif /* CONFIG_ENVIRONMENT_PRESSURE_DELTA */
 
    return 0;
 }
@@ -442,6 +525,93 @@ const char *environment_get_iaq_description(int32_t value)
    (void)value;
    return NULL;
 }
+
+#ifdef CONFIG_SH_CMD
+
+#if CONFIG_ENVIRONMENT_PRESSURE_DELTA > 0
+
+static int sh_cmd_env_monitor_interval(const char *parameter)
+{
+   int res = 0;
+   int interval = environment_monitor_interval;
+   const char *cur = parameter;
+   char value[10];
+
+   memset(value, 0, sizeof(value));
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+
+   if (value[0]) {
+      res = sscanf(value, "%u", &interval);
+      if (res == 1) {
+         if (interval != environment_monitor_interval) {
+            LOG_INF("set environment monitor interval %u ms", interval);
+            environment_monitor_interval = interval;
+            if (interval) {
+               work_reschedule_for_io_queue(&environment_monitor_work, K_MSEC(500));
+            } else {
+               k_work_cancel_delayable(&environment_monitor_work);
+            }
+         } else {
+            LOG_INF("environment monitor interval %u ms already active", interval);
+         }
+         res = 0;
+      } else {
+         res = -EINVAL;
+      }
+   } else {
+      LOG_INF("environment monitor interval %u ms", interval);
+   }
+   return res;
+}
+
+static void sh_cmd_env_monitor_interval_help(void)
+{
+   LOG_INF("> help envmonint:");
+   LOG_INF("  envmonint        : read environment monitor interval.");
+   LOG_INF("  envmonint <time> : set environment monitor interval in milliseconds. 0 disable.");
+}
+
+static int sh_cmd_env_monitor_threshold(const char *parameter)
+{
+   int res = 0;
+   int threshold = environment_monitor_threshold;
+   const char *cur = parameter;
+   char value[10];
+
+   memset(value, 0, sizeof(value));
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+
+   if (value[0]) {
+      res = sscanf(value, "%u", &threshold);
+      if (res == 1) {
+         if (threshold != environment_monitor_threshold) {
+            LOG_INF("set environment monitor threshold %u", threshold);
+            environment_monitor_threshold = threshold;
+         } else {
+            LOG_INF("environment monitor threshold %u already active", threshold);
+         }
+         res = 0;
+      } else {
+         res = -EINVAL;
+      }
+   } else {
+      LOG_INF("environment monitor threshold %u", threshold);
+   }
+   return res;
+}
+
+static void sh_cmd_env_monitor_threshold_help(void)
+{
+   LOG_INF("> help envmonthresh:");
+   LOG_INF("  envmonthresh             : read environment monitor threshold.");
+   LOG_INF("  envmonthresh <threshold> : set environment monitor threshold");
+}
+
+SH_CMD(envmonint, NULL, "environment monitor interval.", sh_cmd_env_monitor_interval, sh_cmd_env_monitor_interval_help, 0);
+SH_CMD(envmonthresh, NULL, "environment monitor threshold.", sh_cmd_env_monitor_threshold, sh_cmd_env_monitor_threshold_help, 0);
+#endif /* CONFIG_ENVIRONMENT_PRESSURE_DELTA */
+
+#endif
 
 #endif /* CONFIG_BME680_BSEC */
 #endif /* CONFIG_ENVIRONMENT_SENSOR */
