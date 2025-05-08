@@ -45,7 +45,7 @@ static K_THREAD_STACK_DEFINE(environment_stack, CONFIG_BME680_BSEC_THREAD_STACK_
 
 static struct k_thread environment_thread;
 
-static const struct i2c_dt_spec environment_i2c_spec =  I2C_DT_SPEC_GET(DT_ALIAS(environment_sensor));
+static const struct i2c_dt_spec environment_i2c_spec = I2C_DT_SPEC_GET(DT_ALIAS(environment_sensor));
 
 /* Structure used to maintain internal variables used by the library. */
 static struct environment_values {
@@ -297,7 +297,7 @@ static const struct environment_sensor *all_sensors[] = {
     &pressure_sensor,
     &gas_sensor};
 
-static const unsigned int all_sensors_size = sizeof(all_sensors) / sizeof(void *);
+static const unsigned int all_sensors_size = ARRAY_SIZE(all_sensors);
 
 int environment_sensor_fetch(bool force)
 {
@@ -336,17 +336,21 @@ static int environment_sensor_init(const struct device *dev)
    return 0;
 }
 
- 
-
 int environment_init(void)
 {
    int err = 0;
 #ifdef CONFIG_BME680
    LOG_INF("BME680 initialize, %ds minimum interval", CONFIG_SAMPLE_INTERVAL_S);
+#elif (defined CONFIG_BME280)
+   LOG_INF("BME280 initialize, %ds minimum interval", CONFIG_SAMPLE_INTERVAL_S);
 #elif (defined CONFIG_DS18B20)
    LOG_INF("DS18B20 initialize, %ds minimum interval", CONFIG_SAMPLE_INTERVAL_S);
-#else
+#elif (defined CONFIG_SHT3X)
    LOG_INF("SHT3x initialize, %ds minimum interval", CONFIG_SAMPLE_INTERVAL_S);
+#elif (defined CONFIG_DPS310)
+   LOG_INF("DPS310 initialize, %ds minimum interval", CONFIG_SAMPLE_INTERVAL_S);
+#else
+   LOG_INF("Env-Sensor initialize, %ds minimum interval", CONFIG_SAMPLE_INTERVAL_S);
 #endif
 
    for (int index = 0; index < all_sensors_size; ++index) {
@@ -401,7 +405,7 @@ int environment_get_temperature(double *value)
 {
    int err = environment_sensor_read(&temperature_sensor, value, NULL, NULL);
    if (!err) {
-      *value -= (double) temperature_offset; /* compensate self heating */
+      *value -= (double)temperature_offset; /* compensate self heating */
    }
    return err;
 }

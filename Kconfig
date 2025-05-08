@@ -863,8 +863,12 @@ endchoice # BME680_BSEC_SAMPLE_MODE
 endif # BME680_BSEC
 
 config ENVIRONMENT_SENSOR
-    bool
-    default y if BME680_BSEC || BME680 || SHT3XD || DS18B20 || BME280
+    bool	
+    default y if "$(dt_alias_enabled,temperature-sensor)"
+    default y if "$(dt_alias_enabled,pressure-sensor)"
+    default y if "$(dt_alias_enabled,humidity-sensor)"
+    default y if "$(dt_alias_enabled,gas-sensor)"
+    default y if "$(dt_alias_enabled,environment-sensor)"
 
 if ENVIRONMENT_SENSOR
 

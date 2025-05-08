@@ -1,0 +1,43 @@
+/*
+ * Copyright (c) 2025 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+
+/*
+ * Usage: 
+ *
+ * west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- \
+ *    -DOVERLAY_CONFIG="dps310-prj.conf" -DDTC_OVERLAY_FILE="boards/nrf9160dk_nrf9160_ns.overlay;dps310.overlay" 
+ */ 
+
+/ {
+	/* Map the devices to the aliases of the application. */ 
+	aliases {	
+
+		/* alias for sensor with SENSOR_CHAN_AMBIENT_TEMP channel */
+		temperature-sensor = &dps310;
+		/* alias for sensor with SENSOR_CHAN_PRESS channel */
+		pressure-sensor = &dps310;
+	};
+	
+};
+
+&sensor_i2c {
+	status = "okay";
+
+	dps310: dps310@77 { 
+		compatible = "infineon,dps310";
+		reg = <0x77>;
+		label = "DPS310";
+		status = "okay";
+	};
+};
+
