@@ -330,10 +330,72 @@ static const struct battery_profile *pm_get_battery_profile(void)
    return battery_profiles[profile];
 }
 
-/*
- * mimimum uptime to calculate forecast after running from battery.
- */
-static int64_t min_forecast_uptime = 0;
+#define LINREG_SIZE 5
+
+static int64_t calc_lr_times[LINREG_SIZE];
+static uint16_t calc_lr_values[LINREG_SIZE];
+static uint16_t calc_lr_count = 0;
+static uint16_t calc_lr_index = 0;
+
+static void reset_linear_regresion(void)
+{
+   calc_lr_count = 0;
+}
+
+static uint16_t calculate_linear_regresion(int64_t *now, uint16_t value)
+{
+   int64_t seconds = *now / 1000;
+
+   if (!calc_lr_count) {
+      calc_lr_index = 0;
+   }
+
+   calc_lr_times[calc_lr_index] = seconds;
+   calc_lr_values[calc_lr_index] = value;
+   ++calc_lr_index;
+
+   if (!calc_lr_count) {
+      ++calc_lr_count;
+   } else {
+      double slope = 0.0;
+      double res = 0.0;
+
+      uint32_t sumT = 0;
+      uint32_t sumV = 0;
+      int64_t sumVT = 0;
+      int64_t sumTT = 0;
+
+      if (calc_lr_count < calc_lr_index) {
+         calc_lr_count = calc_lr_index;
+      }
+
+      if (LINREG_SIZE == calc_lr_index) {
+         calc_lr_index = 0;
+      }
+
+      for (int index = 0; index < calc_lr_count; ++index) {
+         uint32_t rT = (uint32_t)(seconds - calc_lr_times[index]);
+         sumT += rT;
+         sumV += calc_lr_values[index];
+         sumVT += rT * calc_lr_values[index];
+         sumTT += rT * rT;
+      }
+
+      slope = ((calc_lr_count * sumVT) - ((int64_t)sumV * sumT));
+      slope /= ((calc_lr_count * sumTT) - ((int64_t)sumT * sumT));
+      res = (sumV / calc_lr_count) - slope * (sumT / calc_lr_count);
+
+      LOG_DBG("=======================\n");
+      LOG_DBG("Sum: %d %u %u\n", sumT, sumV, calc_lr_count);
+      LOG_DBG("Avg: %d %u\n", sumT / calc_lr_count, sumV / calc_lr_count);
+      LOG_DBG("Res: %f => %f\n", slope, res);
+      LOG_DBG("=======================\n");
+      value = (uint16_t)res;
+   }
+   return value;
+}
+
+static int64_t starting_battery_level_uptime = 0;
 
 /*
  * first_battery_level is set, when the first complete
@@ -363,11 +425,14 @@ static int64_t last_battery_left_time = 0;
 
 /*
  * Minimum battery level delta for new forecast calculation.
- * Value in 0.01%
+ * Value in 2%%
  */
 #define MINIMUM_BATTERY_LEVEL_DELTA 20
+#define CHARGNING_BATTERY_LEVEL_DELTA -200
 
-static int16_t calculate_left_time(const char *tag, int64_t *now, uint16_t battery_level, int64_t *past, uint16_t battery_level_past, int64_t *time)
+#define ROUND_DAYS(M) (int16_t)(((M) + ((MSEC_PER_DAY) / 2)) / (MSEC_PER_DAY))
+
+static int calculate_left_time(const char *tag, int64_t *now, uint16_t battery_level, int64_t *past, uint16_t battery_level_past, int64_t *time)
 {
    int diff = battery_level_past - battery_level;
    if (diff == 0) {
@@ -376,90 +441,110 @@ static int16_t calculate_left_time(const char *tag, int64_t *now, uint16_t batte
    } else {
       int64_t passed_time = *now - *past;
       int64_t left_time = (passed_time * battery_level) / diff;
-      LOG_DBG("%s: left battery %u%% time %lld (%lld days, %lld passed)",
+      LOG_INF("%s: left battery %u%% time %lld (%d days, %d passed)",
               tag, battery_level, left_time,
-              left_time / MSEC_PER_DAY, passed_time / MSEC_PER_DAY);
+              ROUND_DAYS(left_time), ROUND_DAYS(passed_time));
       *time += left_time;
       return 0;
    }
 }
 
-static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_manager_status_t status)
+static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_manager_status_t *status)
 {
    int16_t res = -1;
+   int64_t passed_time = (*now) - last_battery_level_uptime;
+   int32_t delta = ((int32_t)current_battery_level) - battery_level;
 
    if (battery_level == PM_INVALID_INTERNAL_LEVEL) {
+      current_battery_changes = 0;
       LOG_DBG("forecast: not ready.");
-   } else if (status != FROM_BATTERY) {
+   } else if (!status || (*status != FROM_BATTERY && *status != POWER_UNKNOWN)) {
+      current_battery_changes = 0;
       LOG_DBG("forecast: charging.");
+   } else if (current_battery_changes) {
+      if (delta > CHARGNING_BATTERY_LEVEL_DELTA) {
+         res = 0;
+      } else {
+         *status = CHARGING_S;
+         current_battery_level = battery_level;
+         current_battery_changes = 1;
+         LOG_DBG("forecast: charging?");
+      }
    } else {
       res = 0;
    }
    if (res < 0) {
-      // fall through, reset
-      current_battery_changes = 0;
-      first_battery_level = PM_INVALID_INTERNAL_LEVEL;
-      last_battery_level = PM_INVALID_INTERNAL_LEVEL;
-      current_battery_level = PM_INVALID_INTERNAL_LEVEL;
-      // wait 1h after running from battery
-      min_forecast_uptime = *now + MSEC_PER_HOUR;
-      return res;
+      // reset, wait 1h after start running from battery
+      last_battery_level_uptime = *now + MSEC_PER_HOUR;
+      reset_linear_regresion();
+      return -1;
    }
 
-   if (((*now) - min_forecast_uptime) < 0) {
+   if (passed_time < 0) {
       // wait at least 1h after running from battery
       return -1;
-   } else {
-      int64_t passed_time = (*now) - last_battery_level_uptime;
-
-      if ((current_battery_level - battery_level) > MINIMUM_BATTERY_LEVEL_DELTA) {
-         // battery level changed since last forecast
-
-         current_battery_level = battery_level;
-         ++current_battery_changes;
-         if (current_battery_changes == 1) {
-            // initial value;
-            return -1;
-         }
-
-         if (current_battery_changes == 2) {
-            // first battery level change since start
-            LOG_DBG("first battery level change");
-            first_battery_level = battery_level;
-            first_battery_level_uptime = *now;
-            last_battery_level = battery_level;
-            last_battery_level_uptime = *now;
-            return -1;
-         }
-
-         if (passed_time >= MSEC_PER_DAY) {
-            // change after a minium of 24h
-            last_battery_left_time = 0;
-            calculate_left_time("All periods", now, battery_level, &first_battery_level_uptime, first_battery_level, &last_battery_left_time);
-            last_battery_left_time *= 2;
-            calculate_left_time("Last period", now, battery_level, &last_battery_level_uptime, last_battery_level, &last_battery_left_time);
-            last_battery_left_time /= 3;
-            passed_time = 0;
-         } else if (current_battery_changes == 3) {
-            // first full battery-level period
-            last_battery_left_time = 0;
-            calculate_left_time("First period", now, battery_level, &last_battery_level_uptime, last_battery_level, &last_battery_left_time);
-            passed_time = 0;
-         }
-         if (passed_time == 0) {
-            last_battery_level = battery_level;
-            last_battery_level_uptime = *now;
-         }
-      }
-      if (current_battery_changes >= 3) {
-         // after last change
-         passed_time += (MSEC_PER_DAY / 2);
-         int16_t time = (int16_t)((last_battery_left_time - passed_time + MSEC_PER_DAY) / MSEC_PER_DAY);
-         LOG_DBG("battery %u%%, %d left days (passed %d days)", battery_level, time, (int)(passed_time / MSEC_PER_DAY));
-         return time;
-      }
-      return -1;
    }
+
+   if (current_battery_changes > 3 &&
+       (first_battery_level_uptime - starting_battery_level_uptime) < MSEC_PER_DAY &&
+       (last_battery_level_uptime - starting_battery_level_uptime) >= MSEC_PER_DAY) {
+      // clear the first day values
+      // battery has different characteristics after charging
+      first_battery_level = last_battery_level;
+      first_battery_level_uptime = last_battery_level_uptime;
+   }
+
+   if (delta > MINIMUM_BATTERY_LEVEL_DELTA) {
+      // battery level changed since last forecast
+      current_battery_level = battery_level;
+      if (!current_battery_changes) {
+         ++current_battery_changes;
+      }
+      ++current_battery_changes;
+      if (current_battery_changes == 2) {
+         // initial value;
+         starting_battery_level_uptime = *now;
+         return -1;
+      }
+
+      if (current_battery_changes == 3) {
+         // first battery level change since start
+         LOG_DBG("first battery level change");
+         first_battery_level = battery_level;
+         first_battery_level_uptime = *now;
+         last_battery_level = battery_level;
+         last_battery_level_uptime = *now;
+         return -1;
+      }
+
+      res = -1;
+      if (passed_time >= MSEC_PER_DAY) {
+         // change after a minium of 24h
+         last_battery_left_time = 0;
+         calculate_left_time("All periods", now, battery_level, &first_battery_level_uptime, first_battery_level, &last_battery_left_time);
+         last_battery_left_time *= 2;
+         calculate_left_time("Last period", now, battery_level, &last_battery_level_uptime, last_battery_level, &last_battery_left_time);
+         last_battery_left_time /= 3;
+         res = 0;
+      } else if (current_battery_changes == 4) {
+         // first full battery-level period
+         last_battery_left_time = 0;
+         calculate_left_time("First period", now, battery_level, &last_battery_level_uptime, last_battery_level, &last_battery_left_time);
+         res = 0;
+      }
+      if (!res) {
+         last_battery_level = battery_level;
+         last_battery_level_uptime = *now;
+         passed_time = 0;
+      }
+   }
+   if (current_battery_changes >= 4) {
+      // after last change
+      int16_t time = ROUND_DAYS((last_battery_left_time - passed_time));
+      LOG_DBG("battery %u%%, %d left days (passed %d days)", battery_level, time, ROUND_DAYS(passed_time));
+      return time;
+   }
+   return -1;
 }
 
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
@@ -971,7 +1056,7 @@ int power_manager_init(void)
    int rc = -ENOTSUP;
    int64_t now = k_uptime_get();
 
-   calculate_forecast(&now, PM_INVALID_INTERNAL_LEVEL, CHARGING_TRICKLE);
+   calculate_forecast(&now, PM_INVALID_INTERNAL_LEVEL, NULL);
 
    if (device_is_ready(uart_dev)) {
 #ifndef CONFIG_UART_CONSOLE
@@ -1146,10 +1231,11 @@ int power_manager_voltage(uint16_t *voltage)
 
    if (pm_init) {
       uint16_t internal_voltage;
+      int64_t now = k_uptime_get();
       int64_t time;
 
       k_mutex_lock(&pm_mutex, K_FOREVER);
-      time = last_time ? k_uptime_get() - last_time : VOLTAGE_MIN_INTERVAL_MILLIS;
+      time = last_time ? now - last_time : VOLTAGE_MIN_INTERVAL_MILLIS;
       internal_voltage = last_voltage;
       k_mutex_unlock(&pm_mutex);
 
@@ -1189,6 +1275,7 @@ int power_manager_voltage(uint16_t *voltage)
          }
 #endif
          if (!rc) {
+            internal_voltage = calculate_linear_regresion(&now, internal_voltage);
             k_mutex_lock(&pm_mutex, K_FOREVER);
             last_time = k_uptime_get();
             last_voltage = internal_voltage;
@@ -1237,20 +1324,19 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
       if (!rc) {
          int64_t now = k_uptime_get();
          power_manager_status_t internal_status = POWER_UNKNOWN;
-         power_manager_status_t internal_status_forecast = FROM_BATTERY;
          int16_t days = -1;
          uint16_t internal_level = PM_INVALID_INTERNAL_LEVEL;
 
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
          adp536x_power_manager_read_status(&internal_status);
-         internal_status_forecast = internal_status;
 #endif
 #ifdef CONFIG_NPM1300_CHARGER
          npm1300_power_manager_read_status(&internal_status, NULL, 0);
-         internal_status_forecast = internal_status;
 #endif
          internal_level = transform_curve(internal_voltage, pm_get_battery_profile()->curve);
-         days = calculate_forecast(&now, internal_level, internal_status_forecast);
+
+         days = calculate_forecast(&now, internal_level, &internal_status);
+
          if (internal_level < 25500) {
             internal_level /= 100;
          } else {
@@ -1322,6 +1408,9 @@ int power_manager_status_desc(char *buf, size_t len)
          case CHARGING_V:
             msg = "charging (V)";
             break;
+         case CHARGING_S:
+            msg = "charging";
+            break;
          case CHARGING_COMPLETED:
             msg = "full";
             break;
@@ -1382,7 +1471,7 @@ static int sh_cmd_battery_forecast_reset(const char *parameter)
 
    k_mutex_lock(&pm_mutex, K_FOREVER);
    now = k_uptime_get();
-   calculate_forecast(&now, PM_INVALID_INTERNAL_LEVEL, CHARGING_TRICKLE);
+   calculate_forecast(&now, PM_INVALID_INTERNAL_LEVEL, NULL);
    k_mutex_unlock(&pm_mutex);
 
    return 0;

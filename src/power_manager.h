@@ -14,8 +14,8 @@
 #ifndef POWER_MANAGER_H
 #define POWER_MANAGER_H
 
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <zephyr/sys_clock.h>
 
 typedef enum {
@@ -24,6 +24,7 @@ typedef enum {
    CHARGING_TRICKLE,
    CHARGING_I,
    CHARGING_V,
+   CHARGING_S,
    CHARGING_COMPLETED,
    FROM_EXTERNAL,
 } power_manager_status_t;
@@ -55,6 +56,6 @@ int power_manager_ext(uint16_t *voltage, int16_t *current, uint16_t *power);
 
 int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status_t *status, int16_t *forecast);
 
-int power_manager_status_desc(char* buf, size_t len);
+int power_manager_status_desc(char *buf, size_t len);
 
 #endif /* POWER_MANAGER_H */
