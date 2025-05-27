@@ -781,10 +781,16 @@ static int npm1300_buck2_enable(bool enable)
 static const struct device *npm1300_mfd_dev = DEVICE_DT_GET(DT_INST(0, nordic_npm1300));
 
 #define NPM1300_SYSREG_BASE 0x2
-#define NPM1300_USBCDETECTSTATUS_OFFSET 0x5
+#define NPM1300_SYSREG_OFFSET_USBCDETECTSTATUS 0x5
 
+#define NPM1300_BUCK_BASE 0x4
+#define NPM1300_BUCK_OFFSET_BUCKCTRL0 0x15
+#define NPM1300_BUCK2_PULLDOWN_EN BIT(3)
+
+#ifdef CONFIG_MFD_NPM1300_DISABLE_NTC
 #define NPM1300_CHGR_BASE 0x3
 #define NPM1300_CHGR_OFFSET_DIS_SET 0x06
+#endif /* CONFIG_MFD_NPM1300_DISABLE_NTC */
 
 static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
 {
@@ -800,7 +806,7 @@ static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
       return -ENOTSUP;
    }
 
-   ret = mfd_npm1300_reg_read(npm1300_mfd_dev, NPM1300_SYSREG_BASE, NPM1300_USBCDETECTSTATUS_OFFSET, &status);
+   ret = mfd_npm1300_reg_read(npm1300_mfd_dev, NPM1300_SYSREG_BASE, NPM1300_SYSREG_OFFSET_USBCDETECTSTATUS, &status);
    if (ret < 0) {
       LOG_WRN("NPM1300 read usb status failed, %d (%s)!", ret, strerror(-ret));
       return ret;
@@ -812,6 +818,9 @@ static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
 #ifdef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
       if (switch_regulator) {
          npm1300_buck2_enable(status);
+         status = status ? 0 : NPM1300_BUCK2_PULLDOWN_EN;
+         /* Write to MFD to enable/disable pulldown for BUCK2 */
+         ret = mfd_npm1300_reg_update(npm1300_mfd_dev, NPM1300_BUCK_BASE, NPM1300_BUCK_OFFSET_BUCKCTRL0, status, NPM1300_BUCK2_PULLDOWN_EN);
       }
 #endif /* CONFIG_MFD_NPM1300_BUCK2_WITH_USB */
    }
