@@ -1,0 +1,27 @@
+/*
+ * Copyright (c) 2023 Achim Kraus CloudCoap.net
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http: //www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+
+/*
+ * Usage:
+ *
+ * west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- \
+ *   -DDTC_OVERLAY_FILE="boards/nrf9160dk_nrf9160_ns.overlay;bq25186.overlay"
+ */
+
+
+
+&sensor_i2c {
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+};
+

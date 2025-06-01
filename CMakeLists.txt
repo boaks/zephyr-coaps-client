@@ -37,6 +37,7 @@ target_sources(app PRIVATE
 	src/coap_client.c
 	src/coap_appl_client.c
 	src/expansion_port.c
+	src/bq25186.c
 	)
 
 target_sources_ifdef(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING app PRIVATE src/coap_prov_client.c)
