@@ -858,7 +858,7 @@ static int sh_cmd_led(const char *parameter)
 static void sh_cmd_led_help(void)
 {
    LOG_INF("> help led:");
-   LOG_INF("  led <color> <op> : apply opartion on color LED.");
+   LOG_INF("  led <color> <op> : apply opertion on color LED.");
    LOG_INF("      <color>      : red, blue, green, or all.");
    LOG_INF("              <op> : on, off, blink, or blinking.");
 }
