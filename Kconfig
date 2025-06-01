@@ -315,18 +315,18 @@ config UDP_EDRX_WAKEUP_PORT
 	int "UDP port for wakeup"
 	default 15684
 
-config UDP_EDRX_WAKEUP_TIMEOUT
+config UDP_EDRX_WAKEUP_ON_CONNECT_TIMEOUT
 	int "Wakeup on connect timeout"
-	default 1
+	default 0
 	help
 	  In some networks the data is only received, if it was
 	  send in a eDRX period specific time windows (10s before
-	  the receivers are turned onf). In cases, when the data 
+	  the receivers are turned on). In cases, when the data 
 	  is dropped by the mobile network, the modem still goes
-	  into RRC active mode. This timeout waits on RRC active
-	  to receive data. If no data coudl be received it triggers
-	  a message with "connect". 0 to disable a wakeup optional
-	  RRC active only.
+	  into RRC active mode. This timeout waits in RRC active
+	  to receive data. If no data could be received it triggers
+	  a message with "connect". 0 to disable a wakeup on RRC
+	  active only.
 
 endif
 

@@ -204,6 +204,8 @@ static K_WORK_DEFINE(modem_unconnected_callback_work, modem_state_change_callbac
 static K_WORK_DEFINE(modem_low_voltage_callback_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_power_management_resume_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_power_management_suspend_work, modem_state_change_callback_work_fn);
+static K_WORK_DEFINE(modem_psm_active_work, modem_state_change_callback_work_fn);
+static K_WORK_DEFINE(modem_psm_inactive_work, modem_state_change_callback_work_fn);
 
 static K_WORK_DELAYABLE_DEFINE(modem_ready_work, modem_ready_work_fn);
 
@@ -249,6 +251,10 @@ static void modem_state_change_callback_work_fn(struct k_work *work)
          callback(LTE_STATE_SLEEPING, false);
       } else if (work == &modem_power_management_suspend_work) {
          callback(LTE_STATE_SLEEPING, true);
+      } else if (work == &modem_psm_active_work) {
+         callback(LTE_STATE_PSM_ACTIVE, true);
+      } else if (work == &modem_psm_inactive_work) {
+         callback(LTE_STATE_PSM_ACTIVE, false);
       }
    }
 }
@@ -376,8 +382,18 @@ static void lte_set_edrx_status(const struct lte_lc_edrx_cfg *edrx)
 #if defined(CONFIG_LTE_LC_PSM_MODULE)
 static void lte_set_psm_status(const struct lte_lc_psm_cfg *psm)
 {
+   bool active = 0 <= psm->active_time;
+
    k_mutex_lock(&lte_mutex, K_FOREVER);
    psm_status = *psm;
+   if (network_info.psm_active != (active ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF)) {
+      network_info.psm_active = active ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
+      if (active) {
+         work_submit_to_io_queue(&modem_psm_active_work);
+      } else {
+         work_submit_to_io_queue(&modem_psm_inactive_work);
+      }
+   }
    k_mutex_unlock(&lte_mutex);
 }
 #endif /* CONFIG_LTE_LC_PSM_MODULE */
@@ -1243,6 +1259,8 @@ static void modem_cancel_all_job(void)
    k_work_cancel(&modem_unconnected_callback_work);
    k_work_cancel(&modem_power_management_resume_work);
    k_work_cancel(&modem_power_management_suspend_work);
+   k_work_cancel(&modem_psm_active_work);
+   k_work_cancel(&modem_psm_inactive_work);
    k_work_cancel_delayable(&modem_ready_work);
 }
 

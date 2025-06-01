@@ -66,6 +66,7 @@ typedef struct lte_network_info {
    uint16_t rrc_active:2;
    uint16_t sleeping:2;
    uint16_t plmn_lock:2;
+   uint16_t psm_active:2;
    uint16_t rate_limit;
    uint32_t rate_limit_period;
    uint32_t rate_limit_time;
@@ -116,7 +117,8 @@ enum lte_state_type {
 	LTE_STATE_READY_1S,
 	LTE_STATE_CONNECTED,
 	LTE_STATE_SLEEPING,
-	LTE_STATE_LOW_VOLTAGE
+	LTE_STATE_LOW_VOLTAGE,
+	LTE_STATE_PSM_ACTIVE,
 };
 
 enum rai_mode {

@@ -80,6 +80,7 @@ typedef enum {
    WAIT_RESPONSE,
    SEND_ACK,
    WAIT_SUSPEND,
+   INCOMING_CONNECT,
 } request_state_t;
 
 static const char *get_request_state_description(request_state_t request_state)
@@ -97,6 +98,8 @@ static const char *get_request_state_description(request_state_t request_state)
          return "SEND_ACK";
       case WAIT_SUSPEND:
          return "WAIT_SUSPEND";
+      case INCOMING_CONNECT:
+         return "INCOMING_CONNECT";
    }
    return "UNKNOWN";
 }
@@ -152,22 +155,22 @@ typedef struct dtls_app_data_t {
 #define LTE_CONNECTED 2
 #define LTE_SLEEPING 3
 #define LTE_READY_1S 4
-#define LTE_LOW_VOLTAGE 5
-#define LTE_CONNECTED_SEND 6
-#define LTE_SOCKET_ERROR 7
-#define PM_PREVENT_SUSPEND 8
-#define PM_SUSPENDED 9
-#define APN_RATE_LIMIT 10
-#define APN_RATE_LIMIT_RESTART 11
-#define SETUP_MODE 12
+#define LTE_PSM_ACTIVE 5
+#define LTE_LOW_VOLTAGE 6
+#define LTE_CONNECTED_SEND 7
+#define LTE_SOCKET_ERROR 8
+#define PM_PREVENT_SUSPEND 9
+#define PM_SUSPENDED 10
+#define APN_RATE_LIMIT 11
+#define APN_RATE_LIMIT_RESTART 12
+#define SETUP_MODE 13
 
-#define APPL_READY 13
-#define APPL_INITIAL_SUCCESS 14
+#define APPL_READY 14
+#define APPL_INITIAL_SUCCESS 15
 
-#define TRIGGER_SEND 15
-#define TRIGGER_DURATION 16
-#define TRIGGER_RECV 17
-#define TRIGGER_WAKEUP 18
+#define TRIGGER_SEND 16
+#define TRIGGER_DURATION 17
+#define TRIGGER_RECV 18
 
 static atomic_t general_states = ATOMIC_INIT(0);
 
@@ -218,6 +221,10 @@ unsigned int dtls_handshakes = 0;
 #endif
 
 static atomic_t send_interval = ATOMIC_INIT(CONFIG_COAP_SEND_INTERVAL);
+
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+volatile uint32_t edrx_wakeup_on_connect_timeout = CONFIG_UDP_EDRX_WAKEUP_ON_CONNECT_TIMEOUT;
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
 
 volatile uint32_t coap_timeout = COAP_ACK_TIMEOUT;
 
@@ -276,8 +283,8 @@ static void dtls_log_state(void)
    if (atomic_test_bit(&general_states, LTE_SOCKET_ERROR)) {
       index += snprintf(&buf[index], sizeof(buf) - index, ", socket error");
    }
-   if (atomic_test_bit(&general_states, LTE_SOCKET_ERROR)) {
-      index += snprintf(&buf[index], sizeof(buf) - index, ", socket error");
+   if (atomic_test_bit(&general_states, LTE_PSM_ACTIVE)) {
+      index += snprintf(&buf[index], sizeof(buf) - index, ", psm active");
    }
    if (atomic_test_bit(&general_states, PM_PREVENT_SUSPEND)) {
       index += snprintf(&buf[index], sizeof(buf) - index, ", prevent suspend");
@@ -627,7 +634,7 @@ static void dtls_set_send_trigger(const char *trigger)
 
 static inline bool dtls_pending_request(request_state_t state)
 {
-   return (NONE != state) && (WAIT_SUSPEND != state);
+   return (NONE != state) && (WAIT_SUSPEND != state) && (INCOMING_CONNECT != state);
 }
 
 static inline bool dtls_no_pending_request(request_state_t state)
@@ -788,7 +795,6 @@ static void dtls_coap_next(dtls_app_data_t *app, int interval)
    }
 #endif
 
-   memset(appl_buffer, 0, sizeof(appl_buffer));
    dtls_coap_set_request_state("next request", app, lte_power_off ? NONE : WAIT_SUSPEND);
 
    k_mutex_lock(&send_buffer_mutex, K_FOREVER);
@@ -999,7 +1005,7 @@ static void dtls_coap_set_request_state(const char *desc, dtls_app_data_t *app, 
       dtls_info("Req-State %s change from %d (%s) to %d (%s)", desc, previous, get_request_state_description(previous),
                 request_state, get_request_state_description(request_state));
       app->request_state = request_state;
-      if (request_state == RECEIVE && app->no_response && !app->dtls_flight) {
+      if (RECEIVE == request_state && app->no_response && !app->dtls_flight) {
          dtls_coap_success(app);
       }
    }
@@ -1296,9 +1302,9 @@ recvfrom_peer2(dtls_app_data_t *app)
       dtls_warn("recv_from_peer2 failed: errno %d (%s)", result, strerror(errno));
       return result;
    }
-   atomic_clear_bit(&general_states, TRIGGER_WAKEUP);
    dtls_info("received_from_peer2 %d bytes", result);
    if ((result == 2 || result == 3) && memcmp(appl_buffer, "up", 2) == 0) {
+      atomic_clear_bit(&general_states, TRIGGER_RECV);
       dtls_cmd_trigger("wakeup", false, 1);
    }
    return result;
@@ -1414,6 +1420,10 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
          desc = "low voltage";
          bit = LTE_LOW_VOLTAGE;
          break;
+      case LTE_STATE_PSM_ACTIVE:
+         desc = "psm active";
+         bit = LTE_PSM_ACTIVE;
+         break;
       default:
          break;
    }
@@ -1480,17 +1490,14 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
             atomic_set(&connected_time, now);
             atomic_inc(&lte_connections);
             atomic_set_bit(&general_states, LTE_CONNECTED_SEND);
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
-            if (!app_data_context.dtls_flight && NONE == app_data_context.request_state && atomic_test_bit(&general_states, APPL_READY)) {
+            if (!app_data_context.dtls_flight &&
+                NONE == app_data_context.request_state &&
+                atomic_test_bit(&general_states, APPL_READY)) {
+               // start receiving
                atomic_set_bit(&general_states, TRIGGER_RECV);
-               dtls_trigger("connect", false);
+               dtls_trigger("incoming connect", false);
             }
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
          }
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
-      } else {
-         atomic_clear_bit(&general_states, TRIGGER_WAKEUP);
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
       }
    } else if (type == LTE_STATE_SLEEPING) {
       if (active) {
@@ -2001,28 +2008,18 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
       }
 #endif /* CONFIG_COAP_UPDATE */
 
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
-      if (atomic_test_and_clear_bit(&general_states, TRIGGER_RECV) && NONE == app->request_state) {
-         dtls_coap_set_request_state("incoming connect", app, WAIT_SUSPEND);
-         atomic_set_bit(&general_states, TRIGGER_WAKEUP);
+      bool poll_recv = NONE != app->request_state;
+
+      if (!poll_recv && atomic_test_bit(&general_states, TRIGGER_RECV)) {
+         dtls_coap_set_request_state("incoming connect", app, INCOMING_CONNECT);
          loops = 0;
       }
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+      if (INCOMING_CONNECT == app->request_state) {
+         poll_recv = atomic_test_bit(&general_states, TRIGGER_RECV);
+      }
 
-      if (app->request_state != NONE) {
+      if (poll_recv) {
          result = poll(udp_poll, udp_ports_to_poll, 1000);
-#if defined(CONFIG_UDP_EDRX_WAKEUP_TIMEOUT)
-         if (atomic_test_bit(&general_states, TRIGGER_WAKEUP) && !result) {
-            // no data received
-            if (CONFIG_UDP_EDRX_WAKEUP_TIMEOUT <= loops) {
-               atomic_clear_bit(&general_states, TRIGGER_WAKEUP);
-               dtls_coap_set_request_state("no incoming data", app, NONE);
-               if (CONFIG_UDP_EDRX_WAKEUP_TIMEOUT > 0) {
-                  dtls_cmd_trigger("connect", false, 1);
-               }
-            }
-         }
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
       } else {
 #ifdef CONFIG_COAP_WAIT_ON_POWERMANAGER
          if (0xffff == battery_voltage || 0 == battery_voltage) {
@@ -2041,12 +2038,10 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
             if (atomic_test_and_clear_bit(&general_states, TRIGGER_SEND)) {
                int res = get_send_interval();
+               atomic_clear_bit(&general_states, TRIGGER_RECV);
                dtls_coap_set_request_state("trigger", app, SEND);
                dtls_power_management();
                ui_led_op(LED_APPLICATION, LED_SET);
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
-               atomic_clear_bit(&general_states, TRIGGER_WAKEUP);
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
                if (res > 0) {
                   work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(res));
                }
@@ -2195,7 +2190,27 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                // send button pressed
                dtls_coap_set_request_state("trigger", app, NONE);
                dtls_info("%s next trigger after %d s", type, loops);
+            } else if (!atomic_test_bit(&general_states, LTE_CONNECTED) &&
+                       !atomic_test_bit(&general_states, LTE_PSM_ACTIVE)) {
+               // modem without PSM enters idle, no more data
+               dtls_coap_set_request_state("disconnect", app, NONE);
+               dtls_info("%s suspend after %d s", type, loops);
             }
+         } else if (app->request_state == INCOMING_CONNECT) {
+#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+            if (edrx_wakeup_on_connect_timeout && atomic_test_bit(&general_states, TRIGGER_RECV)) {
+               // no data received after wakeup
+               if (edrx_wakeup_on_connect_timeout <= loops) {
+                  atomic_clear_bit(&general_states, TRIGGER_RECV);
+                  dtls_cmd_trigger("incoming connect", false, 1);
+               }
+            } else
+#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+               if (!atomic_test_bit(&general_states, LTE_CONNECTED)) {
+                  atomic_clear_bit(&general_states, TRIGGER_RECV);
+                  dtls_coap_set_request_state("disconnect", app, NONE);
+                  dtls_info("Disconnected after %d s", loops);
+               }
          } else if (app->request_state != NONE) {
             dtls_log_state();
             dtls_info("%s wait state %d, %d s", type, app->request_state, loops);
@@ -2486,6 +2501,45 @@ static void sh_cmd_send_coap_timeout_help(void)
    LOG_INF("  timeout <time> : set initial coap timeout in seconds.");
 }
 
+static int sh_cmd_edrx_wakeup_on_connect_timeout(const char *parameter)
+{
+   int res = 0;
+   uint32_t timeout = edrx_wakeup_on_connect_timeout;
+   const char *cur = parameter;
+   char value[10];
+
+   memset(value, 0, sizeof(value));
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+
+   if (value[0]) {
+      res = sscanf(value, "%u", &timeout);
+      if (res == 1) {
+         edrx_wakeup_on_connect_timeout = timeout;
+         res = 0;
+         cur = "set ";
+      } else {
+         res = -EINVAL;
+      }
+   } else {
+      cur = "";
+   }
+   if (!res) {
+      if (!edrx_wakeup_on_connect_timeout) {
+         LOG_INF("%sno edrx wakeup on connect.", cur);
+      } else {
+         LOG_INF("%sedrx wakeup on connect timeout %us", cur, edrx_wakeup_on_connect_timeout);
+      }
+   }
+   return res;
+}
+
+static void sh_cmd_edrx_wakeup_on_connect_timeout_help(void)
+{
+   LOG_INF("> help ewoc:");
+   LOG_INF("  ewoc        : read edrx wakeup on connect timeout. 0 disabled.");
+   LOG_INF("  ewoc <time> : set edrx wakeup on connect timeout in seconds. 0 to disable.");
+}
+
 typedef struct flags_definition {
    const char *name;
    const char *desc;
@@ -2691,12 +2745,11 @@ static void sh_cmd_dtls_help(void)
    LOG_INF("  dtls reset : reset dtls session.");
 }
 
-
-
 SH_CMD(send, NULL, "send message.", sh_cmd_send, sh_cmd_send_help, 0);
 SH_CMD(sendresult, NULL, "send result message.", sh_cmd_send_result, NULL, 0);
 SH_CMD(interval, NULL, "send interval.", sh_cmd_send_interval, sh_cmd_send_interval_help, 0);
 SH_CMD(timeout, NULL, "initial coap timeout.", sh_cmd_coap_timeout, sh_cmd_send_coap_timeout_help, 0);
+SH_CMD(ewoc, NULL, "edrx wakeup on connect timeout.", sh_cmd_edrx_wakeup_on_connect_timeout, sh_cmd_edrx_wakeup_on_connect_timeout_help, 0);
 SH_CMD(sendflags, NULL, "sendflags.", sh_cmd_coap_sendflags, sh_cmd_coap_sendflags_help, 0);
 SH_CMD(onoff, NULL, "on/off mode.", sh_cmd_onoff, sh_cmd_onoff_help, 0);
 SH_CMD(restart, NULL, "try to switch off the modem and restart device.", sh_cmd_restart, NULL, 0);
