@@ -761,27 +761,6 @@ config INA219_ON_EXPANSION_BOARD
 
 endif # INA219
 
-choice BATTERY_VOLTAGE_SOURCE
-	prompt "Battery voltage source"
-	default BATTERY_VOLTAGE_SOURCE_ADP536X if BOARD_THINGY91_NRF9160_NS
-	default BATTERY_VOLTAGE_SOURCE_ADC if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
-	default BATTERY_VOLTAGE_SOURCE_MODEM
-	help
-	  Configure battery voltage source.
-
-config BATTERY_VOLTAGE_SOURCE_ADP536X
-	bool "Battery voltage source ADP536X (Thingy:91)"
-
-config BATTERY_VOLTAGE_SOURCE_ADC
-	bool "Battery voltage source ADC (feater nRF9160)"
-	depends on BATTERY_ADC
-
-config BATTERY_VOLTAGE_SOURCE_MODEM
-	bool "Battery voltage source modem"
-
-endchoice # BATTERY_VOLTAGE_SOURCE
-
-
 config MOTION_SENSOR
     bool
     default y if ADXL362 || LIS2DH
@@ -928,6 +907,35 @@ config ENVIRONMENT_HISTORY_INTERVAL_S
 	default 30
 
 endif
+
+choice BATTERY_VOLTAGE_SOURCE
+	prompt "Battery voltage source"
+	default BATTERY_VOLTAGE_SOURCE_ADP536X if BOARD_THINGY91_NRF9160_NS
+	default BATTERY_VOLTAGE_SOURCE_ADC if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
+	default BATTERY_VOLTAGE_SOURCE_MODEM
+	help
+	  Configure battery voltage source.
+
+config BATTERY_VOLTAGE_SOURCE_ADP536X
+	bool "Battery voltage source ADP536X (Thingy:91)"
+	depends on SENSOR
+
+config BATTERY_VOLTAGE_SOURCE_ADC
+	bool "Battery voltage source ADC (feater nRF9160)"
+	depends on BATTERY_ADC
+
+config BATTERY_VOLTAGE_SOURCE_MODEM
+	bool "Battery voltage source modem"
+
+endchoice # BATTERY_VOLTAGE_SOURCE
+
+config BATTERY_FORECAST_RESET_THRESHOLD_DEFAULT
+	int "Default battery level threshold to reset runtime forecast."
+	default 0
+	help
+	  Battery level threshold to reset runtime forecast.
+	  Enables support for charger without status. 0 to disable.
+
 
 config DISABLE_REALTIME_CLOCK
 	bool "Disable unused realtime clock (nRF9160 feather only!)"

@@ -29,6 +29,7 @@
 #include "power_manager.h"
 #include "sh_cmd.h"
 #include "transform.h"
+#include "parse.h"
 
 #ifdef CONFIG_BATTERY_ADC
 #include "battery_adc.h"
@@ -415,6 +416,8 @@ static int64_t last_battery_level_uptime = 0;
 static uint16_t current_battery_level = PM_INVALID_INTERNAL_LEVEL;
 static uint16_t current_battery_changes = 0;
 
+static uint16_t battery_reset_threshold = CONFIG_BATTERY_FORECAST_RESET_THRESHOLD_DEFAULT;
+
 /*
  * last left battery time.
  */
@@ -462,7 +465,7 @@ static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_ma
       current_battery_changes = 0;
       LOG_DBG("forecast: charging.");
    } else if (current_battery_changes) {
-      if (delta > CHARGNING_BATTERY_LEVEL_DELTA) {
+      if (!battery_reset_threshold || delta > -battery_reset_threshold) {
          res = 0;
       } else {
          *status = CHARGING_S;
@@ -1486,10 +1489,55 @@ static int sh_cmd_battery_forecast_reset(const char *parameter)
    return 0;
 }
 
+static int sh_cmd_battery_forecast_reset_threshold(const char *parameter)
+{
+   int res = 0;
+   const char *cur = parameter;
+   char value[10];
+
+   memset(value, 0, sizeof(value));
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+
+   if (value[0]) {
+      uint32_t threshold = 0;
+      res = sscanf(value, "%u", &threshold);
+      if (res == 1) {
+         if (threshold > 9999) {
+            LOG_INF("%u invalid value for battery forecast reset threshold [0...9999].", threshold);
+            res = -EINVAL;
+         }
+         battery_reset_threshold = threshold;
+         res = 0;
+         cur = "set ";
+      } else {
+         res = -EINVAL;
+      }
+   } else {
+      cur = "";
+   }
+   if (!res) {
+      if (!battery_reset_threshold) {
+         LOG_INF("%sno battery forecast reset threshold.", cur);
+      } else {
+         LOG_INF("%sbattery forecast reset threshold %us [1-9999]", cur, battery_reset_threshold);
+      }
+   }
+   return res;
+}
+
+static void sh_cmd_battery_forecast_reset_threshold_help(void)
+{
+   LOG_INF("> help batrstth:");
+   LOG_INF("  batrstth         : read battery forecast reset threshold.");
+   LOG_INF("  batrstth <level> : set battery forecast reset threshold. 0 disabled.");
+   LOG_INF("                   : 1-9999 threshold for level up to reset the forecast.");
+}
+
 #ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_MODEM
 SH_CMD(bat, "", "read battery status.", sh_cmd_battery, NULL, 0);
 #else
 SH_CMD(bat, NULL, "read battery status.", sh_cmd_battery, NULL, 0);
 #endif
 SH_CMD(batreset, NULL, "reset battery forecast.", sh_cmd_battery_forecast_reset, NULL, 0);
+SH_CMD(batrstth, NULL, "set battery forecast reset threshold.", sh_cmd_battery_forecast_reset_threshold, sh_cmd_battery_forecast_reset_threshold_help, 0);
 #endif /* CONFIG_SH_CMD */

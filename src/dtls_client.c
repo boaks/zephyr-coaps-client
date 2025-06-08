@@ -2511,7 +2511,6 @@ static void sh_cmd_send_coap_timeout_help(void)
 static int sh_cmd_edrx_wakeup_on_connect_timeout(const char *parameter)
 {
    int res = 0;
-   uint32_t timeout = edrx_wakeup_on_connect_timeout;
    const char *cur = parameter;
    char value[10];
 
@@ -2519,6 +2518,7 @@ static int sh_cmd_edrx_wakeup_on_connect_timeout(const char *parameter)
    cur = parse_next_text(cur, ' ', value, sizeof(value));
 
    if (value[0]) {
+      uint32_t timeout = 0;
       res = sscanf(value, "%u", &timeout);
       if (res == 1) {
          edrx_wakeup_on_connect_timeout = timeout;
