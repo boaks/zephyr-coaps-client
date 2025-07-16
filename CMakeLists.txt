@@ -45,6 +45,8 @@ target_sources_ifdef(CONFIG_SH_CMD app PRIVATE src/sh_cmd.c)
 
 target_sources_ifdef(CONFIG_SH_CMD app PRIVATE src/modem_cmd.c)
 
+target_sources_ifdef(CONFIG_SH_CMD_MODEM_TRACE app PRIVATE src/modem_trace_cmd.c)
+
 target_sources_ifdef(CONFIG_UART_MANAGER app PRIVATE src/uart_manager.c)
 
 target_sources_ifdef(CONFIG_UPDATE app PRIVATE src/appl_update.c)

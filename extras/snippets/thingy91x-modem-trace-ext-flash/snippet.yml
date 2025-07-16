@@ -1,0 +1,22 @@
+#
+# Copyright (c) 2025 Achim Kraus CloudCoap.net
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Eclipse Public License 2.0 which is available at
+# http: //www.eclipse.org/legal/epl-2.0
+#
+# SPDX-License-Identifier: EPL-2.0
+#
+
+name: thingy91x-modem-trace-ext-flash
+append:
+  EXTRA_CONF_FILE: modem-trace-ext-flash.conf
+  EXTRA_DTC_OVERLAY_FILE: modem-trace-uart.overlay
+boards:
+  thingy91x/nrf9151/ns:
+    append:
+      EXTRA_DTC_OVERLAY_FILE: gd25le255-ext-flash.overlay
+      EXTRA_CONF_FILE: thingy91x-ext-flash.conf

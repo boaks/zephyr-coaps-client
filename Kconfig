@@ -455,6 +455,11 @@ config SH_CMD_UNLOCK
     depends on SH_CMD
 	default y	  
 
+config SH_CMD_MODEM_TRACE
+	bool
+	default NRF_MODEM_LIB_TRACE
+
+
 if (SH_CMD_UNLOCK && INIT_SETTINGS) 
 
 config SH_CMD_UNLOCK_PASSWORD

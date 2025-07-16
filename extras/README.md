@@ -2,6 +2,20 @@
 
 ## Zephyr - Coaps Demo Client with Eclipse/TinyDtls
 
+# Snippets
+
+The folder `snippets` contains `thingy91x-modem-trace-ext-flash`, which enables the modem trace to external flash for the Thingy:91X. To use it copy that folder to `nrf/snippets`.
+
+```
+cp -r snippets/* ../../nrf/snippets/
+```
+
+and add `-S thingy91x-modem-trace-ext-flash` to the `west` build options.
+
+```
+west build -d build_thingyx -b thingy91x/nrf9151/ns -S thingy91x-modem-trace-ext-flash
+```
+
 # New/Upcoming Board Support
  
 ## New Board Support - nRF9151 feather
