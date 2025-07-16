@@ -58,12 +58,12 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160), [nRF9161](
 | [Nordic Semiconductor, nRF9161 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9161-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9161-DK/nRF9161_DK_Perspective-small.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9161-DK/nRF9161_DK_Perspective-small.png) |
 | [Nordic Semiconductor, nRF9151 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9151-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png) |
 
-**Note:** for all supported **NEW** boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, please consider to use them with NCS 2.9.1. 
+**Note:** for all supported **NEW** boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, please consider to use them with NCS 2.9.2. 
 
 See [extras/README](./extras/README.md) for more information.
 
-The demo works with [ncs-2.9.1](https://github.com/nrfconnect/sdk-nrf/tree/v2.9.1). 
-If [ncs-2.6.4](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.4) is required, you may use the [ncs_2_6_x](https://github.com/boaks/zephyr-coaps-client/tree/ncs_2_6_x) branch to build the clients, but the future development will be for v2.9.1 or newer.
+The demo works with [ncs-2.9.2](https://github.com/nrfconnect/sdk-nrf/tree/v2.9.2). 
+If [ncs-2.6.4](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.4) is required, you may use the [ncs_2_6_x](https://github.com/boaks/zephyr-coaps-client/tree/ncs_2_6_x) branch to build the clients, but the future development will be for v2.9.2 or newer.
                                              
 Neither `NCS 2.7.0` nor `NCS 2.8.0` are supported.
  
@@ -79,7 +79,7 @@ The demo supports also new upcoming devices based on the nRF9151.
 | :- | - |
 | [**NEW** Makerdiary nRF9151 Connect Kit](https://makerdiary.com/products/nrf9151-connectkit/)<br>Requires additional batteries and closures to work in the "wild". Comes with onboard OCD. | [<img src="https://github.com/makerdiary/nrf9151-connectkit/blob/main/docs/assets/images/attaching_lte_antenna.png" width="300"/>](https://github.com/makerdiary/nrf9151-connectkit/blob/main/docs/assets/images/attaching_lte_antenna.png) |
 
-**Note:** for all supported **NEW** boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, so the full support will only come with NCS 2.9.1. 
+**Note:** for all supported **NEW** boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, so the full support will only come with NCS 2.9.2. 
 
 See [extras/README](./extras/README.md) for more information.
 
