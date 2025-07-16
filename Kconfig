@@ -945,16 +945,23 @@ config DISABLE_REALTIME_CLOCK
 if FLASH
 config FLASH_APPL_STORAGE
 	bool "Flash support for application storage."
-	default y
+    default y if "$(dt_alias_enabled,appl-storage-flash)"
     depends on !ALL_POWER_OFF
 endif
 
 if EEPROM
 config EEPROM_APPL_STORAGE
 	bool "EEPROM support for application storage."
-	default y
+    default y if "$(dt_alias_enabled,appl-storage-eeprom)"
     depends on !ALL_POWER_OFF
 endif
+
+config USE_APPL_STORAGE
+	bool
+    default y if FLASH_APPL_STORAGE
+    default y if EEPROM_APPL_STORAGE
+    default y if NAU7802_SCALE
+
 
 # Application/HW Model
 

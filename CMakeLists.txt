@@ -63,7 +63,9 @@ target_sources_ifdef(CONFIG_SHT21 app PRIVATE src/environment_sht21.c src/enviro
 
 target_sources_ifdef(CONFIG_BATTERY_ADC app PRIVATE src/battery_adc.c)
 
-target_sources_ifdef(CONFIG_NAU7802_SCALE app PRIVATE src/nau7802.c src/appl_storage.c src/appl_storage_config.c)
+target_sources_ifdef(CONFIG_NAU7802_SCALE app PRIVATE src/nau7802.c)
+
+target_sources_ifdef(CONFIG_USE_APPL_STORAGE app PRIVATE src/appl_storage.c src/appl_storage_config.c)
 
 if (CONFIG_BME680_BSEC)
         set(bsec_version "bsec_1-4-9-2_generic_release")
@@ -251,6 +253,12 @@ else()
 set(BUILD_SUMUP11 "Build without initial settings.")
 endif()
 
+if (CONFIG_USE_APPL_STORAGE)
+set(BUILD_SUMUP12 "Build with application storage.")
+else()
+set(BUILD_SUMUP12 "Build without application storage.")
+endif()
+
 message(STATUS "PM_STATIC_YML_FILE: ${PM_STATIC_YML_FILE}")
 
 add_custom_command(TARGET app POST_BUILD
@@ -265,6 +273,7 @@ add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP9}"
                    COMMAND echo "${BUILD_SUMUP10}"
                    COMMAND echo "${BUILD_SUMUP11}"
+                   COMMAND echo "${BUILD_SUMUP12}"
                    COMMAND echo "Build with network search timeout ${CONFIG_MODEM_SEARCH_TIMEOUT}s"
                    COMMAND echo "${CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION}"
                    )
