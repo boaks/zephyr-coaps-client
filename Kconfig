@@ -763,7 +763,7 @@ endif # INA219
 
 config MOTION_SENSOR
     bool
-    default y if ADXL362 || LIS2DH
+    default y if ADXL362 || LIS2DH || ADXL367
 
 if ADXL362
 
@@ -774,6 +774,17 @@ config MOTION_DETECTION
 	   Enable (indirect) motion detection using accelerometer.
 	   More configuration options are available at 
 	   "Zephyr Kernel > Device Drivers > Sensor Drivers > ADXL362 sensor"
+endif # ADXL362
+
+if ADXL367
+
+config MOTION_DETECTION
+	bool "Enable Motion Detection"
+	default y if ADXL367_TRIGGER
+	help
+	   Enable (indirect) motion detection using accelerometer.
+	   More configuration options are available at 
+	   "Zephyr Kernel > Device Drivers > Sensor Drivers > ADXL367 sensor"
 endif # ADXL362
 
 if LIS2DH

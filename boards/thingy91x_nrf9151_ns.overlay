@@ -50,6 +50,9 @@
 		/* alias for BME680 sensor to be used with Bosch BSEC library (IAQ Index Air Quality) */
 		environment-sensor = &bme680;
 
+		/* alias for sensor with SENSOR_CHAN_ACCEL_XYZ channels */
+		accelerometer-sensor = &accelerometer_lp;
+
 		/* alias for watchdog */
 		watchdog0 = &wdt0;
 
@@ -69,6 +72,10 @@
 };
 
 &bme680 {
+	status = "okay";
+};
+
+&accelerometer_lp {
 	status = "okay";
 };
 

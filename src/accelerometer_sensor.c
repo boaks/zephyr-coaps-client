@@ -74,6 +74,8 @@ static void accelerometer_trigger_handler(const struct device *dev,
    switch (trig->type) {
       case SENSOR_TRIG_DELTA:
       case SENSOR_TRIG_MOTION:
+      case SENSOR_TRIG_THRESHOLD:
+      case SENSOR_TRIG_DATA_READY:
          LOG_INF("Accelerometer trigger %d", trig->type);
          accelerometer_read(dev, accelerometer_handler);
          accelerometer_enable(false);
@@ -99,16 +101,26 @@ int accelerometer_init(accelerometer_handler_t handler)
    return 0;
 }
 
+#if defined(CONFIG_ADXL362)
+static const struct sensor_trigger trig = {
+    .chan = SENSOR_CHAN_ACCEL_XYZ,
+    .type = SENSOR_TRIG_MOTION};
+#elif defined(CONFIG_ADXL367)
+static const struct sensor_trigger trig = {
+    .chan = SENSOR_CHAN_ACCEL_XYZ,
+    .type = SENSOR_TRIG_THRESHOLD};
+#elif defined(CONFIG_LIS2DH) && defined(CONFIG_LIS2DH_TRIGGER)
+static const struct sensor_trigger trig = {
+    .chan = SENSOR_CHAN_ACCEL_XYZ,
+    .type = SENSOR_TRIG_DELTA};
+#endif
+
 int accelerometer_enable(bool enable)
 {
    int rc = -ENOTSUP;
 
-#ifdef CONFIG_ADXL362
+#if defined(CONFIG_ADXL362) || defined(CONFIG_ADXL367)
    if (device_is_ready(accelerometer_dev)) {
-      struct sensor_trigger trig = {
-          .chan = SENSOR_CHAN_ACCEL_XYZ,
-          .type = SENSOR_TRIG_MOTION};
-
       rc = sensor_trigger_set(accelerometer_dev, &trig, enable ? accelerometer_trigger_handler : NULL);
       if (rc) {
          LOG_ERR("Accelerometer error: could not set motion trigger for device %s, %d / %s",
@@ -117,13 +129,9 @@ int accelerometer_enable(bool enable)
          LOG_INF("Accelerometer-motion-trigger: %s", enable ? "enabled" : "disabled");
       }
    }
-#endif /* CONFIG_ADXL362 */
+#endif /* CONFIG_ADXL362 || CONFIG_ADXL367 */
 #if defined(CONFIG_LIS2DH) && defined(CONFIG_LIS2DH_TRIGGER)
    if (device_is_ready(accelerometer_dev)) {
-
-      struct sensor_trigger trig = {
-          .chan = SENSOR_CHAN_ACCEL_XYZ,
-          .type = SENSOR_TRIG_DELTA};
 
       // 1.5 m/s
       struct sensor_value value = {
@@ -171,3 +179,18 @@ int accelerometer_enable(bool enable)
 #endif /* CONFIG_LIS2DH */
    return rc;
 }
+
+#if !defined(CONFIG_LIS2DH_TRIGGER_NONE) && defined(CONFIG_SH_CMD)
+
+#include "sh_cmd.h"
+
+static int accelerometer_cmd_info(const char *config)
+{
+   (void)config;
+   accelerometer_read(accelerometer_dev, NULL);
+   return 0;
+}
+
+SH_CMD(acc, NULL, "read accelerometer.", accelerometer_cmd_info, NULL, 0);
+
+#endif
