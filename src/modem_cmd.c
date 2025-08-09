@@ -1050,6 +1050,39 @@ static void modem_cmd_power_level_help(void)
    LOG_INF("        4   : High performance");
 }
 
+static int power_indication = -1;
+
+static int modem_cmd_power_indication(const char *config)
+{
+   unsigned int level = 0;
+   int res = sscanf(config, "%u", &level);
+   if (res == 1) {
+      if (level > 1) {
+         LOG_INF("indication %u is out of range [0..1].", level);
+         res = -EINVAL;
+      } else {
+         res = modem_set_power_indication(level);
+         if (!res) {
+            power_indication = level;
+         }
+      }
+   }
+   if ((res == EOF || res ==  0) && 0 <= power_indication) {
+        LOG_INF("power indication %u", power_indication);
+   }
+
+   return res;
+}
+
+static void modem_cmd_power_indication_help(void)
+{
+   LOG_INF("> help powind:");
+   LOG_INF("  powind     : show current power indication.");
+   LOG_INF("  powind <l> : set power indication. Values 0 to 1.");
+   LOG_INF("        0    : normal");
+   LOG_INF("        1    : low power consumption");
+}
+
 static int modem_cmd_switch_on(const char *parameter)
 {
    (void)parameter;
@@ -1197,6 +1230,8 @@ SH_CMD(rai, "", "configure RAI.", modem_cmd_rai, modem_cmd_rai_help, 0);
 
 SH_CMD(remo, "", "reduced mobility.", modem_cmd_reduced_mobility, modem_cmd_reduced_mobility_help, 0);
 SH_CMD(power, "", "configure power level.", modem_cmd_power_level, modem_cmd_power_level_help, 0);
+SH_CMD(powind, "", "configure power indication.", modem_cmd_power_indication, modem_cmd_power_indication_help, 0);
 SH_CMD(deep, "AT%XDEEPSEARCH", "network deep-search mode.", modem_cmd_deepsearch, modem_cmd_deepsearch_help, 0);
+
 
 #endif

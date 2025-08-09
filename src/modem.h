@@ -209,6 +209,8 @@ int modem_set_power_level(int mode);
 
 int modem_get_power_level(void);
 
+int modem_set_power_indication(int mode);
+
 int modem_set_psm(int16_t active_time_s);
 
 int modem_set_rai_mode(enum rai_mode mode, int socket);

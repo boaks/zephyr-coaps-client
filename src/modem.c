@@ -2470,6 +2470,16 @@ int modem_get_power_level(void)
    return err;
 }
 
+int modem_set_power_indication(int level)
+{
+   int err = -EINVAL;
+   if (0 <= level && level <= 1) {
+      char buf[32];
+      err = modem_at_cmdf(buf, sizeof(buf), NULL, "AT+CEPPI=%d", level);
+   }
+   return err;
+}
+
 int modem_set_psm(int16_t active_time_s)
 {
 #if defined(CONFIG_UDP_PSM_ENABLE) && defined(CONFIG_LTE_LC_PSM_MODULE)
