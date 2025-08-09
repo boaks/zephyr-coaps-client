@@ -20,7 +20,7 @@ west build -d build_thingyx -b thingy91x/nrf9151/ns -S thingy91x-modem-trace-ext
  
 ## New Board Support - nRF9151 feather
 
-| [Circuit Dojo, nRF9151 feather](https://www.circuitdojo.com/products/nrf9151-feather) | [<img src="https://www.circuitdojo.com/base/api/files/products/515ssdvlohrn7es/n_rf9151_feather_front_centered_zVodQCvzhu.png" width="450"/>](https://www.circuitdojo.com/base/api/files/products/515ssdvlohrn7es/n_rf9151_feather_front_centered_zVodQCvzhu.png) |
+| [Circuit Dojo, nRF9151 feather](https://www.circuitdojo.com/products/nrf9151-feather) | [<img src="https://www.circuitdojo.com/base/api/files/products/515ssdvlohrn7es/0289_resized_gsoh9wt1g5.png" width="450"/>](https://www.circuitdojo.com/base/api/files/products/515ssdvlohrn7es/0289_resized_gsoh9wt1g5.png) |
 | :- | - |
 
 **Note:** The board files are available from `Circuit Dojo`, only the `v2.7.x` files are maintained by `Circuit Dojo`.
@@ -35,7 +35,7 @@ cp -r v2.9.x/circuitdojo ../../zephyr/boards/
 
 The mcuboot configuration is already added in the project's `sysbuild/mcuboot/boards` folder.
 
-For flashing a nRF9151 feather see [Flashing New Boards With OCD Support ](#flashing_new_boards_with_ocd_support).
+For flashing a nRF9151 feather see [Flashing New Boards With OCD Support ](#flashing-new-boards-with-ocd-support).
 
 ## New Board Support - Conexio Stratus Pro
 
@@ -84,7 +84,7 @@ Download the [Makerdiary nRF9151 Connect Kit SDK](https://github.com/makerdiary/
 
 The mcuboot configuration is already added in the project's `sysbuild/mcuboot/boards` folder.
 
-For flashing a nRF9151 Connect Kit see [Flashing New Boards With OCD Support ](#flashing_new_boards_with_ocd_support).
+For flashing a nRF9151 Connect Kit see [Flashing New Boards With OCD Support ](#flashing-new-boards-with-ocd-support).
 
 ## Flashing New Boards With OCD Support 
 
