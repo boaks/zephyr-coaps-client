@@ -26,16 +26,16 @@
 #include "expansion_port.h"
 #include "io_job_queue.h"
 #include "modem_at.h"
+#include "parse.h"
 #include "power_manager.h"
 #include "sh_cmd.h"
 #include "transform.h"
-#include "parse.h"
 
 #ifdef CONFIG_BATTERY_ADC
 #include "battery_adc.h"
 #endif /* CONFIG_BATTERY_ADC */
 
-LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
+LOG_MODULE_REGISTER(POWER_MANAGER, CONFIG_POWER_MANAGER_LOG_LEVEL);
 
 typedef const struct device *t_devptr;
 
@@ -65,9 +65,19 @@ SYS_INIT(power_manager_suspend_realtime_clock, POST_KERNEL, CONFIG_SENSOR_INIT_P
 #endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay) && defined(CONFIG_DISABLE_REALTIME_CLOCK) */
 
 #define PM_INVALID_INTERNAL_LEVEL 0xffff
+#define PM_RESET_INTERNAL_LEVEL 0xfffe
 
 #define VOLTAGE_MIN_INTERVAL_MILLIS 10000
 #define MAX_PM_DEVICES 10
+
+/**
+ * last voltage.
+ * suppress new measurement for VOLTAGE_MIN_INTERVAL_MILLIS
+ */
+
+static int64_t last_voltage_uptime = 0;
+static uint16_t last_voltage = PM_INVALID_VOLTAGE;
+static bool last_voltage_charger = false;
 
 static K_MUTEX_DEFINE(pm_mutex);
 static k_ticks_t pm_pluse_end = 0;
@@ -188,17 +198,15 @@ struct battery_profile {
 #ifdef CONFIG_BATTERY_TYPE_LIPO_1350_MAH
 static const struct transform_curve curve_lipo_1350 = {
     /* Thingy:91 */
-    .points = 9,
+    .points = 7,
     .curve = {
         {4200, 10000},
-        {4056, 8750},
-        {3951, 7500},
-        {3810, 5440},
-        {3762, 4110},
-        {3738, 2650},
-        {3637, 1470},
-        {3474, 440},
-        {3200, 0},
+        {3950, 8332},
+        {3812, 5313},
+        {3689, 1592},
+        {3626, 1146},
+        {3540, 700},
+        {3300, 0},
     }};
 
 static const struct battery_profile profile_lipo_1350 = {
@@ -396,12 +404,11 @@ static uint16_t calculate_linear_regresion(int64_t *now, uint16_t value)
    return value;
 }
 
-static int64_t starting_battery_level_uptime = 0;
+static uint16_t current_battery_changes = 0;
+static bool forecast_first_day = false;
 
 /*
- * first_battery_level is set, when the first complete
- * battery level epoch is detected. The very first change
- * indicates only a partitial epoch.
+ * First battery level period.
  */
 static uint16_t first_battery_level = PM_INVALID_INTERNAL_LEVEL;
 static int64_t first_battery_level_uptime = 0;
@@ -410,30 +417,38 @@ static int64_t first_battery_level_uptime = 0;
  */
 static uint16_t last_battery_level = PM_INVALID_INTERNAL_LEVEL;
 static int64_t last_battery_level_uptime = 0;
-/*
- * filter battery levels and record changes.
- */
-static uint16_t current_battery_level = PM_INVALID_INTERNAL_LEVEL;
-static uint16_t current_battery_changes = 0;
 
+/**
+ * Lowest battery level.
+ */
+static uint16_t lowest_battery_level = PM_INVALID_INTERNAL_LEVEL;
+static int64_t lowest_battery_level_uptime = 0;
+
+/**
+ * Threshold to reset forecast. Intended to be used for
+ * solar charger without connected charging signal.
+ * 0 to disable.
+ */
 static uint16_t battery_reset_threshold = CONFIG_BATTERY_FORECAST_RESET_THRESHOLD_DEFAULT;
 
 /*
- * last left battery time.
+ * Last left battery time.
  */
 static int64_t last_battery_left_time = 0;
 
+#define MSEC_PER_MINUTE (MSEC_PER_SEC * 60)
 #define MSEC_PER_HOUR (MSEC_PER_SEC * 60 * 60)
 #define MSEC_PER_DAY (MSEC_PER_SEC * 60 * 60 * 24)
+#define MSEC_PER_WEEK (MSEC_PER_SEC * 60 * 60 * 24 * 7)
 
 /*
  * Minimum battery level delta for new forecast calculation.
  * Value in 2%%
  */
 #define MINIMUM_BATTERY_LEVEL_DELTA 20
-#define CHARGNING_BATTERY_LEVEL_DELTA -200
 
 #define ROUND_DAYS(M) (int16_t)(((M) + ((MSEC_PER_DAY) / 2)) / (MSEC_PER_DAY))
+#define ROUND_HOURS(M) (int32_t)(((M) + ((MSEC_PER_HOUR) / 2)) / (MSEC_PER_HOUR))
 
 static int calculate_left_time(const char *tag, int64_t *now, uint16_t battery_level, int64_t *past, uint16_t battery_level_past, int64_t *time)
 {
@@ -444,8 +459,8 @@ static int calculate_left_time(const char *tag, int64_t *now, uint16_t battery_l
    } else {
       int64_t passed_time = *now - *past;
       int64_t left_time = (passed_time * battery_level) / diff;
-      LOG_INF("%s: left battery %u%% time %lld (%d days, %d passed)",
-              tag, battery_level, left_time,
+      LOG_INF("%s: left battery %u.%02u%% time %lld (%d days, %d passed)",
+              tag, battery_level / 100, battery_level % 100, left_time,
               ROUND_DAYS(left_time), ROUND_DAYS(passed_time));
       *time += left_time;
       return 0;
@@ -456,96 +471,127 @@ static int16_t calculate_forecast(int64_t *now, uint16_t battery_level, power_ma
 {
    int16_t res = -1;
    int64_t passed_time = (*now) - last_battery_level_uptime;
-   int32_t delta = ((int32_t)current_battery_level) - battery_level;
+   int32_t delta = ((int32_t)last_battery_level) - battery_level;
 
-   if (battery_level == PM_INVALID_INTERNAL_LEVEL) {
-      current_battery_changes = 0;
-      LOG_DBG("forecast: not ready.");
-   } else if (!status || (*status != FROM_BATTERY && *status != POWER_UNKNOWN)) {
-      current_battery_changes = 0;
-      LOG_DBG("forecast: charging.");
+   if (PM_INVALID_INTERNAL_LEVEL == battery_level) {
+      LOG_INF("forecast: not ready.");
+   } else if (PM_RESET_INTERNAL_LEVEL == battery_level) {
+      LOG_INF("forecast: reset.");
+   } else if (!status || (FROM_BATTERY != *status && POWER_UNKNOWN != *status)) {
+      LOG_INF("forecast: charging.");
    } else if (current_battery_changes) {
-      if (!battery_reset_threshold || delta > -battery_reset_threshold) {
-         res = 0;
-      } else {
-         *status = CHARGING_S;
-         current_battery_level = battery_level;
+      if (battery_reset_threshold && delta < -battery_reset_threshold) {
+         // unaware "solar" charging
+         if (status) {
+            *status = CHARGING_S;
+         }
+         last_battery_level_uptime = *now + MSEC_PER_HOUR;
+         last_battery_level = battery_level;
+         lowest_battery_level_uptime = *now;
+         lowest_battery_level = battery_level;
          current_battery_changes = 1;
-         LOG_DBG("forecast: charging?");
+         reset_linear_regresion();
+         LOG_INF("forecast: charging?");
+         return -1;
+      } else {
+         res = 0;
       }
    } else {
       res = 0;
    }
-   if (res < 0) {
-      // reset, wait 1h after start running from battery
+   if (0 > res) {
+      // reset, wait 60min after start running from battery
       last_battery_level_uptime = *now + MSEC_PER_HOUR;
+      last_battery_level = battery_level;
+      lowest_battery_level_uptime = *now;
+      lowest_battery_level = battery_level;
+      forecast_first_day = false;
+      current_battery_changes = 0;
       reset_linear_regresion();
       return -1;
    }
 
-   if (passed_time < 0) {
-      // wait at least 1h after running from battery
+   if (0 > passed_time) {
+      // wait 60min after running from battery
+      LOG_INF("forecast: wait 60 minutes, passed %lld minutes", ((MSEC_PER_HOUR + passed_time) / MSEC_PER_MINUTE));
       return -1;
    }
 
-   if (current_battery_changes > 3 &&
-       (first_battery_level_uptime - starting_battery_level_uptime) < MSEC_PER_DAY &&
-       (last_battery_level_uptime - starting_battery_level_uptime) >= MSEC_PER_DAY) {
-      // clear the first day values
-      // battery has different characteristics after charging
-      first_battery_level = last_battery_level;
-      first_battery_level_uptime = last_battery_level_uptime;
-   }
-
-   if (delta > MINIMUM_BATTERY_LEVEL_DELTA) {
-      // battery level changed since last forecast
-      current_battery_level = battery_level;
-      if (!current_battery_changes) {
-         ++current_battery_changes;
-      }
-      ++current_battery_changes;
-      if (current_battery_changes == 2) {
-         // initial value;
-         starting_battery_level_uptime = *now;
-         return -1;
-      }
-
-      if (current_battery_changes == 3) {
-         // first battery level change since start
-         LOG_DBG("first battery level change");
+   if (lowest_battery_level > battery_level) {
+      lowest_battery_level = battery_level;
+      lowest_battery_level_uptime = *now;
+      if (2 > current_battery_changes) {
+         // start forecast calculation
+         LOG_INF("forecast: starting %u.%02u%%", battery_level / 100, battery_level % 100);
          first_battery_level = battery_level;
          first_battery_level_uptime = *now;
          last_battery_level = battery_level;
          last_battery_level_uptime = *now;
-         return -1;
-      }
-
-      res = -1;
-      if (passed_time >= MSEC_PER_DAY) {
-         // change after a minium of 24h
-         last_battery_left_time = 0;
-         calculate_left_time("All periods", now, battery_level, &first_battery_level_uptime, first_battery_level, &last_battery_left_time);
-         last_battery_left_time *= 2;
-         calculate_left_time("Last period", now, battery_level, &last_battery_level_uptime, last_battery_level, &last_battery_left_time);
-         last_battery_left_time /= 3;
-         res = 0;
-      } else if (current_battery_changes == 4) {
-         // first full battery-level period
-         last_battery_left_time = 0;
-         calculate_left_time("First period", now, battery_level, &last_battery_level_uptime, last_battery_level, &last_battery_left_time);
-         res = 0;
-      }
-      if (!res) {
-         last_battery_level = battery_level;
-         last_battery_level_uptime = *now;
-         passed_time = 0;
+         current_battery_changes = 2;
       }
    }
-   if (current_battery_changes >= 4) {
+   if (1 < current_battery_changes) {
+
+      if (!forecast_first_day && MSEC_PER_DAY < (*now) - first_battery_level_uptime) {
+         forecast_first_day = true;
+         LOG_INF("forecast: adjust after 1. day %u.%02u%%", lowest_battery_level / 100, lowest_battery_level % 100);
+         first_battery_level = lowest_battery_level;
+         first_battery_level_uptime = lowest_battery_level_uptime;
+         last_battery_level = lowest_battery_level;
+         last_battery_level_uptime = lowest_battery_level_uptime;
+      }
+
+      if (last_battery_level_uptime != lowest_battery_level_uptime) {
+         bool refresh_calculation = false;
+         if (2 == current_battery_changes) {
+            // first period
+            if (MINIMUM_BATTERY_LEVEL_DELTA <= delta || MSEC_PER_DAY < passed_time) {
+               refresh_calculation = true;
+            }
+         } else {
+            if (MINIMUM_BATTERY_LEVEL_DELTA <= delta && MSEC_PER_DAY < passed_time) {
+               refresh_calculation = true;
+            } else if (MSEC_PER_WEEK < passed_time) {
+               refresh_calculation = true;
+            }
+         }
+
+         if (refresh_calculation) {
+            ++current_battery_changes;
+            last_battery_left_time = 0;
+            if (first_battery_level_uptime == last_battery_level_uptime) {
+               calculate_left_time("First period", &lowest_battery_level_uptime, lowest_battery_level, &last_battery_level_uptime, last_battery_level, &last_battery_left_time);
+            } else {
+               calculate_left_time("All periods", &lowest_battery_level_uptime, lowest_battery_level, &first_battery_level_uptime, first_battery_level, &last_battery_left_time);
+               last_battery_left_time *= 2;
+               calculate_left_time("Last period", &lowest_battery_level_uptime, lowest_battery_level, &last_battery_level_uptime, last_battery_level, &last_battery_left_time);
+               last_battery_left_time /= 3;
+            }
+            last_battery_level = lowest_battery_level;
+            last_battery_level_uptime = lowest_battery_level_uptime;
+            passed_time = (*now) - last_battery_level_uptime;
+         }
+      }
+   }
+   if (2 < current_battery_changes) {
       // after last change
       int16_t time = ROUND_DAYS((last_battery_left_time - passed_time));
-      LOG_DBG("battery %u%%, %d left days (passed %d days)", battery_level, time, ROUND_DAYS(passed_time));
+      LOG_INF("battery %u.%02u%%, %d left days (passed %d days, %d changes)", battery_level / 100, battery_level % 100, time, ROUND_DAYS(passed_time), current_battery_changes);
+      LOG_INF("%u.%02u%% lowest, %d hours ago", lowest_battery_level / 100, lowest_battery_level % 100, ROUND_HOURS(*now - lowest_battery_level_uptime));
+      if (last_battery_level_uptime != lowest_battery_level_uptime) {
+         LOG_INF("%u.%02u%% last, %d hours ago", last_battery_level / 100, last_battery_level % 100, ROUND_HOURS(*now - last_battery_level_uptime));
+      }
+      if (first_battery_level_uptime != lowest_battery_level_uptime &&
+          first_battery_level_uptime != last_battery_level_uptime) {
+         LOG_INF("%u.%02u%% first, %d hours ago", first_battery_level / 100, first_battery_level % 100, ROUND_HOURS(*now - first_battery_level_uptime));
+      }
       return time;
+   } else if (delta < MINIMUM_BATTERY_LEVEL_DELTA) {
+      LOG_INF("forecast: %u.%02u%%, %d delta, %d changes", battery_level / 100, battery_level % 100, delta, current_battery_changes);
+      LOG_INF("%u.%02u%% lowest, %d hours ago", lowest_battery_level / 100, lowest_battery_level % 100, ROUND_HOURS(*now - lowest_battery_level_uptime));
+      if (last_battery_level_uptime != lowest_battery_level_uptime) {
+         LOG_INF("%u.%02u%% last, %d hours ago", last_battery_level / 100, last_battery_level % 100, ROUND_HOURS(*now - last_battery_level_uptime));
+      }
    }
    return -1;
 }
@@ -580,7 +626,6 @@ static int adp536x_reg_write(uint8_t reg, uint8_t val)
    return i2c_reg_write_byte_dt(&i2c_spec, reg, val);
 }
 
-#ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADP536X
 static int adp536x_power_manager_voltage(uint16_t *voltage)
 {
    uint8_t buf[2] = {0, 0};
@@ -593,7 +638,6 @@ static int adp536x_power_manager_voltage(uint16_t *voltage)
    }
    return rc;
 }
-#endif
 
 static int adp536x_power_manager_read_status(power_manager_status_t *status)
 {
@@ -628,18 +672,6 @@ static int adp536x_power_manager_read_status(power_manager_status_t *status)
    return rc;
 }
 
-#ifdef CONFIG_ADP536X_POWER_MANAGEMENT_LOW_POWER
-static void adp536x_power_management_sleep_mode_work_fn(struct k_work *work)
-{
-   /*
-    * 0x5B: 11%, 10mA, 8 min, sleep, enable
-    */
-   adp536x_reg_write(ADP536X_I2C_REG_FUEL_GAUGE_MODE, 0x5B);
-}
-
-static K_WORK_DELAYABLE_DEFINE(adp536x_power_management_sleep_mode_work, adp536x_power_management_sleep_mode_work_fn);
-#endif /* CONFIG_ADP536X_POWER_MANAGEMENT_LOW_POWER */
-
 static int adp536x_power_manager_xvy(uint8_t config_register, bool enable)
 {
    int rc = -ENOTSUP;
@@ -663,7 +695,7 @@ static int adp536x_power_manager_xvy(uint8_t config_register, bool enable)
    return rc;
 }
 
-int adp536x_power_manager_init(void)
+static int adp536x_power_manager_init(void)
 {
    int rc = -ENOTSUP;
 
@@ -672,16 +704,9 @@ int adp536x_power_manager_init(void)
 
       adp536x_reg_read(ADP536X_I2C_REG_CHARGE_TERMINATION, &value);
       value &= 3;
-      value |= 0x80; // 4.2V
+      value |= 0x78; // 4.16V
       adp536x_reg_write(ADP536X_I2C_REG_CHARGE_TERMINATION, value);
-      /*
-       * 0x51: 11%, 10mA, enable
-       */
-      adp536x_reg_write(ADP536X_I2C_REG_FUEL_GAUGE_MODE, 0x51);
       LOG_INF("Battery monitor initialized.");
-#ifdef CONFIG_ADP536X_POWER_MANAGEMENT_LOW_POWER
-      work_schedule_for_io_queue(&adp536x_power_management_sleep_mode_work, K_MINUTES(30));
-#endif
       rc = 0;
    } else {
       LOG_WRN("Failed to initialize battery monitor.");
@@ -691,7 +716,12 @@ int adp536x_power_manager_init(void)
 
 #endif
 
+/* NPM1300 nodes */
+#define NPM1300_MFD_NODE DT_INST(0, nordic_npm1300)
+#define NPM1300_CHARGER_NODE DT_INST(0, nordic_npm1300_charger)
+
 #ifdef CONFIG_REGULATOR_NPM1300
+
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay))
 
 #include "ui.h"
@@ -699,9 +729,9 @@ int adp536x_power_manager_init(void)
 
 #define REGULATOR_NODE DT_NODELABEL(npm1300_buck2)
 
-#if defined(CONFIG_MFD_NPM1300_BUCK2_WITH_USB) && DT_PROP_LEN(DT_INST(0, nordic_npm1300), host_int_gpios)
+#if defined(CONFIG_MFD_NPM1300_BUCK2_WITH_USB) && DT_PROP_LEN(NPM1300_MFD_NODE, host_int_gpios)
 #define MFD_NPM1300_BUCK2_WITH_USB_INT
-#endif /* DT_PROP_LEN(DT_INST(0, nordic_npm1300), host_int_gpios) */
+#endif /* DT_PROP_LEN(NPM1300_MFD_NODE, host_int_gpios) */
 
 static const struct device *npm1300_buck2_dev = DEVICE_DT_GET(REGULATOR_NODE);
 
@@ -777,11 +807,12 @@ static int npm1300_buck2_enable(bool enable)
 #endif /* CONFIG_REGULATOR_NPM1300 */
 
 #ifdef CONFIG_MFD_NPM1300
-#if (DT_NODE_HAS_STATUS(DT_INST(0, nordic_npm1300), okay))
+
+#if (DT_NODE_HAS_STATUS(NPM1300_MFD_NODE, okay))
 
 #include <zephyr/drivers/mfd/npm1300.h>
 
-static const struct device *npm1300_mfd_dev = DEVICE_DT_GET(DT_INST(0, nordic_npm1300));
+static const struct device *npm1300_mfd_dev = DEVICE_DT_GET(NPM1300_MFD_NODE);
 
 #define NPM1300_SYSREG_BASE 0x2
 #define NPM1300_SYSREG_OFFSET_USBCDETECTSTATUS 0x5
@@ -793,6 +824,7 @@ static const struct device *npm1300_mfd_dev = DEVICE_DT_GET(DT_INST(0, nordic_np
 #ifdef CONFIG_MFD_NPM1300_DISABLE_NTC
 #define NPM1300_CHGR_BASE 0x3
 #define NPM1300_CHGR_OFFSET_DIS_SET 0x06
+#define NPM1300_CHGR_OFFSET_DIS_SET_DISABLE_NTC BIT(1)
 #endif /* CONFIG_MFD_NPM1300_DISABLE_NTC */
 
 static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
@@ -893,9 +925,47 @@ static int npm1300_mfd_init(void)
 
 #ifdef CONFIG_NPM1300_CHARGER
 
-#if (DT_NODE_HAS_STATUS(DT_INST(0, nordic_npm1300_charger), okay))
+#if (DT_NODE_HAS_STATUS(NPM1300_CHARGER_NODE, okay))
 
 #include <zephyr/drivers/sensor/npm1300_charger.h>
+
+static const struct device *npm1300_charger_dev = DEVICE_DT_GET(NPM1300_CHARGER_NODE);
+
+static int npm1300_power_manager_read_temperatures(void)
+{
+   struct sensor_value value = {0, 0};
+   int ret = sensor_sample_fetch_chan(npm1300_charger_dev, SENSOR_CHAN_DIE_TEMP);
+   if (ret < 0) {
+      LOG_WRN("NPM1300 fetch die temp failed, %d (%s)!", ret, strerror(-ret));
+      return ret;
+   }
+
+   ret = sensor_channel_get(npm1300_charger_dev, SENSOR_CHAN_DIE_TEMP, &value);
+   if (ret < 0) {
+      LOG_WRN("NPM1300 get die temp failed, %d (%s)!", ret, strerror(-ret));
+      return ret;
+   }
+
+   double die_temp = sensor_value_to_double(&value);
+
+   ret = sensor_sample_fetch_chan(npm1300_charger_dev, SENSOR_CHAN_GAUGE_TEMP);
+   if (ret < 0) {
+      LOG_WRN("NPM1300 fetch gauge temp failed, %d (%s)!", ret, strerror(-ret));
+      return ret;
+   }
+
+   ret = sensor_channel_get(npm1300_charger_dev, SENSOR_CHAN_GAUGE_TEMP, &value);
+   if (ret < 0) {
+      LOG_WRN("NPM1300 get gauge temp failed, %d (%s)!", ret, strerror(-ret));
+      return ret;
+   }
+
+   double gauge_temp = sensor_value_to_double(&value);
+
+   LOG_INF("NPM1300 temperature: die %.2f °C, gauge %.2f °C", die_temp, gauge_temp);
+
+   return ret;
+}
 
 /* nPM1300_PS_v1.1.pdf, 6.2.14.31 BCHGCHARGESTATUS, page 45 */
 #define NPM1300_CHG_STATUS_BATTERY_DETECTED BIT(0)
@@ -907,11 +977,10 @@ static int npm1300_mfd_init(void)
 #define NPM1300_CHG_STATUS_HIGH_TEMPERATURE BIT(6)
 #define NPM1300_CHG_STATUS_SUPLEMENT BIT(7)
 
-static const struct device *npm1300_charger_dev = DEVICE_DT_GET(DT_INST(0, nordic_npm1300_charger));
-
-static int npm1300_power_manager_read_status(power_manager_status_t *status, char *buf, size_t len)
+static int npm1300_power_manager_read_status(power_manager_status_t *status, uint16_t *voltage, char *buf, size_t len)
 {
-   struct sensor_value value;
+   power_manager_status_t current_status = POWER_UNKNOWN;
+   struct sensor_value value = {0, 0};
    int ret = 0;
    int index = 0;
 
@@ -922,13 +991,13 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, cha
 
    ret = sensor_sample_fetch_chan(npm1300_charger_dev, SENSOR_CHAN_NPM1300_CHARGER_STATUS);
    if (ret < 0) {
-      LOG_WRN("NPM1300 fetch channel failed, %d (%s)!", ret, strerror(-ret));
+      LOG_WRN("NPM1300 fetch status failed, %d (%s)!", ret, strerror(-ret));
       return ret;
    }
 
    ret = sensor_channel_get(npm1300_charger_dev, SENSOR_CHAN_NPM1300_CHARGER_STATUS, &value);
    if (ret < 0) {
-      LOG_WRN("NPM1300 get channel failed, %d (%s)!", ret, strerror(-ret));
+      LOG_WRN("NPM1300 get status failed, %d (%s)!", ret, strerror(-ret));
       return ret;
    }
    LOG_DBG("NPM1300 status 0x%02x", value.val1);
@@ -938,31 +1007,34 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, cha
    } else {
       ret = 0;
    }
+   if (value.val1 & NPM1300_CHG_STATUS_HIGH_TEMPERATURE) {
+      LOG_WRN("NPM1300 status high temperature");
+   }
    if (value.val1 & NPM1300_CHG_STATUS_BATTERY_DETECTED) {
       LOG_DBG("NPM1300 status battery");
       if (value.val1 & NPM1300_CHG_STATUS_COMPLETED) {
          LOG_DBG("NPM1300 status battery full");
-         *status = CHARGING_COMPLETED;
+         current_status = CHARGING_COMPLETED;
       } else if (value.val1 & NPM1300_CHG_STATUS_TRICKLE) {
          LOG_DBG("NPM1300 status battery trickle");
-         *status = CHARGING_TRICKLE;
+         current_status = CHARGING_TRICKLE;
       } else if (value.val1 & NPM1300_CHG_STATUS_CURRENT) {
          LOG_DBG("NPM1300 status battery current");
-         *status = CHARGING_I;
+         current_status = CHARGING_I;
       } else if (value.val1 & NPM1300_CHG_STATUS_VOLTAGE) {
          LOG_DBG("NPM1300 status battery voltage");
-         *status = CHARGING_V;
+         current_status = CHARGING_V;
       } else {
          LOG_DBG("NPM1300 status from battery");
-         *status = FROM_BATTERY;
+         current_status = FROM_BATTERY;
       }
    } else {
-      power_manager_status_t temp = FROM_BATTERY;
+      current_status = FROM_BATTERY;
 #ifdef CONFIG_MFD_NPM1300
       uint8_t usb_status = 0;
       if (!npm1300_mfd_detect_usb(&usb_status, false)) {
          if (usb_status) {
-            temp = FROM_EXTERNAL;
+            current_status = FROM_EXTERNAL;
             if (buf && len) {
                index += snprintf(&buf[index], len - index, " usb 0x%02x", usb_status);
                ret = index;
@@ -970,10 +1042,32 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, cha
          }
       }
 #endif /* CONFIG_MFD_NPM1300 */
-      *status = temp;
-      LOG_DBG("NPM1300 status not charging, USB %sconnected", temp == FROM_EXTERNAL ? "" : "not ");
+      LOG_DBG("NPM1300 status not charging, USB %sconnected", current_status == FROM_EXTERNAL ? "" : "not ");
    }
-
+   if (status) {
+      *status = current_status;
+   }
+   if (voltage) {
+      int ret2 = sensor_sample_fetch_chan(npm1300_charger_dev, SENSOR_CHAN_GAUGE_VOLTAGE);
+      if (ret2 < 0) {
+         LOG_WRN("NPM1300 fetch gauge voltage failed, %d (%s)!", ret2, strerror(-ret2));
+      } else {
+         ret2 = sensor_channel_get(npm1300_charger_dev, SENSOR_CHAN_GAUGE_VOLTAGE, &value);
+         if (ret2 < 0) {
+            LOG_WRN("NPM1300 get gauge voltage failed, %d (%s)!", ret2, strerror(-ret2));
+         } else {
+            int milliVolt = value.val1 * 1000 + value.val2 / 1000;
+            LOG_DBG("NPM1300 gauge voltage %d mV", milliVolt);
+            if (voltage) {
+               *voltage = (uint16_t)milliVolt;
+            }
+         }
+      }
+      if (ret2 < 0) {
+         ret = ret2;
+      }
+      npm1300_power_manager_read_temperatures();
+   }
    return ret;
 }
 #else /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_charger), okay) */
@@ -1068,7 +1162,7 @@ int power_manager_init(void)
    int rc = -ENOTSUP;
    int64_t now = k_uptime_get();
 
-   calculate_forecast(&now, PM_INVALID_INTERNAL_LEVEL, NULL);
+   calculate_forecast(&now, PM_RESET_INTERNAL_LEVEL, NULL);
 
    if (device_is_ready(uart_dev)) {
 #ifndef CONFIG_UART_CONSOLE
@@ -1083,7 +1177,9 @@ int power_manager_init(void)
    }
 
 #if defined(CONFIG_SERIAL) && !defined(CONFIG_NRF_MODEM_LIB_TRACE) && DT_HAS_CHOSEN(nordic_modem_trace_uart)
+#if (DT_NODE_HAS_STATUS(DT_CHOSEN(nordic_modem_trace_uart), okay))
    power_manager_suspend_device(DEVICE_DT_GET(DT_CHOSEN(nordic_modem_trace_uart)));
+#endif /* DT_NODE_HAS_STATUS(DT_CHOSEN(nordic_modem_trace_uart), okay) */
 #endif /* !CONFIG_SERIAL && !CONFIG_NRF_MODEM_LIB_TRACE && DT_HAS_CHOSEN(nordic_modem_trace_uart) */
 
 #ifdef CONFIG_INA219
@@ -1236,18 +1332,42 @@ int power_manager_pulse(k_timeout_t time)
 
 int power_manager_voltage(uint16_t *voltage)
 {
-   static int64_t last_time = 0;
-   static uint16_t last_voltage = 0;
-
    int rc = -ENOTSUP;
 
    if (pm_init) {
-      uint16_t internal_voltage;
+      bool charger = false;
+      uint16_t internal_voltage = PM_INVALID_VOLTAGE;
+      uint16_t charger_voltage = PM_INVALID_VOLTAGE;
       int64_t now = k_uptime_get();
-      int64_t time;
+      int64_t time = VOLTAGE_MIN_INTERVAL_MILLIS;
+
+#ifdef CONFIG_ADP536X_POWER_MANAGEMENT
+      {
+         power_manager_status_t status = POWER_UNKNOWN;
+         adp536x_power_manager_read_status(&status);
+         if (FROM_BATTERY != status) {
+            rc = adp536x_power_manager_voltage(&charger_voltage);
+            if (!rc) {
+               LOG_INF("ADP536X %u mV", charger_voltage);
+               charger = true;
+            }
+         }
+      }
+#elif CONFIG_NPM1300_CHARGER
+      {
+         power_manager_status_t status = POWER_UNKNOWN;
+         rc = npm1300_power_manager_read_status(&status, &charger_voltage, NULL, 0);
+         if (rc >= 0 && FROM_BATTERY != status && FROM_EXTERNAL != status) {
+            LOG_INF("NPM1300 %u mV", charger_voltage);
+            charger = true;
+         }
+      }
+#endif
 
       k_mutex_lock(&pm_mutex, K_FOREVER);
-      time = last_time ? now - last_time : VOLTAGE_MIN_INTERVAL_MILLIS;
+      if (!charger && !last_voltage_charger && last_voltage_uptime) {
+         time = now - last_voltage_uptime;
+      }
       internal_voltage = last_voltage;
       k_mutex_unlock(&pm_mutex);
 
@@ -1255,42 +1375,49 @@ int power_manager_voltage(uint16_t *voltage)
          rc = 0;
          LOG_DBG("Last %u mV", internal_voltage);
       } else {
-         internal_voltage = PM_INVALID_VOLTAGE;
-
-#ifdef CONFIG_BATTERY_VOLTAGE_SOURCE_ADP536X
-         rc = adp536x_power_manager_voltage(&internal_voltage);
-         LOG_DBG("ADP536X %u mV", internal_voltage);
-#elif defined(CONFIG_BATTERY_VOLTAGE_SOURCE_ADC)
-         rc = battery_sample(&internal_voltage);
-         LOG_DBG("ADC %u mV", internal_voltage);
-#elif defined(CONFIG_INA219_MODE_POWER_MANAGER)
-         rc = power_manager_read_ina219(&internal_voltage, NULL);
-         LOG_DBG("INA219 %u mV", internal_voltage);
-#else
-         char buf[32];
-
-         rc = modem_at_lock_no_warn(K_NO_WAIT);
-         if (!rc) {
-            rc = modem_at_cmd(buf, sizeof(buf), "%XVBAT: ", "AT%XVBAT");
-            modem_at_unlock();
-         }
-         if (rc < 0) {
-            if (rc == -EBUSY) {
-               LOG_DBG("Failed to read battery level from modem, modem is busy!");
-            } else {
-               LOG_DBG("Failed to read battery level from modem! %d (%s)", rc, strerror(-rc));
-            }
-         } else {
-            internal_voltage = atoi(buf);
-            LOG_DBG("Modem %u mV", internal_voltage);
+         if (charger) {
+            internal_voltage = charger_voltage;
             rc = 0;
-         }
+         } else {
+            internal_voltage = PM_INVALID_VOLTAGE;
+#if defined(CONFIG_BATTERY_VOLTAGE_SOURCE_ADC)
+            rc = battery_sample(&internal_voltage);
+            LOG_DBG("ADC %u mV", internal_voltage);
+#elif defined(CONFIG_BATTERY_VOLTAGE_SOURCE_INA219)
+            rc = power_manager_read_ina219(&internal_voltage, NULL, NULL);
+            LOG_DBG("INA219 %u mV", internal_voltage);
+#else
+            char buf[32];
+
+            rc = modem_at_lock_no_warn(K_NO_WAIT);
+            if (!rc) {
+               rc = modem_at_cmd(buf, sizeof(buf), "%XVBAT: ", "AT%XVBAT");
+               modem_at_unlock();
+            }
+            if (rc < 0) {
+               if (rc == -EBUSY) {
+                  LOG_DBG("Failed to read battery level from modem, modem is busy!");
+               } else {
+                  LOG_DBG("Failed to read battery level from modem! %d (%s)", rc, strerror(-rc));
+               }
+            } else {
+               internal_voltage = atoi(buf);
+               LOG_INF("Modem %u mV", internal_voltage);
+               rc = 0;
+            }
 #endif
+         }
          if (!rc) {
-            internal_voltage = calculate_linear_regresion(&now, internal_voltage);
             k_mutex_lock(&pm_mutex, K_FOREVER);
-            last_time = k_uptime_get();
-            last_voltage = internal_voltage;
+            if (1000 < internal_voltage) {
+               internal_voltage = calculate_linear_regresion(&now, internal_voltage);
+               last_voltage_uptime = k_uptime_get();
+               last_voltage = internal_voltage;
+               last_voltage_charger = charger;
+            } else {
+               // drop too low voltages
+               internal_voltage = last_voltage;
+            }
             k_mutex_unlock(&pm_mutex);
          }
       }
@@ -1343,7 +1470,7 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
          adp536x_power_manager_read_status(&internal_status);
 #endif
 #ifdef CONFIG_NPM1300_CHARGER
-         npm1300_power_manager_read_status(&internal_status, NULL, 0);
+         npm1300_power_manager_read_status(&internal_status, NULL, NULL, 0);
 #endif
          internal_level = transform_curve(internal_voltage, pm_get_battery_profile()->curve);
 
@@ -1436,7 +1563,7 @@ int power_manager_status_desc(char *buf, size_t len)
          index += snprintf(buf + index, len - index, " %s", msg);
       }
 #ifdef CONFIG_NPM1300_CHARGER
-      int rc = npm1300_power_manager_read_status(&battery_status, buf + index, len - index);
+      int rc = npm1300_power_manager_read_status(&battery_status, NULL, buf + index, len - index);
       if (rc > 0) {
          index += rc;
       }
@@ -1482,8 +1609,10 @@ static int sh_cmd_battery_forecast_reset(const char *parameter)
    int64_t now = 0;
 
    k_mutex_lock(&pm_mutex, K_FOREVER);
+   last_voltage_uptime = 0;
+   last_voltage = PM_INVALID_VOLTAGE;
    now = k_uptime_get();
-   calculate_forecast(&now, PM_INVALID_INTERNAL_LEVEL, NULL);
+   calculate_forecast(&now, PM_RESET_INTERNAL_LEVEL, NULL);
    k_mutex_unlock(&pm_mutex);
 
    return 0;

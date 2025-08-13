@@ -736,14 +736,6 @@ config ADP536X_POWER_MANAGEMENT
 	default y
 	help
 	   Enable battery level and charging state monitor.
-
-config ADP536X_POWER_MANAGEMENT_LOW_POWER
-	bool "Enable ADP536X Power Management Sleeping Mode"
-	default y
-	depends on ADP536X_POWER_MANAGEMENT
-	help
-	   Enable power management sleeping mode. Check
-	   battery level only every 8 minutes.
 	   
 endif # ADP536X
 
@@ -941,19 +933,19 @@ endif
 
 choice BATTERY_VOLTAGE_SOURCE
 	prompt "Battery voltage source"
-	default BATTERY_VOLTAGE_SOURCE_ADP536X if BOARD_THINGY91_NRF9160_NS
 	default BATTERY_VOLTAGE_SOURCE_ADC if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
+	default BATTERY_VOLTAGE_SOURCE_INA219 if INA219_MODE_POWER_MANAGER
 	default BATTERY_VOLTAGE_SOURCE_MODEM
 	help
 	  Configure battery voltage source.
 
-config BATTERY_VOLTAGE_SOURCE_ADP536X
-	bool "Battery voltage source ADP536X (Thingy:91)"
-	depends on SENSOR
-
 config BATTERY_VOLTAGE_SOURCE_ADC
-	bool "Battery voltage source ADC (feater nRF9160)"
+	bool "Battery voltage source ADC (feater nRF9160 only)"
 	depends on BATTERY_ADC
+
+config BATTERY_VOLTAGE_SOURCE_INA219
+	bool "Battery voltage source INA219"
+	depends on INA219_MODE_POWER_MANAGER
 
 config BATTERY_VOLTAGE_SOURCE_MODEM
 	bool "Battery voltage source modem"
@@ -1046,6 +1038,10 @@ source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
 
 module = MODEM
 module-str = Modem
+source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
+
+module = POWER_MANAGER
+module-str = PM
 source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
 
 if UART_MANAGER
