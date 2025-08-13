@@ -274,7 +274,7 @@ static const struct sh_cmd_entry *sh_cmd_get(const char *cmd)
 #define PAUSE_HELP 6
 #define PAUSE_MS 40
 #else /* CONFIG_LOG_BACKEND_UART_THROTTLE */
-#define PAUSE_HELP 10
+#define PAUSE_HELP 8
 #define PAUSE_MS 25
 #endif /* CONFIG_LOG_BACKEND_UART_THROTTLE */
 
