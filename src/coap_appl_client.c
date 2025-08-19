@@ -367,7 +367,7 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags, const 
       start = index;
    }
 
-   if ((flags & COAP_SEND_FLAG_INITIAL) || !(flags & COAP_SEND_FLAG_MINIMAL)) {     
+   if ((flags & COAP_SEND_FLAG_INITIAL) || !(flags & COAP_SEND_FLAG_MINIMAL)) {
       err = appl_reboot_cause_description(0, 0, buf + index, len - index);
       if (err > 0) {
          dtls_info("%s", buf + start);
@@ -822,8 +822,8 @@ int coap_appl_client_prepare_location_info(char *buf, size_t len, int flags)
       }
       index += snprintf(buf + index, len - index, "%sGNSS.3=%.06f,%.06f,%.01f,%.02f,%.01f",
                         res ? "*" : "",
-                        result.position.latitude, result.position.longitude, result.position.accuracy,
-                        result.position.altitude, result.position.altitude_accuracy);
+                        result.position.latitude, result.position.longitude, (double)result.position.accuracy,
+                        (double)result.position.altitude, (double)result.position.altitude_accuracy);
       index += snprintf(buf + index, len - index, ",%04d-%02d-%02dT%02d:%02d:%02dZ",
                         result.position.datetime.year, result.position.datetime.month, result.position.datetime.day,
                         result.position.datetime.hour, result.position.datetime.minute, result.position.datetime.seconds);

@@ -12,9 +12,9 @@
  */
 
 #include <modem/lte_lc.h>
+#include <ncs_version.h>
 #include <nrf_errno.h>
 #include <nrf_modem_gnss.h>
-#include <ncs_version.h>
 #include <stdio.h>
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -435,7 +435,6 @@ static void location_gnss_start(void)
    /* Configure GNSS to continuous tracking mode */
    err = nrf_modem_gnss_fix_interval_set(1);
 
-
 #ifdef CONFIG_LOCATION_ENABLE_CONTINUES_MODE
 
 #if (NCS_VERSION_NUMBER < 0x20300)
@@ -592,3 +591,93 @@ modem_gnss_result_t location_get(struct modem_gnss_state *location, bool *runnin
 
    return result;
 }
+
+#ifdef CONFIG_SH_CMD
+#include "parse.h"
+#include "sh_cmd.h"
+
+static int sh_cmd_loc(const char *parameter)
+{
+   int res = 0;
+   const char *cur = parameter;
+   char value[10];
+
+   memset(value, 0, sizeof(value));
+   cur = parse_next_text(cur, ' ', value, sizeof(value));
+
+   if (value[0]) {
+      if (stricmp("start", value)) {
+         location_start(false);
+      } else if (stricmp("stop", value)) {
+         location_stop();
+      } else if (stricmp("force", value)) {
+         location_start(true);
+      }
+   } else {
+      location_state_t state;
+      struct modem_gnss_state gnss;
+      k_mutex_lock(&location_mutex, K_FOREVER);
+      state = s_location_state;
+      gnss = s_location_gnss_state;
+      k_mutex_unlock(&location_mutex);
+
+      const char *mode = "unknown";
+      switch (state) {
+         case LOCATION_NONE:
+            mode = "none";
+            break;
+         case LOCATION_PENDING:
+            mode = "pending";
+            break;
+         case LOCATION_WAITING_FOR_SLEEPING:
+            mode = "waiting for sleeping";
+            break;
+         case LOCATION_GNSS_RUNNING:
+            mode = "GNSS running";
+            break;
+         case LOCATION_DONE:
+            mode = "done";
+            break;
+      }
+      const char *res = "unknown";
+      switch (gnss.result) {
+         case MODEM_GNSS_NOT_AVAILABLE:
+            res = "n.a.";
+            break;
+         case MODEM_GNSS_TIMEOUT:
+            res = "timeout";
+            break;
+         case MODEM_GNSS_ERROR:
+            res = "error";
+            break;
+         case MODEM_GNSS_INVISIBLE:
+            res = "invisible";
+            break;
+         case MODEM_GNSS_POSITION:
+            res = "position";
+            break;
+      }
+
+      LOG_INF("Location: %s.", mode);
+      LOG_INF("Location: %s, %d", res, gnss.max_satellites);
+      if (gnss.valid) {
+         LOG_INF("Location: %f, %f, %f", gnss.position.latitude, gnss.position.longitude, (double)gnss.position.altitude);
+         LOG_INF("location: %04d-%02d-%02dT%02d:%02d:%02dZ",
+                 gnss.position.datetime.year, gnss.position.datetime.month, gnss.position.datetime.day,
+                 gnss.position.datetime.hour, gnss.position.datetime.minute, gnss.position.datetime.seconds);
+      }
+   }
+
+   return res;
+}
+
+static void sh_cmd_loc_help(void)
+{
+   LOG_INF("> help loc:");
+   LOG_INF("  loc         : show location mode.");
+   LOG_INF("  loc [stop|start|force] : set location mode.");
+}
+
+SH_CMD(loc, NULL, "location mode.", sh_cmd_loc, sh_cmd_loc_help, 0);
+
+#endif /* CONFIG_SH_CMD */
