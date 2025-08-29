@@ -1397,6 +1397,18 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
             LOG_INF("rel14feat: %s", buf);
          }
       }
+
+      if (atomic_test_bit(&modem_states, MODEM_FIRMWARE_2)) {
+#ifdef CONFIG_MODEM_MIXED_LTE_GNSS_ANTENNA
+         err = modem_at_cmd(buf, sizeof(buf), NULL, "AT\%XANTCFG=1");
+#else
+         err = modem_at_cmd(buf, sizeof(buf), NULL, "AT\%XANTCFG=0");
+#endif
+         if (err > 0) {
+            LOG_INF("xantcfg: %s", buf);
+         }
+      }
+
       err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%XCONNSTAT=1");
       if (err > 0) {
          LOG_INF("stat: %s", buf);

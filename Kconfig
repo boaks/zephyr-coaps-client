@@ -424,6 +424,11 @@ config LTE_FEATURE_PLMN_SELECT_OPTIMIZATION
 	bool "PLMN select optimization. mfw 2.0.1 >= only."
 	default y
 
+config MODEM_MIXED_LTE_GNSS_ANTENNA
+	bool "Configure modem for mixed LTE/GNSS antenna. mfw 2.0.0 >= only."
+	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NRF9161_NS
+	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9151_NRF9151_NS
+
 endmenu
 
 config SH_CMD
