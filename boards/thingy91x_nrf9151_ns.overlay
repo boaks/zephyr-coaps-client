@@ -13,10 +13,6 @@
 
 / {
 
-	chosen {
-		nordic,modem-trace-uart = &uart1;
-	};
-
 	outs {
 		compatible = "gpio-leds";
 		status = "okay";
@@ -77,13 +73,6 @@
 
 &accelerometer_lp {
 	status = "okay";
-};
-
-&uart1 {
-	status = "okay";
-	hw-flow-control;
-	// important for trace uart!
-	current-speed = < 1000000 >;
 };
 
 sensor_i2c: &i2c2 { };

@@ -10,10 +10,11 @@ The folder `snippets` contains `thingy91x-modem-trace-ext-flash`, which enables 
 cp -r snippets/* ../../nrf/snippets/
 ```
 
-and add `-S thingy91x-modem-trace-ext-flash` to the `west` build options.
+and add `... --- ... -D<app>_SNIPPET="thingy91x-modem-trace-ext-flash"` to the `west` build options. (Replace `<app>` by the folder name of your project.)
+
 
 ```
-west build -d build_thingyx -b thingy91x/nrf9151/ns -S thingy91x-modem-trace-ext-flash
+west build -d build_thingyx -b thingy91x/nrf9151/ns -- -Dcoaps-client_SNIPPET="thingy91x-modem-trace-ext-flash"
 ```
 
 # New/Upcoming Board Support

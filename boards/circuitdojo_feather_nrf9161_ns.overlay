@@ -13,10 +13,6 @@
 
 /    {
 
-	chosen {
-		nordic,modem-trace-uart = &uart1;
-	};
-
 	ins {
 		compatible = "gpio-keys";
 		rx0: uart0_rx {
@@ -55,13 +51,6 @@
 &lis2dh {
 	irq-gpios = <&gpio0 12 GPIO_ACTIVE_HIGH>;
 	anym-on-int1;
-};
-
-&uart1 {
-	status = "okay";
-	hw-flow-control;
-	// important for trace uart!
-	current-speed = <1000000>;
 };
 
 sensor_i2c: &i2c2 {};
