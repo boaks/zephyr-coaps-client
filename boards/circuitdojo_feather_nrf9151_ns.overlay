@@ -6,12 +6,12 @@
  *
  * This program and the accompanying materials are made available under the
  * terms of the Eclipse Public License 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0
+ * http: //www.eclipse.org/legal/epl-2.0
  *
  * SPDX-License-Identifier: EPL-2.0
  */
 
-/	{
+/    {
 
 	chosen {
 		nordic,modem-trace-uart = &uart1;
@@ -35,13 +35,21 @@
 };
 
 &gpio0 {
-    sense-edge-mask = <0xffff>;
+	sense-edge-mask = <0xffff>;
 };
 
 &npm1300_leds {
 	nordic,led0-mode = "host";
 	nordic,led1-mode = "host";
 	nordic,led2-mode = "host";
+};
+
+&npm1300_charger {
+	/* requires to disable the NTC (self heating)*/
+	term-microvolt = <4150000>;
+	/* lower current to reduce self heating*/
+	current-microamp = <500000>;
+	dischg-limit-microamp = <1000000>;
 };
 
 &lis2dh {
@@ -53,7 +61,7 @@
 	status = "okay";
 	hw-flow-control;
 	// important for trace uart!
-	current-speed = < 1000000 >;
+	current-speed = <1000000>;
 };
 
 sensor_i2c: &i2c2 {};
