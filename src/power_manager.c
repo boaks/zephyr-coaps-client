@@ -216,7 +216,26 @@ static const struct battery_profile profile_lipo_1350 = {
 
 #ifdef CONFIG_BATTERY_TYPE_LIPO_2000_MAH
 static const struct transform_curve curve_lipo_2000 = {
-    /* nRF9160 feather */
+    /* nRF9151 feather, modem voltage */
+    .points = 9,
+    .curve = {
+        {4150, 10000},
+        {3762, 6188},
+        {3688, 5246},
+        {3633, 3688},
+        {3554, 1844},
+        {3474, 656},
+        {3466, 491},
+        {3431, 246},
+        {3300, 0},
+    }};
+
+static const struct battery_profile profile_lipo_2000 = {
+    .name = "LiPo",
+    .curve = &curve_lipo_2000};
+#elif CONFIG_BATTERY_TYPE_LIPO_2000_MAH_ADC
+static const struct transform_curve curve_lipo_2000_adc = {
+    /* nRF9160 feather, ADC voltage */
     .points = 8,
     .curve = {
         {4180, 10000},
@@ -229,14 +248,32 @@ static const struct transform_curve curve_lipo_2000 = {
         {3350, 0},
     }};
 
-static const struct battery_profile profile_lipo_2000 = {
+static const struct battery_profile profile_lipo_2000_adc = {
     .name = "LiPo",
-    .curve = &curve_lipo_2000};
+    .curve = &curve_lipo_2000_adc};
 #endif
 
 #ifdef CONFIG_BATTERY_TYPE_NIMH_2000_MAH
 static const struct transform_curve curve_nimh_2000 = {
-    /* nRF9160 feather */
+    /* nRF9151 feather, modem voltage */
+    .points = 9,
+    .curve = {
+        {4300, 10000}, /* requires external charger */
+        {4029, 9144},
+        {3939, 8558},
+        {3903, 8063},
+        {3877, 6982},
+        {3802, 4820},
+        {3445, 765},
+        {3398, 315},
+        {3300, 0},
+    }};
+static const struct battery_profile profile_nimh_2000 = {
+    .name = "NiMH",
+    .curve = &curve_nimh_2000};
+#elif CONFIG_BATTERY_TYPE_NIMH_2000_MAH_ADC
+static const struct transform_curve curve_nimh_2000_adc = {
+    /* nRF9160 feather, ADC voltage */
     .points = 8,
     .curve = {
         {4350, 10000}, /* requires external charger */
@@ -248,10 +285,11 @@ static const struct transform_curve curve_nimh_2000 = {
         {3430, 422},
         {3300, 0},
     }};
-static const struct battery_profile profile_nimh_2000 = {
+static const struct battery_profile profile_nimh_2000_adc = {
     .name = "NiMH",
-    .curve = &curve_nimh_2000};
-#endif
+    .curve = &curve_nimh_2000_adc};
+#endif 
+
 
 #ifdef CONFIG_BATTERY_TYPE_NIMH_4_2000_MAH
 static const struct transform_curve curve_nimh_4_2000 = {
@@ -308,11 +346,15 @@ static const struct battery_profile *battery_profiles[] = {
 #endif
 #ifdef CONFIG_BATTERY_TYPE_LIPO_2000_MAH
     &profile_lipo_2000,
+#elif CONFIG_BATTERY_TYPE_LIPO_2000_MAH_ADC
+    &profile_lipo_2000_adc,
 #else
     NULL,
 #endif
 #ifdef CONFIG_BATTERY_TYPE_NIMH_2000_MAH
     &profile_nimh_2000,
+#elif CONFIG_BATTERY_TYPE_NIMH_2000_MAH_ADC
+    &profile_nimh_2000_adc,
 #else
     NULL,
 #endif
@@ -1431,7 +1473,7 @@ int power_manager_voltage(uint16_t *voltage)
 int power_manager_voltage_ext(uint16_t *voltage)
 {
    int rc = -ENODEV;
-#ifdef CONFIG_BATTERY_ADC
+#ifdef CONFIG_EXT_BATTERY_ADC
    rc = battery2_sample(voltage);
 #elif defined(CONFIG_INA219) && !defined(CONFIG_INA219_MODE_POWER_MANAGER)
    rc = power_manager_read_ina219(voltage, NULL, NULL);
@@ -1442,7 +1484,7 @@ int power_manager_voltage_ext(uint16_t *voltage)
 int power_manager_ext(uint16_t *voltage, int16_t *current, uint16_t *power)
 {
    int rc = -ENODEV;
-#ifdef CONFIG_BATTERY_ADC
+#ifdef CONFIG_EXT_BATTERY_ADC
    rc = battery2_sample(voltage);
 #elif defined(CONFIG_INA219) && !defined(CONFIG_INA219_MODE_POWER_MANAGER)
    rc = power_manager_read_ina219(voltage, current, power);
