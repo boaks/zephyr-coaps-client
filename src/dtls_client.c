@@ -940,7 +940,7 @@ static void dtls_coap_success(dtls_app_data_t *app)
    dtls_coap_clear_failures();
    if (!atomic_test_and_set_bit(&general_states, APPL_INITIAL_SUCCESS)) {
 #ifdef CONFIG_UPDATE
-      appl_update_image_verified();
+      appl_update_image_verify();
 #endif
    }
    interval = app->result_handler(app, true);
@@ -972,7 +972,7 @@ static void dtls_coap_failure(dtls_app_data_t *app, const char *cause)
    }
    dtls_info("%dms/%dms: failure, %s", time1, time2, cause);
    failures++;
-   if (!atomic_test_bit(&general_states, APPL_INITIAL_SUCCESS)) {
+   if (atomic_test_bit(&general_states, APPL_INITIAL_SUCCESS)) {
       int f = dtls_coap_inc_failures();
       dtls_info("current failures %d.", f);
    }
@@ -1710,7 +1710,7 @@ static int dtls_network_searching(const k_timeout_t timeout)
 static long dtls_calculate_reboot_timeout(int reboot)
 {
 #ifdef CONFIG_UPDATE
-   if (appl_update_image_verified()) {
+   if (appl_update_image_unverified()) {
       return MSEC_PER_HOUR;
    }
 #endif

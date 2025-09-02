@@ -186,7 +186,7 @@ int appl_update_cmd(const char *config)
          appl_update_reboot();
       }
    } else if (!stricmp("verify", value)) {
-      rc = appl_update_image_verified();
+      rc = appl_update_image_verify();
    }
 
    if (close) {
@@ -369,7 +369,7 @@ int appl_update_request_upgrade(void)
    return rc;
 }
 
-int appl_update_image_verified(void)
+int appl_update_image_verify(void)
 {
    if (appl_reboots()) {
       return -ESHUTDOWN;
@@ -378,7 +378,7 @@ int appl_update_image_verified(void)
       LOG_INF("Image already confirmed.");
       return 1;
    } else {
-      LOG_INF("Update confirm image.");
+      LOG_INF("Confirm image.");
       return boot_write_img_confirmed();
    }
 }
