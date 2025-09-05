@@ -305,18 +305,26 @@ config UDP_EDRX_ENABLE
 	bool "Enable LTE eDRX"
 	default y
 
-config UDP_EDRX_WAKEUP_ENABLE
-	bool "Enable UDP wakeup in eDRX phase"
+config UDP_WAKEUP_ENABLE
+	bool "Enable UDP wakeup."
 	default y
+	help
+	  Requires to disable PSM (power sleeping mode).
+	  Usually eDRX is then used to save energy.
 
-if (UDP_EDRX_WAKEUP_ENABLE)
+if (UDP_WAKEUP_ENABLE)
 
-config UDP_EDRX_WAKEUP_PORT
+config UDP_WAKEUP_PORT
 	int "UDP port for wakeup"
 	default 15684
+	help
+		To support AS-RAI with the nRF91, the UDP socket
+		for that regular traffic must be "connected" to 
+		a server. Using a second port enables to receive
+		wakeup messages also from different servers. 
 
-config UDP_EDRX_WAKEUP_ON_CONNECT_TIMEOUT
-	int "Wakeup on connect timeout"
+config UDP_WAKEUP_ON_INCOMING_CONNECT_TIMEOUT
+	int "Wakeup on incoming connect timeout"
 	default 0
 	help
 	  In some networks the data is only received, if it was

@@ -520,6 +520,12 @@ int coap_appl_client_prepare_net_info(char *buf, size_t len, int flags)
             index += snprintf(buf + index, len - index, "PSM: TAU %d [s], Act %d [s]", params.psm.tau, params.psm.active_time);
          } else {
             index += snprintf(buf + index, len - index, "PSM: n.a.");
+            time = get_wakeup_on_incoming_connect_timeout();
+            if (time) {
+               index += snprintf(buf + index, len - index, ", woic timeout %d [s]", time);
+            } else {
+               index += snprintf(buf + index, len - index, ", no woic.");
+            }
          }
       }
       memset(&params, 0, sizeof(params));

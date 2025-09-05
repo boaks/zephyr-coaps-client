@@ -37,5 +37,6 @@ extern unsigned int dtls_handshakes;
 
 int get_send_interval(void);
 int get_receive_interval(void);
+int get_wakeup_on_incoming_connect_timeout(void);
 int get_local_address(uint8_t* buf, size_t len);
 #endif /* DTLS_CLIENT_H */

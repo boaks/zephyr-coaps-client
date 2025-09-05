@@ -123,10 +123,10 @@ typedef struct dtls_app_data_t {
    dtls_app_result_handler result_handler;
    int fd;
    int protocol;
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
    int fd2;
    uint16_t port;
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+#endif /* CONFIG_UDP_WAKEUP_ENABLE */
    uint8_t keep_connection : 1;
    uint8_t send_request_pending : 1;
    uint8_t dtls_pending : 1;
@@ -222,14 +222,14 @@ unsigned int dtls_handshakes = 0;
 
 static atomic_t send_interval = ATOMIC_INIT(CONFIG_COAP_SEND_INTERVAL);
 
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
-volatile uint32_t edrx_wakeup_on_connect_timeout = CONFIG_UDP_EDRX_WAKEUP_ON_CONNECT_TIMEOUT;
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
+static volatile uint16_t wakeup_on_incoming_connect_timeout = CONFIG_UDP_WAKEUP_ON_INCOMING_CONNECT_TIMEOUT;
+#endif /* CONFIG_UDP_WAKEUP_ENABLE */
 
-volatile uint32_t coap_timeout = COAP_ACK_TIMEOUT;
+static volatile uint16_t coap_timeout = COAP_ACK_TIMEOUT;
 
-volatile int coap_send_flags = COAP_SEND_FLAGS_;
-volatile int coap_send_flags_next = COAP_SEND_FLAGS_;
+static volatile int coap_send_flags = COAP_SEND_FLAGS_;
+static volatile int coap_send_flags_next = COAP_SEND_FLAGS_;
 
 static K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
 static K_SEM_DEFINE(dtls_trigger_search, 0, 1);
@@ -361,7 +361,7 @@ static int dtls_low_voltage(const k_timeout_t timeout)
 int get_local_address(uint8_t *buf, size_t length)
 {
    int rc = 0;
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
    struct lte_network_info info;
 
    rc = modem_get_network_info(&info);
@@ -372,17 +372,29 @@ int get_local_address(uint8_t *buf, size_t length)
       rc += snprintf(&buf[rc], length - rc, "%u", app_data_context.port);
       dtls_info("dtls: recv. address: %s", buf);
    }
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+#else /* CONFIG_UDP_WAKEUP_ENABLE */
+   (void) buf;
+   (void) length;
+#endif /* CONFIG_UDP_WAKEUP_ENABLE */
    return rc;
 }
 
 int get_receive_interval(void)
 {
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
    return modem_get_recv_interval_ms();
-#else  /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+#else  /* CONFIG_UDP_WAKEUP_ENABLE */
    return 0;
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+#endif /* CONFIG_UDP_WAKEUP_ENABLE */
+}
+
+int get_wakeup_on_incoming_connect_timeout(void)
+{
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
+   return wakeup_on_incoming_connect_timeout;
+#else  /* CONFIG_UDP_WAKEUP_ENABLE */
+   return 0;
+#endif /* CONFIG_UDP_WAKEUP_ENABLE */
 }
 
 int get_send_interval(void)
@@ -525,13 +537,13 @@ static void close_socket(dtls_app_data_t *app)
       (void)close(app->fd);
       app->fd = -1;
    }
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
    if (app->fd2 >= 0) {
       (void)close(app->fd2);
       app->fd2 = -1;
       app->port = 0;
    }
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+#endif /* CONFIG_UDP_WAKEUP_ENABLE */
 }
 
 static bool reopen_socket(dtls_app_data_t *app, const char *loc)
@@ -578,7 +590,7 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
    modem_set_rai_mode(RAI_MODE_OFF, app->fd);
    dtls_info("> %s, reopened socket.", loc);
 
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
    app->fd2 = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
    if (app->fd2 < 0) {
       dtls_warn("> %s, reopen UDP wakeup socket failed, %d, errno %d (%s), restart",
@@ -586,7 +598,7 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
    } else {
       struct sockaddr_in listen_addr;
 
-      app->port = CONFIG_UDP_EDRX_WAKEUP_PORT;
+      app->port = CONFIG_UDP_WAKEUP_PORT;
       memset(&listen_addr, 0, sizeof(listen_addr));
 
       rc = setsockopt(app->fd2, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
@@ -1011,12 +1023,12 @@ static void dtls_coap_set_request_state(const char *desc, dtls_app_data_t *app, 
    }
 }
 
-static uint32_t
-network_timeout_scale(uint32_t timeout)
+static uint16_t
+network_timeout_scale(uint16_t timeout)
 {
    int factor = modem_get_time_scale();
    if (factor > 100) {
-      return (timeout * factor) / 100;
+      return (uint16_t)((timeout * factor) / 100);
    } else {
       return timeout;
    }
@@ -1285,7 +1297,7 @@ recvfrom_peer(dtls_app_data_t *app, dtls_context_t *ctx)
    }
 }
 
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
 static int
 recvfrom_peer2(dtls_app_data_t *app)
 {
@@ -1309,7 +1321,7 @@ recvfrom_peer2(dtls_app_data_t *app)
    }
    return result;
 }
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+#endif /* CONFIG_UDP_WAKEUP_ENABLE */
 
 static int
 sendto_peer(dtls_app_data_t *app, struct dtls_context_t *ctx)
@@ -1719,11 +1731,11 @@ static long dtls_calculate_reboot_timeout(int reboot)
 
 static int dtls_loop(dtls_app_data_t *app, int reboot)
 {
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
    struct pollfd udp_poll[2];
-#else  /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+#else  /* CONFIG_UDP_WAKEUP_ENABLE */
    struct pollfd udp_poll[1];
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+#endif /* CONFIG_UDP_WAKEUP_ENABLE */
 
    dtls_context_t *dtls_context = NULL;
    const char *reopen_cause = NULL;
@@ -1932,7 +1944,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
       udp_poll[0].fd = app->fd;
       udp_poll[0].events = POLLIN;
       udp_poll[0].revents = 0;
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
       if (app->fd2 >= 0) {
          ++udp_ports_to_poll;
          udp_poll[1].fd = app->fd2;
@@ -1943,7 +1955,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
          udp_poll[1].events = 0;
          udp_poll[1].revents = 0;
       }
-#endif /*CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+#endif /*CONFIG_UDP_WAKEUP_ENABLE */
 #ifdef CONFIG_COAP_UPDATE
       if (dtls_no_pending_request(app->request_state)) {
          bool pending = appl_update_coap_pending();
@@ -2197,15 +2209,15 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                dtls_info("%s suspend after %d s", type, loops);
             }
          } else if (app->request_state == INCOMING_CONNECT) {
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
-            if (edrx_wakeup_on_connect_timeout && atomic_test_bit(&general_states, TRIGGER_RECV)) {
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
+            if (wakeup_on_incoming_connect_timeout && atomic_test_bit(&general_states, TRIGGER_RECV)) {
                // no data received after wakeup
-               if (edrx_wakeup_on_connect_timeout <= loops) {
+               if (wakeup_on_incoming_connect_timeout <= loops) {
                   atomic_clear_bit(&general_states, TRIGGER_RECV);
                   dtls_cmd_trigger("incoming connect", false, 1);
                }
             } else
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+#endif /* CONFIG_UDP_WAKEUP_ENABLE */
                if (!atomic_test_bit(&general_states, LTE_CONNECTED)) {
                   atomic_clear_bit(&general_states, TRIGGER_RECV);
                   dtls_coap_set_request_state("disconnect", app, NONE);
@@ -2251,7 +2263,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                k_sleep(K_MSEC(1000));
             }
          }
-#if defined(CONFIG_UDP_EDRX_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
          if (udp_ports_to_poll > 1 && udp_poll[1].revents & POLLIN) {
             recvfrom_peer2(app);
          } else if (udp_poll[1].revents & (POLLERR | POLLNVAL)) {
@@ -2260,7 +2272,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                k_sleep(K_MSEC(1000));
             }
          }
-#endif /* CONFIG_UDP_EDRX_WAKEUP_ENABLE */
+#endif /* CONFIG_UDP_WAKEUP_ENABLE */
       }
    }
 
@@ -2470,7 +2482,7 @@ static void sh_cmd_send_interval_help(void)
 static int sh_cmd_coap_timeout(const char *parameter)
 {
    int res = 0;
-   uint32_t timeout = coap_timeout;
+   uint16_t timeout = coap_timeout;
    const char *cur = parameter;
    char value[10];
 
@@ -2478,7 +2490,7 @@ static int sh_cmd_coap_timeout(const char *parameter)
    cur = parse_next_text(cur, ' ', value, sizeof(value));
 
    if (value[0]) {
-      res = sscanf(value, "%u", &timeout);
+      res = sscanf(value, "%hu", &timeout);
       if (res == 1) {
          coap_timeout = timeout ? timeout : 1;
          res = 0;
@@ -2490,8 +2502,8 @@ static int sh_cmd_coap_timeout(const char *parameter)
       cur = "";
    }
    if (!res) {
-      uint32_t ntimeout = network_timeout_scale(coap_timeout);
-      uint32_t atimeout = network_additional_timeout();
+      uint16_t ntimeout = network_timeout_scale(coap_timeout);
+      uint16_t atimeout = network_additional_timeout();
       if (coap_timeout != ntimeout) {
          LOG_INF("%sinitial coap timeout %us(+%us, *rsrp %us)", cur, timeout, atimeout, ntimeout);
       } else {
@@ -2508,7 +2520,7 @@ static void sh_cmd_send_coap_timeout_help(void)
    LOG_INF("  timeout <time> : set initial coap timeout in seconds.");
 }
 
-static int sh_cmd_edrx_wakeup_on_connect_timeout(const char *parameter)
+static int sh_cmd_wakeup_on_incoming_connect_timeout(const char *parameter)
 {
    int res = 0;
    const char *cur = parameter;
@@ -2518,10 +2530,10 @@ static int sh_cmd_edrx_wakeup_on_connect_timeout(const char *parameter)
    cur = parse_next_text(cur, ' ', value, sizeof(value));
 
    if (value[0]) {
-      uint32_t timeout = 0;
-      res = sscanf(value, "%u", &timeout);
+      uint16_t timeout = 0;
+      res = sscanf(value, "%hu", &timeout);
       if (res == 1) {
-         edrx_wakeup_on_connect_timeout = timeout;
+         wakeup_on_incoming_connect_timeout = timeout;
          res = 0;
          cur = "set ";
       } else {
@@ -2531,20 +2543,20 @@ static int sh_cmd_edrx_wakeup_on_connect_timeout(const char *parameter)
       cur = "";
    }
    if (!res) {
-      if (!edrx_wakeup_on_connect_timeout) {
-         LOG_INF("%sno edrx wakeup on connect.", cur);
+      if (!wakeup_on_incoming_connect_timeout) {
+         LOG_INF("%sno wakeup on incoming connect.", cur);
       } else {
-         LOG_INF("%sedrx wakeup on connect timeout %us", cur, edrx_wakeup_on_connect_timeout);
+         LOG_INF("%swakeup on incoming connect timeout %us", cur, wakeup_on_incoming_connect_timeout);
       }
    }
    return res;
 }
 
-static void sh_cmd_edrx_wakeup_on_connect_timeout_help(void)
+static void sh_cmd_wakeup_on_incoming_connect_timeout_help(void)
 {
-   LOG_INF("> help ewoc:");
-   LOG_INF("  ewoc        : read edrx wakeup on connect timeout. 0 disabled.");
-   LOG_INF("  ewoc <time> : set edrx wakeup on connect timeout in seconds. 0 to disable.");
+   LOG_INF("> help woic:");
+   LOG_INF("  woic        : read wakeup on incoming connect timeout. 0 disabled.");
+   LOG_INF("  woic <time> : set wakeup on incoming connect timeout in seconds. 0 to disable.");
 }
 
 typedef struct flags_definition {
@@ -2757,7 +2769,7 @@ SH_CMD(sendresult, NULL, "send result message.", sh_cmd_send_result, NULL, 0);
 SH_CMD(sendalert, NULL, "send alert message.", sh_cmd_send_alert, NULL, 0);
 SH_CMD(interval, NULL, "send interval.", sh_cmd_send_interval, sh_cmd_send_interval_help, 0);
 SH_CMD(timeout, NULL, "initial coap timeout.", sh_cmd_coap_timeout, sh_cmd_send_coap_timeout_help, 0);
-SH_CMD(ewoc, NULL, "edrx wakeup on connect timeout.", sh_cmd_edrx_wakeup_on_connect_timeout, sh_cmd_edrx_wakeup_on_connect_timeout_help, 0);
+SH_CMD(woic, NULL, "wakeup on incoming connect timeout.", sh_cmd_wakeup_on_incoming_connect_timeout, sh_cmd_wakeup_on_incoming_connect_timeout_help, 0);
 SH_CMD(sendflags, NULL, "sendflags.", sh_cmd_coap_sendflags, sh_cmd_coap_sendflags_help, 0);
 SH_CMD(onoff, NULL, "on/off mode.", sh_cmd_onoff, sh_cmd_onoff_help, 0);
 SH_CMD(restart, NULL, "try to switch off the modem and restart device.", sh_cmd_restart, NULL, 0);
