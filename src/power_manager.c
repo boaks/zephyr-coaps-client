@@ -762,7 +762,7 @@ static int adp536x_power_manager_init(void)
 #define NPM1300_MFD_NODE DT_INST(0, nordic_npm1300)
 #define NPM1300_CHARGER_NODE DT_INST(0, nordic_npm1300_charger)
 
-#ifdef CONFIG_REGULATOR_NPM1300
+#ifdef CONFIG_REGULATOR_NPM13XX
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay))
 
@@ -771,8 +771,8 @@ static int adp536x_power_manager_init(void)
 
 #define REGULATOR_NODE DT_NODELABEL(npm1300_buck2)
 
-#if defined(CONFIG_MFD_NPM1300_BUCK2_WITH_USB) && DT_PROP_LEN(NPM1300_MFD_NODE, host_int_gpios)
-#define MFD_NPM1300_BUCK2_WITH_USB_INT
+#if defined(CONFIG_MFD_NPM13XX_BUCK2_WITH_USB) && DT_PROP_LEN(DT_INST(0, nordic_npm1300), host_int_gpios)
+#define MFD_NPM13XX_BUCK2_WITH_USB_INT
 #endif /* DT_PROP_LEN(NPM1300_MFD_NODE, host_int_gpios) */
 
 static const struct device *npm1300_buck2_dev = DEVICE_DT_GET(REGULATOR_NODE);
@@ -813,7 +813,7 @@ static int npm1300_buck2_enable(bool enable)
             LOG_INF("NPM1300 enabled buck2.");
          }
       }
-#ifdef CONFIG_MFD_NPM1300_BUCK2_LED
+#ifdef CONFIG_MFD_NPM13XX_BUCK2_LED
       if (!ret) {
          ui_led_op(LED_BUCK2, LED_SET);
       }
@@ -831,7 +831,7 @@ static int npm1300_buck2_enable(bool enable)
             LOG_INF("NPM1300 disabled buck2.");
          }
       }
-#ifdef CONFIG_MFD_NPM1300_BUCK2_LED
+#ifdef CONFIG_MFD_NPM13XX_BUCK2_LED
       if (!ret) {
          ui_led_op(LED_BUCK2, LED_CLEAR);
       }
@@ -843,16 +843,16 @@ static int npm1300_buck2_enable(bool enable)
 #endif /* regulator_always_on */
 
 #else /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay) */
-#undef CONFIG_REGULATOR_NPM1300
-#undef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
+#undef CONFIG_REGULATOR_NPM13XX
+#undef CONFIG_MFD_NPM13XX_BUCK2_WITH_USB
 #endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay) */
-#endif /* CONFIG_REGULATOR_NPM1300 */
+#endif /* CONFIG_REGULATOR_NPM13XX */
 
-#ifdef CONFIG_MFD_NPM1300
+#ifdef CONFIG_MFD_NPM13XX
 
 #if (DT_NODE_HAS_STATUS(NPM1300_MFD_NODE, okay))
 
-#include <zephyr/drivers/mfd/npm1300.h>
+#include <zephyr/drivers/mfd/npm13xx.h>
 
 static const struct device *npm1300_mfd_dev = DEVICE_DT_GET(NPM1300_MFD_NODE);
 
@@ -863,17 +863,17 @@ static const struct device *npm1300_mfd_dev = DEVICE_DT_GET(NPM1300_MFD_NODE);
 #define NPM1300_BUCK_OFFSET_BUCKCTRL0 0x15
 #define NPM1300_BUCK2_PULLDOWN_EN BIT(3)
 
-#ifdef CONFIG_MFD_NPM1300_DISABLE_NTC
+#ifdef CONFIG_MFD_NPM13XX_DISABLE_NTC
 #define NPM1300_CHGR_BASE 0x3
 #define NPM1300_CHGR_OFFSET_DIS_SET 0x06
 #define NPM1300_CHGR_OFFSET_DIS_SET_DISABLE_NTC BIT(1)
-#endif /* CONFIG_MFD_NPM1300_DISABLE_NTC */
+#endif /* CONFIG_MFD_NPM13XX_DISABLE_NTC */
 
 static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
 {
-#ifndef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
+#ifndef CONFIG_MFD_NPM13XX_BUCK2_WITH_USB
    (void)switch_regulator;
-#endif /* !CONFIG_MFD_NPM1300_BUCK2_WITH_USB */
+#endif /* !CONFIG_MFD_NPM13XX_BUCK2_WITH_USB */
 
    int ret = 0;
    uint8_t status = 0;
@@ -883,7 +883,7 @@ static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
       return -ENOTSUP;
    }
 
-   ret = mfd_npm1300_reg_read(npm1300_mfd_dev, NPM1300_SYSREG_BASE, NPM1300_SYSREG_OFFSET_USBCDETECTSTATUS, &status);
+   ret = mfd_npm13xx_reg_read(npm1300_mfd_dev, NPM1300_SYSREG_BASE, NPM1300_SYSREG_OFFSET_USBCDETECTSTATUS, &status);
    if (ret < 0) {
       LOG_WRN("NPM1300 read usb status failed, %d (%s)!", ret, strerror(-ret));
       return ret;
@@ -892,33 +892,33 @@ static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
       if (usb) {
          *usb = status;
       }
-#ifdef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
+#ifdef CONFIG_MFD_NPM13XX_BUCK2_WITH_USB
       if (switch_regulator) {
          npm1300_buck2_enable(status);
          status = status ? 0 : NPM1300_BUCK2_PULLDOWN_EN;
          /* Write to MFD to enable/disable pulldown for BUCK2 */
-         ret = mfd_npm1300_reg_update(npm1300_mfd_dev, NPM1300_BUCK_BASE, NPM1300_BUCK_OFFSET_BUCKCTRL0, status, NPM1300_BUCK2_PULLDOWN_EN);
+         ret = mfd_npm13xx_reg_update(npm1300_mfd_dev, NPM1300_BUCK_BASE, NPM1300_BUCK_OFFSET_BUCKCTRL0, status, NPM1300_BUCK2_PULLDOWN_EN);
       }
-#endif /* CONFIG_MFD_NPM1300_BUCK2_WITH_USB */
+#endif /* CONFIG_MFD_NPM13XX_BUCK2_WITH_USB */
    }
 
    return ret;
 }
 
-#ifdef MFD_NPM1300_BUCK2_WITH_USB_INT
+#ifdef MFD_NPM13XX_BUCK2_WITH_USB_INT
 
 static void npm1300_event_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
-   if (pins & BIT(NPM1300_EVENT_VBUS_DETECTED)) {
+   if (pins & BIT(NPM13XX_EVENT_VBUS_DETECTED)) {
       LOG_INF("PM Vbus connected");
       npm1300_buck2_enable(true);
-   } else if (pins & BIT(NPM1300_EVENT_VBUS_REMOVED)) {
+   } else if (pins & BIT(NPM13XX_EVENT_VBUS_REMOVED)) {
       LOG_INF("PM Vbus removed");
       npm1300_buck2_enable(false);
    }
 }
 
-#endif /* MFD_NPM1300_BUCK2_WITH_USB_INT */
+#endif /* MFD_NPM13XX_BUCK2_WITH_USB_INT */
 
 static int npm1300_mfd_init(void)
 {
@@ -930,46 +930,46 @@ static int npm1300_mfd_init(void)
    }
 #ifdef REGULATOR_NODE
    if (npm1300_buck2_enabled()) {
-#ifdef CONFIG_MFD_NPM1300_BUCK2_LED
+#ifdef CONFIG_MFD_NPM13XX_BUCK2_LED
       ui_led_op(LED_BUCK2, LED_SET);
 #endif
    }
 #endif /* REGULATOR_NODE */
 
-#ifdef MFD_NPM1300_BUCK2_WITH_USB_INT
+#ifdef MFD_NPM13XX_BUCK2_WITH_USB_INT
    static struct gpio_callback event_cb;
 
    gpio_init_callback(&event_cb, npm1300_event_callback,
-                      BIT(NPM1300_EVENT_VBUS_DETECTED) |
-                          BIT(NPM1300_EVENT_VBUS_REMOVED));
+                      BIT(NPM13XX_EVENT_VBUS_DETECTED) |
+                          BIT(NPM13XX_EVENT_VBUS_REMOVED));
 
-   ret = mfd_npm1300_add_callback(npm1300_mfd_dev, &event_cb);
+   ret = mfd_npm13xx_add_callback(npm1300_mfd_dev, &event_cb);
    if (ret) {
       LOG_WRN("NPM1300 mfd set callback failed %d (%s)!", ret, strerror(-ret));
    }
 #endif /* MFD_NPM1300_BUCK2_WITH_USB_INT */
 
-#ifdef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
+#ifdef CONFIG_MFD_NPM13XX_BUCK2_WITH_USB
    ret = npm1300_mfd_detect_usb(NULL, true);
-#endif /* CONFIG_MFD_NPM1300_BUCK2_WITH_USB */
+#endif /* CONFIG_MFD_NPM13XX_BUCK2_WITH_USB */
 
-#ifdef CONFIG_MFD_NPM1300_DISABLE_NTC
-   ret = mfd_npm1300_reg_write(npm1300_mfd_dev, NPM1300_CHGR_BASE, NPM1300_CHGR_OFFSET_DIS_SET, 2);
-#endif /* CONFIG_MFD_NPM1300_DISABLE_NTC */
+#ifdef CONFIG_MFD_NPM13XX_DISABLE_NTC
+   ret = mfd_npm13xx_reg_write(npm1300_mfd_dev, NPM1300_CHGR_BASE, NPM1300_CHGR_OFFSET_DIS_SET, 2);
+#endif /* CONFIG_MFD_NPM13XX_DISABLE_NTC */
 
    return ret;
 }
 
 #else /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay) */
-#undef CONFIG_MFD_NPM1300
+#undef CONFIG_MFD_NPM13XX
 #endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_buck2), okay) */
-#endif /* CONFIG_MFD_NPM1300 */
+#endif /* CONFIG_MFD_NPM13XX */
 
-#ifdef CONFIG_NPM1300_CHARGER
+#ifdef CONFIG_NPM13XX_CHARGER
 
 #if (DT_NODE_HAS_STATUS(NPM1300_CHARGER_NODE, okay))
 
-#include <zephyr/drivers/sensor/npm1300_charger.h>
+#include <zephyr/drivers/sensor/npm13xx_charger.h>
 
 static const struct device *npm1300_charger_dev = DEVICE_DT_GET(NPM1300_CHARGER_NODE);
 
@@ -1031,13 +1031,13 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, uin
       return -ENOTSUP;
    }
 
-   ret = sensor_sample_fetch_chan(npm1300_charger_dev, SENSOR_CHAN_NPM1300_CHARGER_STATUS);
+   ret = sensor_sample_fetch_chan(npm1300_charger_dev, SENSOR_CHAN_NPM13XX_CHARGER_STATUS);
    if (ret < 0) {
       LOG_WRN("NPM1300 fetch status failed, %d (%s)!", ret, strerror(-ret));
       return ret;
    }
 
-   ret = sensor_channel_get(npm1300_charger_dev, SENSOR_CHAN_NPM1300_CHARGER_STATUS, &value);
+   ret = sensor_channel_get(npm1300_charger_dev, SENSOR_CHAN_NPM13XX_CHARGER_STATUS, &value);
    if (ret < 0) {
       LOG_WRN("NPM1300 get status failed, %d (%s)!", ret, strerror(-ret));
       return ret;
@@ -1072,7 +1072,7 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, uin
       }
    } else {
       current_status = FROM_BATTERY;
-#ifdef CONFIG_MFD_NPM1300
+#ifdef CONFIG_MFD_NPM13XX
       uint8_t usb_status = 0;
       if (!npm1300_mfd_detect_usb(&usb_status, false)) {
          if (usb_status) {
@@ -1083,7 +1083,7 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, uin
             }
          }
       }
-#endif /* CONFIG_MFD_NPM1300 */
+#endif /* CONFIG_MFD_NPM13XX */
       LOG_DBG("NPM1300 status not charging, USB %sconnected", current_status == FROM_EXTERNAL ? "" : "not ");
    }
    if (status) {
@@ -1113,9 +1113,9 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, uin
    return ret;
 }
 #else /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_charger), okay) */
-#undef CONFIG_NPM1300_CHARGER
+#undef CONFIG_NPM13XX_CHARGER
 #endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(npm1300_charger), okay) */
-#endif /* CONFIG_NPM1300_CHARGER */
+#endif /* CONFIG_NPM13XX_CHARGER */
 
 #ifdef CONFIG_INA219
 
@@ -1235,7 +1235,7 @@ int power_manager_init(void)
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
    rc = adp536x_power_manager_init();
 #endif
-#ifdef CONFIG_MFD_NPM1300
+#ifdef CONFIG_MFD_NPM13XX
    rc = npm1300_mfd_init();
 #endif
 
@@ -1328,11 +1328,11 @@ static int power_manager_apply(void)
 #ifdef CONFIG_SUSPEND_3V3
       power_manager_3v3(!suspend);
 #endif
-#ifndef MFD_NPM1300_BUCK2_WITH_USB_INT
-#ifdef CONFIG_MFD_NPM1300_BUCK2_WITH_USB
+#ifndef MFD_NPM13XX_BUCK2_WITH_USB_INT
+#ifdef CONFIG_MFD_NPM13XX_BUCK2_WITH_USB
       npm1300_mfd_detect_usb(NULL, true);
-#endif /* CONFIG_MFD_NPM1300_BUCK2_WITH_USB */
-#endif /* MFD_NPM1300_BUCK2_WITH_USB_INT */
+#endif /* CONFIG_MFD_NPM13XX_BUCK2_WITH_USB */
+#endif /* MFD_NPM13XX_BUCK2_WITH_USB_INT */
    }
    return 0;
 }
@@ -1395,7 +1395,7 @@ int power_manager_voltage(uint16_t *voltage)
             }
          }
       }
-#elif CONFIG_NPM1300_CHARGER
+#elif CONFIG_NPM13XX_CHARGER
       {
          power_manager_status_t status = POWER_UNKNOWN;
          rc = npm1300_power_manager_read_status(&status, &charger_voltage, NULL, 0);
@@ -1404,7 +1404,7 @@ int power_manager_voltage(uint16_t *voltage)
             charger = true;
          }
       }
-#endif
+#endif /* CONFIG_NPM13XX_CHARGER */
 
       k_mutex_lock(&pm_mutex, K_FOREVER);
       if (!charger && !last_voltage_charger && last_voltage_uptime) {
@@ -1511,7 +1511,7 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
          adp536x_power_manager_read_status(&internal_status);
 #endif
-#ifdef CONFIG_NPM1300_CHARGER
+#ifdef CONFIG_NPM13XX_CHARGER
          npm1300_power_manager_read_status(&internal_status, NULL, NULL, 0);
 #endif
          internal_level = transform_curve(internal_voltage, pm_get_battery_profile()->curve);
@@ -1604,7 +1604,7 @@ int power_manager_status_desc(char *buf, size_t len)
       if (msg[0]) {
          index += snprintf(buf + index, len - index, " %s", msg);
       }
-#ifdef CONFIG_NPM1300_CHARGER
+#ifdef CONFIG_NPM13XX_CHARGER
       int rc = npm1300_power_manager_read_status(&battery_status, NULL, buf + index, len - index);
       if (rc > 0) {
          index += rc;

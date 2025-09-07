@@ -4,7 +4,7 @@
 
 ## Reliable - Efficient - Encrypted
 
-Version 0.12.0 - May 2025
+Version 0.14.0 - September 2025
 
 This [zephyr](https://www.zephyrproject.org/) client demonstrates to use coaps ([CoAP](https://tools.ietf.org/html/rfc7252) over [DTLS 1.2](https://tools.ietf.org/html/rfc6347)) with the [Eclipse/TinyDtls Library](https://github.com/eclipse/tinydtls). In combination with [Eclipse/Californium](https://github.com/eclipse/californium) as Cloud-Server, it enables a device to use [DTLS 1.2 Connection ID](https://tools.ietf.org/html/rfc9146), which obsolete the commonly used frequently DTLS handshakes and eliminates that expensive overhead.
 Reducing the messages exchange mostly down to two ip-messages (one request, one response), it enables your device for
@@ -52,21 +52,19 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160), [nRF9161](
 | [Nordic Semiconductor, Thingy:91X](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91-X)<br>Works "out-of-the-box" in the "wild". Comes with selection of sensors (environment, motion) and a 32MB flash. A QWIIC connector enables to add custom sensors. | [<img src="./docu/thingy91x.jpg" width="300"/>](./docu/thingy91x.jpg) |
 | [Circuit Dojo, nRF9160 feather v5 (or newer)](https://www.circuitdojo.com/products/nrf9160-feather)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with motion sensor and 4MB flash. The design of the feather allows to easily add custom sensors. | [<img src="https://www.circuitdojo.com/base/api/files/products/i6zc2f7302etkea/nrf9160_feather_v4_nobg_dUlxE8SX1b.jpg" width="300"/>](https://www.circuitdojo.com/base/api/files/products/i6zc2f7302etkea/nrf9160_feather_v4_nobg_dUlxE8SX1b.jpg) |
 | [**NEW** Circuit Dojo, nRF9151 feather (only with NCS 2.9.x or newer)](https://www.circuitdojo.com/products/nrf9151-feather)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with motion sensor, 16MB flash and onboard OCD. The design of the feather allows to easily add custom sensors. | [<img src="https://www.circuitdojo.com/base/api/files/products/515ssdvlohrn7es/0289_resized_gsoh9wt1g5.png" width="300"/>](https://www.circuitdojo.com/base/api/files/products/515ssdvlohrn7es/0289_resized_gsoh9wt1g5.png) |
-| [**NEW** Conexio Stratus Pro nRF9161](https://conexiotech.com/conexio-stratus-pro-nrf9161/)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with built-in solar energy harvesting, motion sensor, 2KB EEPROM, and 2x5 plug for JTAG. Includes a SIM card with 500MB in 10 years. | [<img src="https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png" width="300"/>](https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png) |
 | [**NEW** Conexio Stratus Pro nRF9151](https://conexiotech.com/conexio-stratus-pro-nrf9151/)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with built-in solar energy harvesting, motion sensor, 2KB EEPROM, and 2x5 plug for JTAG. Includes a SIM card with 500MB in 10 years. | [<img src="https://conexiotech.com/wp-content/uploads/2024/10/stratus-pro-transparency-1-1536x911.png" width="300"/>](https://conexiotech.com/wp-content/uploads/2024/10/stratus-pro-transparency-1-1536x911.png) |
 | [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. Comes with a 8MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png) |
-| [Nordic Semiconductor, nRF9161 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9161-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9161-DK/nRF9161_DK_Perspective-small.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9161-DK/nRF9161_DK_Perspective-small.png) |
 | [Nordic Semiconductor, nRF9151 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9151-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png) |
 
-**Note:** for all supported **NEW** boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, please consider to use them with NCS 2.9.2. 
+**Note:** for all supported **NEW** boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, please consider to use them with NCS 2.9.2 or NCS 3.1.0. 
 
 See [extras/README](./extras/README.md) for more information.
 
-The demo works with [ncs-2.9.2](https://github.com/nrfconnect/sdk-nrf/tree/v2.9.2). 
-If [ncs-2.6.4](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.4) is required, you may use the [ncs_2_6_x](https://github.com/boaks/zephyr-coaps-client/tree/ncs_2_6_x) branch to build the clients, but the future development will be for v2.9.2 or newer.
-                                             
-Neither `NCS 2.7.0` nor `NCS 2.8.0` are supported.
- 
+The demo works with [ncs-3.1.0](https://github.com/nrfconnect/sdk-nrf/tree/v3.1.0).
+If [ncs-2.9.2](https://github.com/nrfconnect/sdk-nrf/tree/v2.9.2) or [ncs-2.6.4](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.4) is required, you may use the [ncs_2_9_x](https://github.com/boaks/zephyr-coaps-client/tree/ncs_2_9_x) branch or the[ncs_2_6_x](https://github.com/boaks/zephyr-coaps-client/tree/ncs_2_6_x) branch to build the clients, but the future development will be for v3.1.0 or newer.
+
+Neither `NCS 2.7.0`, `NCS 2.8.0` nor `NCS 3.0.x` are supported.
+
 To benefit from the newer modem features, please consider to use the modem firmware [1.3.7](https://www.nordicsemi.com/-/media/Software-and-other-downloads/Dev-Kits/nRF9160-DK/nRF9160-modem-FW/mfw_nrf9160_1.3.7.zip) for `nRF9160` based device. See ["Getting started with Thingy:91"](#install-tools-and-tool-chains) below how to apply it.
 
 For `nRF9161` and `nRF9151` devices use the modem firmware [2.0.2](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/sip/nrf91x1-sip/nrf91x1-lte-modem-firmware/mfw_nrf91x1_2.0.2.zip) for that. 
@@ -78,6 +76,19 @@ The demo supports also new upcoming devices based on the nRF9151.
 | Device | Image |
 | :- | - |
 | [**NEW** Makerdiary nRF9151 Connect Kit](https://makerdiary.com/products/nrf9151-connectkit/)<br>Requires additional batteries and closures to work in the "wild". Comes with onboard OCD. | [<img src="https://github.com/makerdiary/nrf9151-connectkit/blob/main/docs/assets/images/attaching_lte_antenna.png" width="300"/>](https://github.com/makerdiary/nrf9151-connectkit/blob/main/docs/assets/images/attaching_lte_antenna.png) |
+
+**Note:** for all supported **NEW** boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, so the full support will only come with NCS 2.9.2. 
+
+See [extras/README](./extras/README.md) for more information.
+
+## Supported nRF9161 Based Devices
+
+The demo supports devices based on the nRF9161. Though this variant is currently already "replaced" by the nRF9151, these devices are not intended for new developments.
+
+| Device | Image |
+| :- | - |
+| [Nordic Semiconductor, nRF9161 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9161-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9161-DK/nRF9161_DK_Perspective-small.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9161-DK/nRF9161_DK_Perspective-small.png) |
+| [**NEW** Conexio Stratus Pro nRF9161](https://conexiotech.com/conexio-stratus-pro-nrf9161/)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with built-in solar energy harvesting, motion sensor, 2KB EEPROM, and 2x5 plug for JTAG. Includes a SIM card with 500MB in 10 years. | [<img src="https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png" width="300"/>](https://conexiotech.com/wp-content/uploads/2024/02/D-copy.png) |
 
 **Note:** for all supported **NEW** boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, so the full support will only come with NCS 2.9.2. 
 
