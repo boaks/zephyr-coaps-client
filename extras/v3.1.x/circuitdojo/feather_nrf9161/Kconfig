@@ -1,0 +1,5 @@
+if !MCUBOOT
+config CIRCUITDOJO_FEATHER_NRF9161_PMIC_STARTUP
+	bool "Allows for executing startup code for PMIC."
+	default y
+endif
