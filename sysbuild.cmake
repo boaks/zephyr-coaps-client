@@ -11,7 +11,7 @@
 # SPDX-License-Identifier: EPL-2.0
 #
 
-cmake_minimum_required(VERSION 3.29.0)
+cmake_minimum_required(VERSION 3.21.0)
 
 set(PM_STATIC_YML_FILE ${CMAKE_CURRENT_LIST_DIR}/configuration/pm_static.yml CACHE INTERNAL "")
 
