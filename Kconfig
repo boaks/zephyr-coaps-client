@@ -781,29 +781,29 @@ config ADP536X_POWER_MANAGEMENT
 	   
 endif # ADP536X
 
-if MFD_NPM1300
+if MFD_NPM13XX
 
-config MFD_NPM1300_BUCK2_WITH_USB
-    bool "Enable/disable npm1300 buck2 with USB"
+config MFD_NPM13XX_BUCK2_WITH_USB
+    bool "Enable/disable npm13xx buck2 with USB"
 	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NRF9161_NS
 	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9151_NRF9151_NS
-    depends on REGULATOR_NPM1300
+    depends on REGULATOR_NPM13XX
     help
-       Enable/disable buck2 (RP2040) when powered by USB.
+       Enable/disable NPM13XX buck2 (RP2040) when powered by USB.
 
-config MFD_NPM1300_BUCK2_LED
-    bool "Use LED to indicate buck2 status"
-    depends on REGULATOR_NPM1300
+config MFD_NPM13XX_BUCK2_LED
+    bool "Use LED to indicate npm13xx buck2 status"
+    depends on REGULATOR_NPM13XX
     help
-       Use LED to indicate buck2 status.
+       Use LED to indicate NPM13XX buck2 status.
 
-config MFD_NPM1300_DISABLE_NTC
+config MFD_NPM13XX_DISABLE_NTC
 	bool
 	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
 	default y if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
 	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9151_NRF9151_NS
 
-endif # MFD_NPM1300
+endif # MFD_NPM13XX
 
 if INA219
 
