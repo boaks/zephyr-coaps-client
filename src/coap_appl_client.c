@@ -471,10 +471,14 @@ int coap_appl_client_prepare_net_info(char *buf, size_t len, int flags)
 
    memset(&params, 0, sizeof(params));
    if (!modem_get_network_info(&params.network_info)) {
-      index += snprintf(buf, len, "Network: %s",
+      const char *header = (flags & COAP_SEND_FLAG_MINIMAL) ? "Net" : "Network";
+      index += snprintf(buf, len, "%s: %s", header,
                         modem_get_network_mode_description(params.network_info.mode));
-      index += snprintf(buf + index, len - index, ",%s",
-                        modem_get_registration_short_description(params.network_info.status));
+
+      if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
+         index += snprintf(buf + index, len - index, ",%s",
+                           modem_get_registration_short_description(params.network_info.status));
+      }
       if (params.network_info.registered == LTE_NETWORK_STATE_ON) {
          index += snprintf(buf + index, len - index, ",Band %d", params.network_info.band);
          if (params.network_info.plmn_lock == LTE_NETWORK_STATE_ON) {
@@ -482,9 +486,13 @@ int coap_appl_client_prepare_net_info(char *buf, size_t len, int flags)
          } else {
             index += snprintf(buf + index, len - index, ",PLMN %s", params.network_info.provider);
          }
-         index += snprintf(buf + index, len - index, ",TAC %u", params.network_info.tac);
+         if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
+            index += snprintf(buf + index, len - index, ",TAC %u", params.network_info.tac);
+         }
          index += snprintf(buf + index, len - index, ",Cell %u", params.network_info.cell);
-         index += snprintf(buf + index, len - index, ",EARFCN %u", params.network_info.earfcn);
+         if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
+            index += snprintf(buf + index, len - index, ",EARFCN %u", params.network_info.earfcn);
+         }
       }
    }
    dtls_info("%s", buf);
@@ -576,21 +584,36 @@ int coap_appl_client_prepare_net_stats(char *buf, size_t len, int flags)
    if (modem_get_coverage_enhancement_info(&params.ce_info) >= 0) {
       if (params.ce_info.ce_supported) {
 
-         index = snprintf(buf, len, "CE: down: %u, up: %u",
-                          params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
+         index = snprintf(buf, len, "CE:");
+         start = index;
+         if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
+            index += snprintf(buf + index, len - index, " down: %u, up: %u",
+                              params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
+         }
          if (params.ce_info.rsrp < INVALID_SIGNAL_VALUE) {
-            index += snprintf(buf + index, len - index, ", RSRP: %d dBm",
+            if (index > start && index < len) {
+               buf[index++] = ',';
+            }
+            index += snprintf(buf + index, len - index, " RSRP: %d dBm",
                               params.ce_info.rsrp);
          }
-         if (params.ce_info.cinr < INVALID_SIGNAL_VALUE) {
-            index += snprintf(buf + index, len - index, ", CINR: %d dB",
-                              params.ce_info.cinr);
+         if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
+            if (params.ce_info.cinr < INVALID_SIGNAL_VALUE) {
+               if (index > start && index < len) {
+                  buf[index++] = ',';
+               }
+               index += snprintf(buf + index, len - index, " CINR: %d dB",
+                                 params.ce_info.cinr);
+            }
          }
          if (params.ce_info.snr < INVALID_SIGNAL_VALUE) {
-            index += snprintf(buf + index, len - index, ", SNR: %d dB",
+            if (index > start && index < len) {
+               buf[index++] = ',';
+            }
+            index += snprintf(buf + index, len - index, " SNR: %d dB",
                               params.ce_info.snr);
          }
-         dtls_info("%s", buf + start);
+         dtls_info("%s", buf);
       }
    }
 
@@ -968,18 +991,30 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags, const char *
          memmove(&value[1], value, err);
          value[0] = '?';
       }
-      err = coap_packet_set_path(&request, value);
-      if (err < 0) {
-         dtls_warn("Failed to encode CoAP URI-QUERY '%s' option, %d", value, err);
-         return err;
-      }
       read = strstr(value, "read");
       if (read > value) {
          char c = *(read - 1);
          if (c == '?' || c == '&') {
-            c = *(read + 4);
-            read_etag = c == 0 || c == '&' || c == '=';
+            if (flags & COAP_SEND_FLAG_NO_RESPONSE) {
+               int offset = read - value - 1;
+               char *end = strchr(read, '&');
+               if (end) {
+                  int tail = err - (end - value);
+                  memmove(&value[offset], end, tail);
+               } else {
+                  value[offset] = 0;
+               }
+               dtls_info("CoAP URI-QUERY '%s' (no response)", value);
+            } else {
+               c = *(read + 4);
+               read_etag = c == 0 || c == '&' || c == '=';
+            }
          }
+      }
+      err = coap_packet_set_path(&request, value);
+      if (err < 0) {
+         dtls_warn("Failed to encode CoAP URI-QUERY '%s' option, %d", value, err);
+         return err;
       }
    }
 
@@ -992,24 +1027,26 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags, const char *
       }
    }
 
-   err = coap_appl_client_encode_time(&request);
-   if (err < 0) {
-      return err;
-   }
+   if (!(flags & COAP_SEND_FLAG_NO_RESPONSE)) {
+      err = coap_appl_client_encode_time(&request);
+      if (err < 0) {
+         return err;
+      }
 
-   if (read_etag) {
-      if (coap_read_etag[0]) {
-         err = coap_packet_append_option(&request, CUSTOM_COAP_OPTION_READ_ETAG,
-                                         &coap_read_etag[1],
-                                         coap_read_etag[0]);
-         if (err < 0) {
-            dtls_warn("Failed to encode CoAP read-etag option, %d", err);
-            return err;
+      if (read_etag) {
+         if (coap_read_etag[0]) {
+            err = coap_packet_append_option(&request, CUSTOM_COAP_OPTION_READ_ETAG,
+                                            &coap_read_etag[1],
+                                            coap_read_etag[0]);
+            if (err < 0) {
+               dtls_warn("Failed to encode CoAP read-etag option, %d", err);
+               return err;
+            } else {
+               dtls_info("Send CoAP read-etag option (%u bytes)", coap_read_etag[0]);
+            }
          } else {
-            dtls_info("Send CoAP read-etag option (%u bytes)", coap_read_etag[0]);
+            dtls_info("Send CoAP no read-etag option");
          }
-      } else {
-         dtls_info("Send CoAP no read-etag option");
       }
    }
 
@@ -1022,20 +1059,22 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags, const char *
       }
    }
 
-   err = get_receive_interval();
-   if (err > 0) {
-
-      err = coap_append_option_int(&request, CUSTOM_COAP_OPTION_RECV_INTERVAL, err);
-      if (err < 0) {
-         dtls_warn("Failed to encode CoAP recv. interval option, %d", err);
-         return err;
-      }
-      err = get_local_address(value, sizeof(value));
+   if (!(flags & COAP_SEND_FLAG_NO_RESPONSE)) {
+      err = get_receive_interval();
       if (err > 0) {
-         err = coap_packet_append_option(&request, CUSTOM_COAP_OPTION_RECV_ADDRESS, value, err);
+
+         err = coap_append_option_int(&request, CUSTOM_COAP_OPTION_RECV_INTERVAL, err);
          if (err < 0) {
-            dtls_warn("Failed to encode local address option, %d", err);
+            dtls_warn("Failed to encode CoAP recv. interval option, %d", err);
             return err;
+         }
+         err = get_local_address(value, sizeof(value));
+         if (err > 0) {
+            err = coap_packet_append_option(&request, CUSTOM_COAP_OPTION_RECV_ADDRESS, value, err);
+            if (err < 0) {
+               dtls_warn("Failed to encode local address option, %d", err);
+               return err;
+            }
          }
       }
    }
