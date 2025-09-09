@@ -16,6 +16,7 @@
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <modem/nrf_modem_lib.h>
 
 #include "appl_diagnose.h"
 #include "io_job_queue.h"
@@ -966,11 +967,9 @@ int modem_sim_reset(bool restart)
    return 0;
 }
 
-#if defined(CONFIG_LTE_LINK_CONTROL)
+NRF_MODEM_LIB_ON_CFUN(modem_sim_on_cfun_hook, modem_sim_on_cfun, NULL);
 
-LTE_LC_ON_CFUN(modem_sim_on_cfun_hook, modem_sim_on_cfun, NULL);
-
-static void modem_sim_on_cfun(enum lte_lc_func_mode mode, void *ctx)
+static void modem_sim_on_cfun(int mode, void *ctx)
 {
    if (mode == LTE_LC_FUNC_MODE_NORMAL ||
        mode == LTE_LC_FUNC_MODE_ACTIVATE_LTE) {
@@ -979,7 +978,6 @@ static void modem_sim_on_cfun(enum lte_lc_func_mode mode, void *ctx)
       k_mutex_unlock(&sim_mutex);
    }
 }
-#endif /* CONFIG_LTE_LINK_CONTROL */
 
 #ifdef CONFIG_SH_CMD
 
