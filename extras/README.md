@@ -131,7 +131,7 @@ pyocd load --target nRF9160_xxAA --format hex build/merged.hex -e chip
 It is also possible to update the modem firmware.
 
 ```
-pyocd cmd --target nRF9160_xxAA -c 'nrf91-update-modem-fw -f mfw_nrf91x1_2.0.2.zip'
+pyocd cmd -t nrf91 -c 'nrf91-update-modem-fw -f mfw_nrf91x1_2.0.2.zip'
 ```
 
 
