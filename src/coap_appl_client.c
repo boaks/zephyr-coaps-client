@@ -388,14 +388,16 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags, const 
       }
    }
 
-   if (connect_time_ms > 0 || coap_rtt_ms > 0) {
+   if (coap_rtt_ms > 0) {
       index += snprintf(buf + index, len - index, "RETRANS: %u", retransmissions);
-      if (coap_rtt_ms > 0) {
-         index += snprintf(buf + index, len - index, ", RTT: %u ms", coap_rtt_ms);
-      }
+      index += snprintf(buf + index, len - index, ", RTT: %u ms", coap_rtt_ms);
       if (connect_time_ms > 0) {
          index += snprintf(buf + index, len - index, ", CT: %u ms", connect_time_ms);
       }
+   } else if (flags & COAP_SEND_FLAG_NO_RESPONSE) {
+      index += snprintf(buf + index, len - index, "NORESP CT: %u ms", connect_time_ms);
+   }
+   if (index != start) {
       dtls_info("%s", buf + start);
       buf[index++] = '\n';
       start = index;
@@ -490,9 +492,7 @@ int coap_appl_client_prepare_net_info(char *buf, size_t len, int flags)
             index += snprintf(buf + index, len - index, ",TAC %u", params.network_info.tac);
          }
          index += snprintf(buf + index, len - index, ",Cell %u", params.network_info.cell);
-         if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
-            index += snprintf(buf + index, len - index, ",EARFCN %u", params.network_info.earfcn);
-         }
+         index += snprintf(buf + index, len - index, ",EARFCN %u", params.network_info.earfcn);
       }
    }
    dtls_info("%s", buf);
@@ -985,31 +985,40 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags, const char *
    }
 
    if ((err = appl_settings_get_coap_query(value, sizeof(value)))) {
+      const char *cur = value;
       const char *read = NULL;
-      ++err;
+      ++err; // add terminating \0
       if (value[0] != '?' && err < sizeof(value)) {
+         // add leading '?'
          memmove(&value[1], value, err);
          value[0] = '?';
+         ++err;
       }
-      read = strstr(value, "read");
-      if (read > value) {
+      while ((read = strstr(cur, "read"))) {
          char c = *(read - 1);
          if (c == '?' || c == '&') {
-            if (flags & COAP_SEND_FLAG_NO_RESPONSE) {
-               int offset = read - value - 1;
-               char *end = strchr(read, '&');
-               if (end) {
-                  int tail = err - (end - value);
-                  memmove(&value[offset], end, tail);
+            c = *(read + 4);
+            if (c == 0 || c == '&' || c == '=') {
+               if (flags & COAP_SEND_FLAG_NO_RESPONSE) {
+                  int offset = read - value;
+                  char *end = strchr(read, '&');
+                  if (end) {
+                     int tail;
+                     ++end;
+                     tail = err - (end - value);
+                     memmove(&value[offset], end, tail);
+                  } else {
+                     value[offset - 1] = 0;
+                  }
+                  dtls_info("CoAP URI-QUERY '%s' (no response)", value);
                } else {
-                  value[offset] = 0;
+                  read_etag = true;
+                  dtls_info("CoAP URI-QUERY '%s' => %s", value, read_etag ? "read-ETAG" : "no read");
                }
-               dtls_info("CoAP URI-QUERY '%s' (no response)", value);
-            } else {
-               c = *(read + 4);
-               read_etag = c == 0 || c == '&' || c == '=';
+               break;
             }
          }
+         cur = read + 4;
       }
       err = coap_packet_set_path(&request, value);
       if (err < 0) {

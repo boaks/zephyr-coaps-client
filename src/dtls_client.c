@@ -235,21 +235,18 @@ static K_SEM_DEFINE(dtls_trigger_msg, 0, 1);
 static K_SEM_DEFINE(dtls_trigger_search, 0, 1);
 
 static void dtls_power_management(void);
+static void dtls_power_management_fn(struct k_work *work);
+
+static K_WORK_DEFINE(dtls_power_management_work, dtls_power_management_fn);
+static K_WORK_DELAYABLE_DEFINE(dtls_power_management_suspend_work, dtls_power_management_fn);
 
 static void dtls_power_management_fn(struct k_work *work)
 {
+   if (&dtls_power_management_suspend_work.work == work) {
+      atomic_clear_bit(&general_states, PM_PREVENT_SUSPEND);
+   }
    dtls_power_management();
 }
-
-static K_WORK_DEFINE(dtls_power_management_work, dtls_power_management_fn);
-
-static void dtls_power_management_suspend_fn(struct k_work *work)
-{
-   atomic_clear_bit(&general_states, PM_PREVENT_SUSPEND);
-   dtls_power_management();
-}
-
-static K_WORK_DELAYABLE_DEFINE(dtls_power_management_suspend_work, dtls_power_management_suspend_fn);
 
 static void dtls_log_state(void)
 {
@@ -663,8 +660,10 @@ static void dtls_trigger(const char *cause, bool send)
       modem_interrupt_wait();
    }
    if (dtls_no_pending_request(app_data_context.request_state)) {
-      // read battery status before modem wakes up
-      power_manager_status(NULL, NULL, NULL, NULL);
+      if (!atomic_test_bit(&general_states, LTE_CONNECTED)) {
+         // read battery status before modem wakes up
+         power_manager_status(NULL, NULL, NULL, NULL);
+      }
       dtls_info("trigger %s%s", cause, send ? " send message" : "");
       atomic_set_bit_to(&general_states, TRIGGER_SEND, send);
       k_sem_give(&dtls_trigger_msg);
@@ -895,6 +894,9 @@ static void dtls_coap_success(dtls_app_data_t *app)
          connect_time_ms = 0;
          coap_rtt_ms = time2;
       }
+   } else if (time1 > 0) {
+      connect_time_ms = time1;
+      coap_rtt_ms = 0;
    } else {
       connect_time_ms = 0;
       coap_rtt_ms = 0;
