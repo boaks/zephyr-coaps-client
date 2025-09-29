@@ -26,12 +26,12 @@
 			label = "LTE OUT 1";
 		};
 
-		/*		
+		
 		out2: out_2 {
 			gpios = <&gpio0 20 0>;
 			label = "LTE OUT 2";
 		};
-		*/  
+		  
 	};
 
 	ins {
@@ -43,7 +43,7 @@
 
 	aliases {
 		out1 = &out1;
-	/*  out2 = &out2; */
+	    out2 = &out2;
 
 	};
 
