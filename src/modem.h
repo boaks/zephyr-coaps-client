@@ -74,7 +74,7 @@ typedef struct lte_network_info {
    uint32_t rate_limit_time;
    enum lte_lc_nw_reg_status status;
    enum lte_lc_lte_mode mode;
-   uint8_t band;
+   uint16_t band;
    char provider[MODEM_PLMN_SIZE];
    uint16_t tac;
    uint32_t cell;
@@ -156,6 +156,12 @@ enum lte_power_state {
 typedef void (*lte_state_change_callback_handler_t)(enum lte_state_type type, bool active);
 
 int modem_init(int config, lte_state_change_callback_handler_t state_handler);
+
+int modem_read_systemmode(enum lte_lc_system_mode *lte_mode);
+
+bool modem_support_ntn(void);
+
+int modem_use_ntn(void);
 
 int modem_reinit(bool lib);
 

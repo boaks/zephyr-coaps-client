@@ -96,7 +96,7 @@ int coap_appl_client_prepare_post(char *buf, size_t len, int flags, const char* 
 
 int coap_appl_client_message(const uint8_t **buffer);
 
-int coap_appl_client_retry_strategy(int counter, bool dtls);
+int coap_appl_client_retry_strategy(int counter, bool dtls, int scale, bool ntn);
 
 extern coap_handler_t coap_appl_client_handler;
 

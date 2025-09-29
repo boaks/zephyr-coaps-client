@@ -65,6 +65,9 @@
 #define COAP_ACK_TIMEOUT 3
 #define ADD_ACK_TIMEOUT 3
 
+#define MIN_COAP_ACK_TIMEOUT_NTN 20
+#define ADD_ACK_TIMEOUT_NTN 10
+
 #define LED_APPLICATION LED_LTE_1
 #define LED_DTLS LED_NONE
 
@@ -452,6 +455,62 @@ static bool set_next_send_interval(int new_interval)
    }
 }
 
+static uint32_t get_network_search_timeout(void)
+{
+   if (modem_use_ntn()) {
+      return CONFIG_MODEM_SEARCH_TIMEOUT_NTN;
+   } else {
+      return CONFIG_MODEM_SEARCH_TIMEOUT;
+   }
+}
+
+static uint16_t
+network_timeout_scale(uint16_t timeout)
+{
+   int factor = modem_get_time_scale();
+   int ntn = modem_use_ntn();
+   if (factor > 100) {
+      timeout = (uint16_t)((timeout * factor) / 100);
+   }
+   if (ntn) {
+      int minTimeout = MIN_COAP_ACK_TIMEOUT_NTN;
+      if (ntn == 255) {
+         minTimeout *= 2;
+      }
+      if (timeout < minTimeout) {
+         timeout = minTimeout;
+      }
+   }
+   return timeout;
+}
+
+static uint32_t
+network_additional_timeout(void)
+{
+   uint32_t additional_timeout = ADD_ACK_TIMEOUT;
+   struct lte_lc_edrx_cfg edrx;
+
+   if (!atomic_test_bit(&general_states, LTE_CONNECTED) &&
+       modem_get_edrx_status(&edrx) >= 0 && edrx.mode != LTE_LC_LTE_MODE_NONE) {
+      additional_timeout = (uint32_t)ceil(edrx.edrx);
+   }
+   if (additional_timeout < ADD_ACK_TIMEOUT_NTN && modem_use_ntn()) {
+      additional_timeout = ADD_ACK_TIMEOUT_NTN;
+   }
+   return additional_timeout;
+}
+
+static bool
+network_adjust_initial_timeout(dtls_app_data_t *app, bool set)
+{
+   const uint16_t timeout = network_timeout_scale(coap_timeout);
+   bool res = set || timeout > app->timeout;
+   if (res) {
+      app->timeout = timeout;
+   }
+   return res;
+}
+
 static const led_task_t led_reboot[] = {
     {.loop = 4, .time_ms = 499, .led = LED_COLOR_RED, .op = LED_SET},
     {.time_ms = 1, .led = LED_COLOR_RED, .op = LED_CLEAR},
@@ -546,7 +605,7 @@ static bool restart_modem(bool power_off)
    }
    dtls_info("app> modem restarting ...");
    modem_set_psm_for_connect();
-   modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), false);
+   modem_start(K_SECONDS(get_network_search_timeout()), false);
    atomic_clear_bit(&general_states, PM_PREVENT_SUSPEND);
    dtls_power_management();
    watchdog_feed();
@@ -957,7 +1016,7 @@ static void dtls_coap_success(dtls_app_data_t *app)
 
    if (time2 >= 0) {
       retransmissions = app->retransmission;
-      if (retransmissions == 0) {
+      if (retransmissions == 0 && !modem_use_ntn()) {
          modem_set_psm(0, K_NO_WAIT);
       }
       index = time2 / RTT_INTERVAL;
@@ -1038,6 +1097,11 @@ static void dtls_coap_failure(dtls_app_data_t *app, const char *cause)
       app->dtls_flight = 0;
    }
 
+#if CONFIG_COAP_FAILURE_SEND_INTERVAL_NTN > 0
+   if (interval == 0 && modem_use_ntn()) {
+      interval = CONFIG_COAP_FAILURE_SEND_INTERVAL_NTN;
+   }
+#endif /* CONFIG_COAP_FAILURE_SEND_INTERVAL_NTN */
 #if CONFIG_COAP_FAILURE_SEND_INTERVAL > 0
    if (interval == 0) {
       interval = CONFIG_COAP_FAILURE_SEND_INTERVAL;
@@ -1064,41 +1128,6 @@ static void dtls_coap_set_request_state(const char *desc, dtls_app_data_t *app, 
                    request_state, get_request_state_description(request_state));
       }
    }
-}
-
-static uint16_t
-network_timeout_scale(uint16_t timeout)
-{
-   int factor = modem_get_time_scale();
-   if (factor > 100) {
-      return (uint16_t)((timeout * factor) / 100);
-   } else {
-      return timeout;
-   }
-}
-
-static uint32_t
-network_additional_timeout(void)
-{
-   struct lte_lc_edrx_cfg edrx;
-
-   if (!atomic_test_bit(&general_states, LTE_CONNECTED) &&
-       modem_get_edrx_status(&edrx) >= 0 && edrx.mode != LTE_LC_LTE_MODE_NONE) {
-      return (uint32_t)ceil(edrx.edrx);
-   } else {
-      return ADD_ACK_TIMEOUT;
-   }
-}
-
-static bool
-network_adjust_initial_timeout(dtls_app_data_t *app, bool set)
-{
-   const uint16_t timeout = network_timeout_scale(coap_timeout);
-   bool res = set || timeout > app->timeout;
-   if (res) {
-      app->timeout = timeout;
-   }
-   return res;
 }
 
 #if defined(CONFIG_UDP_WAKEUP_ENABLE)
@@ -1761,7 +1790,7 @@ static int dtls_network_searching(const k_timeout_t timeout)
             dtls_info("Start network search");
             modem_start_search();
          }
-         if (modem_wait_ready(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT)) == 0) {
+         if (modem_wait_ready(K_SECONDS(get_network_search_timeout())) == 0) {
             dtls_info("Network found");
             return false;
          }
@@ -1829,7 +1858,11 @@ static long dtls_calculate_reboot_timeout(int reboot)
       return MSEC_PER_HOUR;
    }
 #endif
-   return reboot == 1 ? MSEC_PER_HOUR * 4 : MSEC_PER_DAY;
+   if (modem_use_ntn()) {
+      return reboot == 1 ? MSEC_PER_DAY : MSEC_PER_DAY * 2;
+   } else {
+      return reboot == 1 ? MSEC_PER_HOUR * 4 : MSEC_PER_DAY;
+   }
 }
 
 static int dtls_loop(dtls_app_data_t *app, int reboot)
@@ -1974,7 +2007,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
       }
       f = dtls_coap_next_failures();
       if (f > 0) {
-         int strategy = coap_appl_client_retry_strategy(f, app->protocol == PROTOCOL_COAP_DTLS);
+         int strategy = coap_appl_client_retry_strategy(f, app->protocol == PROTOCOL_COAP_DTLS, modem_get_time_scale(), modem_use_ntn());
          if (strategy) {
             if (strategy & DTLS_CLIENT_RETRY_STRATEGY_RESTARTS) {
                dtls_info("Too many failures, reboot");
@@ -2185,7 +2218,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   lte_power_off = false;
                   restarting_modem = false;
                   app->start_time = k_uptime_get();
-                  modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), false);
+                  modem_start(K_SECONDS(get_network_search_timeout()), false);
                   reopen_socket(app, "on");
                }
                app->retransmission = 0;
@@ -2303,7 +2336,8 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                      network_adjust_initial_timeout(app, false);
                   }
                   app->timeout <<= 1;
-                  if (app->retransmission == 0) {
+                  if (app->retransmission == 0 && !modem_use_ntn()) {
+                     // only switch on TN, not NTN!
                      int rat = CONFIG_UDP_PSM_RETRANS_RAT;
                      if ((app->timeout + 4) > rat) {
                         rat = app->timeout + 4;
@@ -3082,7 +3116,7 @@ int main(void)
    sh_app_set_active();
    modem_set_psm_for_connect();
 
-   if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), true) != 0) {
+   if (modem_start(K_SECONDS(get_network_search_timeout()), true) != 0) {
       if (dtls_network_searching(K_MINUTES(CONFIG_MODEM_SEARCH_TIMEOUT_REBOOT))) {
          restart(ERROR_CODE_INIT_NO_LTE, false);
       }

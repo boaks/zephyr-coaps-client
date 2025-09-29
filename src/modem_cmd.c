@@ -98,6 +98,8 @@ static void modem_cmd_reinit_help(void)
 
 #define CFG_NB_IOT "nb"
 #define CFG_LTE_M "m1"
+#define CFG_NTN "nt"
+#define CFG_NTN2 "nt2"
 
 static int modem_cmd_config(const char *config)
 {
@@ -149,6 +151,8 @@ static int modem_cmd_config(const char *config)
          desc = CFG_LTE_M;
       } else if (net_mode == LTE_LC_LTE_MODE_NBIOT) {
          desc = CFG_NB_IOT;
+      } else if (net_mode == LTE_LC_LTE_MODE_NTN_NBIOT) {
+         desc = CFG_NTN;
       }
       LOG_INF("currently %s %s", plmn, desc);
       return 0;
@@ -176,7 +180,8 @@ static int modem_cmd_config(const char *config)
       LOG_INF("plmn '%s' not supported! Either 'auto' or numerical plmn.", value1);
       return -EINVAL;
    }
-   if (value2[0] && stricmp(CFG_NB_IOT, value2) && stricmp(CFG_LTE_M, value2) && stricmp("auto", value2)) {
+   if (value2[0] && stricmp(CFG_NB_IOT, value2) && stricmp(CFG_LTE_M, value2) &&
+       stricmp(CFG_NTN, value2) && stricmp(CFG_NTN2, value2) && stricmp("auto", value2)) {
       LOG_INF("cfg %s", config);
       LOG_INF("mode '%s' not supported!", value2);
       return -EINVAL;
@@ -191,6 +196,16 @@ static int modem_cmd_config(const char *config)
       LOG_INF("second mode '%s' not supported with 'auto'!", value3);
       return -EINVAL;
    }
+   if ((!stricmp(CFG_NTN, value2) || !stricmp(CFG_NTN2, value2)) && value3[0]) {
+      LOG_INF("cfg %s", config);
+      LOG_INF("second mode '%s' not supported with '%s'!", value3, value2);
+      return -EINVAL;
+   }
+   if ((!stricmp(CFG_NTN, value2) || !stricmp(CFG_NTN2, value2)) && !modem_support_ntn()) {
+      LOG_INF("cfg %s", config);
+      LOG_INF("mode '%s' not supported by modem firmware!", value2);
+      return -EINVAL;
+   }
    LOG_INF(">> cfg %s %s %s", value1, value2, value3);
    if (value2[0]) {
       enum lte_lc_system_mode lte_mode = LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS;
@@ -198,6 +213,8 @@ static int modem_cmd_config(const char *config)
       enum lte_lc_system_mode lte_mode_new;
       enum lte_lc_system_mode_preference lte_preference_new;
       bool gps;
+      bool band256only = false;
+
       res = modem_at_system_mode_get(&lte_mode, &lte_preference);
       if (res) {
          LOG_INF("Can't read current LTE mode!");
@@ -247,11 +264,27 @@ static int modem_cmd_config(const char *config)
             }
             lte_preference_new = LTE_LC_SYSTEM_MODE_PREFER_AUTO;
          }
+      } else if (!stricmp(CFG_NTN, value2)) {
+         lte_mode_new = LTE_LC_SYSTEM_MODE_NTN_NBIOT;
+         lte_preference_new = LTE_LC_SYSTEM_MODE_PREFER_AUTO;
+      } else if (!stricmp(CFG_NTN2, value2)) {
+         lte_mode_new = LTE_LC_SYSTEM_MODE_NTN_NBIOT;
+         lte_preference_new = LTE_LC_SYSTEM_MODE_PREFER_AUTO;
+         band256only = true;
       }
       if (lte_mode != lte_mode_new || lte_preference != lte_preference_new) {
          if (!modem_at_push_off()) {
             res = modem_at_system_mode_set(lte_mode_new, lte_preference_new);
             modem_set_preference(RESET_PREFERENCE);
+            modem_read_systemmode(NULL);
+            if (LTE_LC_SYSTEM_MODE_NTN_NBIOT == lte_mode_new) {
+               if (band256only) {
+                  modem_at_cmd(buf, sizeof(buf), NULL, "AT%XBANDLOCK=2,,\"256\"");
+               } else {
+                  modem_at_cmd(buf, sizeof(buf), NULL, "AT%XBANDLOCK=2,,\"255,256\"");
+               }
+               modem_at_cmd(buf, sizeof(buf), NULL, "AT%LOCATION=2,\"48.809376\",\"9.520497\",\"0\",0,0");
+            }
             modem_set_psm_for_connect();
             modem_at_restore();
          }
@@ -294,16 +327,25 @@ static int modem_cmd_config(const char *config)
 
 static void modem_cmd_config_help(void)
 {
+   bool ntn = modem_support_ntn();
+
    LOG_INF("> help cfg:");
    LOG_INF("  cfg         : read configuration.");
    LOG_INF("  cfg init    : reset configuration.");
    LOG_INF("  cfg <plmn> <modes>");
    LOG_INF("      <plmn>  : either auto or numerical plmn, e.g. 26202");
-   LOG_INF("      <modes> : " CFG_NB_IOT ", " CFG_LTE_M ", " CFG_NB_IOT " " CFG_LTE_M ", " CFG_LTE_M " " CFG_NB_IOT ", or auto.");
+   if (ntn) {
+      LOG_INF("      <modes> : " CFG_NB_IOT ", " CFG_LTE_M ", " CFG_NB_IOT " " CFG_LTE_M ", " CFG_LTE_M " " CFG_NB_IOT ", " CFG_NTN ", or auto.");
+   } else {
+      LOG_INF("      <modes> : " CFG_NB_IOT ", " CFG_LTE_M ", " CFG_NB_IOT " " CFG_LTE_M ", " CFG_LTE_M " " CFG_NB_IOT ", or auto.");
+   }
    LOG_INF("              : " CFG_NB_IOT "    := NB-IoT");
    LOG_INF("              : " CFG_LTE_M "    := LTE-M");
    LOG_INF("              : " CFG_NB_IOT " " CFG_LTE_M " := NB-IoT/LTE-M");
    LOG_INF("              : " CFG_LTE_M " " CFG_NB_IOT " := LTE-M/NB-IoT");
+   if (ntn) {
+      LOG_INF("              : " CFG_NTN "    := NTN");
+   }
    LOG_INF("              : auto := LTE-M/NB-IoT without preference");
 }
 
@@ -338,6 +380,8 @@ static int modem_cmd_connect(const char *config)
          desc = CFG_LTE_M;
       } else if (net_mode == LTE_LC_LTE_MODE_NBIOT) {
          desc = CFG_NB_IOT;
+      } else if (net_mode == LTE_LC_LTE_MODE_NTN_NBIOT) {
+         desc = CFG_NTN;
       }
       LOG_INF("con %s%s %s", mode == '0' ? "auto " : "", plmn, desc);
       return 0;
@@ -367,6 +411,13 @@ static int modem_cmd_connect(const char *config)
          cur = ",9";
       } else if (stricmp(CFG_LTE_M, value2) == 0) {
          cur = ",7";
+      } else if (stricmp(CFG_NTN, value2) == 0) {
+         if (!modem_support_ntn()) {
+            LOG_INF("con %s", config);
+            LOG_INF("mode '%s' not supported by modem firmware!", value2);
+            return -EINVAL;
+         }
+         cur = ",14";
       } else {
          LOG_INF("con %s", config);
          LOG_INF("mode '%s' not supported!", value2);
@@ -393,13 +444,21 @@ static int modem_cmd_connect(const char *config)
 
 static void modem_cmd_connect_help(void)
 {
+   bool ntn = modem_support_ntn();
    LOG_INF("> help con:");
    LOG_INF("  con         : read connection information");
    LOG_INF("  con <plmn> [<mode>]");
    LOG_INF("      <plmn>  : numerical plmn, e.g. 26202");
-   LOG_INF("      <mode>  : optional mode, " CFG_NB_IOT " or " CFG_LTE_M ".");
+   if (ntn) {
+      LOG_INF("      <mode>  : optional mode, " CFG_NB_IOT ", " CFG_LTE_M " or " CFG_NTN ".");
+   } else {
+      LOG_INF("      <mode>  : optional mode, " CFG_NB_IOT " or " CFG_LTE_M ".");
+   }
    LOG_INF("              : " CFG_NB_IOT " := NB-IoT");
    LOG_INF("              : " CFG_LTE_M " := LTE-M");
+   if (ntn) {
+      LOG_INF("              : " CFG_NTN " := NTN");
+   }
    LOG_INF("  con auto    : automatic network selection.");
 }
 
@@ -621,7 +680,7 @@ static int modem_cmd_psm(const char *config)
       modem_lock_psm(false);
       res = modem_set_psm_for_connect();
    } else if (!stricmp("off", value)) {
-      sh_app_set_inactive(K_SECONDS(5));
+      sh_app_set_inactive(K_SECONDS(modem_use_ntn() ? 10 : 5));
       modem_lock_psm(true);
       res = modem_at_psm_req(false);
    } else {
@@ -708,7 +767,7 @@ static int modem_cmd_psm(const char *config)
          } else {
             LOG_INF("PSM enable, act: %d s, tau: %d s", active_time * rat_mul, tau_time * tau_mul);
          }
-         sh_app_set_inactive(K_SECONDS(5));
+         sh_app_set_inactive(K_SECONDS(modem_use_ntn() ? 10 : 5));
          modem_lock_psm(true);
          lte_lc_psm_param_set(tau, rat); // doesn't use at-cmd
          res = modem_at_psm_req(true);
@@ -821,6 +880,9 @@ static int modem_cmd_show_edrx(void)
                   break;
                case 5:
                   edrx_cfg_net.mode = LTE_LC_LTE_MODE_NBIOT;
+                  break;
+               case 6:
+                  edrx_cfg_net.mode = LTE_LC_LTE_MODE_NTN_NBIOT;
                   break;
             }
             modem_print_edrx("req", &edrx_cfg_net, line, sizeof(line) - 1);
@@ -1252,7 +1314,7 @@ static int modem_cmd_sms(const char *config)
 
    memset(destination, 0, sizeof(destination));
    cur = parse_next_text(cur, ' ', destination, sizeof(destination));
-   modem_set_psm(120, K_SECONDS(5));
+   modem_set_psm(120, K_SECONDS(modem_use_ntn() ? 10 : 5));
    if (destination[0]) {
       return sms_send_text(destination, cur);
    } else {

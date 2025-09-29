@@ -62,17 +62,20 @@ static sys_slist_t lte_ready_list = SYS_SLIST_STATIC_INIT(&lte_ready_list);
 #define MODEM_INITIALIZED 1
 #define MODEM_INTERRUPT_SEARCH 2
 #define MODEM_FIRMWARE_2 3
-#define MODEM_ON_OFF 4
-#define MODEM_SIGNAL_READY 5
-#define MODEM_READY 6
-#define MODEM_CONNECTED 7
-#define MODEM_PSM_UPDATE 8
-#define MODEM_LOW_POWER 9
-#define MODEM_LTE_MODE_INITIALIZED 10
-#define MODEM_LTE_MODE_PREFERENCE 11
-#define MODEM_LTE_MODE_FORCE 12
+#define MODEM_FIRMWARE_NTN 4
+#define MODEM_ON_OFF 5
+#define MODEM_SIGNAL_READY 6
+#define MODEM_READY 7
+#define MODEM_CONNECTED 8
+#define MODEM_PSM_UPDATE 9
+#define MODEM_LOW_POWER 10
+#define MODEM_LTE_MODE_INITIALIZED 11
+#define MODEM_LTE_MODE_PREFERENCE 12
+#define MODEM_LTE_MODE_FORCE 13
+#define MODEM_MODE_NTN 14
 
 static atomic_t modem_states = ATOMIC_INIT(0);
+static atomic_t modem_systemmode = ATOMIC_INIT(0);
 
 static inline bool modem_states_changed(int bit, bool value)
 {
@@ -114,6 +117,7 @@ static int64_t lte_psm_delay_time = 0;
 static struct lte_modem_info modem_info;
 static struct lte_network_info network_info;
 static struct lte_ce_info ce_info;
+static int64_t ce_info_time = 0;
 
 static int64_t transmission_time = 0;
 static int64_t network_search_time = 0;
@@ -188,11 +192,13 @@ static K_WORK_DEFINE(modem_read_network_info_work, modem_read_info_work_fn);
 
 static void modem_read_coverage_enhancement_info_work_fn(struct k_work *work)
 {
-   bool rate_limit;
-   modem_read_coverage_enhancement_info(NULL);
    k_mutex_lock(&lte_mutex, K_FOREVER);
-   rate_limit = network_info.rate_limit;
+   bool rate_limit = network_info.rate_limit;
+   int64_t last = ce_info_time;
    k_mutex_unlock(&lte_mutex);
+   if (modem_read_coverage_enhancement_info(NULL) < 0 && (k_uptime_get() - last) > 5000) {
+      modem_read_network_info(NULL, false);
+   }
    if (rate_limit) {
       modem_read_rate_limit_time(NULL);
    }
@@ -583,6 +589,7 @@ static void lte_network_mode_set(enum lte_lc_lte_mode mode)
    k_mutex_lock(&lte_mutex, K_FOREVER);
    if (network_info.mode != mode) {
       network_info.mode = mode;
+      atomic_set_bit_to(&modem_states, MODEM_MODE_NTN, LTE_LC_LTE_MODE_NTN_NBIOT == mode);
       rai_time = -1;
    }
    k_mutex_unlock(&lte_mutex);
@@ -1244,6 +1251,7 @@ static void modem_on_cfun(int mode, void *ctx)
          modem_set_ptw(ptw_time_s);
       }
       modem_read_network_info(NULL, true);
+      modem_read_systemmode(NULL);
       if (!atomic_test_and_set_bit(&modem_states, MODEM_ON_OFF)) {
          MODEM_STATE_CHANGE_CALLBACK(&modem_on_callback_work);
       }
@@ -1371,19 +1379,44 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       err = modem_at_cmd(buf, sizeof(buf), "%HWVERSION: ", "AT%HWVERSION");
       if (err > 0) {
          LOG_INF("hw: %s", buf);
+         size_t len = sizeof(modem_info.version) - 1;
+         char *ver = modem_info.version;
+         const char *mod = "60 ";
          int index = strstart(buf, "nRF9160 SICA ", true);
          if (!index) {
+            mod = "61 ";
             index = strstart(buf, "nRF9161 LACA ", true);
+            if (!index) {
+               mod = "51 ";
+               index = strstart(buf, "nRF9151 LACA ", true);
+            }
          }
-         strncpy(modem_info.version, &buf[index], sizeof(modem_info.version) - 1);
+         if (index) {
+            size_t mlen = strlen(mod);
+            strncpy(ver, mod, len);
+            len -= mlen;
+            ver += mlen;
+         }
+         strncpy(ver, &buf[index], len);
       }
       atomic_clear_bit(&modem_states, MODEM_FIRMWARE_2);
+      atomic_clear_bit(&modem_states, MODEM_FIRMWARE_NTN);
+      atomic_clear_bit(&modem_states, MODEM_MODE_NTN);
       err = modem_at_cmd(buf, sizeof(buf), NULL, "AT+CGMR");
       if (err > 0) {
+         // mfw_nrf9151-ntn_0.5.0-322.prealpha
          LOG_INF("rev: %s", buf);
          int index = strstart(buf, "mfw_nrf9160_", true);
          if (!index) {
             index = strstart(buf, "mfw_nrf91x1_", true);
+            if (!index) {
+               index = strstart(buf, "mfw_nrf9151-ntn_", true);
+               if (index) {
+                  atomic_set_bit(&modem_states, MODEM_FIRMWARE_NTN);
+                  atomic_set_bit(&modem_states, MODEM_FIRMWARE_2);
+                  index -= 4;
+               }
+            }
          }
          strncpy(modem_info.firmware, &buf[index], sizeof(modem_info.firmware) - 1);
          if (modem_info.firmware[0] >= '2') {
@@ -1698,6 +1731,40 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
    return err;
 }
 
+int modem_read_systemmode(enum lte_lc_system_mode *system_mode)
+{
+   enum lte_lc_system_mode lte_mode = 0;
+   int res = lte_lc_system_mode_get(&lte_mode, NULL);
+   if (!res) {
+      atomic_set(&modem_systemmode, lte_mode);
+      if (system_mode) {
+         *system_mode = lte_mode;
+      }
+   }
+   return res;
+}
+
+bool modem_support_ntn(void)
+{
+   return atomic_test_bit(&modem_states, MODEM_FIRMWARE_NTN);
+}
+
+int modem_use_ntn(void)
+{
+   int res = 0;
+
+   if (atomic_test_bit(&modem_states, MODEM_MODE_NTN) ||
+       atomic_get(&modem_systemmode) == LTE_LC_SYSTEM_MODE_NTN_NBIOT) {
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      res = network_info.band;
+      k_mutex_unlock(&lte_mutex);
+      if (!res) {
+         res = -1;
+      }
+   }
+   return res;
+}
+
 int modem_reinit(bool lib)
 {
    atomic_clear_bit(&modem_states, MODEM_INITIALIZED);
@@ -1789,6 +1856,7 @@ int modem_start(const k_timeout_t timeout, bool save)
    ce_info.rsrq = INVALID_SIGNAL_VALUE;
    ce_info.cinr = INVALID_SIGNAL_VALUE;
    ce_info.snr = INVALID_SIGNAL_VALUE;
+   ce_info_time = 0;
    rai_time = -1;
    rai_network_state = LTE_NETWORK_RAI_UNKNOWN;
    k_mutex_unlock(&lte_mutex);
@@ -2189,13 +2257,14 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
       if (*n == ',') {
          // skip ,
          cur = n + 1;
-         // Act LTE-M/NB-IoT
+         // Act LTE-M/NB-IoT/NTN
          n = parse_next_long(cur, 10, &value);
          if (cur != n) {
             switch (value) {
                case LTE_LC_LTE_MODE_NONE:
                case LTE_LC_LTE_MODE_NBIOT:
                case LTE_LC_LTE_MODE_LTEM:
+               case LTE_LC_LTE_MODE_NTN_NBIOT:
                   temp.mode = (enum lte_lc_lte_mode)value;
                   break;
                default:
@@ -2208,8 +2277,8 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
          cur = n + 1;
          // Band
          n = parse_next_long(cur, 10, &value);
-         if (cur != n && 0 <= value && value < 90) {
-            temp.band = (uint8_t)value;
+         if (cur != n && 0 <= value && value <= 500) {
+            temp.band = (uint16_t)value;
          }
       }
       if (*n == ',') {
@@ -2379,6 +2448,7 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
       }
    }
 
+   int64_t time = k_uptime_get();
    k_mutex_lock(&lte_mutex, K_FOREVER);
    if (network_info.cell != temp.cell || network_info.tac != temp.tac) {
       lte_cell_updates++;
@@ -2388,12 +2458,15 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
    network_info = temp;
    if (rsrp != NONE_SIGNAL_VALUE) {
       ce_info.rsrp = rsrp;
+      ce_info_time = time;
    }
    if (snr != NONE_SIGNAL_VALUE) {
       ce_info.snr = snr;
+      ce_info_time = time;
    }
    if (rsrq != NONE_SIGNAL_VALUE) {
       ce_info.rsrq = rsrq;
+      ce_info_time = time;
    }
    if (callbacks) {
       network_info.registered = LTE_NETWORK_STATE_INIT;
@@ -2937,7 +3010,10 @@ int modem_set_power_indication(int level)
 int modem_set_psm_for_connect(void)
 {
    int rat = CONFIG_UDP_PSM_CONNECT_RAT;
-   return modem_set_psm(rat, K_SECONDS(5));
+   if (rat < CONFIG_UDP_PSM_CONNECT_RAT_NTN && modem_use_ntn()) {
+      rat = CONFIG_UDP_PSM_CONNECT_RAT_NTN;
+   }
+   return modem_set_psm(rat, K_SECONDS(modem_use_ntn() ? 10 : 5));
 }
 
 int modem_set_psm(int16_t active_time_s, const k_timeout_t timeout)
@@ -3144,6 +3220,7 @@ int modem_set_edrx(int16_t edrx_time_s)
       }
    } else {
       int res2 = 0;
+      int res3 = 0;
       int edrx_code = 0;
       char edrx[5] = "0000";
       float time = edrx_time_s;
@@ -3157,10 +3234,16 @@ int modem_set_edrx(int16_t edrx_time_s)
       }
       print_bin(edrx, 4, edrx_code);
       LOG_INF("eDRX enable, %.2f s", (double)edrx_time);
+      if (modem_support_ntn()) {
+         res3 = modem_at_cmdf(NULL, 0, NULL, "AT+CEDRXS=2,6,\"%s\"", edrx);
+      }
       res2 = modem_at_cmdf(NULL, 0, NULL, "AT+CEDRXS=2,5,\"%s\"", edrx);
       res = modem_at_cmdf(NULL, 0, NULL, "AT+CEDRXS=2,4,\"%s\"", edrx);
       if (res2 < 0) {
          return res2;
+      }
+      if (res3 < 0) {
+         return res3;
       }
       if (res >= 0) {
          k_mutex_lock(&lte_mutex, K_FOREVER);
@@ -3194,6 +3277,9 @@ int modem_print_edrx(const char *desc, struct lte_lc_edrx_cfg *edrx_cfg, char *b
          break;
       case LTE_LC_LTE_MODE_NBIOT:
          mode = "NB-IoT";
+         break;
+      case LTE_LC_LTE_MODE_NTN_NBIOT:
+         mode = "NTN";
          break;
       default:
          return snprintf(buf, len, "eDRX %s%sunknown.", desc, sep);
@@ -3298,6 +3384,28 @@ int modem_wait_ready(const k_timeout_t timeout)
 int modem_start(const k_timeout_t timeout)
 {
    (void)timeout;
+   return 0;
+}
+
+int modem_read_systemmode(enum lte_lc_system_mode *lte_mode)
+{
+   (void)lte_mode;
+   return 0;
+}
+
+bool modem_support_ntn(void)
+{
+   return false;
+}
+
+bool modem_use_ntn(void)
+{
+   return false;
+}
+
+int modem_reinit(bool lib);
+{
+   (void)lib;
    return 0;
 }
 

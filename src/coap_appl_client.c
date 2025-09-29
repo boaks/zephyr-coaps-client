@@ -1126,9 +1126,24 @@ int coap_appl_client_message(const uint8_t **buffer)
    return appl_context.message_len;
 }
 
-int coap_appl_client_retry_strategy(int counter, bool dtls)
+int coap_appl_client_retry_strategy(int counter, bool dtls, int scale, bool ntn)
 {
-   if (dtls) {
+   if (ntn) {
+      switch (counter) {
+         case 1:
+         case 2:
+         case 4:
+         case 5:
+         case 7:
+         case 8:
+            return 0;
+         case 3:
+         case 6:
+            return DTLS_CLIENT_RETRY_STRATEGY_OFF;
+         case 9:
+            return DTLS_CLIENT_RETRY_STRATEGY_DTLS_HANDSHAKE;
+      }
+   } else if (dtls) {
       switch (counter) {
          case 1:
             return 0;

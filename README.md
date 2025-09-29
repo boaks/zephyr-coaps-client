@@ -1,4 +1,7 @@
-![Zephyr logo](https://github.com/zephyrproject-rtos/zephyr/raw/main/doc/_static/images/kite.png)
+| | | |
+| - | - | - |
+| [<img src="https://github.com/zephyrproject-rtos/zephyr/raw/main/doc/_static/images/kite.png" width="300"/>](https://github.com/zephyrproject-rtos/zephyr/raw/main/doc/_static/images/kite.png) | [<img src="https://www.nordicsemi.com/-/media/Images/Products/SiP/nRF9151-SiP/A1/nRF9151_SiP_12.10x11.10_stacked_web.png" width="80"/>](https://www.nordicsemi.com/-/media/Images/Products/SiP/nRF9151-SiP/A1/nRF9151_SiP_12.10x11.10_stacked_web.png) | [<img src="./docu/satellite-orbit.svg" width="200"/>](./docu/satellite-orbit.svg) |
+
 
 # Zephyr - Coaps Demo Client with Eclipse/TinyDtls
 
@@ -28,6 +31,12 @@ Without that knowledge it will be time consuming to make benefit out of this dem
 **Note:**
 The demo client is considered to use CoAP/DTLS 1.2 CID. Without server-side support for DTLS 1.2 CID, it will not work proper. Please ensure, that your server supports that.
 
+## **New** Support for NTN
+
+The [nRF9151 A1A (HW Rev. 2)](https://www.nordicsemi.com/products/nrf9151) supports [NTN (Non-Terrestrial Networks, NB-IoT over satellite)](https://www.nordicsemi.com/Products/Wireless/Low-power-cellular-IoT/What-is-NTN) using the modem NTN firmware [mfw_nrf9151-ntn_1.0.0-1.alpha.zip](https://nsscprodmedia.blob.core.windows.net/prod/software-and-other-downloads/sip/nrf91x1-sip/nrf9151-ntn-modem-firmware/mfw_nrf9151-ntn_1.0.0-1.alpha.zip). The client is adapted to support pretty high timeouts (e.g. 50s) and using DTLS 1.2 CID it is possibel to keep the DTLS context even switching between TN (LTE-M/NB-IoT) and NTN.
+
+Beside of a device with a nRF9151 A1A, it requires a SIM card with NTN subscription supporting IP and usually a good antenna is also very helpful. Using NTN the RTT gets large, for a first message 30s-50s are common, follow up messages will make it in 10-15s. NTN requires more energy, but the main point will be much higher costs for the data. Just as example 80 cent for 1 KB must be considered. With that a solution may only send twice a day and will fast reach 40 Euro per month.
+
 ## Supported Devices
 
 For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160), [nRF9161](https://www.nordicsemi.com/products/nrf9161), and [nRF9151](https://www.nordicsemi.com/products/nrf9151)  based devices are supported.
@@ -35,12 +44,12 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160), [nRF9161](
 | Device | Image |
 | :- | - |
 | [Nordic Semiconductor, Thingy:91](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91)<br>Works "out-of-the-box" in the "wild". Comes with selection of sensors (environment, motion) and a 2KB EEPROM. Not easy to extend with custom sensors. | [<img src="./docu/thingy91.jpg" width="300"/>](./docu/thingy91.jpg) |
-| [Nordic Semiconductor, Thingy:91X](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91-X)<br>Works "out-of-the-box" in the "wild". Comes with selection of sensors (environment, motion) and a 32MB flash. A QWIIC connector enables to add custom sensors. | [<img src="./docu/thingy91x.jpg" width="300"/>](./docu/thingy91x.jpg) |
+| [Nordic Semiconductor, Thingy:91X](https://www.nordicsemi.com/Products/Development-hardware/Nordic-Thingy-91-X)<br>Works "out-of-the-box" in the "wild". Comes with selection of sensors (environment, motion) and a 32MB flash. A QWIIC connector enables to add custom sensors. **NTN** maybe to demonstrate, but the antenna isn't good enough for satellites. | [<img src="./docu/thingy91x.jpg" width="300"/>](./docu/thingy91x.jpg) |
 | [Circuit Dojo, nRF9160 feather v5 (or newer)](https://www.circuitdojo.com/products/nrf9160-feather)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with motion sensor and 4MB flash. The design of the feather allows to easily add custom sensors. | [<img src="https://www.circuitdojo.com/base/api/files/products/i6zc2f7302etkea/nrf9160_feather_v4_nobg_dUlxE8SX1b.jpg" width="300"/>](https://www.circuitdojo.com/base/api/files/products/i6zc2f7302etkea/nrf9160_feather_v4_nobg_dUlxE8SX1b.jpg) |
-| [**EXT** Circuit Dojo, nRF9151 feather (only with NCS 2.9.x or newer)](https://www.circuitdojo.com/products/nrf9151-feather)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with motion sensor, 16MB flash and onboard OCD. The design of the feather allows to easily add custom sensors. | [<img src="https://www.circuitdojo.com/base/api/files/products/515ssdvlohrn7es/0289_resized_gsoh9wt1g5.png" width="300"/>](https://www.circuitdojo.com/base/api/files/products/515ssdvlohrn7es/0289_resized_gsoh9wt1g5.png) |
+| [**EXT** Circuit Dojo, nRF9151 feather (only with NCS 2.9.x or newer)](https://www.circuitdojo.com/products/nrf9151-feather)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with motion sensor, 16MB flash and onboard OCD. The design of the feather allows to easily add custom sensors. **NTN** with a good antenna, the choice for the field.| [<img src="https://www.circuitdojo.com/base/api/files/products/515ssdvlohrn7es/0289_resized_gsoh9wt1g5.png" width="300"/>](https://www.circuitdojo.com/base/api/files/products/515ssdvlohrn7es/0289_resized_gsoh9wt1g5.png) |
 | [**EXT** Conexio Stratus Pro nRF9151](https://conexiotech.com/conexio-stratus-pro-nrf9151/)<br>Requires additional batteries, antennas, and closures to work in the "wild". Comes with built-in solar energy harvesting, motion sensor, 2KB EEPROM, and 2x5 plug for JTAG. Includes a SIM card with 500MB in 10 years. | [<img src="https://conexiotech.com/wp-content/uploads/2024/10/stratus-pro-transparency-1-1536x911.png" width="300"/>](https://conexiotech.com/wp-content/uploads/2024/10/stratus-pro-transparency-1-1536x911.png) |
 | [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. Comes with a 8MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png) |
-| [Nordic Semiconductor, nRF9151 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9151-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png) |
+| [Nordic Semiconductor, nRF9151 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9151-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. **NTN** the SMA version of the DK and an external antenna may work even from your desk. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png) |
 
 **Note:** for all supported **EXT** boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, please consider to use them with NCS 2.9.2, NCS 3.1.0 or NCS 3.2.4. 
 
@@ -63,7 +72,7 @@ The demo supports also new upcoming devices based on the nRF9151.
 
 | Device | Image |
 | :- | - |
-| [**NEW** Makerdiary nRF9151 Connect Kit](https://makerdiary.com/products/nrf9151-connectkit/)<br>Requires additional batteries and closures to work in the "wild". Comes with onboard OCD. | [<img src="https://github.com/makerdiary/nrf9151-connectkit/blob/main/docs/assets/images/attaching_lte_antenna.png" width="300"/>](https://github.com/makerdiary/nrf9151-connectkit/blob/main/docs/assets/images/attaching_lte_antenna.png) |
+| [**NEW** Makerdiary nRF9151 Connect Kit](https://makerdiary.com/products/nrf9151-connectkit/)<br>Requires additional batteries and closures to work in the "wild". Comes with onboard OCD. Support tickets are answered only rarely. | [<img src="https://github.com/makerdiary/nrf9151-connectkit/blob/main/docs/assets/images/attaching_lte_antenna.png" width="300"/>](https://github.com/makerdiary/nrf9151-connectkit/blob/main/docs/assets/images/attaching_lte_antenna.png) |
 
 **Note:** for all supported **NEW** boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, so the full support will only come with NCS 2.9.2. 
 
@@ -145,6 +154,12 @@ In order to use this demo with a `nRF9151 feather`, you need:
    - or a [Segger j-Link](https://www.segger.com/products/debug-probes/j-link/) and a [cortex-M adapter](https://www.segger.com/products/debug-probes/j-link/accessories/adapters/9-pin-cortex-m-adapter/).
 
 **Note:** the `nRF9151 feather` uses 3.3V VDD and requires the Jlink to support 3.3V as well. Therefore a `nRF5340-DK` can be used. If the `nRF9160-DK` is used, ensure you select 3.0V for VDD-IO (SW9 on the DK).
+
+[<img src="./docu/satellite-orbit.svg" width="100"/>](./docu/satellite-orbit.svg)
+
+**NTN:** If you want to use the device with NTN, please ensure your feather is equiped with the hardware variant A1A. Current device are equiped with it, but older devices may come with the A0A. You will need to operate the device outdoor and using a good antenna will offer better reliability. I have tested it with 
+
+[Amazon - Bingfu 4G LTE Antenna 7 dBi Outdoor](https://www.amazon.de/dp/B0CN34SMCG) and [Amazon - UF.L to SMA adapter](https://www.amazon.de/dp/B0C89RNC7S).
 
 ## Required HW-Tools for Conexio Stratus Pro nRF9161 or nRF9151 
 
