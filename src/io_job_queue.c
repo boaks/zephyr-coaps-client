@@ -40,7 +40,7 @@ static int queues_init(void)
    struct k_work_queue_config io_cfg = {
        .name = "io_workq",
    };
-
+   k_work_queue_init(&io_job_queue);
    k_work_queue_start(
        &io_job_queue,
        io_job_queue_stack,
@@ -49,6 +49,7 @@ static int queues_init(void)
        &io_cfg);
 #endif /* CONFIG_USE_IO_JOB_QUEUE */
 
+   k_work_queue_init(&cmd_queue);
    k_work_queue_start(&cmd_queue, cmd_stack,
                       K_THREAD_STACK_SIZEOF(cmd_stack),
                       CONFIG_CMD_THREAD_PRIO, &cmd_cfg);
