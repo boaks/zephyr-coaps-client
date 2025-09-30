@@ -44,13 +44,13 @@ static K_THREAD_STACK_DEFINE(appl_diagnose_stack, CONFIG_DIAGNOSE_STACK_SIZE);
 static struct k_thread appl_diagnose_thread;
 static K_SEM_DEFINE(appl_diagnose_shutdown, 0, 1);
 
-static volatile bool reboots = false;
-static volatile bool shutdown_now = false;
-
 static atomic_t shutdown_delay = ATOMIC_INIT(-1);
 static atomic_t reboot_cause = ATOMIC_INIT(-1);
 
-static atomic_t read_reset_cause = ATOMIC_INIT(0);
+#define DIAGNOSE_READ_CAUSE 0
+#define DIAGNOSE_REBOOTS 1
+#define DIAGNOSE_SHUTDOWN_NOW 2
+static atomic_t diagnose_flags = ATOMIC_INIT(0);
 
 static const struct device *const wdt = DEVICE_DT_GET_OR_NULL(DT_ALIAS(watchdog0));
 static int wdt_channel_id = -1;
@@ -86,13 +86,13 @@ static void appl_reboot_fn(void *p1, void *p2, void *p3)
       appl_settings_add_reboot_code((uint16_t)error);
    }
 
-   if (!shutdown_now) {
+   if (!atomic_test_bit(&diagnose_flags, DIAGNOSE_SHUTDOWN_NOW)) {
       uint32_t delay_ms = atomic_get(&shutdown_delay);
       while (delay_ms > 0) {
          if (k_sem_take(&appl_diagnose_shutdown, K_MSEC(delay_ms)) == -EAGAIN) {
             break;
          }
-         if (shutdown_now) {
+         if (atomic_test_bit(&diagnose_flags, DIAGNOSE_SHUTDOWN_NOW)) {
             break;
          }
          delay_ms = atomic_get(&shutdown_delay);
@@ -103,20 +103,20 @@ static void appl_reboot_fn(void *p1, void *p2, void *p3)
 
 void appl_reboot(int error, const k_timeout_t delay)
 {
-   reboots = true;
+   atomic_set_bit(&diagnose_flags, DIAGNOSE_REBOOTS);
    uint32_t delay_ms = (uint32_t)k_ticks_to_ms_floor64(delay.ticks);
    atomic_set(&reboot_cause, error);
    if (delay_ms > 0) {
       atomic_set(&shutdown_delay, delay_ms);
    } else {
-      shutdown_now = true;
+      atomic_set_bit(&diagnose_flags, DIAGNOSE_SHUTDOWN_NOW);
    }
    k_sem_give(&appl_diagnose_shutdown);
 }
 
 bool appl_reboots(void)
 {
-   return reboots;
+   return atomic_test_bit(&diagnose_flags, DIAGNOSE_REBOOTS);
 }
 
 const char *appl_get_reboot_desciption(int error)
@@ -181,7 +181,7 @@ int appl_reboot_cause_description(size_t index, int flags, char *buf, size_t len
 uint32_t appl_reset_cause(int *flags, uint16_t *reboot_code)
 {
    uint32_t cause = 0;
-   if (atomic_cas(&read_reset_cause, 0, 1)) {
+   if (!atomic_test_and_set_bit(&diagnose_flags, DIAGNOSE_READ_CAUSE)) {
       reset_error = hwinfo_get_reset_cause(&cause);
       if (!reset_error) {
          hwinfo_clear_reset_cause();
@@ -311,7 +311,7 @@ int appl_reset_cause_description(char *buf, size_t len)
 {
    int index = 0;
 
-   if (atomic_get(&read_reset_cause) && len > 8) {
+   if (atomic_test_bit(&diagnose_flags, DIAGNOSE_READ_CAUSE) && len > 8) {
       int error = reset_error;
       if (error) {
          index += snprintf(buf + index, len - index, "%d (%s)", error, strerror(-error));
@@ -400,7 +400,7 @@ static int sh_cmd_read_restarts(const char *parameter)
    len = appl_cause_description(supported, buf, sizeof(buf));
    LOG_INF("Supported  : 0x%04x, %s", supported, buf);
 
-   if (atomic_get(&read_reset_cause)) {
+   if (atomic_test_bit(&diagnose_flags, DIAGNOSE_READ_CAUSE)) {
       memset(buf, 0, sizeof(buf));
       len = appl_reset_cause_description(buf, sizeof(buf));
       LOG_INF("Reset cause: %s", buf);
