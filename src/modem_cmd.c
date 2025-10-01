@@ -120,7 +120,7 @@ static int modem_cmd_config(const char *config)
    if (!value1[0]) {
       char mode = 0;
       char type = 0;
-      char net_mode = 0;
+      unsigned int net_mode = 0;
       char plmn[16];
       const char *desc = "\?\?\?";
       enum lte_lc_system_mode lte_mode = LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS;
@@ -134,7 +134,7 @@ static int modem_cmd_config(const char *config)
       memset(plmn, 0, sizeof(plmn));
       res = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS?");
       if (res > 0) {
-         res = sscanf(buf, " %c,%c,%15[^,],%c",
+         res = sscanf(buf, " %c,%c,%15[^,],%u",
                       &mode, &type, plmn, &net_mode);
          strtrunc(plmn, '"');
       }
@@ -145,9 +145,9 @@ static int modem_cmd_config(const char *config)
       }
       LOG_INF("cfg %s %s", desc, modem_get_system_mode_cfg(lte_mode, lte_preference));
       desc = "none";
-      if (net_mode == '7') {
+      if (net_mode == LTE_LC_LTE_MODE_LTEM) {
          desc = CFG_LTE_M;
-      } else if (net_mode == '9') {
+      } else if (net_mode == LTE_LC_LTE_MODE_NBIOT) {
          desc = CFG_NB_IOT;
       }
       LOG_INF("currently %s %s", plmn, desc);
@@ -320,7 +320,7 @@ static int modem_cmd_connect(const char *config)
    if (!value1[0]) {
       char mode = 0;
       char type = 0;
-      char net_mode = 0;
+      int net_mode = 0;
       char plmn[16];
       char buf[32];
       const char *desc = "none";
@@ -328,14 +328,14 @@ static int modem_cmd_connect(const char *config)
       memset(plmn, 0, sizeof(plmn));
       res = modem_at_cmd(buf, sizeof(buf), "+COPS: ", "AT+COPS?");
       if (res > 0) {
-         res = sscanf(buf, " %c,%c,%15[^,],%c",
+         res = sscanf(buf, " %c,%c,%15[^,],%d",
                       &mode, &type, plmn, &net_mode);
          strtrunc(plmn, '"');
       }
-      if (net_mode == '7') {
-         desc = "m1";
-      } else if (net_mode == '9') {
-         desc = "nb";
+      if (net_mode == LTE_LC_LTE_MODE_LTEM) {
+         desc = CFG_LTE_M;
+      } else if (net_mode == LTE_LC_LTE_MODE_NBIOT) {
+         desc = CFG_NB_IOT;
       }
       LOG_INF("con %s%s %s", mode == '0' ? "auto " : "", plmn, desc);
       return 0;

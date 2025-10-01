@@ -2175,9 +2175,16 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
          cur = n + 1;
          // Act LTE-M/NB-IoT
          n = parse_next_long(cur, 10, &value);
-         if (cur != n &&
-             (value == LTE_LC_LTE_MODE_NONE || value == LTE_LC_LTE_MODE_NBIOT || value == LTE_LC_LTE_MODE_LTEM)) {
-            temp.mode = (enum lte_lc_lte_mode)value;
+         if (cur != n) {
+            switch (value) {
+               case LTE_LC_LTE_MODE_NONE:
+               case LTE_LC_LTE_MODE_NBIOT:
+               case LTE_LC_LTE_MODE_LTEM:
+                  temp.mode = (enum lte_lc_lte_mode)value;
+                  break;
+               default:
+                  break;
+            }
          }
       }
       if (*n == ',') {
