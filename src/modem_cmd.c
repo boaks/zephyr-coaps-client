@@ -1084,8 +1084,8 @@ static int modem_cmd_power_indication(const char *config)
          }
       }
    }
-   if ((res == EOF || res ==  0) && 0 <= power_indication) {
-        LOG_INF("power indication %u", power_indication);
+   if ((res == EOF || res == 0) && 0 <= power_indication) {
+      LOG_INF("power indication %u", power_indication);
    }
 
    return res;
@@ -1116,6 +1116,39 @@ static int modem_cmd_state(const char *parameter)
 {
    (void)parameter;
    return modem_read_network_info(NULL, true);
+}
+
+static int modem_cmd_network_quality(const char *parameter)
+{
+   (void)parameter;
+   int res = 0;
+   struct lte_ce_info info;
+
+   memset(&info, 0, sizeof(info));
+   res = modem_read_coverage_enhancement_info(&info);
+   if (res > 0) {
+      const char *desc = "Current";
+      if ('U' == info.state || 'I' == info.state) {
+         modem_get_coverage_enhancement_info(&info);
+         desc = "Previous";
+      }
+      char buf[127];
+      int index = 0;
+
+      memset(buf, 0, sizeof(buf));
+      index = snprintf(&buf[index], sizeof(buf) - index, "%c, down: %u, up: %u", info.state, info.downlink_repetition, info.uplink_repetition);
+      if (info.rsrp != INVALID_SIGNAL_VALUE) {
+         index += snprintf(&buf[index], sizeof(buf) - index, ", RSRP: %d dBm", info.rsrp);
+      }
+      if (info.cinr != INVALID_SIGNAL_VALUE) {
+         index += snprintf(&buf[index], sizeof(buf) - index, ", CINR: %d dB", info.cinr);
+      }
+      if (info.snr != INVALID_SIGNAL_VALUE) {
+         index += snprintf(&buf[index], sizeof(buf) - index, ", SNR: %d dB", info.snr);
+      }
+      LOG_INF("%s netqual: %s", desc, buf);
+   }
+   return res;
 }
 
 static int modem_cmd_rate_limit(const char *parameter)
@@ -1221,6 +1254,7 @@ SH_CMD(search, "AT+COPS=?", "network search.", NULL, NULL, 0);
 SH_CMD(limit, "", "read apn rate limit.", modem_cmd_rate_limit, NULL, 0);
 SH_CMD(on, "AT+CFUN=1", "switch modem on.", modem_cmd_switch_on, NULL, 0);
 SH_CMD(state, "", "read modem state.", modem_cmd_state, NULL, 0);
+SH_CMD(netqual, "AT+CEINFO?", "read current modem signal quality.", modem_cmd_network_quality, NULL, 0);
 
 SH_CMD(cfg, "", "configure modem.", modem_cmd_config, modem_cmd_config_help, 0);
 SH_CMD(con, "", "connect modem.", modem_cmd_connect, modem_cmd_connect_help, 0);

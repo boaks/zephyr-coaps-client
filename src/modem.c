@@ -2398,6 +2398,13 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
    char buf[64];
    struct lte_ce_info temp;
 
+   if (info) {
+      info->state = 'U';
+      info->rsrp = INVALID_SIGNAL_VALUE;
+      info->cinr = INVALID_SIGNAL_VALUE;
+      info->snr = INVALID_SIGNAL_VALUE;
+   }
+
    memset(&temp, 0, sizeof(temp));
    err = modem_at_cmd(buf, sizeof(buf), "+CEINFO: ", "AT+CEINFO?");
    if (err > 0) {
@@ -2422,6 +2429,14 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
          if (temp.cinr == 127) {
             temp.cinr = INVALID_SIGNAL_VALUE;
          }
+         if (info) {
+            info->ce_supported = values[0];
+            info->state = temp.state;
+            info->downlink_repetition = values[1];
+            info->uplink_repetition = values[2];
+            info->rsrp = temp.rsrp;
+            info->cinr = temp.cinr;
+         }
          err2 = modem_at_cmd(buf, sizeof(buf), "%XSNRSQ: ", "AT%XSNRSQ?");
          if (err2 > 0) {
             LOG_INF("XSNRSQ: %s", buf);
@@ -2431,6 +2446,9 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
                   temp.snr = INVALID_SIGNAL_VALUE;
                } else {
                   temp.snr -= 24;
+               }
+               if (info) {
+                  info->snr = temp.snr;
                }
             }
          }
@@ -2457,9 +2475,6 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
          }
          ce_info = temp;
          k_mutex_unlock(&lte_mutex);
-         if (info) {
-            *info = temp;
-         }
       } else {
          LOG_ERR("CEINFO: %s => %d", buf, err);
       }
