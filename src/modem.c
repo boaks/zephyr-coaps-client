@@ -19,6 +19,8 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/net/socket.h>
+#include <zephyr/spinlock.h>
+#include <zephyr/sys/slist.h>
 
 #include "appl_diagnose.h"
 #include "io_job_queue.h"
@@ -51,6 +53,9 @@ LOG_MODULE_REGISTER(MODEM, CONFIG_MODEM_LOG_LEVEL);
 
 static K_MUTEX_DEFINE(lte_mutex);
 static K_CONDVAR_DEFINE(lte_condvar);
+static struct k_spinlock lte_lock;
+
+static sys_slist_t lte_ready_list = SYS_SLIST_STATIC_INIT(&lte_ready_list);
 
 #define MODEM_LIB_INITIALIZED 0
 #define MODEM_INITIALIZED 1
@@ -209,21 +214,42 @@ static K_WORK_DEFINE(modem_psm_inactive_work, modem_state_change_callback_work_f
 
 static K_WORK_DELAYABLE_DEFINE(modem_ready_work, modem_ready_work_fn);
 
+static struct k_work *modem_ready_get_next_work(void)
+{
+   sys_snode_t *node = sys_slist_get(&lte_ready_list);
+   if (node) {
+      return CONTAINER_OF(node, struct k_work, node);
+   }
+   return NULL;
+}
+
 static void modem_ready_work_fn(struct k_work *work)
 {
    bool ready = atomic_test_bit(&modem_states, MODEM_READY);
    if (ready) {
+      int counter = 0;
+      struct k_work *work_on_ready = NULL;
       lte_state_change_callback_handler_t callback = lte_state_change_handler;
       if (callback) {
          callback(LTE_STATE_READY_1S, true);
       }
-   }
-   if (ready) {
+
+      K_SPINLOCK(&lte_lock)
+      {
+         atomic_set_bit(&modem_states, MODEM_SIGNAL_READY);
+         while ((work_on_ready = modem_ready_get_next_work())) {
+            ++counter;
+            work_submit_to_io_queue(work_on_ready);
+         }
+      }
       k_mutex_lock(&lte_mutex, K_FOREVER);
-      atomic_set_bit(&modem_states, MODEM_SIGNAL_READY);
       k_condvar_broadcast(&lte_condvar);
       k_mutex_unlock(&lte_mutex);
-      LOG_INF("modem signaled ready.");
+      if (counter) {
+         LOG_INF("modem signaled ready. %d jobs.", counter);
+      } else {
+         LOG_INF("modem signaled ready. no jobs.");
+      }
    }
 }
 
@@ -1674,6 +1700,23 @@ int modem_wait_ready(const k_timeout_t timeout)
    now = k_uptime_get();
    LOG_INF("Modem network %sconnected in %ld s", err ? "not " : "", (long)MSEC_TO_SEC(now - start));
    return err;
+}
+
+bool modem_on_ready(struct k_work *work)
+{
+   bool res = false;
+
+   K_SPINLOCK(&lte_lock)
+   {
+      if (atomic_test_bit(&modem_states, MODEM_SIGNAL_READY)) {
+         res = true;
+         work_submit_to_io_queue(work);
+      } else {
+         k_work_cancel(work);
+         sys_slist_append(&lte_ready_list, &work->node);
+      }
+   }
+   return res;
 }
 
 void modem_interrupt_wait(void)

@@ -17,6 +17,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <zephyr/sys_clock.h>
+#include <zephyr/kernel.h>
 
 #include <modem/lte_lc.h>
 
@@ -158,6 +159,8 @@ int modem_start(const k_timeout_t timeout, bool save);
 int modem_start_search(void);
 
 int modem_wait_ready(const k_timeout_t timeout);
+
+bool modem_on_ready(struct k_work *work);
 
 void modem_interrupt_wait(void);
 
