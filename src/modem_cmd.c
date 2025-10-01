@@ -30,7 +30,6 @@ LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 #include <modem/pdn.h>
 #include <nrf_modem_at.h>
 
-#include "io_job_queue.h"
 #include "modem.h"
 #include "modem_at.h"
 #include "modem_desc.h"
@@ -46,14 +45,27 @@ static bool modem_is_plmn(const char *value)
 
 static void cmd_resp_callback(const char *at_response)
 {
+   // interrupt context!
    LOG_INF("modem cmd => %s", at_response);
 }
 
+static void modem_send_on_ready_work_fn(struct k_work *work)
+{
+   LOG_INF("modem ready => send ...");
+   sh_cmd_append("send", K_MSEC(1000));
+}
+
+static K_WORK_DEFINE(modem_send_on_ready_work, modem_send_on_ready_work_fn);
+
 static void cmd_resp_callback_send(const char *at_response)
 {
+   // interrupt context!
    if (!strncmp(at_response, "OK", 2)) {
-      LOG_INF("modem cmd => OK, send ...");
-      sh_cmd_append("send", K_MSEC(2000));
+      if (modem_on_ready(&modem_send_on_ready_work)) {
+         LOG_INF("modem cmd => OK, ready.");
+      } else {
+         LOG_INF("modem cmd => OK, wait for ready ...");
+      }
    } else {
       LOG_INF("modem cmd => %s", at_response);
    }
@@ -69,7 +81,7 @@ static int modem_cmd_reinit(const char *config)
    modem_at_restore();
    LOG_INF(">> modem reinit ready");
    if (is_on) {
-      sh_cmd_append("send", K_MSEC(2000));
+      modem_on_ready(&modem_send_on_ready_work);
    }
    return 0;
 }
@@ -150,7 +162,7 @@ static int modem_cmd_config(const char *config)
       modem_at_restore();
       LOG_INF(">> cfg init ready");
       if (is_on) {
-         sh_cmd_append("send", K_MSEC(2000));
+         modem_on_ready(&modem_send_on_ready_work);
       }
       return 0;
    }
