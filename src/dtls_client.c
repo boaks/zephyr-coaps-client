@@ -150,27 +150,28 @@ typedef struct dtls_app_data_t {
 #define DOWNLOAD_PROGRESS_LAST_STATUS_MESSAGE 33
 #define DOWNLOAD_PROGRESS_REBOOT 34
 
-#define LTE_REGISTERED 0
-#define LTE_READY 1
-#define LTE_CONNECTED 2
-#define LTE_SLEEPING 3
-#define LTE_READY_1S 4
-#define LTE_PSM_ACTIVE 5
-#define LTE_LOW_VOLTAGE 6
-#define LTE_CONNECTED_SEND 7
-#define LTE_SOCKET_ERROR 8
-#define PM_PREVENT_SUSPEND 9
-#define PM_SUSPENDED 10
-#define APN_RATE_LIMIT 11
-#define APN_RATE_LIMIT_RESTART 12
-#define SETUP_MODE 13
+#define LTE_ON 0
+#define LTE_REGISTERED 1
+#define LTE_READY 2
+#define LTE_CONNECTED 3
+#define LTE_SLEEPING 4
+#define LTE_READY_1S 5
+#define LTE_PSM_ACTIVE 6
+#define LTE_LOW_VOLTAGE 7
+#define LTE_CONNECTED_SEND 8
+#define LTE_SOCKET_ERROR 9
+#define PM_PREVENT_SUSPEND 10
+#define PM_SUSPENDED 11
+#define APN_RATE_LIMIT 12
+#define APN_RATE_LIMIT_RESTART 13
+#define SETUP_MODE 14
 
-#define APPL_READY 14
-#define APPL_INITIAL_SUCCESS 15
+#define APPL_READY 15
+#define APPL_INITIAL_SUCCESS 16
 
-#define TRIGGER_SEND 16
-#define TRIGGER_DURATION 17
-#define TRIGGER_RECV 18
+#define TRIGGER_SEND 17
+#define TRIGGER_DURATION 18
+#define TRIGGER_RECV 19
 
 static atomic_t general_states = ATOMIC_INIT(0);
 
@@ -370,9 +371,9 @@ int get_local_address(uint8_t *buf, size_t length)
       rc += snprintf(&buf[rc], length - rc, "%u", app_data_context.port);
       dtls_info("dtls: recv. address: %s", buf);
    }
-#else /* CONFIG_UDP_WAKEUP_ENABLE */
-   (void) buf;
-   (void) length;
+#else  /* CONFIG_UDP_WAKEUP_ENABLE */
+   (void)buf;
+   (void)length;
 #endif /* CONFIG_UDP_WAKEUP_ENABLE */
    return rc;
 }
@@ -688,6 +689,9 @@ static void dtls_manual_trigger(int duration)
       atomic_set_bit(&general_states, TRIGGER_DURATION);
    } else {
       atomic_clear_bit(&general_states, TRIGGER_DURATION);
+      if (!lte_power_off && !atomic_test_bit(&general_states, LTE_ON)) {
+         return;
+      }
       send = true;
       dtls_set_send_trigger("button");
    }
@@ -705,6 +709,10 @@ static void dtls_manual_trigger(int duration)
 static void dtls_cmd_trigger(const char *source, bool led, int mode)
 {
    bool ready = atomic_test_bit(&general_states, LTE_READY);
+   if (!lte_power_off && !atomic_test_bit(&general_states, LTE_ON)) {
+      dtls_info("%s: modem off", source);
+      return;
+   }
    if (mode & 1) {
       if (dtls_no_pending_request(app_data_context.request_state)) {
          ui_enable(led);
@@ -734,7 +742,7 @@ static void dtls_timer_trigger_fn(struct k_work *work)
 {
    long interval = atomic_get(&send_interval);
 
-   if (dtls_no_pending_request(app_data_context.request_state)) {
+   if ((lte_power_off || atomic_test_bit(&general_states, LTE_ON)) && dtls_no_pending_request(app_data_context.request_state)) {
       // no LEDs for time trigger
       ui_enable(false);
       dtls_set_send_trigger("timer");
@@ -1411,6 +1419,10 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
    }
    now = (long)k_uptime_get();
    switch (type) {
+      case LTE_STATE_ON:
+         desc = "cfun";
+         bit = LTE_ON;
+         break;
       case LTE_STATE_REGISTRATION:
          desc = "registration";
          bit = LTE_REGISTERED;
@@ -1449,12 +1461,14 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
       dtls_info("modem state: %d %s", type, active ? "on" : "off");
    }
    bool previous = active;
+   bool changed = false;
    if (bit >= 0) {
       if (active) {
          previous = atomic_test_and_set_bit(&general_states, bit);
       } else {
          previous = atomic_test_and_clear_bit(&general_states, bit);
       }
+      changed = active != previous;
    }
 
    if (type == LTE_STATE_REGISTRATION) {
@@ -1477,7 +1491,7 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
          ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
       }
    } else if (type == LTE_STATE_READY) {
-      if (previous != active) {
+      if (changed) {
          if (active) {
             trigger_search = READY_SEARCH;
             k_sem_give(&dtls_trigger_search);
@@ -1491,17 +1505,18 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
          modem_sim_ready();
       }
    } else if (type == LTE_STATE_CONNECTED) {
-      if (!app_data_context.dtls_flight) {
+      dtls_app_data_t *app = &app_data_context;
+      if (!app->dtls_flight) {
          if (active) {
             ui_led_op(LED_COLOR_BLUE, LED_CLEAR);
             ui_led_op(LED_COLOR_GREEN, LED_SET);
-         } else if (dtls_no_pending_request(app_data_context.request_state)) {
+         } else if (dtls_no_pending_request(app->request_state)) {
             ui_led_op(LED_COLOR_RED, LED_CLEAR);
             ui_led_op(LED_COLOR_GREEN, LED_CLEAR);
          }
       }
-      if (active) {
-         if (!previous) {
+      if (changed) {
+         if (active) {
             atomic_set(&connected_time, now);
             atomic_inc(&lte_connections);
             atomic_set_bit(&general_states, LTE_CONNECTED_SEND);
@@ -1526,6 +1541,10 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
    } else if (type == LTE_STATE_LOW_VOLTAGE) {
       if (active) {
          work_schedule_for_io_queue(&dtls_power_management_suspend_work, K_NO_WAIT);
+      }
+   } else if (type == LTE_STATE_ON) {
+      if (!active) {
+         atomic_and(&general_states, ~(BIT(LTE_CONNECTED_SEND)));
       }
    }
 }
@@ -1818,6 +1837,11 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
          dtls_info("> No initial success, reboot %d.", reboot);
          restart(ERROR_CODE(ERROR_CODE_INIT_NO_SUCCESS, reboot), true);
       }
+      if (!lte_power_off && !atomic_test_bit(&general_states, LTE_ON)) {
+         dtls_info("modem off.");
+         k_sem_take(&dtls_trigger_msg, K_SECONDS(60));
+         continue;
+      }
 
       network_not_found = false;
       if (!lte_power_off && (!atomic_test_bit(&general_states, LTE_READY) || app->fd < 0)) {
@@ -2056,6 +2080,11 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                int res = get_send_interval();
                loops = 0;
                atomic_clear_bit(&general_states, TRIGGER_RECV);
+               if (!lte_power_off && !atomic_test_bit(&general_states, LTE_ON)) {
+                  dtls_info("modem off, postpone sending ...");
+                  atomic_set_bit(&general_states, TRIGGER_SEND);
+                  continue;
+               }
                sh_app_set_active();
                dtls_coap_set_request_state("trigger", app, SEND);
                dtls_power_management();
@@ -2169,17 +2198,18 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
             if (loops > temp) {
                result = -1;
                if (app->retransmission < COAP_MAX_RETRANSMISSION) {
+                  loops = 0;
                   if (app->retransmission == 0) {
+                     app->timeout = network_timeout_scale(coap_timeout) << 1;
                      int rat = CONFIG_UDP_PSM_RETRANS_RAT;
-                     app->timeout = network_timeout_scale(coap_timeout);
                      if ((app->timeout + 4) > rat) {
                         rat = app->timeout + 4;
                      }
                      modem_set_psm(rat, K_SECONDS(5));
+                  } else {
+                     app->timeout <<= 1;
                   }
                   ++app->retransmission;
-                  loops = 0;
-                  app->timeout <<= 1;
                   dtls_coap_set_request_state("resend", app, SEND);
 
                   dtls_info("%s resend, timeout %d s", type, app->timeout);

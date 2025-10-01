@@ -62,14 +62,15 @@ static sys_slist_t lte_ready_list = SYS_SLIST_STATIC_INIT(&lte_ready_list);
 #define MODEM_INITIALIZED 1
 #define MODEM_INTERRUPT_SEARCH 2
 #define MODEM_FIRMWARE_2 3
-#define MODEM_SIGNAL_READY 4
-#define MODEM_READY 5
-#define MODEM_CONNECTED 6
-#define MODEM_PSM_UPDATE 7
-#define MODEM_LOW_POWER 8
-#define MODEM_LTE_MODE_INITIALIZED 9
-#define MODEM_LTE_MODE_PREFERENCE 10
-#define MODEM_LTE_MODE_FORCE 11
+#define MODEM_ON_OFF 4
+#define MODEM_SIGNAL_READY 5
+#define MODEM_READY 6
+#define MODEM_CONNECTED 7
+#define MODEM_PSM_UPDATE 8
+#define MODEM_LOW_POWER 9
+#define MODEM_LTE_MODE_INITIALIZED 10
+#define MODEM_LTE_MODE_PREFERENCE 11
+#define MODEM_LTE_MODE_FORCE 12
 
 static atomic_t modem_states = ATOMIC_INIT(0);
 
@@ -202,6 +203,8 @@ static K_WORK_DEFINE(modem_read_coverage_enhancement_info_work, modem_read_cover
 static void modem_state_change_callback_work_fn(struct k_work *work);
 static void modem_ready_work_fn(struct k_work *work);
 
+static K_WORK_DEFINE(modem_on_callback_work, modem_state_change_callback_work_fn);
+static K_WORK_DEFINE(modem_off_callback_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_registered_callback_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_unregistered_callback_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_ready_callback_work, modem_state_change_callback_work_fn);
@@ -269,6 +272,10 @@ static void modem_state_change_callback_work_fn(struct k_work *work)
          callback(LTE_STATE_READY, true);
       } else if (work == &modem_not_ready_callback_work) {
          callback(LTE_STATE_READY, false);
+      } else if (work == &modem_on_callback_work) {
+         callback(LTE_STATE_ON, true);
+      } else if (work == &modem_off_callback_work) {
+         callback(LTE_STATE_ON, false);
       } else if (work == &modem_registered_callback_work) {
          callback(LTE_STATE_REGISTRATION, true);
          modem_sim_network(true);
@@ -1255,8 +1262,17 @@ static void modem_on_cfun(int mode, void *ctx)
          modem_set_ptw(ptw_time_s);
       }
       modem_read_network_info(NULL, true);
+      if (!atomic_test_and_set_bit(&modem_states, MODEM_ON_OFF)) {
+         work_submit_to_io_queue(&modem_on_callback_work);
+      }
       return;
    }
+   if (LTE_LC_FUNC_MODE_POWER_OFF == mode || LTE_LC_FUNC_MODE_OFFLINE == mode || LTE_LC_FUNC_MODE_DEACTIVATE_LTE == mode || LTE_LC_FUNC_MODE_ACTIVATE_UICC == mode) {
+      if (atomic_test_and_clear_bit(&modem_states, MODEM_ON_OFF)) {
+         work_submit_to_io_queue(&modem_off_callback_work);
+      }
+   }
+
 #ifdef CONFIG_PDN
    if (mode == LTE_LC_FUNC_MODE_POWER_OFF) {
       modem_apply_apn();
@@ -1301,6 +1317,8 @@ static void modem_cancel_all_job(void)
    k_work_cancel(&modem_read_sim_work);
    k_work_cancel(&modem_read_network_info_work);
    k_work_cancel(&modem_read_coverage_enhancement_info_work);
+   k_work_cancel(&modem_on_callback_work);
+   k_work_cancel(&modem_off_callback_work);
    k_work_cancel(&modem_registered_callback_work);
    k_work_cancel(&modem_unregistered_callback_work);
    k_work_cancel(&modem_ready_callback_work);
@@ -1450,9 +1468,9 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 
       if (atomic_test_bit(&modem_states, MODEM_FIRMWARE_2)) {
 #ifdef CONFIG_MODEM_MIXED_LTE_GNSS_ANTENNA
-         err = modem_at_cmd(buf, sizeof(buf), NULL, "AT\%XANTCFG=1");
+         err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%XANTCFG=1");
 #else
-         err = modem_at_cmd(buf, sizeof(buf), NULL, "AT\%XANTCFG=0");
+         err = modem_at_cmd(buf, sizeof(buf), NULL, "AT%XANTCFG=0");
 #endif
          if (err > 0) {
             LOG_INF("xantcfg: %s", buf);
@@ -1846,7 +1864,9 @@ int modem_get_power_state(enum lte_power_state *state)
 
    if (state) {
       k_mutex_lock(&lte_mutex, K_FOREVER);
-      if (atomic_test_bit(&modem_states, MODEM_LOW_POWER)) {
+      if (!atomic_test_bit(&modem_states, MODEM_ON_OFF)) {
+         *state = LTE_POWER_STATE_OFF;
+      } else if (atomic_test_bit(&modem_states, MODEM_LOW_POWER)) {
          *state = LTE_POWER_STATE_LOW_VOLTAGE;
       } else if (network_info.sleeping == LTE_NETWORK_STATE_ON) {
          *state = LTE_POWER_STATE_SLEEPING;
@@ -2914,7 +2934,6 @@ int modem_set_offline(void)
 {
    LOG_INF("modem offline");
    watchdog_feed();
-
    return lte_lc_offline();
 }
 

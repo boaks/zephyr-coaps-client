@@ -112,6 +112,7 @@ typedef struct lte_network_statistic {
 } lte_network_statistic_t;
 
 enum lte_state_type {
+	LTE_STATE_ON,
 	LTE_STATE_REGISTRATION,
 	LTE_STATE_READY,
 	LTE_STATE_READY_1S,
@@ -136,6 +137,7 @@ enum preference_mode {
 };
 
 enum lte_power_state {
+	LTE_POWER_STATE_OFF,
 	LTE_POWER_STATE_SLEEPING,
 	LTE_POWER_STATE_IDLE,
 	LTE_POWER_STATE_ACTIVE,
