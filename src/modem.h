@@ -60,7 +60,6 @@ enum lte_network_rai {
 	LTE_NETWORK_AS_AND_CP_RAI = 4,
 };
 
-
 typedef struct lte_network_info {
    uint16_t registered:2;
    uint16_t pdn_active:2;
@@ -124,7 +123,7 @@ enum lte_state_type {
 
 enum rai_mode {
 	RAI_MODE_OFF,
-	RAI_MODE_NOW, /* intended to uses a extra dummy message! */
+	RAI_MODE_NOW, /* assumed/intended to uses a extra dummy message! */
 	RAI_MODE_LAST,
 	RAI_MODE_ONE_RESPONSE
 };
@@ -214,7 +213,9 @@ int modem_get_power_level(void);
 
 int modem_set_power_indication(int mode);
 
-int modem_set_psm(int16_t active_time_s);
+int modem_set_psm_for_connect(void);
+
+int modem_set_psm(int16_t active_time_s, const k_timeout_t timeout);
 
 int modem_set_rai_mode(enum rai_mode mode, int socket);
 

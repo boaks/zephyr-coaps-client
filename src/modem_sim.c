@@ -163,6 +163,7 @@ static int modem_sim_write_imsi_sel(unsigned int select, bool restart, const cha
       atomic_set_bit(&sim_status, SIM_STATUS_SELECT_IMSI);
       if (restart) {
          modem_at_push_off(false);
+         modem_set_psm_for_connect();
          modem_at_restore();
          res = modem_sim_read_imsi_sel(true, &selected);
          if (res == 1) {

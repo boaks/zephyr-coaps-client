@@ -511,6 +511,7 @@ static bool restart_modem(bool power_off)
       restart(ERROR_CODE_LOW_VOLTAGE, false);
    }
    dtls_info("> modem restarting ...");
+   modem_set_psm_for_connect();
    modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), false);
    atomic_clear_bit(&general_states, PM_PREVENT_SUSPEND);
    dtls_power_management();
@@ -560,6 +561,7 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
    if (!ready) {
       return false;
    }
+   modem_set_psm_for_connect();
 
    app->fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
    if (app->fd < 0) {
@@ -573,8 +575,6 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
       dtls_warn("> %s, set timeout for socket failed, errno %d (%s)",
                 loc, errno, strerror(errno));
    }
-
-   modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
 
 #ifdef CONFIG_UDP_USE_CONNECT
    // using SO_RAI_NO_DATA requires a destination, for what ever
@@ -918,7 +918,7 @@ static void dtls_coap_success(dtls_app_data_t *app)
    if (time2 >= 0) {
       retransmissions = app->retransmission;
       if (retransmissions == 0 && time2 < 4000) {
-         modem_set_psm(0);
+         modem_set_psm(0, K_NO_WAIT);
       }
       index = time2 / RTT_INTERVAL;
       if (index < RTT_SLOTS) {
@@ -1820,6 +1820,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
 
       network_not_found = false;
       if (!lte_power_off && (!atomic_test_bit(&general_states, LTE_READY) || app->fd < 0)) {
+         modem_set_psm_for_connect();
          if (dtls_network_searching(K_MINUTES(CONFIG_MODEM_SEARCH_TIMEOUT_RESTART))) {
             network_not_found = true;
             f = dtls_coap_inc_failures();
@@ -2172,7 +2173,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                      if ((app->timeout + 4) > rat) {
                         rat = app->timeout + 4;
                      }
-                     modem_set_psm(rat);
+                     modem_set_psm(rat, K_SECONDS(5));
                   }
                   ++app->retransmission;
                   loops = 0;
@@ -2922,6 +2923,7 @@ int main(void)
    environment_init();
 #endif
 
+   modem_set_psm_for_connect();
    if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), true) != 0) {
       atomic_set_bit(&general_states, APPL_READY);
       if (dtls_network_searching(K_MINUTES(CONFIG_MODEM_SEARCH_TIMEOUT_REBOOT))) {

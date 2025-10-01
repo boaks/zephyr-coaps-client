@@ -247,6 +247,7 @@ static int modem_cmd_config(const char *config)
          modem_at_push_off(false);
          res = lte_lc_system_mode_set(lte_mode_new, lte_preference_new);
          modem_set_preference(RESET_PREFERENCE);
+         modem_set_psm_for_connect();
          modem_at_restore();
          if (!res) {
             LOG_INF("Switched to %s", modem_get_system_mode_cfg(lte_mode_new, lte_preference_new));
@@ -411,6 +412,7 @@ static int modem_cmd_apn(const char *config)
          LOG_INF("Set APN: '%s' failed!", config + off);
       } else {
          if (!modem_at_push_off(false)) {
+            modem_set_psm_for_connect();
             modem_at_restore();
          }
          LOG_INF("Set APN: '%s'", config + off);
@@ -450,6 +452,7 @@ static int modem_cmd_apnclr(const char *config)
       LOG_INF("Clear APN failed!");
    } else {
       if (!modem_at_push_off(false)) {
+         modem_set_psm_for_connect();
          modem_at_restore();
       }
       LOG_INF("Cleared APN.");
@@ -599,7 +602,7 @@ static int modem_cmd_psm(const char *config)
       }
    } else if (!stricmp("normal", value)) {
       modem_lock_psm(false);
-      res = modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
+      res = modem_set_psm_for_connect();
    } else if (!stricmp("off", value)) {
       modem_lock_psm(true);
       res = lte_lc_psm_req(false);
@@ -948,6 +951,7 @@ static int modem_cmd_band(const char *config)
       if (res > 0) {
          LOG_INF("BANDLOCK: %s", buf);
       }
+      modem_set_psm_for_connect();
       modem_at_restore();
    } else {
       char bands[] = "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
@@ -963,6 +967,7 @@ static int modem_cmd_band(const char *config)
       if (res >= 0) {
          LOG_INF("BANDLOCK: %s", buf);
       }
+      modem_set_psm_for_connect();
       modem_at_restore();
    }
    return 0;
@@ -1185,7 +1190,7 @@ static int modem_cmd_sms(const char *config)
 
    memset(destination, 0, sizeof(destination));
    cur = parse_next_text(cur, ' ', destination, sizeof(destination));
-   modem_set_psm(120);
+   modem_set_psm(120, K_SECONDS(5));
    if (destination[0]) {
       return sms_send_text(destination, cur);
    } else {
@@ -1244,6 +1249,5 @@ SH_CMD(remo, "", "reduced mobility.", modem_cmd_reduced_mobility, modem_cmd_redu
 SH_CMD(power, "", "configure power level.", modem_cmd_power_level, modem_cmd_power_level_help, 0);
 SH_CMD(powind, "", "configure power indication.", modem_cmd_power_indication, modem_cmd_power_indication_help, 0);
 SH_CMD(deep, "AT%XDEEPSEARCH", "network deep-search mode.", modem_cmd_deepsearch, modem_cmd_deepsearch_help, 0);
-
 
 #endif

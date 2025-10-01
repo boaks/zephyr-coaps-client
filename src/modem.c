@@ -52,7 +52,8 @@ LOG_MODULE_REGISTER(MODEM, CONFIG_MODEM_LOG_LEVEL);
 #define LED_SEARCH LED_NONE
 
 static K_MUTEX_DEFINE(lte_mutex);
-static K_CONDVAR_DEFINE(lte_condvar);
+static K_CONDVAR_DEFINE(lte_condvar_ready_1s);
+static K_CONDVAR_DEFINE(lte_condvar_psm_updated);
 static struct k_spinlock lte_lock;
 
 static sys_slist_t lte_ready_list = SYS_SLIST_STATIC_INIT(&lte_ready_list);
@@ -64,10 +65,11 @@ static sys_slist_t lte_ready_list = SYS_SLIST_STATIC_INIT(&lte_ready_list);
 #define MODEM_SIGNAL_READY 4
 #define MODEM_READY 5
 #define MODEM_CONNECTED 6
-#define MODEM_LOW_POWER 7
-#define MODEM_LTE_MODE_INITIALIZED 8
-#define MODEM_LTE_MODE_PREFERENCE 9
-#define MODEM_LTE_MODE_FORCE 10
+#define MODEM_PSM_UPDATE 7
+#define MODEM_LOW_POWER 8
+#define MODEM_LTE_MODE_INITIALIZED 9
+#define MODEM_LTE_MODE_PREFERENCE 10
+#define MODEM_LTE_MODE_FORCE 11
 
 static atomic_t modem_states = ATOMIC_INIT(0);
 
@@ -243,7 +245,7 @@ static void modem_ready_work_fn(struct k_work *work)
          }
       }
       k_mutex_lock(&lte_mutex, K_FOREVER);
-      k_condvar_broadcast(&lte_condvar);
+      k_condvar_broadcast(&lte_condvar_ready_1s);
       k_mutex_unlock(&lte_mutex);
       if (counter) {
          LOG_INF("modem signaled ready. %d jobs.", counter);
@@ -376,7 +378,7 @@ static int lte_ready_wait(k_timeout_t timeout)
          status = 0;
          res = 0;
       } else {
-         if (!k_condvar_wait(&lte_condvar, &lte_mutex, timeout)) {
+         if (!k_condvar_wait(&lte_condvar_ready_1s, &lte_mutex, timeout)) {
             if (atomic_test_bit(&modem_states, MODEM_SIGNAL_READY)) {
                res = 0;
             }
@@ -396,6 +398,27 @@ static int lte_ready_wait(k_timeout_t timeout)
    return res;
 }
 
+static int lte_psm_rai_wait(k_timeout_t timeout)
+{
+   int res = -EINPROGRESS;
+   if (!k_mutex_lock(&lte_mutex, timeout)) {
+      if (!atomic_test_bit(&modem_states, MODEM_SIGNAL_READY)) {
+         res = 0;
+      } else if (atomic_test_bit(&modem_states, MODEM_PSM_UPDATE)) {
+         res = 0;
+      } else if (!k_condvar_wait(&lte_condvar_psm_updated, &lte_mutex, timeout)) {
+         res = 0;
+      }
+      k_mutex_unlock(&lte_mutex);
+   }
+   if (res == 0) {
+      LOG_INF("Modem psm ready.");
+   } else {
+      LOG_DBG("Modem psm pending ...");
+   }
+   return res;
+}
+
 #if defined(CONFIG_LTE_LC_EDRX_MODULE)
 static void lte_set_edrx_status(const struct lte_lc_edrx_cfg *edrx)
 {
@@ -406,7 +429,7 @@ static void lte_set_edrx_status(const struct lte_lc_edrx_cfg *edrx)
 #endif /* CONFIG_LTE_LC_EDRX_MODULE */
 
 #if defined(CONFIG_LTE_LC_PSM_MODULE)
-static void lte_set_psm_status(const struct lte_lc_psm_cfg *psm)
+static void lte_set_psm_status(const struct lte_lc_psm_cfg *psm, bool notify)
 {
    bool active = 0 <= psm->active_time;
 
@@ -419,6 +442,10 @@ static void lte_set_psm_status(const struct lte_lc_psm_cfg *psm)
       } else {
          work_submit_to_io_queue(&modem_psm_inactive_work);
       }
+   }
+   if (notify) {
+      atomic_set_bit(&modem_states, MODEM_PSM_UPDATE);
+      k_condvar_broadcast(&lte_condvar_psm_updated);
    }
    k_mutex_unlock(&lte_mutex);
 }
@@ -931,7 +958,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          LOG_INF("PSM parameter update: TAU: %d s, Active time: %d s",
                  evt->psm_cfg.tau, evt->psm_cfg.active_time);
          active_time = evt->psm_cfg.active_time;
-         lte_set_psm_status(&evt->psm_cfg);
+         lte_set_psm_status(&evt->psm_cfg, true);
          break;
 #endif /* CONFIG_LTE_LC_PSM_MODULE */
 #if defined(CONFIG_LTE_LC_EDRX_MODULE)
@@ -1210,8 +1237,8 @@ NRF_MODEM_LIB_ON_CFUN(modem_on_cfun_hook, modem_on_cfun, NULL);
 
 static void modem_on_cfun(int mode, void *ctx)
 {
-   if (mode == LTE_LC_FUNC_MODE_NORMAL ||
-       mode == LTE_LC_FUNC_MODE_ACTIVATE_LTE) {
+   if (LTE_LC_FUNC_MODE_NORMAL == mode ||
+       LTE_LC_FUNC_MODE_ACTIVATE_LTE == mode) {
       int16_t edrx_time_s = 0;
       int16_t ptw_time_s = 0;
       k_mutex_lock(&lte_mutex, K_FOREVER);
@@ -1483,7 +1510,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 
 #if defined(CONFIG_LTE_LC_PSM_MODULE)
 #ifdef CONFIG_UDP_PSM_ENABLE
-      err = modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT);
+      err = modem_set_psm(CONFIG_UDP_PSM_CONNECT_RAT, K_NO_WAIT);
       if (err) {
          if (err == -EFAULT) {
             LOG_WRN("Modem set PSM failed, AT cmd failed!");
@@ -1519,7 +1546,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          /** Release Assistance Indication  */
          int mode = 0; // disable
 #ifdef CONFIG_AS_RAI_ON
-         // enable or enable with notifications fro mfw 2.x.y
+         // enable or enable with notifications for mfw 2.x.y
          mode = atomic_test_bit(&modem_states, MODEM_FIRMWARE_2) ? 2 : 1;
 #endif /* CONFIG_AS_RAI_ON */
          err = modem_at_cmdf(buf, sizeof(buf), "%RAI: ", "AT%%RAI=%d", mode);
@@ -2250,7 +2277,7 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
       if (!psm_parse(act, tau_ext, tau, &temp_psm_status)) {
          LOG_INF("PSM update: TAU: %d s, Active time: %d s",
                  temp_psm_status.tau, temp_psm_status.active_time);
-         lte_set_psm_status(&temp_psm_status);
+         lte_set_psm_status(&temp_psm_status, false);
       }
    } else {
       if (act) {
@@ -2532,7 +2559,13 @@ int modem_set_power_indication(int level)
    return err;
 }
 
-int modem_set_psm(int16_t active_time_s)
+int modem_set_psm_for_connect(void)
+{
+   int rat = CONFIG_UDP_PSM_CONNECT_RAT;
+   return modem_set_psm(rat, K_SECONDS(5));
+}
+
+int modem_set_psm(int16_t active_time_s, const k_timeout_t timeout)
 {
 #if defined(CONFIG_UDP_PSM_ENABLE) && defined(CONFIG_LTE_LC_PSM_MODULE)
    int current;
@@ -2545,35 +2578,51 @@ int modem_set_psm(int16_t active_time_s)
       psm_rat = active_time_s;
    }
    k_mutex_unlock(&lte_mutex);
-   if (-2 <= current && current != active_time_s) {
+   if (current < -2) {
+      LOG_INF("PSM locked");
+      return 0;
+   } else if (current == active_time_s) {
       if (active_time_s < 0) {
-         LOG_INF("PSM disable");
-         return lte_lc_psm_req(false);
+         LOG_INF("PSM keep disabled");
       } else {
-         char rat[9] = "00000000";
-         int mul = 2;
-         // 2s
-         active_time_s /= 2;
-         if (active_time_s > 31) {
-            // 60s
-            active_time_s /= 30;
-            mul = 60;
-            if (active_time_s > 31) {
-               // 360s
-               active_time_s /= 6;
-               mul = 360;
-               rat[1] = '1';
-            } else {
-               rat[2] = '1';
-            }
-         }
-         print_bin(&rat[3], 5, active_time_s);
-         lte_lc_psm_param_set(CONFIG_LTE_PSM_REQ_RPTAU, rat);
-         LOG_INF("PSM enable, act: %d s", active_time_s * mul);
-         return lte_lc_psm_req(true);
+         LOG_INF("PSM keep enabled, act: %d s", active_time_s);
       }
+      return 0;
    }
-   return 0;
+   bool wait = timeout.ticks > 0 && modem_at_is_on() && atomic_test_bit(&modem_states, MODEM_READY);
+   int res = 0;
+   if (active_time_s < 0) {
+      LOG_INF("PSM disable");
+      atomic_clear_bit(&modem_states, MODEM_PSM_UPDATE);
+      res = lte_lc_psm_req(false);
+   } else {
+      char rat[9] = "00000000";
+      int mul = 2;
+      // 2s
+      active_time_s /= 2;
+      if (active_time_s > 31) {
+         // 60s
+         active_time_s /= 30;
+         mul = 60;
+         if (active_time_s > 31) {
+            // 360s
+            active_time_s /= 6;
+            mul = 360;
+            rat[1] = '1';
+         } else {
+            rat[2] = '1';
+         }
+      }
+      print_bin(&rat[3], 5, active_time_s);
+      lte_lc_psm_param_set(CONFIG_LTE_PSM_REQ_RPTAU, rat);
+      LOG_INF("PSM enable, act: %d s", active_time_s * mul);
+      atomic_clear_bit(&modem_states, MODEM_PSM_UPDATE);
+      res = lte_lc_psm_req(true);
+   }
+   if (!res && wait) {
+      lte_psm_rai_wait(timeout);
+   }
+   return res;
 #else
    (void)active_time_s;
    return 0;
@@ -2981,9 +3030,15 @@ void modem_set_scan_time(void)
 {
 }
 
-int modem_set_psm(int16_t active_time_s)
+int modem_set_psm_for_connect(void)
+{
+   return 0;
+}
+
+int modem_set_psm(int16_t active_time_s, const k_timeout_t timeout)
 {
    (void)active_time_s;
+   (void)timeout;
    return 0;
 }
 
