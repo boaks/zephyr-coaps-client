@@ -322,6 +322,7 @@ static void dtls_power_management(void)
    if (previous != suspend) {
       if (suspend) {
          ui_enable(false);
+         sh_app_set_inactive(K_NO_WAIT);
       }
       power_manager_suspend(suspend);
    }
@@ -2053,7 +2054,9 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
          if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
             if (atomic_test_and_clear_bit(&general_states, TRIGGER_SEND)) {
                int res = get_send_interval();
+               loops = 0;
                atomic_clear_bit(&general_states, TRIGGER_RECV);
+               sh_app_set_active();
                dtls_coap_set_request_state("trigger", app, SEND);
                dtls_power_management();
                ui_led_op(LED_APPLICATION, LED_SET);
@@ -2068,7 +2071,6 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), false);
                   reopen_socket(app, "on");
                }
-               loops = 0;
                app->retransmission = 0;
 #ifdef CONFIG_DTLS_ECDSA_AUTO_PROVISIONING
                if (appl_settings_is_provisioning()) {
@@ -2922,7 +2924,7 @@ int main(void)
 #ifdef CONFIG_ENVIRONMENT_SENSOR
    environment_init();
 #endif
-
+   sh_app_set_active();
    modem_set_psm_for_connect();
    if (modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), true) != 0) {
       atomic_set_bit(&general_states, APPL_READY);

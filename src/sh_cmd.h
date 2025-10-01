@@ -40,12 +40,18 @@ struct sh_cmd_entry {
    }
 
 #define BIT_SH_CMD_EXECUTING 0
-#define BIT_AT_CMD_PENDING 1
+#define BIT_SH_CMD_AT_PENDING 1
+#define BIT_SH_CMD_APP_ACTIVE 2
+
+#define BIT_SH_CMD_LAST BIT_SH_CMD_APP_ACTIVE
 
 #define SH_CMD_EXECUTING BIT(BIT_SH_CMD_EXECUTING)
-#define AT_CMD_PENDING BIT(BIT_AT_CMD_PENDING)
+#define SH_CMD_AT_PENDING BIT(BIT_SH_CMD_AT_PENDING)
+#define SH_CMD_APP_ACTIVE BIT(BIT_SH_CMD_APP_ACTIVE)
 
 #ifdef CONFIG_SH_CMD
+
+void sh_cmd_at_finish(void);
 
 int sh_cmd_execute(const char *cmd);
 int sh_cmd_schedule(const char *cmd, const k_timeout_t delay);
@@ -54,6 +60,9 @@ int sh_cmd_append(const char *cmd, const k_timeout_t delay);
 
 int sh_busy(void);
 int sh_protected(void);
+int sh_app_active(void);
+int sh_app_set_active(void);
+int sh_app_set_inactive(const k_timeout_t delay);
 
 #else
 

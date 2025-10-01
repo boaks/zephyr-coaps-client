@@ -242,6 +242,10 @@ int modem_at_cmd_async(modem_at_response_handler_t handler, const char *skip, co
    return res;
 }
 
+bool modem_at_async_pending(void) {
+   return atomic_ptr_get(&lte_at_response_handler) != NULL;
+}
+
 static void modem_at_logging_switching_off_fn(struct k_work *work)
 {
    LOG_INF("Modem switching off ...");

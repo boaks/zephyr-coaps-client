@@ -47,6 +47,7 @@ static void cmd_resp_callback(const char *at_response)
 {
    // interrupt context!
    LOG_INF("modem cmd => %s", at_response);
+   sh_cmd_at_finish();
 }
 
 static void modem_send_on_ready_work_fn(struct k_work *work)
@@ -60,6 +61,7 @@ static K_WORK_DEFINE(modem_send_on_ready_work, modem_send_on_ready_work_fn);
 static void cmd_resp_callback_send(const char *at_response)
 {
    // interrupt context!
+   sh_cmd_at_finish();
    if (!strncmp(at_response, "OK", 2)) {
       if (modem_on_ready(&modem_send_on_ready_work)) {
          LOG_INF("modem cmd => OK, ready.");
@@ -81,6 +83,7 @@ static int modem_cmd_reinit(const char *config)
    modem_at_restore();
    LOG_INF(">> modem reinit ready");
    if (is_on) {
+      sh_app_set_inactive(K_SECONDS(5));
       modem_on_ready(&modem_send_on_ready_work);
    }
    return 0;
@@ -162,6 +165,7 @@ static int modem_cmd_config(const char *config)
       modem_at_restore();
       LOG_INF(">> cfg init ready");
       if (is_on) {
+         sh_app_set_inactive(K_SECONDS(5));
          modem_on_ready(&modem_send_on_ready_work);
       }
       return 0;
@@ -413,6 +417,7 @@ static int modem_cmd_apn(const char *config)
       } else {
          if (!modem_at_push_off(false)) {
             modem_set_psm_for_connect();
+            sh_app_set_inactive(K_SECONDS(5));
             modem_at_restore();
          }
          LOG_INF("Set APN: '%s'", config + off);
@@ -453,6 +458,7 @@ static int modem_cmd_apnclr(const char *config)
    } else {
       if (!modem_at_push_off(false)) {
          modem_set_psm_for_connect();
+         sh_app_set_inactive(K_SECONDS(5));
          modem_at_restore();
       }
       LOG_INF("Cleared APN.");
@@ -604,6 +610,7 @@ static int modem_cmd_psm(const char *config)
       modem_lock_psm(false);
       res = modem_set_psm_for_connect();
    } else if (!stricmp("off", value)) {
+      sh_app_set_inactive(K_SECONDS(5));
       modem_lock_psm(true);
       res = lte_lc_psm_req(false);
    } else {
@@ -690,6 +697,7 @@ static int modem_cmd_psm(const char *config)
          } else {
             LOG_INF("PSM enable, act: %d s, tau: %d s", active_time * rat_mul, tau_time * tau_mul);
          }
+         sh_app_set_inactive(K_SECONDS(5));
          modem_lock_psm(true);
          lte_lc_psm_param_set(tau, rat);
          res = lte_lc_psm_req(true);
@@ -952,6 +960,7 @@ static int modem_cmd_band(const char *config)
          LOG_INF("BANDLOCK: %s", buf);
       }
       modem_set_psm_for_connect();
+      sh_app_set_inactive(K_SECONDS(5));
       modem_at_restore();
    } else {
       char bands[] = "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
@@ -968,6 +977,7 @@ static int modem_cmd_band(const char *config)
          LOG_INF("BANDLOCK: %s", buf);
       }
       modem_set_psm_for_connect();
+      sh_app_set_inactive(K_SECONDS(5));
       modem_at_restore();
    }
    return 0;
@@ -1103,12 +1113,14 @@ static void modem_cmd_power_indication_help(void)
 static int modem_cmd_switch_on(const char *parameter)
 {
    (void)parameter;
+   sh_app_set_inactive(K_SECONDS(5));
    return modem_set_normal();
 }
 
 static int modem_cmd_switch_off(const char *parameter)
 {
    (void)parameter;
+   sh_app_set_inactive(K_SECONDS(5));
    return modem_power_off();
 }
 

@@ -18,9 +18,11 @@
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/spinlock.h>
 
 #include "appl_diagnose.h"
 #include "appl_settings.h"
+#include "io_job_queue.h"
 #include "modem.h"
 #include "modem_at.h"
 #include "parse.h"
@@ -43,6 +45,7 @@ struct sh_cmd_fifo {
 };
 
 static void sh_cmd_execute_fn(struct k_work *work);
+static void sh_cmd_app_inactive_fn(struct k_work *work);
 static void sh_cmd_wait_fn(struct k_work *work);
 static void at_cmd_response_fn(struct k_work *work);
 
@@ -52,12 +55,16 @@ static size_t sh_cmd_max_length = 0;
 static char sh_cmd_buf[CONFIG_SH_CMD_MAX_LEN];
 static char at_response_buf[CONFIG_SH_AT_RESPONSE_MAX_LEN];
 
-#define BIT_SH_CMD_QUEUED 3
-#define BIT_SH_CMD_PROTECTED 4
+#define BIT_SH_CMD_QUEUED (BIT_SH_CMD_LAST + 1)
+#define BIT_SH_CMD_PROTECTED (BIT_SH_CMD_LAST + 2)
 #define SH_CMD_PROTECTED BIT(BIT_SH_CMD_PROTECTED)
 
 static atomic_t sh_cmd_state = ATOMIC_INIT(SH_CMD_PROTECTED);
 
+static struct k_spinlock sh_cmd_app_active_lock;
+static int64_t sh_cmd_app_active_end = 0;
+
+static K_WORK_DELAYABLE_DEFINE(sh_cmd_app_inactive_work, sh_cmd_app_inactive_fn);
 static K_WORK_DELAYABLE_DEFINE(sh_cmd_schedule_work, sh_cmd_execute_fn);
 static K_WORK_DEFINE(sh_cmd_execute_work, sh_cmd_execute_fn);
 static K_WORK_DEFINE(at_cmd_response_work, at_cmd_response_fn);
@@ -211,15 +218,16 @@ static void at_coneval_result(const char *result)
    }
 }
 
-static void at_cmd_finish(void)
+void sh_cmd_at_finish(void)
 {
-   if (atomic_test_and_clear_bit(&sh_cmd_state, BIT_AT_CMD_PENDING)) {
+   if (atomic_test_and_clear_bit(&sh_cmd_state, BIT_SH_CMD_AT_PENDING)) {
       at_cmd_time = k_uptime_get() - at_cmd_time;
       if (at_cmd_time > 5000) {
          LOG_INF("%ld s", (long)((at_cmd_time + 500) / 1000));
       } else if (at_cmd_time > 500) {
          LOG_INF("%ld ms", (long)at_cmd_time);
       }
+      sh_app_set_inactive(K_NO_WAIT);
    }
 }
 
@@ -239,7 +247,7 @@ static void at_cmd_response_fn(struct k_work *work)
    } else {
       sh_cmd_result(-1);
    }
-   at_cmd_finish();
+   sh_cmd_at_finish();
 }
 
 static void at_cmd_resp_callback(const char *at_response)
@@ -443,14 +451,17 @@ static int sh_cmd(const char *cmd_buf, bool insecure)
             goto at_cmd_modem;
          } else {
             /* handler AT cmd*/
-            if (atomic_test_and_set_bit(&sh_cmd_state, BIT_AT_CMD_PENDING)) {
+            if (atomic_test_and_set_bit(&sh_cmd_state, BIT_SH_CMD_AT_PENDING)) {
                LOG_INF("Modem pending ...");
                return 1;
             }
+            sh_app_set_active();
             at_cmd_time = k_uptime_get();
             res = cmd->handler(&cmd_buf[i]);
             res = RESULT(res);
-            at_cmd_finish();
+            if (!modem_at_async_pending()) {
+               sh_cmd_at_finish();
+            }
          }
       } else {
          res = cmd->handler(&cmd_buf[i]);
@@ -467,15 +478,16 @@ at_cmd_modem:
       LOG_INF("> 'help' for available commands.");
       return -1;
    }
-   if (atomic_test_and_set_bit(&sh_cmd_state, BIT_AT_CMD_PENDING)) {
+   if (atomic_test_and_set_bit(&sh_cmd_state, BIT_SH_CMD_AT_PENDING)) {
       LOG_INF("Modem pending ...");
       return 1;
    }
    LOG_INF(">%s", at_cmd);
+   sh_app_set_active();
    at_cmd_time = k_uptime_get();
    res = modem_at_cmd_async(at_cmd_resp_callback, NULL, at_cmd);
    if (res < 0) {
-      at_cmd_finish();
+      sh_cmd_at_finish();
    } else {
       res = 1;
    }
@@ -564,16 +576,62 @@ int sh_cmd_append(const char *cmd, const k_timeout_t delay)
 
 int sh_busy(void)
 {
-   return atomic_get(&sh_cmd_state) & (SH_CMD_EXECUTING | AT_CMD_PENDING);
+   return atomic_get(&sh_cmd_state) & (SH_CMD_EXECUTING | SH_CMD_AT_PENDING);
 }
 
 int sh_protected(void)
 {
 #ifdef CONFIG_SH_CMD_UNLOCK
-   return atomic_get(&sh_cmd_state) & SH_CMD_PROTECTED;
+   return atomic_test_bit(&sh_cmd_state, BIT_SH_CMD_PROTECTED);
 #else  /* CONFIG_SH_CMD_UNLOCK */
    return SH_CMD_PROTECTED;
 #endif /* CONFIG_SH_CMD_UNLOCK */
+}
+
+int sh_app_active()
+{
+   return atomic_test_bit(&sh_cmd_state, BIT_SH_CMD_APP_ACTIVE);
+}
+
+int sh_app_set_active(void)
+{
+   int res = 0;
+   K_SPINLOCK(&sh_cmd_app_active_lock)
+   {
+      k_work_cancel_delayable(&sh_cmd_app_inactive_work);
+      sh_cmd_app_active_end = 0;
+      res = atomic_test_and_set_bit(&sh_cmd_state, BIT_SH_CMD_APP_ACTIVE) ? 1 : 0;
+   }
+   if (!res) {
+      LOG_INF("sh app active");
+   }
+   return res;
+}
+
+static void sh_cmd_app_inactive_fn(struct k_work *work)
+{
+   K_SPINLOCK(&sh_cmd_app_active_lock)
+   {
+      sh_cmd_app_active_end = 0;
+      atomic_clear_bit(&sh_cmd_state, BIT_SH_CMD_APP_ACTIVE);
+   }
+   LOG_INF("sh app inactive");
+}
+
+int sh_app_set_inactive(const k_timeout_t delay)
+{
+   int res = 0;
+   if (atomic_test_bit(&sh_cmd_state, BIT_SH_CMD_APP_ACTIVE)) {
+      k_ticks_t end = delay.ticks + sys_clock_tick_get() - K_MSEC(50).ticks;
+      K_SPINLOCK(&sh_cmd_app_active_lock)
+      {
+         if ((end - sh_cmd_app_active_end) > 0) {
+            sh_cmd_app_active_end = end;
+            res = work_reschedule_for_io_queue(&sh_cmd_app_inactive_work, delay);
+         }
+      }
+   }
+   return res;
 }
 
 static int sh_cmd_init(void)
