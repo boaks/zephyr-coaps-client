@@ -1058,6 +1058,17 @@ network_additional_timeout(void)
    }
 }
 
+static bool
+network_adjust_initial_timeout(dtls_app_data_t *app, bool set)
+{
+   const uint16_t timeout = network_timeout_scale(coap_timeout);
+   bool res = set || timeout > app->timeout;
+   if (res) {
+      app->timeout = timeout;
+   }
+   return res;
+}
+
 static int
 read_from_peer(dtls_app_data_t *app, session_t *session, uint8 *data, size_t len)
 {
@@ -1173,7 +1184,7 @@ send_to_peer(dtls_app_data_t *app, const uint8_t *data, size_t len)
       app->dtls_flight += 2;
    }
    if (first) {
-      app->timeout = network_timeout_scale(coap_timeout);
+      network_adjust_initial_timeout(app, true);
       dtls_info("%sresponse timeout %d s", tag, app->timeout);
    }
    return result;
@@ -2101,6 +2112,8 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   reopen_socket(app, "on");
                }
                app->retransmission = 0;
+               app->timeout = coap_timeout;
+
 #ifdef CONFIG_DTLS_ECDSA_AUTO_PROVISIONING
                if (appl_settings_is_provisioning()) {
                   res = coap_prov_client_prepare_post(appl_buffer, sizeof(appl_buffer));
@@ -2162,12 +2175,17 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   time = -1;
                }
                dtls_log_state();
-               if (app->request_state == SEND) {
-                  dtls_info("%ld ms: connected => sent",
-                            time);
+               if (app->retransmission > 0) {
+                  dtls_info("%ld ms: connected => resent %d",
+                            time, app->retransmission);
                } else {
-                  dtls_info("%ld ms: connected => resent",
-                            time);
+                  if (network_adjust_initial_timeout(app, true)) {
+                     dtls_info("%ld ms: connected => sent, new timeout %d s",
+                               time, app->timeout);
+                  } else {
+                     dtls_info("%ld ms: connected => sent",
+                               time);
+                  }
                }
                dtls_coap_set_request_state("lte connected", app, RECEIVE);
             } else {
@@ -2200,14 +2218,15 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                if (app->retransmission < COAP_MAX_RETRANSMISSION) {
                   loops = 0;
                   if (app->retransmission == 0) {
-                     app->timeout = network_timeout_scale(coap_timeout) << 1;
+                     network_adjust_initial_timeout(app, false);
+                  }
+                  app->timeout <<= 1;
+                  if (app->retransmission == 0) {
                      int rat = CONFIG_UDP_PSM_RETRANS_RAT;
                      if ((app->timeout + 4) > rat) {
                         rat = app->timeout + 4;
                      }
                      modem_set_psm(rat, K_SECONDS(5));
-                  } else {
-                     app->timeout <<= 1;
                   }
                   ++app->retransmission;
                   dtls_coap_set_request_state("resend", app, SEND);
