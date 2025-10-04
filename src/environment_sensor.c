@@ -25,7 +25,7 @@
 
 LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 
-static const float temperature_offset = (CONFIG_TEMPERATURE_OFFSET / 100.0);
+static const float temperature_offset = (CONFIG_TEMPERATURE_OFFSET / 100.0F);
 
 #ifdef CONFIG_BME680_BSEC
 
@@ -115,7 +115,7 @@ static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_a
 
    environment_values.temperature = temperature;
    environment_values.humidity = humidity;
-   environment_values.pressure = pressure / 100.0; /* hPA */
+   environment_values.pressure = pressure / 100.0F; /* hPA */
    environment_values.gas = gas;
    environment_values.co2 = co2_equivalent;
    environment_values.air_quality = iaq;
@@ -130,7 +130,7 @@ static void environment_output_ready(int64_t timestamp, float iaq, uint8_t iaq_a
    environment_add_iaq_history(iaq_qual, false);
 
    LOG_DBG("BME680 BSEC %0.2f°C, %0.1f%%H, %0.1fhPA, %0.1f gas, %0.1f co2, %0.1f iaq (%d)",
-           temperature, humidity, p, gas, co2_equivalent, iaq, iaq_accuracy);
+           (double)temperature, (double)humidity, (double)p, (double)gas, (double)co2_equivalent, (double)iaq, iaq_accuracy);
 }
 
 static uint32_t environment_state_load(uint8_t *state_buffer, uint32_t n_buffer)
@@ -158,9 +158,9 @@ static void environment_bsec_thread_fn(void)
 
 int environment_init(void)
 {
-   return_values_init bsec_ret;
+   return_values_init bsec_ret = { .bme68x_status = 0, .bsec_status = BSEC_OK };
 
-   LOG_INF("BME680 BSEC initialize, %0.3f Hz", BSEC_SAMPLE_RATE);
+   LOG_INF("BME680 BSEC initialize, %0.3f Hz", (double)BSEC_SAMPLE_RATE);
    if (!device_is_ready(environment_i2c_spec.bus)) {
       LOG_ERR("%s device is not ready", environment_i2c_spec.bus->name);
       return -ENOTSUP;
