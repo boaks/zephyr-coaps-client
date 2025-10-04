@@ -1140,17 +1140,6 @@ dtls_read_from_peer(dtls_context_t *ctx, session_t *session, uint8 *data, size_t
    return read_from_peer(app, session, data, len);
 }
 
-static void prepare_socket(dtls_app_data_t *app)
-{
-   atomic_clear_bit(&general_states, LTE_CONNECTED_TO_SEND);
-   atomic_set_bit(&general_states, LTE_SEND);
-   if (!lte_power_on_off && app->rai) {
-      modem_set_rai_mode(app->no_response ? RAI_MODE_LAST : RAI_MODE_ONE_RESPONSE, app->fd);
-   } else {
-      modem_set_rai_mode(RAI_MODE_OFF, app->fd);
-   }
-}
-
 static int
 send_to_peer(dtls_app_data_t *app, const uint8_t *data, size_t len)
 {
@@ -1160,9 +1149,13 @@ send_to_peer(dtls_app_data_t *app, const uint8_t *data, size_t len)
    int result = 0;
    const char *tag = app->dtls_flight ? (app->retransmission ? "hs_re" : "hs_") : (app->retransmission ? "re" : "");
 
-   if (!lte_power_on_off) {
-      prepare_socket(app);
+   if (!lte_power_on_off && app->rai) {
+      modem_set_rai_mode(app->no_response ? RAI_MODE_LAST : RAI_MODE_ONE_RESPONSE, app->fd);
+   } else {
+      modem_set_rai_mode(RAI_MODE_OFF, app->fd);
    }
+   atomic_clear_bit(&general_states, LTE_CONNECTED_TO_SEND);
+   atomic_set_bit(&general_states, LTE_SEND);
    result = sendto(app->fd, data, len, MSG_DONTWAIT, &app->destination.addr.sa, app->destination.size);
    if (result < 0) {
       dtls_warn("%ssend_to_peer failed: %d, errno %d (%s)", tag, result, errno, strerror(errno));
