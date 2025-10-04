@@ -1045,11 +1045,12 @@ static void dtls_coap_set_request_state(const char *desc, dtls_app_data_t *app, 
    if (previous == request_state) {
       dtls_info("Req-State %s keep %d (%s)", desc, request_state, get_request_state_description(request_state));
    } else {
-      dtls_info("Req-State %s change from %d (%s) to %d (%s)", desc, previous, get_request_state_description(previous),
-                request_state, get_request_state_description(request_state));
-      app->request_state = request_state;
       if (RECEIVE == request_state && app->no_response && !app->dtls_flight) {
          dtls_coap_success(app);
+      } else {
+         app->request_state = request_state;
+         dtls_info("Req-State %s change from %d (%s) to %d (%s)", desc, previous, get_request_state_description(previous),
+                   request_state, get_request_state_description(request_state));
       }
    }
 }
