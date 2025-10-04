@@ -11,8 +11,9 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
-#include <zephyr/kernel.h>
+// #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/spinlock.h>
 
 #include "environment_sensor.h"
 #include "io_job_queue.h"
@@ -31,7 +32,7 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
       T history[S];              \
    } SENSOR_HISTORY(T)
 
-static K_MUTEX_DEFINE(environment_history_mutex);
+static struct k_spinlock environment_history_lock;
 
 SENSOR_HISTORY_DEF(double, CONFIG_ENVIRONMENT_HISTORY_SIZE);
 
@@ -48,27 +49,29 @@ static SENSOR_HISTORY(uint16_t) s_iaq_history;
 static void environment_init_uint16_history(SENSOR_HISTORY(uint16_t) * history)
 {
    uint8_t index;
-   k_mutex_lock(&environment_history_mutex, K_FOREVER);
-   history->size = 0;
-   history->next_time = 0;
-   for (index = 0; index < CONFIG_ENVIRONMENT_HISTORY_SIZE; ++index) {
-      history->history[index] = 0.0;
+   K_SPINLOCK(&environment_history_lock)
+   {
+      history->size = 0;
+      history->next_time = 0;
+      for (index = 0; index < CONFIG_ENVIRONMENT_HISTORY_SIZE; ++index) {
+         history->history[index] = 0.0;
+      }
    }
-   k_mutex_unlock(&environment_history_mutex);
 }
 
 static int environment_get_uint16_history(SENSOR_HISTORY(uint16_t) * history, uint16_t *values, uint8_t size)
 {
    uint8_t index;
 
-   k_mutex_lock(&environment_history_mutex, K_FOREVER);
-   if (history->size < size) {
-      size = history->size;
+   K_SPINLOCK(&environment_history_lock)
+   {
+      if (history->size < size) {
+         size = history->size;
+      }
+      for (index = 0; index < size; ++index) {
+         values[index] = history->history[index];
+      }
    }
-   for (index = 0; index < size; ++index) {
-      values[index] = history->history[index];
-   }
-   k_mutex_unlock(&environment_history_mutex);
 
    return size;
 }
@@ -78,18 +81,19 @@ static void environment_add_uint16_history(SENSOR_HISTORY(uint16_t) * history, u
    uint8_t index;
    int64_t now = k_uptime_get();
 
-   k_mutex_lock(&environment_history_mutex, K_FOREVER);
-   if (force || (now - history->next_time) >= 0) {
-      if (history->size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
-         ++history->size;
+   K_SPINLOCK(&environment_history_lock)
+   {
+      if (force || (now - history->next_time) >= 0) {
+         if (history->size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
+            ++history->size;
+         }
+         for (index = history->size - 1; index > 0; --index) {
+            history->history[index] = history->history[index - 1];
+         }
+         history->history[0] = value;
+         history->next_time = now + CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S * MSEC_PER_SEC;
       }
-      for (index = history->size - 1; index > 0; --index) {
-         history->history[index] = history->history[index - 1];
-      }
-      history->history[0] = value;
-      history->next_time = now + CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S * MSEC_PER_SEC;
    }
-   k_mutex_unlock(&environment_history_mutex);
 }
 #endif
 
@@ -119,27 +123,30 @@ static void environment_history_work_fn(struct k_work *work)
 static void environment_init_double_history(SENSOR_HISTORY(double) * history)
 {
    uint8_t index;
-   k_mutex_lock(&environment_history_mutex, K_FOREVER);
-   history->size = 0;
-   history->next_time = 0;
-   for (index = 0; index < CONFIG_ENVIRONMENT_HISTORY_SIZE; ++index) {
-      history->history[index] = 0.0;
+
+   K_SPINLOCK(&environment_history_lock)
+   {
+      history->size = 0;
+      history->next_time = 0;
+      for (index = 0; index < CONFIG_ENVIRONMENT_HISTORY_SIZE; ++index) {
+         history->history[index] = 0.0;
+      }
    }
-   k_mutex_unlock(&environment_history_mutex);
 }
 
 static int environment_get_double_history(SENSOR_HISTORY(double) * history, double *values, uint8_t size)
 {
    uint8_t index;
 
-   k_mutex_lock(&environment_history_mutex, K_FOREVER);
-   if (history->size < size) {
-      size = history->size;
+   K_SPINLOCK(&environment_history_lock)
+   {
+      if (history->size < size) {
+         size = history->size;
+      }
+      for (index = 0; index < size; ++index) {
+         values[index] = history->history[index];
+      }
    }
-   for (index = 0; index < size; ++index) {
-      values[index] = history->history[index];
-   }
-   k_mutex_unlock(&environment_history_mutex);
 
    return size;
 }
@@ -149,18 +156,19 @@ static void environment_add_double_history(SENSOR_HISTORY(double) * history, dou
    uint8_t index;
    int64_t now = k_uptime_get();
 
-   k_mutex_lock(&environment_history_mutex, K_FOREVER);
-   if (force || (now - history->next_time) >= 0) {
-      if (history->size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
-         ++history->size;
+   K_SPINLOCK(&environment_history_lock)
+   {
+      if (force || (now - history->next_time) >= 0) {
+         if (history->size < CONFIG_ENVIRONMENT_HISTORY_SIZE) {
+            ++history->size;
+         }
+         for (index = history->size - 1; index > 0; --index) {
+            history->history[index] = history->history[index - 1];
+         }
+         history->history[0] = value;
+         history->next_time = now + CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S * MSEC_PER_SEC;
       }
-      for (index = history->size - 1; index > 0; --index) {
-         history->history[index] = history->history[index - 1];
-      }
-      history->history[0] = value;
-      history->next_time = now + CONFIG_ENVIRONMENT_HISTORY_INTERVAL_S * MSEC_PER_SEC;
    }
-   k_mutex_unlock(&environment_history_mutex);
 }
 
 int environment_get_temperature_history(double *values, uint8_t size)

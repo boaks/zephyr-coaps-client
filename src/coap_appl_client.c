@@ -309,7 +309,7 @@ int coap_appl_client_prepare_modem_info(char *buf, size_t len, int flags, const 
    buf[index++] = '\n';
    start = index;
 
-   if (trigger) {
+   if (trigger && *trigger) {
       index += snprintf(buf + index, len - index, "%s", trigger);
       dtls_info("%s", buf + start);
       buf[index++] = '\n';

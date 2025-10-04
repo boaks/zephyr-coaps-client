@@ -19,6 +19,7 @@
 #include <string.h>
 #include <zephyr/net/coap.h>
 #include <zephyr/net/socket.h>
+#include <zephyr/spinlock.h>
 
 #include "appl_diagnose.h"
 #include "appl_settings.h"
@@ -201,7 +202,7 @@ static uint8_t appl_buffer[MAX_APPL_BUF];
 static uint8_t send_buffer[MAX_SEND_BUF];
 static volatile size_t send_buffer_len = 0;
 static const char *send_trigger = NULL;
-static K_MUTEX_DEFINE(send_buffer_mutex);
+static struct k_spinlock send_buffer_lock;
 
 #define RTT_SLOTS 9
 #define RTT_INTERVAL (2 * MSEC_PER_SEC)
@@ -655,9 +656,10 @@ static int check_socket(dtls_app_data_t *app)
 
 static void dtls_set_send_trigger(const char *trigger)
 {
-   k_mutex_lock(&send_buffer_mutex, K_FOREVER);
-   send_trigger = trigger;
-   k_mutex_unlock(&send_buffer_mutex);
+   K_SPINLOCK(&send_buffer_lock)
+   {
+      send_trigger = trigger;
+   }
 }
 
 static inline bool dtls_pending_request(request_state_t state)
@@ -834,9 +836,10 @@ static void dtls_coap_next(dtls_app_data_t *app, int interval)
 
    dtls_coap_set_request_state("next request", app, lte_power_off ? NONE : WAIT_SUSPEND);
 
-   k_mutex_lock(&send_buffer_mutex, K_FOREVER);
-   pending = send_buffer_len > 0;
-   k_mutex_unlock(&send_buffer_mutex);
+   K_SPINLOCK(&send_buffer_lock)
+   {
+      pending = send_buffer_len > 0;
+   }
 
    if (pending) {
       // send pending custom request
@@ -2156,18 +2159,23 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                } else
 #endif /* CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
                {
+                  const char *trigger = NULL;
                   app->no_response = (coap_send_flags_next & COAP_SEND_FLAG_NO_RESPONSE) ? 1 : 0;
-                  k_mutex_lock(&send_buffer_mutex, K_FOREVER);
-                  if (send_buffer_len) {
-                     res = coap_appl_client_prepare_post(send_buffer, send_buffer_len,
-                                                         coap_send_flags_next | COAP_SEND_FLAG_SET_PAYLOAD, NULL);
-                     send_buffer_len = 0;
-                  } else {
-                     memset(appl_buffer, 0, sizeof(appl_buffer));
-                     res = coap_appl_client_prepare_post(appl_buffer, sizeof(appl_buffer), coap_send_flags_next, send_trigger);
-                     send_trigger = NULL;
+                  K_SPINLOCK(&send_buffer_lock)
+                  {
+                     if (send_buffer_len) {
+                        res = coap_appl_client_prepare_post(send_buffer, send_buffer_len,
+                                                            coap_send_flags_next | COAP_SEND_FLAG_SET_PAYLOAD, NULL);
+                        send_buffer_len = 0;
+                     } else {
+                        trigger = send_trigger == NULL ? "" : send_trigger;
+                        send_trigger = NULL;
+                     }
                   }
-                  k_mutex_unlock(&send_buffer_mutex);
+                  if (trigger) {
+                     memset(appl_buffer, 0, sizeof(appl_buffer));
+                     res = coap_appl_client_prepare_post(appl_buffer, sizeof(appl_buffer), coap_send_flags_next, trigger);
+                  }
                   app->coap_handler = coap_appl_client_handler;
                   app->result_handler = dtls_app_coap_result_handler;
 #ifdef CONFIG_COAP_UPDATE
@@ -2455,14 +2463,15 @@ static int sh_cmd_send(const char *parameter)
       if (len > sizeof(send_buffer)) {
          len = sizeof(send_buffer);
       }
-      k_mutex_lock(&send_buffer_mutex, K_FOREVER);
-      if (send_buffer_len) {
-         res = -EBUSY;
-      } else {
-         memmove(send_buffer, parameter, len);
-         send_buffer_len = len;
+      K_SPINLOCK(&send_buffer_lock)
+      {
+         if (send_buffer_len) {
+            res = -EBUSY;
+         } else {
+            memmove(send_buffer, parameter, len);
+            send_buffer_len = len;
+         }
       }
-      k_mutex_unlock(&send_buffer_mutex);
       if (res) {
          dtls_info("Busy, custom request pending ...");
          return res;
