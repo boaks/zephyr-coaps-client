@@ -38,8 +38,8 @@ LOG_MODULE_DECLARE(COAP_CLIENT, CONFIG_COAP_CLIENT_LOG_LEVEL);
 #define CONFIG_SH_CMD_HEAP_SIZE (1024 + 512)
 #define CONFIG_SH_AT_RESPONSE_MAX_LEN 256
 
-struct sh_cmd_fifo {
-   void *fifo_reserved;
+struct sh_cmd_queue {
+   void *queue_reserved;
    k_timeout_t delay;
    char data[]; /* Null-terminated cmd string */
 };
@@ -55,8 +55,7 @@ static size_t sh_cmd_max_length = 0;
 static char sh_cmd_buf[CONFIG_SH_CMD_MAX_LEN];
 static char at_response_buf[CONFIG_SH_AT_RESPONSE_MAX_LEN];
 
-#define BIT_SH_CMD_QUEUED (BIT_SH_CMD_LAST + 1)
-#define BIT_SH_CMD_PROTECTED (BIT_SH_CMD_LAST + 2)
+#define BIT_SH_CMD_PROTECTED (BIT_SH_CMD_LAST + 1)
 #define SH_CMD_PROTECTED BIT(BIT_SH_CMD_PROTECTED)
 
 static atomic_t sh_cmd_state = ATOMIC_INIT(SH_CMD_PROTECTED);
@@ -72,7 +71,7 @@ static K_WORK_DEFINE(at_cmd_response_work, at_cmd_response_fn);
 static struct k_work_q sh_cmd_work_q;
 static K_THREAD_STACK_DEFINE(sh_cmd_stack, CONFIG_SH_CMD_STACK_SIZE);
 
-static K_FIFO_DEFINE(sh_cmd_fifo);
+static K_QUEUE_DEFINE(sh_cmd_queue);
 static K_HEAP_DEFINE(sh_cmd_heap, CONFIG_SH_CMD_HEAP_SIZE);
 
 static int line_length(const uint8_t *data, size_t length)
@@ -510,7 +509,7 @@ static void sh_cmd_execute_fn(struct k_work *work)
 static void sh_cmd_wait_fn(struct k_work *work)
 {
    if (!atomic_test_and_set_bit(&sh_cmd_state, BIT_SH_CMD_EXECUTING)) {
-      struct sh_cmd_fifo *sh_cmd = k_fifo_get(&sh_cmd_fifo, K_NO_WAIT);
+      struct sh_cmd_queue *sh_cmd = k_queue_get(&sh_cmd_queue, K_NO_WAIT);
       if (sh_cmd) {
          uint32_t delay_ms = (uint32_t)k_ticks_to_ms_floor64(sh_cmd->delay.ticks);
          strncpy(sh_cmd_buf, sh_cmd->data, sizeof(sh_cmd_buf) - 1);
@@ -556,14 +555,18 @@ int sh_cmd_schedule(const char *cmd, const k_timeout_t delay)
    return -EBUSY;
 }
 
-int sh_cmd_append(const char *cmd, const k_timeout_t delay)
+static int sh_cmd_put(bool head, const char *cmd, const k_timeout_t delay)
 {
-   size_t len = sizeof(struct sh_cmd_fifo) + strlen(cmd) + sizeof(char);
-   struct sh_cmd_fifo *item = k_heap_alloc(&sh_cmd_heap, len, K_NO_WAIT);
+   size_t len = sizeof(struct sh_cmd_queue) + strlen(cmd) + sizeof(char);
+   struct sh_cmd_queue *item = k_heap_alloc(&sh_cmd_heap, len, K_NO_WAIT);
    if (item) {
       item->delay = delay;
       strcpy(item->data, cmd);
-      k_fifo_put(&sh_cmd_fifo, item);
+      if (head) {
+      k_queue_prepend(&sh_cmd_queue, item);
+      } else {
+      k_queue_append(&sh_cmd_queue, item);
+      }
       atomic_set_bit(&sh_cmd_state, BIT_SH_CMD_QUEUED);
       LOG_DBG("> cmd appended.");
       sh_cmd_wait_fn(NULL);
@@ -574,9 +577,19 @@ int sh_cmd_append(const char *cmd, const k_timeout_t delay)
    return -EBUSY;
 }
 
+int sh_cmd_prepend(const char *cmd, const k_timeout_t delay)
+{
+   return sh_cmd_put(true, cmd, delay);
+}
+
+int sh_cmd_append(const char *cmd, const k_timeout_t delay)
+{
+   return sh_cmd_put(false, cmd, delay);
+}
+
 int sh_busy(void)
 {
-   return atomic_get(&sh_cmd_state) & (SH_CMD_EXECUTING | SH_CMD_AT_PENDING);
+   return atomic_get(&sh_cmd_state) & (SH_CMD_EXECUTING | SH_CMD_AT_PENDING | SH_CMD_QUEUED);
 }
 
 int sh_protected(void)

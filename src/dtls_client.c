@@ -2528,7 +2528,7 @@ static int sh_cmd_send_interval(const char *parameter)
             if (interval != interval_s) {
                LOG_INF("set send interval %u%c", new_interval, unit);
                set_send_interval(interval_s);
-               sh_cmd_append("send", K_MSEC(2000));
+               sh_cmd_prepend("send", K_MSEC(2000));
             } else {
                LOG_INF("send interval %u%c already active", new_interval, unit);
             }
