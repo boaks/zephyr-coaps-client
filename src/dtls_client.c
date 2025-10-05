@@ -1113,7 +1113,7 @@ read_from_peer(dtls_app_data_t *app, session_t *session, uint8 *data, size_t len
          break;
       case PARSE_ACK:
          if (NONE != app->request_state && app->request_state < WAIT_RESPONSE) {
-            dtls_coap_set_request_state("coap  ack", app, WAIT_RESPONSE);
+            dtls_coap_set_request_state("coap ack", app, WAIT_RESPONSE);
          }
          break;
       case PARSE_RESPONSE:
@@ -1557,7 +1557,6 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
                } else if (NONE != app->request_state) {
                   dtls_info("requested connect");
                } else if (sh_app_active() || 0 == wakeup_on_incoming_connect_timeout) {
-                  dtls_info("internal connect");
                   atomic_set_bit(&general_states, LTE_INCOMING_DATA);
                   dtls_trigger("internal connect", false);
                } else {
