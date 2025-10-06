@@ -1269,6 +1269,18 @@ static void modem_on_cfun(int mode, void *ctx)
    }
    if (LTE_LC_FUNC_MODE_POWER_OFF == mode || LTE_LC_FUNC_MODE_OFFLINE == mode || LTE_LC_FUNC_MODE_DEACTIVATE_LTE == mode || LTE_LC_FUNC_MODE_ACTIVATE_UICC == mode) {
       if (atomic_test_and_clear_bit(&modem_states, MODEM_ON_OFF)) {
+#ifdef CONFIG_AS_RAI_ON
+         if (atomic_test_bit(&modem_states, MODEM_FIRMWARE_2)) {
+            // Release Assistance Indication
+            // enable with notifications for mfw 2.x.y
+            int err = modem_at_cmd(NULL, 0, "%RAI: ", "AT%RAI=2");
+            if (err < 0) {
+               LOG_WRN("Failed to set RAI %d, err %d (%s)", mode, err, strerror(-err));
+            } else {
+               LOG_INF("Set RAI %d", mode);
+            }
+         }
+#endif /* CONFIG_AS_RAI_ON */
          work_submit_to_io_queue(&modem_off_callback_work);
       }
    }
