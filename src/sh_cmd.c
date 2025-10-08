@@ -22,7 +22,6 @@
 
 #include "appl_diagnose.h"
 #include "appl_settings.h"
-#include "io_job_queue.h"
 #include "modem.h"
 #include "modem_at.h"
 #include "parse.h"
@@ -227,6 +226,7 @@ void sh_cmd_at_finish(void)
          LOG_INF("%ld ms", (long)at_cmd_time);
       }
       sh_app_set_inactive(K_NO_WAIT);
+      sh_cmd_wait_fn(NULL);
    }
 }
 
@@ -498,9 +498,11 @@ static void sh_cmd_execute_fn(struct k_work *work)
    int res = 0;
 
    if (&sh_cmd_schedule_work.work == work) {
+      // scheduled from remote
       LOG_INF("...> %s", sh_cmd_buf);
       res = sh_cmd(sh_cmd_buf, false);
    } else {
+      // executed from sh
       res = sh_cmd(sh_cmd_buf, true);
    }
    sh_cmd_result(res);
@@ -527,6 +529,7 @@ static void sh_cmd_wait_fn(struct k_work *work)
    }
 }
 
+// from sh
 int sh_cmd_execute(const char *cmd)
 {
    size_t len = strlen(cmd);
@@ -541,6 +544,7 @@ int sh_cmd_execute(const char *cmd)
    return -EBUSY;
 }
 
+// from remote
 int sh_cmd_schedule(const char *cmd, const k_timeout_t delay)
 {
    size_t len = strlen(cmd);
@@ -563,9 +567,9 @@ static int sh_cmd_put(bool head, const char *cmd, const k_timeout_t delay)
       item->delay = delay;
       strcpy(item->data, cmd);
       if (head) {
-      k_queue_prepend(&sh_cmd_queue, item);
+         k_queue_prepend(&sh_cmd_queue, item);
       } else {
-      k_queue_append(&sh_cmd_queue, item);
+         k_queue_append(&sh_cmd_queue, item);
       }
       atomic_set_bit(&sh_cmd_state, BIT_SH_CMD_QUEUED);
       LOG_DBG("> cmd appended.");
@@ -640,12 +644,24 @@ int sh_app_set_inactive(const k_timeout_t delay)
       {
          if ((end - sh_cmd_app_active_end) > 0) {
             sh_cmd_app_active_end = end;
-            res = work_reschedule_for_io_queue(&sh_cmd_app_inactive_work, delay);
+            res = k_work_reschedule_for_queue(&sh_cmd_work_q, &sh_cmd_app_inactive_work, delay);
          }
       }
    }
    return res;
 }
+
+#ifdef CONFIG_USE_JOB_QUEUE_ALIVE_CHECK
+static void sh_cmd_alive_fn(struct k_work *work);
+
+static K_WORK_DELAYABLE_DEFINE(sh_cmd_alive_work, sh_cmd_alive_fn);
+
+static void sh_cmd_alive_fn(struct k_work *work)
+{
+   LOG_INF("SH alive");
+   k_work_reschedule_for_queue(&sh_cmd_work_q, &sh_cmd_alive_work, K_MSEC(30000));
+}
+#endif /* CONFIG_USE_JOB_QUEUE_ALIVE_CHECK */
 
 static int sh_cmd_init(void)
 {
@@ -664,6 +680,10 @@ static int sh_cmd_init(void)
    k_work_queue_start(&sh_cmd_work_q, sh_cmd_stack,
                       K_THREAD_STACK_SIZEOF(sh_cmd_stack),
                       CONFIG_SH_CMD_THREAD_PRIO, &sh_cmd_cfg);
+
+#ifdef CONFIG_USE_JOB_QUEUE_ALIVE_CHECK
+   k_work_reschedule_for_queue(&sh_cmd_work_q, &sh_cmd_alive_work, K_MSEC(30000));
+#endif /* CONFIG_USE_JOB_QUEUE_ALIVE_CHECK */
 
    return 0;
 }

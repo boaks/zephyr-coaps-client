@@ -551,6 +551,12 @@ config USE_IO_JOB_QUEUE
 	bool "Use i/o job queue"
 	default y
 
+config USE_JOB_QUEUE_ALIVE_CHECK
+	bool "Use i/o job queue alive check"
+	default n
+	help
+	   Schedules a "alive-logging" job every 15s.
+
 config SUSPEND_3V3
 	bool "Low power mode, suspend 3.3V when sleeping"
 	default y
@@ -861,7 +867,7 @@ config MOTION_DETECTION_LED
 endif # MOTION_DETECTION
 
 config BME680_BSEC
-	bool "BME680 BSEC"
+	bool "BME680 BSEC (not longer working)"
 	depends on !BME680
 	help
 	  Use BME680 with Bosch BSEC library (IAQ Index Air Quality).
@@ -869,7 +875,8 @@ config BME680_BSEC
 	  and placed in "<ncs>/nrf/ext/BSEC_1.4.8.0_Generic_Release_updated_v3"
 	  Disable "Zephyr Kernel > Device Drivers > Sensor Drivers > BME680 sensor"
 	  in order to use the BME680 with the Bosch BSEC library! Enable 
-	  the BME680 sensor to use it without the Bosch BSEC library! 
+	  the BME680 sensor to use it without the Bosch BSEC library!
+	  (Using BSEC currently exceeds the flash size.) 
 
 if BME680_BSEC
 
@@ -1075,6 +1082,10 @@ source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
 
 module = POWER_MANAGER
 module-str = PM
+source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
+
+module = WORK_QUEUE
+module-str = Work Queue
 source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
 
 if UART_MANAGER

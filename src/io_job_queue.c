@@ -12,8 +12,11 @@
  */
 
 #include <zephyr/init.h>
+#include <zephyr/logging/log.h>
 
 #include "io_job_queue.h"
+
+LOG_MODULE_REGISTER(WORK_QUEUE, CONFIG_WORK_QUEUE_LOG_LEVEL);
 
 #ifdef CONFIG_USE_IO_JOB_QUEUE
 
@@ -29,6 +32,26 @@ static K_THREAD_STACK_DEFINE(io_job_queue_stack, IO_JOB_QUEUE_STACK_SIZE);
 
 static struct k_work_q cmd_queue;
 static K_THREAD_STACK_DEFINE(cmd_stack, CONFIG_CMD_STACK_SIZE);
+
+#ifdef CONFIG_USE_JOB_QUEUE_ALIVE_CHECK
+static void work_alive_io_fn(struct k_work *work);
+static void work_alive_cmd_fn(struct k_work *work);
+
+static K_WORK_DELAYABLE_DEFINE(work_alive_io_work, work_alive_io_fn);
+static K_WORK_DELAYABLE_DEFINE(work_alive_cmd_work, work_alive_cmd_fn);
+
+static void work_alive_io_fn(struct k_work *work)
+{
+   LOG_INF("I/O alive");
+   work_reschedule_for_io_queue(&work_alive_io_work, K_MSEC(15000));
+}
+
+static void work_alive_cmd_fn(struct k_work *work)
+{
+   LOG_INF("CMD alive");
+   work_reschedule_for_cmd_queue(&work_alive_cmd_work, K_MSEC(15000));
+}
+#endif /* CONFIG_USE_JOB_QUEUE_ALIVE_CHECK */
 
 static int queues_init(void)
 {
@@ -48,16 +71,23 @@ static int queues_init(void)
        IO_JOB_QUEUE_PRIORITY,
        &io_cfg);
 #endif /* CONFIG_USE_IO_JOB_QUEUE */
+#ifdef CONFIG_USE_JOB_QUEUE_ALIVE_CHECK
+   work_reschedule_for_io_queue(&work_alive_io_work, K_MSEC(7500));
+#endif /* CONFIG_USE_JOB_QUEUE_ALIVE_CHECK */
 
    k_work_queue_init(&cmd_queue);
    k_work_queue_start(&cmd_queue, cmd_stack,
                       K_THREAD_STACK_SIZEOF(cmd_stack),
                       CONFIG_CMD_THREAD_PRIO, &cmd_cfg);
 
+#ifdef CONFIG_USE_JOB_QUEUE_ALIVE_CHECK
+   work_reschedule_for_cmd_queue(&work_alive_cmd_work, K_MSEC(15000));
+#endif /* CONFIG_USE_JOB_QUEUE_ALIVE_CHECK */
    return 0;
 }
 
-SYS_INIT(queues_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
+#define APPLICATION_PREINIT_PRIORITY 89
+SYS_INIT(queues_init, APPLICATION, APPLICATION_PREINIT_PRIORITY);
 
 int work_schedule_for_io_queue(struct k_work_delayable *dwork,
                                k_timeout_t delay)
