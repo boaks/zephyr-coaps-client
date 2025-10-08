@@ -35,10 +35,18 @@ int modem_at_cmd_async(modem_at_response_handler_t handler, const char *skip, co
 
 bool modem_at_async_pending(void);
 
-int modem_at_is_on(void);
+bool modem_at_is_on(void);
 
 int modem_at_push_off(bool force);
 
 int modem_at_restore(void);
+
+int modem_at_set_offline(void);
+
+int modem_at_set_lte_offline(void);
+
+int modem_at_set_normal(void);
+
+int modem_at_power_off(void);
 
 #endif /* MODEM_AT_H */
