@@ -18,7 +18,6 @@
 #include <zephyr/settings/settings.h>
 
 #include "parse.h"
-
 #include "sh_cmd.h"
 
 LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
@@ -75,7 +74,7 @@ static void cmd_resp_callback_send(const char *at_response)
 
 static int modem_cmd_reinit(const char *config)
 {
-   const bool is_on = modem_at_is_on() == 1;
+   const bool is_on = modem_at_is_on();
 
    LOG_INF(">> modem reinit");
    modem_at_push_off(false);
@@ -101,7 +100,7 @@ static void modem_cmd_reinit_help(void)
 
 static int modem_cmd_config(const char *config)
 {
-   const bool is_on = modem_at_is_on() == 1;
+   const bool is_on = modem_at_is_on();
    int res;
    char buf[32];
    char value1[8];
@@ -311,7 +310,7 @@ static int modem_cmd_connect(const char *config)
    char value1[8];
    char value2[4];
    const char *cur = config;
-   modem_at_response_handler_t handler = modem_at_is_on() == 1 ? cmd_resp_callback_send : cmd_resp_callback;
+   modem_at_response_handler_t handler = modem_at_is_on() ? cmd_resp_callback_send : cmd_resp_callback;
 
    memset(value1, 0, sizeof(value1));
    memset(value2, 0, sizeof(value2));
@@ -1114,14 +1113,14 @@ static int modem_cmd_switch_on(const char *parameter)
 {
    (void)parameter;
    sh_app_set_inactive(K_SECONDS(5));
-   return modem_set_normal();
+   return modem_at_set_normal();
 }
 
 static int modem_cmd_switch_off(const char *parameter)
 {
    (void)parameter;
    sh_app_set_inactive(K_SECONDS(5));
-   return modem_power_off();
+   return modem_at_power_off();
 }
 
 static int modem_cmd_state(const char *parameter)
