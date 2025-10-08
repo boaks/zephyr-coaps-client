@@ -28,6 +28,8 @@
 #include "app_version.h"
 #endif
 
+#include "io_job_queue.h"
+
 #include "appl_diagnose.h"
 #include "appl_settings.h"
 #include "appl_time.h"
@@ -65,10 +67,18 @@ const char *appl_get_version(void)
    return appl_version;
 }
 
+static void diagnose_watchdog_feed_fn(struct k_work *work)
+{
+   wdt_feed(wdt, wdt_channel_id);
+}
+
+static K_WORK_DELAYABLE_DEFINE(diagnose_watchdog_feed_work, diagnose_watchdog_feed_fn);
+
 void watchdog_feed(void)
 {
    if (wdt && wdt_channel_id >= 0) {
-      wdt_feed(wdt, wdt_channel_id);
+      // feed via work queue schedule => add monitoring for that queue
+      work_schedule_for_io_queue(&diagnose_watchdog_feed_work, K_MSEC(100));
    }
 }
 

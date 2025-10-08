@@ -16,6 +16,7 @@
 
 #include <stdbool.h>
 #include <sys/types.h>
+#include <zephyr/sys_clock.h>
 
 #define ERROR_CODE_INIT_NO_LTE 0x0000
 #define ERROR_CODE_INIT_NO_DTLS 0x1000
