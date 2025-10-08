@@ -359,7 +359,7 @@ static int dtls_low_voltage(const k_timeout_t timeout)
       if (!power_manager_status(NULL, &battery_voltage, &battery_status, NULL)) {
          if (battery_voltage > 3300 || battery_status >= CHARGING_I) {
             atomic_clear_bit(&general_states, LTE_LOW_VOLTAGE);
-            modem_set_normal();
+            modem_at_set_normal();
             return false;
          }
          dtls_info("waiting, low voltage %d mV.", battery_voltage);
@@ -383,10 +383,7 @@ int get_local_address(uint8_t *buf, size_t length)
 
    rc = modem_get_network_info(&info);
    if (!rc && buf && length) {
-      rc = strlen(info.local_ip);
-      memcpy(buf, info.local_ip, rc);
-      buf[rc++] = ':';
-      rc += snprintf(&buf[rc], length - rc, "%u", app_data_context.port);
+      rc = snprintf(buf, length, "%s:%u", info.local_ip, app_data_context.port);
       dtls_info("dtls: recv. address: %s", buf);
    }
 #else  /* CONFIG_UDP_WAKEUP_ENABLE */
@@ -460,14 +457,14 @@ static void restart(int error, bool factoryReset)
    res = modem_at_lock_no_warn(K_MSEC(2000));
    if (!res) {
       modem_sim_reset(false);
-      modem_power_off();
+      modem_at_power_off();
       if (factoryReset) {
          modem_factory_reset();
       }
-      dtls_info("> modem switched off-");
+      dtls_info("app> modem switched off-");
       modem_at_unlock();
    } else {
-      dtls_info("> modem busy, not switched off.");
+      dtls_info("app> modem busy, not switched off.");
    }
 
    ui_led_op(LED_COLOR_ALL, LED_CLEAR);
@@ -486,10 +483,10 @@ static void check_restart(void)
       // nRF9160-DK restart with button2 also pressed
       int ui = ui_config();
       if (ui < 0) {
-         dtls_info("> modem restart / factory reset");
+         dtls_info("app> modem restart / factory reset");
          restart(ERROR_CODE_REBOOT_MANUAL, true);
       } else if (ui & 2) {
-         dtls_info("> modem restart");
+         dtls_info("app> modem restart");
          restart(ERROR_CODE_REBOOT_MANUAL, false);
       }
       atomic_clear_bit(&general_states, TRIGGER_DURATION);
@@ -514,36 +511,36 @@ static bool restart_modem(bool power_off)
    watchdog_feed();
    check_restart();
 
-   dtls_info("> modem restart");
+   dtls_info("app> modem restart");
    atomic_set_bit(&general_states, PM_PREVENT_SUSPEND);
    dtls_power_management();
    ui_led_op(LED_COLOR_BLUE, LED_BLINKING);
    ui_led_op(LED_COLOR_RED, LED_BLINKING);
    if (power_off) {
-      modem_power_off();
+      modem_at_power_off();
    } else {
-      modem_set_lte_offline();
+      modem_at_set_lte_offline();
    }
-   dtls_info("> modem offline");
+   dtls_info("app> modem offline");
    ui_led_op(LED_COLOR_ALL, LED_CLEAR);
    k_sleep(K_MSEC(2000));
    if (dtls_low_voltage(K_HOURS(24))) {
       restart(ERROR_CODE_LOW_VOLTAGE, false);
    }
-   dtls_info("> modem restarting ...");
+   dtls_info("app> modem restarting ...");
    modem_set_psm_for_connect();
    modem_start(K_SECONDS(CONFIG_MODEM_SEARCH_TIMEOUT), false);
    atomic_clear_bit(&general_states, PM_PREVENT_SUSPEND);
    dtls_power_management();
    watchdog_feed();
    if (atomic_test_bit(&general_states, LTE_READY)) {
-      dtls_info("> modem ready.");
+      dtls_info("app> modem ready.");
       return true;
    } else if (atomic_test_bit(&general_states, LTE_REGISTERED)) {
-      dtls_info("> modem registered, not ready.");
+      dtls_info("app> modem registered, not ready.");
       return false;
    } else {
-      dtls_info("> modem not registered.");
+      dtls_info("app> modem not registered.");
       return false;
    }
 }
@@ -572,10 +569,10 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
 
    if (!ready) {
       bool registered = atomic_test_bit(&general_states, LTE_REGISTERED);
-      dtls_info("> %s, reopen socket (modem %s)", loc,
+      dtls_info("app> %s, reopen socket (modem %s)", loc,
                 registered ? "registered, not ready" : "not ready");
    } else {
-      dtls_info("> %s, reopen socket (modem ready)", loc);
+      dtls_info("app> %s, reopen socket (modem ready)", loc);
    }
    close_socket(app);
    if (!ready) {
@@ -708,7 +705,7 @@ static void dtls_manual_trigger(int duration)
       atomic_set_bit(&general_states, TRIGGER_DURATION);
    } else {
       atomic_clear_bit(&general_states, TRIGGER_DURATION);
-      if (!lte_power_off && !atomic_test_bit(&general_states, LTE_ON)) {
+      if (!lte_power_off && !modem_at_is_on()) {
          return;
       }
       send = true;
@@ -728,8 +725,8 @@ static void dtls_manual_trigger(int duration)
 static void dtls_cmd_trigger(const char *source, bool led, int mode)
 {
    bool ready = atomic_test_bit(&general_states, LTE_READY);
-   if (!lte_power_off && !atomic_test_bit(&general_states, LTE_ON)) {
-      dtls_info("%s: modem off", source);
+   if (!lte_power_off && !modem_at_is_on()) {
+      dtls_info("%s: modem is off", source);
       return;
    }
    if (mode & 1) {
@@ -761,7 +758,7 @@ static void dtls_timer_trigger_fn(struct k_work *work)
 {
    long interval = atomic_get(&send_interval);
 
-   if ((lte_power_off || atomic_test_bit(&general_states, LTE_ON)) && dtls_no_pending_request(app_data_context.request_state)) {
+   if ((lte_power_off || modem_at_is_on()) && dtls_no_pending_request(app_data_context.request_state)) {
       // no LEDs for time trigger
       ui_enable(false);
       dtls_set_send_trigger("timer");
@@ -820,10 +817,10 @@ static void dtls_coap_next(dtls_app_data_t *app, int interval)
 
    ui_led_op(LED_APPLICATION, LED_CLEAR);
    if (lte_power_on_off) {
-      dtls_debug("> modem switching off ...");
+      dtls_debug("app> modem switching off ...");
       lte_power_off = true;
-      modem_power_off();
-      dtls_debug("modem off");
+      modem_at_power_off();
+      dtls_debug("app> modem switched off.");
    }
 
    dtls_log_now();
@@ -1097,6 +1094,9 @@ read_from_peer(dtls_app_data_t *app, session_t *session, uint8 *data, size_t len
    int err = app->coap_handler.parse_data(data, len);
 
    if (err < 0) {
+      if (INCOMING_DATA == app->request_state) {
+         dtls_info("incoming data: %d bytes", len);
+      }
       return err;
    }
 
@@ -1483,9 +1483,9 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
    }
 
    if (desc) {
-      dtls_info("modem state: %s %s", desc, active ? "on" : "off");
+      dtls_info("app> modem state: %s %s", desc, active ? "on" : "off");
    } else {
-      dtls_info("modem state: %d %s", type, active ? "on" : "off");
+      dtls_info("app> modem state: %d %s", type, active ? "on" : "off");
    }
    bool previous = active;
    bool changed = false;
@@ -1639,7 +1639,7 @@ static bool dtls_setup_mode(void)
       request = scale_calibrate_setup();
    } else {
       // modem reset
-      dtls_info("Reset modem.");
+      dtls_info("app> reset modem.");
       restart = true;
    }
    k_sem_reset(&dtls_trigger_msg);
@@ -1712,7 +1712,7 @@ static int dtls_network_searching(const k_timeout_t timeout)
       if (trigger != NO_SEARCH) {
          trigger = NO_SEARCH;
          if (off) {
-            modem_set_normal();
+            modem_at_set_normal();
             off = false;
          }
          if (trigger != READY_SEARCH) {
@@ -1754,7 +1754,7 @@ static int dtls_network_searching(const k_timeout_t timeout)
                dtls_info("Multi IMSI, interval %d s.", info.sim_info.imsi_interval);
                if (((long)now - last_not_ready_time) > (MSEC_PER_SEC * timeout_s)) {
                   dtls_info("Multi IMSI, offline");
-                  modem_set_offline();
+                  modem_at_set_offline();
                   off = true;
                }
             }
@@ -1876,10 +1876,15 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
          dtls_info("> No initial success, reboot %d.", reboot);
          restart(ERROR_CODE(ERROR_CODE_INIT_NO_SUCCESS, reboot), true);
       }
-      if (!lte_power_off && !atomic_test_bit(&general_states, LTE_ON)) {
-         dtls_info("modem off.");
-         k_sem_take(&dtls_trigger_msg, K_SECONDS(60));
-         continue;
+      if (!lte_power_off && !modem_at_is_on()) {
+         dtls_info("app> modem is off - nop.");
+         if (k_sem_take(&dtls_trigger_msg, K_SECONDS(60)) == 0) {
+            if (modem_at_is_on()) {
+               k_sem_give(&dtls_trigger_msg);
+            }
+         } else {
+            continue;
+         }
       }
 
       network_not_found = false;
@@ -2120,8 +2125,8 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
             if (atomic_test_and_clear_bit(&general_states, TRIGGER_SEND)) {
                int res = get_send_interval();
                loops = 0;
-               if (!lte_power_off && !atomic_test_bit(&general_states, LTE_ON)) {
-                  dtls_info("modem off, postpone sending ...");
+               if (!lte_power_off && !modem_at_is_on()) {
+                  dtls_info("app> modem is off, postpone sending ...");
                   atomic_set_bit(&general_states, TRIGGER_SEND);
                   continue;
                }
@@ -2133,7 +2138,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(res));
                }
                if (lte_power_off) {
-                  dtls_info("modem on");
+                  dtls_info("app> modem switching on");
                   lte_power_off = false;
                   restarting_modem = false;
                   app->start_time = k_uptime_get();
