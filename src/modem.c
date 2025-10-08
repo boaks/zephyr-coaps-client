@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-
+ 
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
@@ -345,18 +345,9 @@ bool modem_set_preference(enum preference_mode mode)
             }
             if (lte_new_preference != lte_preference) {
                LOG_INF("%s LTE mode preference to %s", op, sys_mode);
-               enum lte_lc_func_mode func_mode;
-               if (!lte_lc_func_mode_get(&func_mode)) {
-                  if (func_mode != LTE_LC_FUNC_MODE_POWER_OFF) {
-                     watchdog_feed();
-                     lte_lc_func_mode_set(LTE_LC_FUNC_MODE_POWER_OFF);
-                  }
-                  lte_lc_system_mode_set(lte_mode, lte_new_preference);
-                  if (func_mode != LTE_LC_FUNC_MODE_POWER_OFF) {
-                     watchdog_feed();
-                     lte_lc_func_mode_set(func_mode);
-                  }
-               }
+               modem_at_push_off(false);
+               lte_lc_system_mode_set(lte_mode, lte_new_preference);
+               modem_at_restore();
             } else {
                sys_mode = nbiot_preference ? "NB-IoT" : "LTE-M";
                LOG_INF("Keep LTE mode preference %s", sys_mode);
@@ -2970,34 +2961,6 @@ void modem_lock_plmn(bool on)
    k_mutex_unlock(&lte_mutex);
 }
 
-int modem_set_offline(void)
-{
-   LOG_INF("modem offline");
-   watchdog_feed();
-   return lte_lc_offline();
-}
-
-int modem_set_normal(void)
-{
-   LOG_INF("modem normal");
-   watchdog_feed();
-   return lte_lc_normal();
-}
-
-int modem_set_lte_offline(void)
-{
-   LOG_INF("modem deactivate LTE");
-   watchdog_feed();
-   return lte_lc_func_mode_set(LTE_LC_FUNC_MODE_DEACTIVATE_LTE) ? -EFAULT : 0;
-}
-
-int modem_power_off(void)
-{
-   LOG_INF("modem off");
-   watchdog_feed();
-   return lte_lc_power_off();
-}
-
 int modem_factory_reset(void)
 {
    char buf[16];
@@ -3120,26 +3083,6 @@ int modem_set_rai_mode(enum rai_mode mode, int socket)
 {
    (void)mode;
    (void)socket;
-   return 0;
-}
-
-int modem_set_offline(void)
-{
-   return 0;
-}
-
-int modem_set_lte_offline(void)
-{
-   return 0;
-}
-
-int modem_set_normal(void)
-{
-   return 0;
-}
-
-int modem_power_off(void)
-{
    return 0;
 }
 

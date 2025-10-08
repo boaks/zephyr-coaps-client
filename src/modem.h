@@ -239,14 +239,6 @@ int modem_get_edrx_multiplier(int edrx_code);
 
 int modem_print_edrx(const char *desc, struct lte_lc_edrx_cfg *edrx_cfg, char* buf, size_t len);
 
-int modem_set_offline(void);
-
-int modem_set_lte_offline(void);
-
-int modem_set_normal(void);
-
-int modem_power_off(void);
-
 int modem_factory_reset(void);
 
 #endif /* MODEM_H */
