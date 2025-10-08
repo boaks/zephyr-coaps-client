@@ -124,10 +124,10 @@ typedef struct dtls_app_data_t {
    dtls_app_result_handler result_handler;
    int fd;
    int protocol;
-#if defined(CONFIG_UDP_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE) && (CONFIG_UDP_WAKEUP_PORT != 0)
    int fd2;
    uint16_t port;
-#endif /* CONFIG_UDP_WAKEUP_ENABLE */
+#endif /* CONFIG_UDP_WAKEUP_ENABLE &&  (CONFIG_UDP_WAKEUP_PORT != 0) */
    uint8_t keep_connection : 1;
    uint8_t send_request_pending : 1;
    uint8_t dtls_pending : 1;
@@ -379,6 +379,9 @@ int get_local_address(uint8_t *buf, size_t length)
 {
    int rc = 0;
 #if defined(CONFIG_UDP_WAKEUP_ENABLE)
+#if (CONFIG_UDP_WAKEUP_PORT == 0)
+   rc = snprintf(buf, length, ".");
+#else  /* CONFIG_UDP_WAKEUP_PORT == 0 */
    struct lte_network_info info;
 
    rc = modem_get_network_info(&info);
@@ -386,6 +389,7 @@ int get_local_address(uint8_t *buf, size_t length)
       rc = snprintf(buf, length, "%s:%u", info.local_ip, app_data_context.port);
       dtls_info("dtls: recv. address: %s", buf);
    }
+#endif /* CONFIG_UDP_WAKEUP_PORT == 0 */
 #else  /* CONFIG_UDP_WAKEUP_ENABLE */
    (void)buf;
    (void)length;
@@ -552,13 +556,13 @@ static void close_socket(dtls_app_data_t *app)
       (void)close(app->fd);
       app->fd = -1;
    }
-#if defined(CONFIG_UDP_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE) && (CONFIG_UDP_WAKEUP_PORT != 0)
    if (app->fd2 >= 0) {
       (void)close(app->fd2);
       app->fd2 = -1;
       app->port = 0;
    }
-#endif /* CONFIG_UDP_WAKEUP_ENABLE */
+#endif /* CONFIG_UDP_WAKEUP_ENABLE && (CONFIG_UDP_WAKEUP_PORT != 0) */
 }
 
 static bool reopen_socket(dtls_app_data_t *app, const char *loc)
@@ -604,7 +608,7 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
    modem_set_rai_mode(RAI_MODE_OFF, app->fd);
    dtls_info("> %s, reopened socket.", loc);
 
-#if defined(CONFIG_UDP_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE) && (CONFIG_UDP_WAKEUP_PORT != 0)
    app->fd2 = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
    if (app->fd2 < 0) {
       dtls_warn("> %s, reopen UDP wakeup socket failed, %d, errno %d (%s), restart",
@@ -633,7 +637,7 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
          dtls_info("> %s, bind wakeup socket to port: %u", loc, app->port);
       }
    }
-#endif
+#endif /* defined(CONFIG_UDP_WAKEUP_ENABLE) && (CONFIG_UDP_WAKEUP_PORT != 0) */
 
    return true;
 }
@@ -1087,6 +1091,18 @@ network_adjust_initial_timeout(dtls_app_data_t *app, bool set)
    return res;
 }
 
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
+static void
+check_wakeup(uint8_t *buffer, size_t len)
+{
+   LOG_HEXDUMP_INF(buffer, len, "incoming data");
+   if ((len == 2 || len == 3) && memcmp(buffer, "up", 2) == 0) {
+      atomic_clear_bit(&general_states, LTE_INCOMING_CONNECT);
+      dtls_cmd_trigger("wakeup", false, 1);
+   }
+}
+#endif /* CONFIG_UDP_WAKEUP_ENABLE */
+
 static int
 read_from_peer(dtls_app_data_t *app, session_t *session, uint8 *data, size_t len)
 {
@@ -1096,6 +1112,9 @@ read_from_peer(dtls_app_data_t *app, session_t *session, uint8 *data, size_t len
    if (err < 0) {
       if (INCOMING_DATA == app->request_state) {
          dtls_info("incoming data: %d bytes", len);
+#if defined(CONFIG_UDP_WAKEUP_ENABLE)
+         check_wakeup(data, len);
+#endif /* CONFIG_UDP_WAKEUP_ENABLE */
       }
       return err;
    }
@@ -1335,7 +1354,7 @@ recvfrom_peer(dtls_app_data_t *app, dtls_context_t *ctx)
    }
 }
 
-#if defined(CONFIG_UDP_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE) && (CONFIG_UDP_WAKEUP_PORT != 0)
 static int
 recvfrom_peer2(dtls_app_data_t *app)
 {
@@ -1353,13 +1372,10 @@ recvfrom_peer2(dtls_app_data_t *app)
       return result;
    }
    dtls_info("received_from_peer2 %d bytes", result);
-   if ((result == 2 || result == 3) && memcmp(appl_buffer, "up", 2) == 0) {
-      atomic_clear_bit(&general_states, LTE_INCOMING_CONNECT);
-      dtls_cmd_trigger("wakeup", false, 1);
-   }
+   check_wakeup(appl_buffer, result);
    return result;
 }
-#endif /* CONFIG_UDP_WAKEUP_ENABLE */
+#endif /* CONFIG_UDP_WAKEUP_ENABLE && (CONFIG_UDP_WAKEUP_PORT != 0) */
 
 static int
 sendto_peer(dtls_app_data_t *app, struct dtls_context_t *ctx)
@@ -1792,11 +1808,11 @@ static long dtls_calculate_reboot_timeout(int reboot)
 
 static int dtls_loop(dtls_app_data_t *app, int reboot)
 {
-#if defined(CONFIG_UDP_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE) && (CONFIG_UDP_WAKEUP_PORT != 0)
    struct pollfd udp_poll[2];
-#else  /* CONFIG_UDP_WAKEUP_ENABLE */
+#else  /* CONFIG_UDP_WAKEUP_ENABLE && (CONFIG_UDP_WAKEUP_PORT != 0) */
    struct pollfd udp_poll[1];
-#endif /* CONFIG_UDP_WAKEUP_ENABLE */
+#endif /* CONFIG_UDP_WAKEUP_ENABLE && (CONFIG_UDP_WAKEUP_PORT != 0) */
 
    dtls_context_t *dtls_context = NULL;
    const char *reopen_cause = NULL;
@@ -2016,7 +2032,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
       udp_poll[0].fd = app->fd;
       udp_poll[0].events = POLLIN;
       udp_poll[0].revents = 0;
-#if defined(CONFIG_UDP_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE) && (CONFIG_UDP_WAKEUP_PORT != 0)
       if (app->fd2 >= 0) {
          ++udp_ports_to_poll;
          udp_poll[1].fd = app->fd2;
@@ -2027,7 +2043,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
          udp_poll[1].events = 0;
          udp_poll[1].revents = 0;
       }
-#endif /*CONFIG_UDP_WAKEUP_ENABLE */
+#endif /*CONFIG_UDP_WAKEUP_ENABLE && (CONFIG_UDP_WAKEUP_PORT != 0) */
 #ifdef CONFIG_COAP_UPDATE
       if (dtls_no_pending_request(app->request_state)) {
          bool pending = appl_update_coap_pending();
@@ -2351,7 +2367,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                k_sleep(K_MSEC(1000));
             }
          }
-#if defined(CONFIG_UDP_WAKEUP_ENABLE)
+#if defined(CONFIG_UDP_WAKEUP_ENABLE) && (CONFIG_UDP_WAKEUP_PORT != 0)
          if (udp_ports_to_poll > 1 && udp_poll[1].revents & POLLIN) {
             recvfrom_peer2(app);
          } else if (udp_poll[1].revents & (POLLERR | POLLNVAL)) {
@@ -2360,7 +2376,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                k_sleep(K_MSEC(1000));
             }
          }
-#endif /* CONFIG_UDP_WAKEUP_ENABLE */
+#endif /* CONFIG_UDP_WAKEUP_ENABLE && (CONFIG_UDP_WAKEUP_PORT != 0) */
       }
    }
 

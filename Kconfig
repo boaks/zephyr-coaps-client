@@ -321,7 +321,10 @@ config UDP_WAKEUP_PORT
 		To support AS-RAI with the nRF91, the UDP socket
 		for that regular traffic must be "connected" to 
 		a server. Using a second port enables to receive
-		wakeup messages also from different servers. 
+		wakeup messages also from different servers.
+		If 0 is used, then only port for the regular
+		traffic is open to receive wakeup messages
+		directly from the DTLS server endpoint. 
 
 config UDP_WAKEUP_ON_INCOMING_CONNECT_TIMEOUT
 	int "Wakeup on incoming connect timeout"
