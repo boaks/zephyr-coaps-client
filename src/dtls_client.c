@@ -1032,7 +1032,7 @@ static void dtls_coap_failure(dtls_app_data_t *app, const char *cause)
    if (interval == 0) {
       interval = CONFIG_COAP_FAILURE_SEND_INTERVAL;
    }
-#endif /*CONFIG_COAP_FAILURE_SEND_INTERVAL*/
+#endif /* CONFIG_COAP_FAILURE_SEND_INTERVAL */
 
    if (interval > 0) {
       dtls_debug("Failure, schedule in %d s.", interval);
@@ -2254,7 +2254,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
             }
          } else if (app->request_state == RECEIVE) {
             int temp = app->timeout;
-            if (!atomic_test_bit(&general_states, LTE_READY)) {
+            if (!atomic_test_bit(&general_states, LTE_CONNECTED)) {
                if (app->retransmission >= COAP_MAX_RETRANSMISSION) {
                   // stop waiting ...
                   temp = loops - 1;
