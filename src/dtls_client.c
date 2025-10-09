@@ -195,12 +195,18 @@ static bool lte_power_on_off = false;
 static volatile bool moved = false;
 #endif
 
+/* merge dtls flight records to single UDP message */
+#define MAX_DTLS_BUF 512
+static uint8_t dtls_buffer[MAX_DTLS_BUF];
+static size_t dtls_buffer_len = 0;
+static struct k_spinlock dtls_buffer_lock;
+
 #define MAX_APPL_BUF 1600
 static uint8_t appl_buffer[MAX_APPL_BUF];
 
 #define MAX_SEND_BUF 1024
 static uint8_t send_buffer[MAX_SEND_BUF];
-static volatile size_t send_buffer_len = 0;
+static size_t send_buffer_len = 0;
 static const char *send_trigger = NULL;
 static struct k_spinlock send_buffer_lock;
 
@@ -1195,23 +1201,6 @@ send_to_peer(dtls_app_data_t *app, const uint8_t *data, size_t len)
       atomic_clear_bit(&general_states, LTE_SEND);
    }
 
-#ifndef NDEBUG
-   /* logging */
-   if (SEND == app->request_state || app->dtls_flight) {
-      if (connected) {
-         dtls_info("%ssent_to_peer %d", tag, result);
-      } else {
-         dtls_info("%ssend_to_peer %d", tag, result);
-      }
-   } else if (RECEIVE == app->request_state) {
-      if (connected) {
-         dtls_info("%sunintended resent_to_peer %d", tag, result);
-      } else {
-         dtls_info("%sunintended resend_to_peer %d", tag, result);
-      }
-   }
-#endif
-
    if (app->dtls_next_flight) {
       // 1. messages in flight
       app->dtls_next_flight = 0;
@@ -1220,8 +1209,14 @@ send_to_peer(dtls_app_data_t *app, const uint8_t *data, size_t len)
    }
    if (first) {
       network_adjust_initial_timeout(app, true);
-      dtls_info("%sresponse timeout %d s", tag, app->timeout);
+      dtls_info("%sinitial response timeout %d s", tag, app->timeout);
    }
+   if (connected) {
+      dtls_info("%s %ssent_to_peer %d", get_request_state_description(app->request_state), tag, result);
+   } else {
+      dtls_info("%s %ssend_to_peer %d", get_request_state_description(app->request_state), tag, result);
+   }
+
    return result;
 }
 
@@ -1230,12 +1225,30 @@ dtls_send_to_peer(dtls_context_t *ctx,
                   session_t *session, uint8 *data, size_t len)
 {
    (void)session;
+   int result = 0;
    dtls_app_data_t *app = dtls_get_app_data(ctx);
-   int result = send_to_peer(app, data, len);
-   if (app->dtls_flight && result < 0) {
-      /* don't forward send errors,
-         the dtls state machine will suffer */
-      result = len;
+   if (app->dtls_flight > 1) {
+      K_SPINLOCK(&dtls_buffer_lock)
+      {
+         if (dtls_buffer_len + len > sizeof(dtls_buffer)) {
+            send_to_peer(app, dtls_buffer, dtls_buffer_len);
+            dtls_buffer_len = 0;
+         }
+         memmove(&dtls_buffer[dtls_buffer_len], data, len);
+         dtls_buffer_len += len;
+         result = len;
+      }
+      if (result) {
+         dtls_info("append handshake message %d bytes", len);
+      }
+   }
+   if (!result) {
+      result = send_to_peer(app, data, len);
+      if (app->dtls_flight && result < 0) {
+         /* don't forward send errors,
+            the dtls state machine will suffer */
+         result = len;
+      }
    }
    return result;
 }
@@ -1283,6 +1296,10 @@ dtls_handle_event(dtls_context_t *ctx, session_t *session,
          app->dtls_pending = 0;
          app->dtls_next_flight = 0;
          app->dtls_flight = 0;
+         K_SPINLOCK(&dtls_buffer_lock)
+         {
+            dtls_buffer_len = 0;
+         }
          peer = dtls_get_peer(ctx, session);
          if (peer) {
             const dtls_security_parameters_t *security_params = peer->security_params[0];
@@ -1346,6 +1363,14 @@ recvfrom_peer(dtls_app_data_t *app, dtls_context_t *ctx)
       }
       result = dtls_handle_message(ctx, &session, appl_buffer, result);
       if (app->dtls_flight) {
+         K_SPINLOCK(&dtls_buffer_lock)
+         {
+            if (dtls_buffer_len) {
+               dtls_coap_set_request_state("dtls handle receive", app, SEND);
+               result = send_to_peer(app, dtls_buffer, dtls_buffer_len);
+               dtls_buffer_len = 0;
+            }
+         }
          dtls_coap_set_request_state("dtls received", app, RECEIVE);
       }
       return result;
@@ -1389,6 +1414,14 @@ sendto_peer(dtls_app_data_t *app, struct dtls_context_t *ctx)
       if (app->dtls_flight) {
          app->dtls_next_flight = 0;
          dtls_check_retransmit(ctx, NULL);
+         K_SPINLOCK(&dtls_buffer_lock)
+         {
+            if (dtls_buffer_len) {
+               dtls_coap_set_request_state("dtls resend", app, SEND);
+               result = send_to_peer(app, dtls_buffer, dtls_buffer_len);
+               dtls_buffer_len = 0;
+            }
+         }
       } else {
          dtls_peer_t *peer = dtls_get_peer(ctx, &app->destination);
          if (peer) {
