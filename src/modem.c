@@ -1178,7 +1178,7 @@ static void modem_apply_apn(void)
 {
    char apn[MODEM_APN_SIZE];
    if (appl_settings_get_apn(apn, sizeof(apn))) {
-      int err = pdn_ctx_configure(0, apn, PDN_FAM_IPV4V6, NULL);
+      int err = pdn_ctx_configure(0, apn, PDN_FAM_IPV4, NULL);
       if (err) {
          LOG_WRN("Failed to set PDN '%s': %d (%s)", apn, err, strerror(err));
       }
@@ -2368,6 +2368,12 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
          ++cur;
          // copy ip
          cur = parse_next_qtext(cur, '"', temp.local_ip, sizeof(temp.local_ip));
+         // ipv4/ipv6
+         t = strchr(temp.local_ip, ' ');
+         if (t) {
+            // truncate to ipv4
+            *t = 0;
+         }
          temp.pdn_active = temp.local_ip[0] ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
       }
    }
