@@ -726,6 +726,12 @@ SH_CMD(storageclear, NULL, "clear all storage sections.", appl_storage_clear, NU
 
 #else /* defined(STORAGE_DEV_FLASH) || defined(STORAGE_DEV_EEPROM) */
 
+int appl_storage_add(const struct storage_config* cfg)
+{
+   (void) cfg;
+   return -ENOTSUP;
+}
+
 int appl_storage_read_memory(const struct storage_config *cfg, off_t mem_addr, uint8_t *data, size_t num_bytes)
 {
    (void)mem_addr;
