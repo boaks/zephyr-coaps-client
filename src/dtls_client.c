@@ -661,14 +661,6 @@ static int check_socket(dtls_app_data_t *app)
    return error;
 }
 
-static void dtls_set_send_trigger(const char *trigger)
-{
-   K_SPINLOCK(&send_buffer_lock)
-   {
-      send_trigger = trigger;
-   }
-}
-
 static inline bool dtls_pending_request(request_state_t state)
 {
    return (NONE != state) && (WAIT_SUSPEND != state) && (INCOMING_DATA != state);
@@ -691,6 +683,12 @@ static void dtls_trigger(const char *cause, bool send)
       if (!atomic_test_bit(&general_states, LTE_CONNECTED)) {
          // read battery status before modem wakes up
          power_manager_status(NULL, NULL, NULL, NULL);
+      }
+      if (send) {
+         K_SPINLOCK(&send_buffer_lock)
+         {
+            send_trigger = cause;
+         }
       }
       dtls_info("trigger %s%s", cause, send ? " send message" : "");
       atomic_set_bit_to(&general_states, TRIGGER_SEND, send);
@@ -719,12 +717,11 @@ static void dtls_manual_trigger(int duration)
          return;
       }
       send = true;
-      dtls_set_send_trigger("button");
    }
 
-   // LEDs for manual trigger
+   // LEDs for manual trigger / button
    ui_led_op(LED_COLOR_RED, LED_CLEAR);
-   dtls_trigger("manual", send);
+   dtls_trigger("button", send);
 
    if (!atomic_test_bit(&general_states, LTE_READY)) {
       trigger_search = MANUAL_SEARCH;
@@ -742,7 +739,6 @@ static void dtls_cmd_trigger(const char *source, bool led, int mode)
    if (mode & 1) {
       if (dtls_no_pending_request(app_data_context.request_state)) {
          ui_enable(led);
-         dtls_set_send_trigger(source);
          dtls_trigger(source, true);
          if (!ready && !(mode & 2)) {
             dtls_info("%s: no network ...", source);
@@ -771,7 +767,6 @@ static void dtls_timer_trigger_fn(struct k_work *work)
    if ((lte_power_off || modem_at_is_on()) && dtls_no_pending_request(app_data_context.request_state)) {
       // no LEDs for time trigger
       ui_enable(false);
-      dtls_set_send_trigger("timer");
       dtls_trigger("timer", true);
    } else {
       long next_interval = interval;
@@ -2110,11 +2105,10 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                   if (download) {
                      dtls_info("download request");
                   } else {
-                     dtls_set_send_trigger("download status");
-                     dtls_trigger("download status report", true);
+                     dtls_trigger("download status", true);
                   }
                } else {
-                  dtls_info("manual download status report");
+                  dtls_info("manual download status");
                }
                if (download) {
                   loops = 0;
@@ -2144,6 +2138,7 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
       if (atomic_test_and_clear_bit(&general_states, LTE_INCOMING_DATA)) {
          if (NONE == app->request_state || WAIT_SUSPEND == app->request_state) {
             dtls_coap_set_request_state("", app, INCOMING_DATA);
+            dtls_log_now();
          }
       }
 
@@ -3076,7 +3071,6 @@ int main(void)
    }
    init_destination(&app_data_context);
 
-   dtls_set_send_trigger("initial message");
    dtls_trigger("initial message", true);
    dtls_loop(&app_data_context, (reset_cause & FLAG_REBOOT_RETRY) ? ERROR_DETAIL(reboot_cause) : 0);
 
