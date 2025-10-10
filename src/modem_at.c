@@ -260,13 +260,18 @@ static atomic_t modem_mode = ATOMIC_INIT(-1);
 
 static int modem_at_set_func_mode(enum lte_lc_func_mode mode)
 {
+   int res = modem_at_lock(K_FOREVER);
+   if (res) {
+      LOG_INF("Modem busy");
+      return res;
+   }
    bool off = LTE_LC_FUNC_MODE_POWER_OFF == mode;
    atomic_val_t previous = atomic_set(&modem_mode, mode);
    if (off) {
       work_reschedule_for_io_queue(&modem_at_logging_switching_off_work, K_MSEC(5000));
    }
-//	int res = modem_at_cmdf(NULL, 0, "+CFUN: ", "AT+CFUN=%d", mode);
-   int res = lte_lc_func_mode_set(mode);
+   res = lte_lc_func_mode_set(mode);
+   modem_at_unlock();
    if (off) {
       k_work_cancel_delayable(&modem_at_logging_switching_off_work);
    }
@@ -297,7 +302,12 @@ int modem_at_push_off(bool force)
 
 int modem_at_restore(void)
 {
-   int res = -EINVAL;
+   int res = modem_at_lock(K_FOREVER);
+   if (res) {
+      LOG_INF("Modem busy");
+      return res;
+   }
+   res = -EINVAL;
    atomic_val_t previous = atomic_get(&previous_mode);
    if (-1 < previous && atomic_cas(&previous_mode, previous, -1)) {
       if (previous != LTE_LC_FUNC_MODE_POWER_OFF) {
@@ -306,6 +316,7 @@ int modem_at_restore(void)
          res = 0;
       }
    }
+   modem_at_unlock();
    return res;
 }
 
@@ -318,9 +329,16 @@ int modem_at_set_offline(void)
 
 int modem_at_set_normal(void)
 {
+   int res = modem_at_lock(K_FOREVER);
+   if (res) {
+      LOG_INF("Modem busy");
+      return res;
+   }
    LOG_INF("modem at normal");
    watchdog_feed();
-   return lte_lc_normal();
+   res = lte_lc_normal();
+   modem_at_unlock();
+   return res;
 }
 
 int modem_at_set_lte_offline(void)
