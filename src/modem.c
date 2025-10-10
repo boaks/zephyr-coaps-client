@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
- 
+
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
@@ -200,11 +200,9 @@ static void modem_read_coverage_enhancement_info_work_fn(struct k_work *work)
 
 static K_WORK_DEFINE(modem_read_coverage_enhancement_info_work, modem_read_coverage_enhancement_info_work_fn);
 
-static void modem_off_restore_work_fn(struct k_work *work);
 static void modem_state_change_callback_work_fn(struct k_work *work);
 static void modem_ready_work_fn(struct k_work *work);
 
-static K_WORK_DEFINE(modem_off_restore_work, modem_off_restore_work_fn);
 static K_WORK_DEFINE(modem_on_callback_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_off_callback_work, modem_state_change_callback_work_fn);
 static K_WORK_DEFINE(modem_registered_callback_work, modem_state_change_callback_work_fn);
@@ -548,7 +546,7 @@ static void lte_connection_status(void)
       ui_led_op(LED_READY, ready ? LED_SET : LED_CLEAR);
       if (ready) {
          ui_led_op(LED_SEARCH, LED_CLEAR);
-         work_submit_to_io_queue(&modem_read_network_info_work);
+         work_submit_to_cmd_queue(&modem_read_network_info_work);
          work_submit_to_io_queue(&modem_ready_callback_work);
          work_reschedule_for_io_queue(&modem_ready_work, K_MSEC(1000));
          LOG_INF("Modem ready.");
@@ -568,7 +566,9 @@ static void lte_connection_status(void)
       }
    }
    if (connected && !atomic_test_and_set_bit(&modem_states, MODEM_CONNECTED)) {
-      work_submit_to_io_queue(&modem_read_coverage_enhancement_info_work);
+      if (modem_at_is_on()) {
+         work_submit_to_cmd_queue(&modem_read_coverage_enhancement_info_work);
+      }
       work_submit_to_io_queue(&modem_connected_callback_work);
    }
 }
@@ -682,7 +682,7 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
    }
    if (search) {
       lte_start_search();
-      work_submit_to_io_queue(&modem_read_sim_work);
+      work_submit_to_cmd_queue(&modem_read_sim_work);
    } else {
       lte_end_search();
    }
@@ -1233,28 +1233,6 @@ static void modem_sms_callback(struct sms_data *const data, void *context)
 }
 #endif
 
-static void modem_off_restore_work_fn(struct k_work *work)
-{
-   LOG_DBG("modem: restore on +CFUN=0");
-#ifdef CONFIG_AS_RAI_ON
-   if (atomic_test_bit(&modem_states, MODEM_FIRMWARE_2)) {
-      // Release Assistance Indication
-      // enable with notifications for mfw 2.x.y
-      LOG_INF("Restore RAI 2 ...");
-      int err = modem_at_cmd(NULL, 0, "%RAI: ", "AT%RAI=2");
-      if (err < 0) {
-         LOG_WRN("Failed to restore RAI 2, err %d (%s)", err, strerror(-err));
-      } else {
-         LOG_INF("Restored RAI 2");
-      }
-   }
-#endif /* CONFIG_AS_RAI_ON */
-#ifdef CONFIG_PDN
-   modem_apply_apn();
-#endif
-   LOG_DBG("modem: restore ready.");
-}
-
 NRF_MODEM_LIB_ON_CFUN(modem_on_cfun_hook, modem_on_cfun, NULL);
 
 static void modem_on_cfun(int mode, void *ctx)
@@ -1285,12 +1263,24 @@ static void modem_on_cfun(int mode, void *ctx)
    }
    if (LTE_LC_FUNC_MODE_POWER_OFF == mode || LTE_LC_FUNC_MODE_OFFLINE == mode || LTE_LC_FUNC_MODE_DEACTIVATE_LTE == mode || LTE_LC_FUNC_MODE_ACTIVATE_UICC == mode) {
       if (atomic_test_and_clear_bit(&modem_states, MODEM_ON_OFF)) {
+#ifdef CONFIG_AS_RAI_ON
+         if (atomic_test_bit(&modem_states, MODEM_FIRMWARE_2)) {
+            // Release Assistance Indication
+            // enable with notifications for mfw 2.x.y
+            LOG_INF("Restore RAI 2 ...");
+            int err = modem_at_cmd(NULL, 0, "%RAI: ", "AT%RAI=2");
+            if (err < 0) {
+               LOG_WRN("Failed to restore RAI 2, err %d (%s)", err, strerror(-err));
+            } else {
+               LOG_INF("Restored RAI 2");
+            }
+         }
+#endif /* CONFIG_AS_RAI_ON */
+#ifdef CONFIG_PDN
+         modem_apply_apn();
+#endif
          work_submit_to_io_queue(&modem_off_callback_work);
       }
-   }
-
-   if (mode == LTE_LC_FUNC_MODE_POWER_OFF) {
-      work_submit_to_cmd_queue(&modem_off_restore_work);
    }
    LOG_DBG("modem: +CFUN=%d ready.", mode);
 }
