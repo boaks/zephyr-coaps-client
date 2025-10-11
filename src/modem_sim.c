@@ -1058,7 +1058,7 @@ static int modem_cmd_imsi_sel(const char *parameter)
                if (!force && res == 1 && 0 < select && select < 255 && 0 <= imsi) {
                   atomic_set_bit(&sim_status, SIM_STATUS_TEST_IMSI);
                   LOG_INF("SIM remember imsi %d to restore.", imsi);
-                  work_reschedule_for_io_queue(&modem_cmd_sim_reset_work, K_MINUTES(CONFIG_MODEM_SEARCH_TIMEOUT_IMSI));
+                  work_reschedule_for_cmd_queue(&modem_cmd_sim_reset_work, K_MINUTES(CONFIG_MODEM_SEARCH_TIMEOUT_IMSI));
                }
             }
          } else {
