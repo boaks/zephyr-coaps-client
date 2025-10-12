@@ -18,6 +18,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/logging/log_ctrl.h>
+#include <zephyr/spinlock.h>
 #include <zephyr/sys/__assert.h>
 #include <zephyr/sys/reboot.h>
 
@@ -67,18 +68,64 @@ const char *appl_get_version(void)
    return appl_version;
 }
 
+struct work_queue_check {
+   struct k_spinlock lock;
+   int64_t last;
+   bool pending;
+};
+
+static struct work_queue_check diagnose_work_queue_check;
+
+static void diagnose_work_queue_check_init(void)
+{
+   int64_t now = k_uptime_get();
+   K_SPINLOCK(&diagnose_work_queue_check.lock)
+   {
+      diagnose_work_queue_check.last = now;
+      diagnose_work_queue_check.pending = false;
+   }
+}
+
 static void diagnose_watchdog_feed_fn(struct k_work *work)
 {
    wdt_feed(wdt, wdt_channel_id);
+   diagnose_work_queue_check_init();
+   LOG_INF("alive check done.");
 }
 
 static K_WORK_DELAYABLE_DEFINE(diagnose_watchdog_feed_work, diagnose_watchdog_feed_fn);
 
+static void diagnose_watchdog_system_queue_fn(struct k_work *work)
+{
+   LOG_DBG("alive check sys-queue.");
+   k_work_schedule(&diagnose_watchdog_feed_work, K_MSEC(100));
+}
+
+static K_WORK_DELAYABLE_DEFINE(diagnose_watchdog_system_queue_work, diagnose_watchdog_system_queue_fn);
+
+static void diagnose_watchdog_io_queue_fn(struct k_work *work)
+{
+   LOG_DBG("alive check io-queue.");
+   work_schedule_for_io_queue(&diagnose_watchdog_system_queue_work, K_MSEC(100));
+}
+
+static K_WORK_DELAYABLE_DEFINE(diagnose_watchdog_io_queue_work, diagnose_watchdog_io_queue_fn);
+
 void watchdog_feed(void)
 {
    if (wdt && wdt_channel_id >= 0) {
-      // feed via work queue schedule => add monitoring for that queue
-      work_schedule_for_io_queue(&diagnose_watchdog_feed_work, K_MSEC(100));
+      int64_t now = k_uptime_get();
+      K_SPINLOCK(&diagnose_work_queue_check.lock)
+      {
+         int delta = (now - diagnose_work_queue_check.last) / MSEC_PER_SEC;
+         if (!diagnose_work_queue_check.pending && delta > 120) {
+            diagnose_work_queue_check.pending = true;
+            // feed via work queue schedule => add monitoring for that queue
+            LOG_DBG("alive check cmd-queue.");
+            work_schedule_for_cmd_queue(&diagnose_watchdog_io_queue_work, K_MSEC(100));
+            wdt_feed(wdt, wdt_channel_id);
+         }
+      }
    }
 }
 
@@ -556,6 +603,7 @@ static int appl_diagnose_init(void)
       }
       appl_version[i + 1] = c;
    }
+   diagnose_work_queue_check_init();
 
    return 0;
 }
