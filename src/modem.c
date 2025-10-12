@@ -200,25 +200,6 @@ static void modem_read_coverage_enhancement_info_work_fn(struct k_work *work)
 
 static K_WORK_DEFINE(modem_read_coverage_enhancement_info_work, modem_read_coverage_enhancement_info_work_fn);
 
-static void modem_state_change_callback_work_fn(struct k_work *work);
-static void modem_ready_work_fn(struct k_work *work);
-
-static K_WORK_DEFINE(modem_on_callback_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_off_callback_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_registered_callback_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_unregistered_callback_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_ready_callback_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_not_ready_callback_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_connected_callback_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_unconnected_callback_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_low_voltage_callback_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_power_management_resume_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_power_management_suspend_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_psm_active_work, modem_state_change_callback_work_fn);
-static K_WORK_DEFINE(modem_psm_inactive_work, modem_state_change_callback_work_fn);
-
-static K_WORK_DELAYABLE_DEFINE(modem_ready_work, modem_ready_work_fn);
-
 static struct k_work *modem_ready_get_next_work(void)
 {
    sys_snode_t *node = sys_slist_get(&lte_ready_list);
@@ -258,41 +239,46 @@ static void modem_ready_work_fn(struct k_work *work)
    }
 }
 
+static K_WORK_DELAYABLE_DEFINE(modem_ready_work, modem_ready_work_fn);
+
+
+struct modem_state_change_callback {
+   struct k_work work;
+   enum lte_state_type type;
+   bool active;
+};
+
 static void modem_state_change_callback_work_fn(struct k_work *work)
 {
    lte_state_change_callback_handler_t callback = lte_state_change_handler;
    if (callback) {
-      if (work == &modem_low_voltage_callback_work) {
-         callback(LTE_STATE_LOW_VOLTAGE, true);
-      } else if (work == &modem_connected_callback_work) {
-         callback(LTE_STATE_CONNECTED, true);
-      } else if (work == &modem_unconnected_callback_work) {
-         callback(LTE_STATE_CONNECTED, false);
-      } else if (work == &modem_ready_callback_work) {
-         callback(LTE_STATE_READY, true);
-      } else if (work == &modem_not_ready_callback_work) {
-         callback(LTE_STATE_READY, false);
-      } else if (work == &modem_on_callback_work) {
-         callback(LTE_STATE_ON, true);
-      } else if (work == &modem_off_callback_work) {
-         callback(LTE_STATE_ON, false);
-      } else if (work == &modem_registered_callback_work) {
-         callback(LTE_STATE_REGISTRATION, true);
-         modem_sim_network(true);
-      } else if (work == &modem_unregistered_callback_work) {
-         callback(LTE_STATE_REGISTRATION, false);
-         modem_sim_network(false);
-      } else if (work == &modem_power_management_resume_work) {
-         callback(LTE_STATE_SLEEPING, false);
-      } else if (work == &modem_power_management_suspend_work) {
-         callback(LTE_STATE_SLEEPING, true);
-      } else if (work == &modem_psm_active_work) {
-         callback(LTE_STATE_PSM_ACTIVE, true);
-      } else if (work == &modem_psm_inactive_work) {
-         callback(LTE_STATE_PSM_ACTIVE, false);
-      }
+      struct modem_state_change_callback *call = CONTAINER_OF(work, struct modem_state_change_callback, work);
+      callback(call->type, call->active);
    }
 }
+
+#define MODEM_STATE_CHANGE(WORK, E, A) \
+   struct modem_state_change_callback WORK = { \
+      .work = Z_WORK_INITIALIZER(modem_state_change_callback_work_fn), \
+      .type = E, \
+      .active = A}
+
+static MODEM_STATE_CHANGE(modem_on_callback_work, LTE_STATE_ON, true);
+static MODEM_STATE_CHANGE(modem_off_callback_work, LTE_STATE_ON, false);
+static MODEM_STATE_CHANGE(modem_registered_callback_work, LTE_STATE_REGISTRATION, true);
+static MODEM_STATE_CHANGE(modem_unregistered_callback_work, LTE_STATE_REGISTRATION, false);
+static MODEM_STATE_CHANGE(modem_ready_callback_work, LTE_STATE_READY, true);
+static MODEM_STATE_CHANGE(modem_not_ready_callback_work, LTE_STATE_READY, false);
+static MODEM_STATE_CHANGE(modem_connected_callback_work, LTE_STATE_CONNECTED, true);
+static MODEM_STATE_CHANGE(modem_unconnected_callback_work, LTE_STATE_CONNECTED, false);
+static MODEM_STATE_CHANGE(modem_power_management_resume_work, LTE_STATE_SLEEPING, false);
+static MODEM_STATE_CHANGE(modem_power_management_suspend_work, LTE_STATE_SLEEPING, true);
+static MODEM_STATE_CHANGE(modem_psm_active_work, LTE_STATE_PSM_ACTIVE, true);
+static MODEM_STATE_CHANGE(modem_psm_inactive_work, LTE_STATE_PSM_ACTIVE, false);
+static MODEM_STATE_CHANGE(modem_low_voltage_callback_work, LTE_STATE_LOW_VOLTAGE, true);
+
+#define MODEM_STATE_CHANGE_CALLBACK(CHANGE) work_submit_to_io_queue(&((CHANGE)->work))
+#define MODEM_STATE_CHANGE_CANCEL(CHANGE) k_work_cancel(&((CHANGE)->work))
 
 bool modem_set_preference(enum preference_mode mode)
 {
@@ -436,9 +422,9 @@ static void lte_set_psm_status(const struct lte_lc_psm_cfg *psm, bool notify)
    if (network_info.psm_active != (active ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF)) {
       network_info.psm_active = active ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
       if (active) {
-         work_submit_to_io_queue(&modem_psm_active_work);
+         MODEM_STATE_CHANGE_CALLBACK(&modem_psm_active_work);
       } else {
-         work_submit_to_io_queue(&modem_psm_inactive_work);
+         MODEM_STATE_CHANGE_CALLBACK(&modem_psm_inactive_work);
       }
    }
    if (notify) {
@@ -539,7 +525,7 @@ static void lte_connection_status(void)
    bool connected = ready &&
                     network_info.rrc_active == LTE_NETWORK_STATE_ON;
    if (!connected && atomic_test_and_clear_bit(&modem_states, MODEM_CONNECTED)) {
-      work_submit_to_io_queue(&modem_unconnected_callback_work);
+      MODEM_STATE_CHANGE_CALLBACK(&modem_unconnected_callback_work);
    }
    if (modem_states_changed(MODEM_READY, ready)) {
       atomic_clear_bit(&modem_states, MODEM_SIGNAL_READY);
@@ -547,12 +533,12 @@ static void lte_connection_status(void)
       if (ready) {
          ui_led_op(LED_SEARCH, LED_CLEAR);
          work_submit_to_cmd_queue(&modem_read_network_info_work);
-         work_submit_to_io_queue(&modem_ready_callback_work);
+         MODEM_STATE_CHANGE_CALLBACK(&modem_ready_callback_work);
          work_reschedule_for_io_queue(&modem_ready_work, K_MSEC(1000));
          LOG_INF("Modem ready.");
       } else {
          k_work_cancel_delayable(&modem_ready_work);
-         work_submit_to_io_queue(&modem_not_ready_callback_work);
+         MODEM_STATE_CHANGE_CALLBACK(&modem_not_ready_callback_work);
 #ifdef CONFIG_PDN
          LOG_INF("Modem not ready. con=%s/reg=%s/pdn=%s",
                  modem_get_state_type(network_info.rrc_active),
@@ -569,7 +555,7 @@ static void lte_connection_status(void)
       if (modem_at_is_on()) {
          work_submit_to_cmd_queue(&modem_read_coverage_enhancement_info_work);
       }
-      work_submit_to_io_queue(&modem_connected_callback_work);
+      MODEM_STATE_CHANGE_CALLBACK(&modem_connected_callback_work);
    }
 }
 
@@ -611,9 +597,9 @@ static void lte_network_sleeping_set(bool sleep)
    if (network_info.sleeping != (sleep ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF)) {
       network_info.sleeping = sleep ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
       if (sleep) {
-         work_submit_to_io_queue(&modem_power_management_suspend_work);
+         MODEM_STATE_CHANGE_CALLBACK(&modem_power_management_suspend_work);
       } else {
-         work_submit_to_io_queue(&modem_power_management_resume_work);
+         MODEM_STATE_CHANGE_CALLBACK(&modem_power_management_resume_work);
       }
    }
    k_mutex_unlock(&lte_mutex);
@@ -687,9 +673,9 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
       lte_end_search();
    }
    if (registered) {
-      work_submit_to_io_queue(&modem_registered_callback_work);
+      MODEM_STATE_CHANGE_CALLBACK(&modem_registered_callback_work);
    } else {
-      work_submit_to_io_queue(&modem_unregistered_callback_work);
+      MODEM_STATE_CHANGE_CALLBACK(&modem_unregistered_callback_work);
    }
    LOG_INF("Network status: %s", description);
    lte_registration_set(registered);
@@ -1075,7 +1061,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
       case LTE_LC_EVT_MODEM_EVENT:
          if (evt->modem_evt == LTE_LC_MODEM_EVT_BATTERY_LOW) {
             LOG_INF("LTE modem Battery Low!");
-            work_submit_to_io_queue(&modem_low_voltage_callback_work);
+            MODEM_STATE_CHANGE_CALLBACK(&modem_low_voltage_callback_work);
             k_mutex_lock(&lte_mutex, K_FOREVER);
             ++lte_low_voltage;
             atomic_set_bit(&modem_states, MODEM_LOW_POWER);
@@ -1257,7 +1243,7 @@ static void modem_on_cfun(int mode, void *ctx)
       }
       modem_read_network_info(NULL, true);
       if (!atomic_test_and_set_bit(&modem_states, MODEM_ON_OFF)) {
-         work_submit_to_io_queue(&modem_on_callback_work);
+         MODEM_STATE_CHANGE_CALLBACK(&modem_on_callback_work);
       }
       return;
    }
@@ -1279,7 +1265,7 @@ static void modem_on_cfun(int mode, void *ctx)
 #ifdef CONFIG_PDN
          modem_apply_apn();
 #endif
-         work_submit_to_io_queue(&modem_off_callback_work);
+         MODEM_STATE_CHANGE_CALLBACK(&modem_off_callback_work);
       }
    }
    LOG_DBG("modem: +CFUN=%d ready.", mode);
@@ -1322,19 +1308,21 @@ static void modem_cancel_all_job(void)
    k_work_cancel(&modem_read_sim_work);
    k_work_cancel(&modem_read_network_info_work);
    k_work_cancel(&modem_read_coverage_enhancement_info_work);
-   k_work_cancel(&modem_on_callback_work);
-   k_work_cancel(&modem_off_callback_work);
-   k_work_cancel(&modem_registered_callback_work);
-   k_work_cancel(&modem_unregistered_callback_work);
-   k_work_cancel(&modem_ready_callback_work);
-   k_work_cancel(&modem_not_ready_callback_work);
-   k_work_cancel(&modem_connected_callback_work);
-   k_work_cancel(&modem_unconnected_callback_work);
-   k_work_cancel(&modem_power_management_resume_work);
-   k_work_cancel(&modem_power_management_suspend_work);
-   k_work_cancel(&modem_psm_active_work);
-   k_work_cancel(&modem_psm_inactive_work);
    k_work_cancel_delayable(&modem_ready_work);
+
+   MODEM_STATE_CHANGE_CANCEL(&modem_on_callback_work);
+   MODEM_STATE_CHANGE_CANCEL(&modem_off_callback_work);
+   MODEM_STATE_CHANGE_CANCEL(&modem_registered_callback_work);
+   MODEM_STATE_CHANGE_CANCEL(&modem_unregistered_callback_work);
+   MODEM_STATE_CHANGE_CANCEL(&modem_ready_callback_work);
+   MODEM_STATE_CHANGE_CANCEL(&modem_not_ready_callback_work);
+   MODEM_STATE_CHANGE_CANCEL(&modem_connected_callback_work);
+   MODEM_STATE_CHANGE_CANCEL(&modem_unconnected_callback_work);
+   MODEM_STATE_CHANGE_CANCEL(&modem_power_management_resume_work);
+   MODEM_STATE_CHANGE_CANCEL(&modem_power_management_suspend_work);
+   MODEM_STATE_CHANGE_CANCEL(&modem_psm_active_work);
+   MODEM_STATE_CHANGE_CANCEL(&modem_psm_inactive_work);
+   MODEM_STATE_CHANGE_CANCEL(&modem_low_voltage_callback_work);
 }
 
 static void modem_init_rai(void)
