@@ -562,7 +562,7 @@ static int modem_cmd_rscan(const char *config)
          LOG_INF(">network scan waiting for result ...");
          k_sleep(K_MSEC(1000));
          if (modem_wait_scan_result(300)) {
-            res = sh_cmd_append("sendresult", K_MSEC(2000));
+            res = sh_cmd_prepend("sendresult", K_MSEC(2000));
          } else {
             res = -ETIME;
          }
