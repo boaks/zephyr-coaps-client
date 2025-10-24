@@ -948,7 +948,7 @@ static void dtls_coap_success(dtls_app_data_t *app)
 
    if (time2 >= 0) {
       retransmissions = app->retransmission;
-      if (retransmissions == 0 && time2 < 4000) {
+      if (retransmissions == 0) {
          modem_set_psm(0, K_NO_WAIT);
       }
       index = time2 / RTT_INTERVAL;
