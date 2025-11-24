@@ -57,15 +57,25 @@ static size_t terminate_at_buffer(char *line)
    return len;
 }
 
+static int modem_at_lock_internal(void)
+{
+   int err = modem_at_lock(K_FOREVER);
+   if (err) {
+      LOG_INF("Modem busy");
+   } else {
+      watchdog_feed();
+   }
+   return err;
+}
+
 int modem_at_cmd(char *buf, size_t len, const char *skip, const char *cmd)
 {
    int err;
    int at_len;
 
    LOG_DBG("%s", cmd);
-   err = modem_at_lock(K_FOREVER);
+   err = modem_at_lock_internal();
    if (err) {
-      LOG_INF("Modem busy");
       return err;
    }
    err = nrf_modem_at_cmd(lte_at_buf, sizeof(lte_at_buf) - 1, "%s", cmd);
@@ -198,45 +208,51 @@ static void modem_at_cmd_async_response_handler(const char *response)
 int modem_at_cmdf_async(modem_at_response_handler_t handler, const char *skip, const char *cmd, ...)
 {
    va_list ap;
-   int res = -EBUSY;
+   int res = k_mutex_lock(&lte_at_mutex, AT_MUTEX_TIMEOUT);
+   if (!res) {
+      if (atomic_ptr_cas(&lte_at_response_handler, NULL, handler)) {
+         lte_at_response_skip = skip;
+         va_start(ap, cmd);
+         vsnprintf(lte_at_buf, sizeof(lte_at_buf), cmd, ap);
+         va_end(ap);
 
-   k_mutex_lock(&lte_at_mutex, AT_MUTEX_TIMEOUT);
-   if (atomic_ptr_cas(&lte_at_response_handler, NULL, handler)) {
-      lte_at_response_skip = skip;
-      va_start(ap, cmd);
-      vsnprintf(lte_at_buf, sizeof(lte_at_buf), cmd, ap);
-      va_end(ap);
-
-      res = nrf_modem_at_cmd_async(modem_at_cmd_async_response_handler, "%s", lte_at_buf);
-      if (res) {
-         lte_at_response_skip = NULL;
-         atomic_ptr_clear(&lte_at_response_handler);
+         res = nrf_modem_at_cmd_async(modem_at_cmd_async_response_handler, "%s", lte_at_buf);
+         if (res) {
+            lte_at_response_skip = NULL;
+            atomic_ptr_clear(&lte_at_response_handler);
+         }
+      } else {
+         LOG_INF("Modem busy");
+         res = -EBUSY;
       }
+      k_mutex_unlock(&lte_at_mutex);
    } else {
       LOG_INF("Modem busy");
+      res = -EBUSY;
    }
-   k_mutex_unlock(&lte_at_mutex);
-
    return res;
 }
 
 int modem_at_cmd_async(modem_at_response_handler_t handler, const char *skip, const char *cmd)
 {
-   int res = -EBUSY;
-
-   k_mutex_lock(&lte_at_mutex, AT_MUTEX_TIMEOUT);
-   if (atomic_ptr_cas(&lte_at_response_handler, NULL, handler)) {
-      lte_at_response_skip = skip;
-      res = nrf_modem_at_cmd_async(modem_at_cmd_async_response_handler, "%s", cmd);
-      if (res) {
-         lte_at_response_skip = NULL;
-         atomic_ptr_clear(&lte_at_response_handler);
+   int res = k_mutex_lock(&lte_at_mutex, AT_MUTEX_TIMEOUT);
+   if (!res) {
+      if (atomic_ptr_cas(&lte_at_response_handler, NULL, handler)) {
+         lte_at_response_skip = skip;
+         res = nrf_modem_at_cmd_async(modem_at_cmd_async_response_handler, "%s", cmd);
+         if (res) {
+            lte_at_response_skip = NULL;
+            atomic_ptr_clear(&lte_at_response_handler);
+         }
+      } else {
+         LOG_INF("Modem busy");
+         res = -EBUSY;
       }
+      k_mutex_unlock(&lte_at_mutex);
    } else {
       LOG_INF("Modem busy");
+      res = -EBUSY;
    }
-   k_mutex_unlock(&lte_at_mutex);
-
    return res;
 }
 
@@ -255,14 +271,12 @@ static void modem_at_logging_switching_off_fn(struct k_work *work)
    work_reschedule_for_io_queue(&modem_at_logging_switching_off_work, K_MSEC(15000));
 }
 
-static atomic_t previous_mode = ATOMIC_INIT(-1);
 static atomic_t modem_mode = ATOMIC_INIT(-1);
 
 static int modem_at_set_func_mode(enum lte_lc_func_mode mode)
 {
-   int res = modem_at_lock(K_FOREVER);
+   int res = modem_at_lock_internal();
    if (res) {
-      LOG_INF("Modem busy");
       return res;
    }
    bool off = LTE_LC_FUNC_MODE_POWER_OFF == mode;
@@ -271,13 +285,14 @@ static int modem_at_set_func_mode(enum lte_lc_func_mode mode)
       work_reschedule_for_io_queue(&modem_at_logging_switching_off_work, K_MSEC(5000));
    }
    res = lte_lc_func_mode_set(mode);
-   modem_at_unlock();
    if (off) {
       k_work_cancel_delayable(&modem_at_logging_switching_off_work);
    }
    if (0 > res) {
+      // restore on failure
       atomic_cas(&modem_mode, mode, previous);
    }
+   modem_at_unlock();
    return res;
 }
 
@@ -287,33 +302,63 @@ bool modem_at_is_on(void)
    return LTE_LC_FUNC_MODE_NORMAL == mode || LTE_LC_FUNC_MODE_ACTIVATE_LTE == mode;
 }
 
-int modem_at_push_off(bool force)
-{
-   enum lte_lc_func_mode mode;
-   int res = lte_lc_func_mode_get(&mode);
+static int pushs_counter = 0;
+static int previous_mode = -1;
 
-   if (!res && (atomic_cas(&previous_mode, -1, mode) || force)) {
-      if (mode != LTE_LC_FUNC_MODE_POWER_OFF) {
-         res = modem_at_set_func_mode(LTE_LC_FUNC_MODE_POWER_OFF);
+int modem_at_push_off(void)
+{
+   int res = modem_at_lock_internal();
+   if (res) {
+      return res;
+   }
+
+   enum lte_lc_func_mode mode;
+   res = lte_lc_func_mode_get(&mode);
+
+   if (!res) {
+      bool push = previous_mode == -1;
+      if (push) {
+         previous_mode = mode;
+      }
+      if (push || mode == LTE_LC_FUNC_MODE_POWER_OFF) {
+         ++pushs_counter;
+         if (push && mode != LTE_LC_FUNC_MODE_POWER_OFF) {
+            res = modem_at_set_func_mode(LTE_LC_FUNC_MODE_POWER_OFF);
+            if (res && push) {
+               // free
+               previous_mode = -1;
+               --pushs_counter;
+            }
+         }
+      } else {
+         res = -EBUSY;
       }
    }
+   modem_at_unlock();
    return res;
 }
 
 int modem_at_restore(void)
 {
-   int res = modem_at_lock(K_FOREVER);
+   int res = modem_at_lock_internal();
    if (res) {
-      LOG_INF("Modem busy");
       return res;
    }
    res = -EINVAL;
-   atomic_val_t previous = atomic_get(&previous_mode);
-   if (-1 < previous && atomic_cas(&previous_mode, previous, -1)) {
-      if (previous != LTE_LC_FUNC_MODE_POWER_OFF) {
-         res = lte_lc_func_mode_set(previous);
-      } else {
-         res = 0;
+   if (pushs_counter > 0) {
+      --pushs_counter;
+      if (0 == pushs_counter && -1 != previous_mode) {
+         if (previous_mode != LTE_LC_FUNC_MODE_POWER_OFF) {
+            res = lte_lc_func_mode_set(previous_mode);
+            if (res) {
+               ++pushs_counter;
+            }
+         } else {
+            res = 0;
+         }
+         if (!res) {
+            previous_mode = -1;
+         }
       }
    }
    modem_at_unlock();
@@ -323,19 +368,16 @@ int modem_at_restore(void)
 int modem_at_set_offline(void)
 {
    LOG_INF("modem at offline");
-   watchdog_feed();
    return modem_at_set_func_mode(LTE_LC_FUNC_MODE_OFFLINE);
 }
 
 int modem_at_set_normal(void)
 {
-   int res = modem_at_lock(K_FOREVER);
+   int res = modem_at_lock_internal();
    if (res) {
-      LOG_INF("Modem busy");
       return res;
    }
    LOG_INF("modem at normal");
-   watchdog_feed();
    res = lte_lc_normal();
    modem_at_unlock();
    return res;
@@ -344,15 +386,62 @@ int modem_at_set_normal(void)
 int modem_at_set_lte_offline(void)
 {
    LOG_INF("modem at deactivate LTE");
-   watchdog_feed();
    return modem_at_set_func_mode(LTE_LC_FUNC_MODE_DEACTIVATE_LTE);
 }
 
 int modem_at_power_off(void)
 {
    LOG_INF("modem at power off");
-   watchdog_feed();
    return modem_at_set_func_mode(LTE_LC_FUNC_MODE_POWER_OFF);
+}
+
+int modem_at_system_mode_get(enum lte_lc_system_mode *mode,
+                             enum lte_lc_system_mode_preference *preference)
+{
+   int res = modem_at_lock_internal();
+   if (res) {
+      return res;
+   }
+   res = lte_lc_system_mode_get(mode, preference);
+   modem_at_unlock();
+   return res;
+}
+
+int modem_at_system_mode_set(enum lte_lc_system_mode mode,
+                                  enum lte_lc_system_mode_preference preference)
+{
+   int res = modem_at_lock_internal();
+   if (res) {
+      return res;
+   }
+   if (!modem_at_push_off()) {
+      res = lte_lc_system_mode_set(mode, preference);
+      modem_at_restore();
+   }
+   modem_at_unlock();
+   return res;
+}
+
+int modem_at_psm_req(bool enable)
+{
+   int res = modem_at_lock_internal();
+   if (res) {
+      return res;
+   }
+   res = lte_lc_psm_req(enable);
+   modem_at_unlock();
+   return res;
+}
+
+int modem_at_edrx_req(bool enable)
+{
+   int res = modem_at_lock_internal();
+   if (res) {
+      return res;
+   }
+   res = lte_lc_edrx_req(enable);
+   modem_at_unlock();
+   return res;
 }
 
 NRF_MODEM_LIB_ON_CFUN(modem_at_on_cfun_hook, modem_at_on_cfun, NULL);

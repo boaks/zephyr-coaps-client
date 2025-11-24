@@ -17,6 +17,9 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include <modem/lte_lc.h>
+
+
 typedef void (*modem_at_response_handler_t)(const char *resp);
 
 int modem_at_lock(const k_timeout_t timeout);
@@ -37,7 +40,7 @@ bool modem_at_async_pending(void);
 
 bool modem_at_is_on(void);
 
-int modem_at_push_off(bool force);
+int modem_at_push_off(void);
 
 int modem_at_restore(void);
 
@@ -48,5 +51,15 @@ int modem_at_set_lte_offline(void);
 int modem_at_set_normal(void);
 
 int modem_at_power_off(void);
+
+int modem_at_system_mode_get(enum lte_lc_system_mode *mode,
+			   enum lte_lc_system_mode_preference *preference);
+
+int modem_at_system_mode_set(enum lte_lc_system_mode mode,
+			   enum lte_lc_system_mode_preference preference);
+
+int modem_at_psm_req(bool enable);
+
+int modem_at_edrx_req(bool enable);
 
 #endif /* MODEM_AT_H */

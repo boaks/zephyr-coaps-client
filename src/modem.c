@@ -285,7 +285,7 @@ bool modem_set_preference(enum preference_mode mode)
    enum lte_lc_system_mode lte_mode;
    enum lte_lc_system_mode_preference lte_preference;
 
-   if (!lte_lc_system_mode_get(&lte_mode, &lte_preference)) {
+   if (!modem_at_system_mode_get(&lte_mode, &lte_preference)) {
       if (lte_mode == LTE_LC_SYSTEM_MODE_LTEM_NBIOT ||
           lte_mode == LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS) {
          bool nbiot_preference = false;
@@ -329,9 +329,7 @@ bool modem_set_preference(enum preference_mode mode)
             }
             if (lte_new_preference != lte_preference) {
                LOG_INF("%s LTE mode preference to %s", op, sys_mode);
-               modem_at_push_off(false);
-               lte_lc_system_mode_set(lte_mode, lte_new_preference);
-               modem_at_restore();
+               modem_at_system_mode_set(lte_mode, lte_new_preference);
             } else {
                sys_mode = nbiot_preference ? "NB-IoT" : "LTE-M";
                LOG_INF("Keep LTE mode preference %s", sys_mode);
@@ -681,12 +679,12 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
    lte_registration_set(registered);
 }
 
-static inline int lte_lc_ncell_quality(const struct lte_lc_ncell *ncell)
+static inline int lte_ncell_quality(const struct lte_lc_ncell *ncell)
 {
    return ncell->rsrp + (ncell->rsrq / 2);
 }
 
-static inline int lte_lc_cell_quality(const struct lte_lc_cell *gci_cell)
+static inline int lte_cell_quality(const struct lte_lc_cell *gci_cell)
 {
    return gci_cell->rsrp + (gci_cell->rsrq / 2);
 }
@@ -804,13 +802,13 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
       bool match_current = false;
 
       for (int index = 0; index < cells_info->gci_cells_count; ++index) {
-         quality = lte_lc_cell_quality(gci_cells);
+         quality = lte_cell_quality(gci_cells);
          if (quality > max_quality) {
             max_quality = quality;
          }
          gci_cells_sorted[index] = gci_cells;
          for (int index2 = index; index2 > 0; --index2) {
-            if (quality <= lte_lc_cell_quality(gci_cells_sorted[index2 - 1])) {
+            if (quality <= lte_cell_quality(gci_cells_sorted[index2 - 1])) {
                break;
             }
             gci_cells_sorted[index2] = gci_cells_sorted[index2 - 1];
@@ -827,7 +825,7 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
          if (match_current) {
             matched_current = index;
             // compare current cell with best quality.
-            if ((max_quality - lte_lc_cell_quality(gci_cells)) > MIN_QUALITY_DELTA) {
+            if ((max_quality - lte_cell_quality(gci_cells)) > MIN_QUALITY_DELTA) {
                ++hits;
             }
          }
@@ -861,10 +859,10 @@ static void lte_neighbor_cell_meas(const struct lte_lc_cells_info *cells_info)
          const struct lte_lc_ncell *neighbor_cells_sorted[cells_info->ncells_count];
          int w = cells_info->ncells_count > 9 ? 2 : 1;
          for (int index = 0; index < cells_info->ncells_count; ++index) {
-            int quality = lte_lc_ncell_quality(neighbor_cells);
+            int quality = lte_ncell_quality(neighbor_cells);
             neighbor_cells_sorted[index] = neighbor_cells;
             for (int index2 = index; index2 > 0; --index2) {
-               if (quality <= lte_lc_ncell_quality(neighbor_cells_sorted[index2 - 1])) {
+               if (quality <= lte_ncell_quality(neighbor_cells_sorted[index2 - 1])) {
                   break;
                }
                neighbor_cells_sorted[index2] = neighbor_cells_sorted[index2 - 1];
@@ -1291,7 +1289,7 @@ static int modem_connect(void)
             LOG_WRN("Connecting to LTE network failed, error: %d", err);
          }
       }
-      if (!err && !lte_lc_system_mode_get(&lte_mode, &lte_preference)) {
+      if (!err && !modem_at_system_mode_get(&lte_mode, &lte_preference)) {
          if (!atomic_test_and_set_bit(&modem_states, MODEM_LTE_MODE_INITIALIZED)) {
             lte_initial_mode = lte_mode;
             LOG_INF("Start %s", modem_get_system_mode_description(lte_mode, lte_preference));
@@ -1403,15 +1401,15 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
       } else if (config & 2) {
          // force NB-IoT only
          atomic_set_bit(&modem_states, MODEM_LTE_MODE_FORCE);
-         lte_lc_system_mode_set(LTE_LC_SYSTEM_MODE_NBIOT, LTE_LC_SYSTEM_MODE_PREFER_NBIOT);
+         modem_at_system_mode_set(LTE_LC_SYSTEM_MODE_NBIOT, LTE_LC_SYSTEM_MODE_PREFER_NBIOT);
       } else if (config & 1) {
          // force LTE-M only
          atomic_set_bit(&modem_states, MODEM_LTE_MODE_FORCE);
-         lte_lc_system_mode_set(LTE_LC_SYSTEM_MODE_LTEM, LTE_LC_SYSTEM_MODE_PREFER_LTEM);
+         modem_at_system_mode_set(LTE_LC_SYSTEM_MODE_LTEM, LTE_LC_SYSTEM_MODE_PREFER_LTEM);
       }
       if (atomic_test_bit(&modem_states, MODEM_LTE_MODE_INITIALIZED) &&
           !atomic_test_bit(&modem_states, MODEM_LTE_MODE_FORCE)) {
-         lte_lc_system_mode_set(lte_initial_mode, CONFIG_LTE_MODE_PREFERENCE_VALUE);
+         modem_at_system_mode_set(lte_initial_mode, CONFIG_LTE_MODE_PREFERENCE_VALUE);
       }
 
       if (atomic_test_bit(&modem_states, MODEM_FIRMWARE_2)) {
@@ -1544,7 +1542,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          }
       }
 #else
-      err = lte_lc_psm_req(false);
+      err = modem_at_psm_req(false);
       if (err) {
          LOG_WRN("Modem disable PSM failed!");
       }
@@ -1583,7 +1581,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 
 #if defined(CONFIG_LTE_LC_EDRX_MODULE)
 #ifdef CONFIG_UDP_EDRX_ENABLE
-      err = lte_lc_edrx_req(true);
+      err = modem_at_edrx_req(true);
       if (err) {
          if (err == -EFAULT) {
             LOG_WRN("Modem set eDRX failed, AT cmd failed!");
@@ -1597,7 +1595,7 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          }
       }
 #else
-      err = lte_lc_edrx_req(false);
+      err = modem_at_edrx_req(false);
       if (err) {
          LOG_WRN("Modem disable eDRX failed!");
       }
@@ -1796,7 +1794,7 @@ int modem_start(const k_timeout_t timeout, bool save)
       if (atomic_test_bit(&modem_states, MODEM_LTE_MODE_PREFERENCE)) {
          modem_sim_apply_iccid_preference();
       }
-      lte_lc_offline();
+      modem_at_set_offline();
    }
 
    ui_led_op(LED_COLOR_BLUE, LED_SET);
@@ -1835,11 +1833,11 @@ int modem_start(const k_timeout_t timeout, bool save)
             --lte_searchs;
             k_mutex_unlock(&lte_mutex);
 
-            lte_lc_power_off();
+            modem_at_power_off();
             if (current_mode != RESET_PREFERENCE) {
                modem_set_preference(current_mode);
             }
-            lte_lc_normal();
+            modem_at_set_normal();
             LOG_INF("Modem saved.");
             err = modem_wait_ready(timeout);
          } else {
@@ -2644,7 +2642,7 @@ int modem_set_psm(int16_t active_time_s, const k_timeout_t timeout)
    if (active_time_s < 0) {
       LOG_INF("PSM disable");
       atomic_clear_bit(&modem_states, MODEM_PSM_UPDATE);
-      res = lte_lc_psm_req(false);
+      res = modem_at_psm_req(false);
    } else {
       char rat[9] = "00000000";
       int mul = 2;
@@ -2667,7 +2665,7 @@ int modem_set_psm(int16_t active_time_s, const k_timeout_t timeout)
       lte_lc_psm_param_set(CONFIG_LTE_PSM_REQ_RPTAU, rat);
       LOG_INF("PSM enable, act: %d s", active_time_s * mul);
       atomic_clear_bit(&modem_states, MODEM_PSM_UPDATE);
-      res = lte_lc_psm_req(true);
+      res = modem_at_psm_req(true);
    }
    if (!res && wait) {
       lte_psm_rai_wait(timeout);

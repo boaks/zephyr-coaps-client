@@ -11,12 +11,12 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include <modem/nrf_modem_lib.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-#include <modem/nrf_modem_lib.h>
 
 #include "appl_diagnose.h"
 #include "io_job_queue.h"
@@ -162,18 +162,19 @@ static int modem_sim_write_imsi_sel(unsigned int select, bool restart, const cha
    if (res > 0) {
       atomic_set_bit(&sim_status, SIM_STATUS_SELECT_IMSI);
       if (restart) {
-         modem_at_push_off(false);
-         modem_set_psm_for_connect();
-         sh_app_set_inactive(K_SECONDS(5));
-         modem_at_restore();
-         res = modem_sim_read_imsi_sel(true, &selected);
-         if (res == 1) {
-            if (select == 0) {
-               LOG_INF("SIM %s auto select, imsi %u selected.", action, selected);
-            } else if (select == (selected & 0xff)) {
-               LOG_INF("SIM %s imsi %u gets selected.", action, select);
-            } else {
-               LOG_INF("SIM %s imsi %u not selected.", action, select);
+         if (!modem_at_push_off()) {
+            modem_set_psm_for_connect();
+            sh_app_set_inactive(K_SECONDS(5));
+            modem_at_restore();
+            res = modem_sim_read_imsi_sel(true, &selected);
+            if (res == 1) {
+               if (select == 0) {
+                  LOG_INF("SIM %s auto select, imsi %u selected.", action, selected);
+               } else if (select == (selected & 0xff)) {
+                  LOG_INF("SIM %s imsi %u gets selected.", action, select);
+               } else {
+                  LOG_INF("SIM %s imsi %u not selected.", action, select);
+               }
             }
          }
       } else {
