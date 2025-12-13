@@ -1166,7 +1166,7 @@ static void modem_apply_apn(void)
 {
    char apn[MODEM_APN_SIZE];
    if (appl_settings_get_apn(apn, sizeof(apn))) {
-      int err = pdn_ctx_configure(0, apn, PDN_FAM_IPV4, NULL);
+      int err = pdn_ctx_configure(0, apn, CONFIG_PDN_DEFAULT_FAM, NULL);
       if (err) {
          LOG_WRN("Failed to set PDN '%s': %d (%s)", apn, err, strerror(err));
       }
@@ -2344,27 +2344,7 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
       }
    }
 
-   result = modem_at_cmd(buf, sizeof(buf), "+CGDCONT: ", "AT+CGDCONT?");
-   if (result > 0) {
-      // CGDCONT: 0,"IP","iot.1nce.net","10.223.63.3",0,0
-      LOG_INF("CGDCONT: %s", buf);
-      // skip 1 parameter "...", find start of 3th parameter.
-      cur = parse_next_chars(buf, ',', 2);
-      // apn
-      cur = parse_next_qtext(cur, '"', temp.apn, sizeof(temp.apn));
-      if (*cur == ',') {
-         ++cur;
-         // copy ip
-         cur = parse_next_qtext(cur, '"', temp.local_ip, sizeof(temp.local_ip));
-         // ipv4/ipv6
-         t = strchr(temp.local_ip, ' ');
-         if (t) {
-            // truncate to ipv4
-            *t = 0;
-         }
-         temp.pdn_active = temp.local_ip[0] ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
-      }
-   }
+   modem_read_pdn_info(&temp);
 
    result = modem_at_cmd(buf, sizeof(buf), "%APNRATECTRL: ", "AT%APNRATECTRL=1");
    if (result > 0) {
@@ -2405,6 +2385,66 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
       *info = temp;
    }
    return 0;
+}
+
+int modem_read_pdn_info(struct lte_network_info *info)
+{
+   // more than MODEM_IP_ADDR_SIZE + MODEM_IP6_ADDR_SIZE
+   char buf[100];
+   struct lte_network_info temp;
+
+   temp.pdn_active = LTE_NETWORK_STATE_INIT;
+   memset(temp.apn, 0, sizeof(temp.apn));
+   memset(temp.local_ip, 0, sizeof(temp.local_ip));
+   memset(temp.local_ip6, 0, sizeof(temp.local_ip6));
+
+   int result = modem_at_cmd(buf, sizeof(buf), "+CGDCONT: ", "AT+CGDCONT?");
+   if (result > 0) {
+      const char *cur = buf;
+      char *t = NULL;
+
+      // CGDCONT: 0,"IP","iot.1nce.net","10.223.63.3 2A01:059D:C900:ED31:0001:0002:FB94:B6C8",0,0
+      LOG_INF("CGDCONT: %s", buf);
+      // skip 2 parameter, find start of 3th parameter.
+      cur = parse_next_chars(buf, ',', 2);
+      // apn
+      cur = parse_next_qtext(cur, '"', temp.apn, sizeof(temp.apn));
+      if (*cur == ',') {
+         ++cur;
+         // copy ip, reuse buffer
+         cur = parse_next_qtext(cur, '"', buf, sizeof(buf));
+         t = strchr(buf, ' ');
+         if (t) {
+            // ipv4/ipv6
+            size_t len = MIN(t - buf, sizeof(temp.local_ip) - 1);
+            strncpy(temp.local_ip, buf, len);
+            strncpy(temp.local_ip6, t + 1, sizeof(temp.local_ip6) - 1);
+            temp.pdn_active = temp.local_ip[0] ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
+         } else if (strchr(buf, ':')) {
+            // ipv6
+            strncpy(temp.local_ip6, buf, sizeof(temp.local_ip6) - 1);
+            temp.pdn_active = temp.local_ip6[0] ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
+         } else {
+            // ipv4
+            strncpy(temp.local_ip, buf, sizeof(temp.local_ip) - 1);
+            temp.pdn_active = temp.local_ip[0] ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
+         }
+         k_mutex_lock(&lte_mutex, K_FOREVER);
+         network_info.pdn_active = temp.pdn_active;
+         memcpy(network_info.apn, temp.apn, sizeof(temp.apn));
+         memcpy(network_info.local_ip, temp.local_ip, sizeof(temp.local_ip));
+         memcpy(network_info.local_ip6, temp.local_ip6, sizeof(temp.local_ip6));
+         k_mutex_unlock(&lte_mutex);
+         if (info) {
+            info->pdn_active = temp.pdn_active;
+            memcpy(info->apn, temp.apn, sizeof(temp.apn));
+            memcpy(info->local_ip, temp.local_ip, sizeof(temp.local_ip));
+            memcpy(info->local_ip6, temp.local_ip6, sizeof(temp.local_ip6));
+         }
+      }
+   }
+
+   return result;
 }
 
 int modem_read_statistic(struct lte_network_statistic *statistic)

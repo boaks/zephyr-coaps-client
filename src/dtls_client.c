@@ -358,8 +358,7 @@ static int dtls_low_voltage(const k_timeout_t timeout)
    const int64_t start_time_low_voltage = k_uptime_get();
    int64_t timeout_ms = k_ticks_to_ms_floor64(timeout.ticks);
 
-   while (!atomic_test_bit(&general_states, TRIGGER_DURATION)
-            && atomic_test_bit(&general_states, LTE_LOW_VOLTAGE)) {
+   while (!atomic_test_bit(&general_states, TRIGGER_DURATION) && atomic_test_bit(&general_states, LTE_LOW_VOLTAGE)) {
       uint16_t battery_voltage = 0; // = 0 for raw voltage!
       power_manager_status_t battery_status = POWER_UNKNOWN;
 
@@ -397,8 +396,16 @@ int get_local_address(uint8_t *buf, size_t length)
 
    rc = modem_get_network_info(&info);
    if (!rc && buf && length) {
-      rc = snprintf(buf, length, "%s:%u", info.local_ip, app_data_context.port);
-      dtls_info("dtls: recv. address: %s", buf);
+      if (strstart(info.local_ip6, "0000:0000:0000:0000:", false)) {
+         modem_read_pdn_info(&info);
+      }
+      if (app_data_context.destination.addr.sa.sa_family == AF_INET) {
+         rc = snprintf(buf, length, "%s:%u", info.local_ip, app_data_context.port);
+         dtls_info("dtls: recv. address: %s", buf);
+      } else if (app_data_context.destination.addr.sa.sa_family == AF_INET6) {
+         rc = snprintf(buf, length, "[%s]:%u", info.local_ip6, app_data_context.port);
+         dtls_info("dtls: recv. address: %s", buf);
+      }
    }
 #endif /* CONFIG_UDP_WAKEUP_PORT == 0 */
 #else  /* CONFIG_UDP_WAKEUP_ENABLE */
@@ -595,7 +602,9 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
    }
    modem_set_psm_for_connect();
 
-   app->fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+   int ai_family = app->destination.addr.sa.sa_family;
+
+   app->fd = socket(ai_family, SOCK_DGRAM, IPPROTO_UDP);
    if (app->fd < 0) {
       dtls_warn("> %s, reopen UDP socket failed, %d, errno %d (%s), restart",
                 loc, app->fd, errno, strerror(errno));
@@ -610,7 +619,7 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
 
 #ifdef CONFIG_UDP_USE_CONNECT
    // using SO_RAI_NO_DATA requires a destination, for what ever
-   rc = connect(app->fd, (struct sockaddr *)&app->destination.addr.sin, sizeof(struct sockaddr_in));
+   rc = connect(app->fd, &app->destination.addr.sa, app->destination.size);
    if (rc) {
       dtls_warn("> %s, connect socket failed, errno %d (%s)",
                 loc, errno, strerror(errno));
@@ -620,7 +629,7 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
    dtls_info("> %s, reopened socket.", loc);
 
 #if defined(CONFIG_UDP_WAKEUP_ENABLE) && (CONFIG_UDP_WAKEUP_PORT != 0)
-   app->fd2 = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+   app->fd2 = socket(ai_family, SOCK_DGRAM, IPPROTO_UDP);
    if (app->fd2 < 0) {
       dtls_warn("> %s, reopen UDP wakeup socket failed, %d, errno %d (%s), restart",
                 loc, app->fd2, errno, strerror(errno));
@@ -636,7 +645,7 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
                    loc, errno, strerror(errno));
       }
 
-      listen_addr.sin_family = AF_INET;
+      listen_addr.sin_family = ai_family;
       listen_addr.sin_port = htons(app->port);
       listen_addr.sin_addr.s_addr = INADDR_ANY;
 
@@ -1556,8 +1565,7 @@ static void dtls_lte_state_handler(enum lte_state_type type, bool active)
       } else {
          atomic_and(&general_states, ~(BIT(LTE_READY) | BIT(LTE_READY_1S) | BIT(LTE_CONNECTED)));
          led_op_t op = LED_SET;
-         if (lte_power_off || atomic_test_bit(&general_states, LTE_SLEEPING) 
-            || atomic_test_bit(&general_states, LTE_LOW_VOLTAGE)) {
+         if (lte_power_off || atomic_test_bit(&general_states, LTE_SLEEPING) || atomic_test_bit(&general_states, LTE_LOW_VOLTAGE)) {
             op = LED_CLEAR;
          } else {
             trigger_search = EVENT_SEARCH;
@@ -2416,11 +2424,13 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
 static void dump_destination(const dtls_app_data_t *app)
 {
    char value[MAX_SETTINGS_VALUE_LENGTH];
-   char ipv4_addr[NET_IPV4_ADDR_LEN] = {0};
+   char ip_addr[INET6_ADDRSTRLEN] = {0};
    const char *scheme = "";
+   const char *ip_fam = "";
+   int ai_family = app->destination.addr.sa.sa_family;
 
-   inet_ntop(AF_INET, &app->destination.addr.sin.sin_addr.s_addr, ipv4_addr,
-             sizeof(ipv4_addr));
+   inet_ntop(ai_family, &app->destination.addr.sin.sin_addr.s_addr, ip_addr, sizeof(ip_addr));
+
    switch (app->protocol) {
       case PROTOCOL_COAP_DTLS:
          scheme = "coaps ";
@@ -2429,10 +2439,19 @@ static void dump_destination(const dtls_app_data_t *app)
          scheme = "coap ";
          break;
    }
+   switch (ai_family) {
+      case AF_INET:
+         ip_fam = "IPv4";
+         break;
+      case AF_INET6:
+         ip_fam = "IPv6";
+         break;
+   }
+
    dtls_info("Destination: %s'%s'", scheme, app->host);
    if (app->destination.size) {
-      if (strcmp(app->host, ipv4_addr)) {
-         dtls_info("IPv4 Address found %s", ipv4_addr);
+      if (strcmp(app->host, ip_addr)) {
+         dtls_info("%s Address found %s", ip_fam, ip_addr);
       }
    } else {
       dtls_info("DNS lookup pending ...");
@@ -2456,12 +2475,15 @@ static int init_destination(dtls_app_data_t *app)
       int count = 0;
       struct addrinfo *result = NULL;
       struct addrinfo hints = {
-          .ai_family = AF_INET,
-          .ai_socktype = SOCK_DGRAM};
+          .ai_family = AF_UNSPEC,
+          .ai_socktype = SOCK_DGRAM,
+          .ai_protocol = IPPROTO_UDP};
+      char port[6] = {0};
 
       dtls_info("DNS lookup: %s", app->host);
       watchdog_feed();
-      rc = getaddrinfo(app->host, NULL, &hints, &result);
+      snprintf(port, sizeof(port), "%u", appl_settings_get_destination_port(app->protocol == PROTOCOL_COAP_DTLS));
+      rc = getaddrinfo(app->host, port, &hints, &result);
       while (rc == -EAGAIN && count < 10) {
          k_sleep(K_MSEC(1000));
          ++count;
@@ -2474,16 +2496,25 @@ static int init_destination(dtls_app_data_t *app)
          dtls_warn("ERROR: Address not found");
          rc = -ENOENT;
       } else {
+         socklen_t len = result->ai_addrlen;
+         app->destination.size = len;
+         uint8_t *tail = (uint8_t *)result->ai_addr;
+         if (result->ai_family == AF_INET6 && len == 24) {
+            if (tail[21] || tail[22] || tail[23]) {
+               // AF_INET6 seems to have garbage at the last 3 bytes. Leave them 0.
+               k_sleep(K_MSEC(200));
+               LOG_HEXDUMP_WRN(tail + 21, 3, "IPv6 tail (garbage)");
+               len -= 3;
+            }
+         }
+         memmove(&app->destination.addr, result->ai_addr, len);
          /* Free the address. */
-         app->destination.addr.sin = *((struct sockaddr_in *)result->ai_addr);
          freeaddrinfo(result);
       }
    }
    if (rc) {
       return rc;
    }
-   app->destination.addr.sin.sin_port = htons(appl_settings_get_destination_port(app->protocol == PROTOCOL_COAP_DTLS));
-   app->destination.size = sizeof(struct sockaddr_in);
    dump_destination(app);
    return 0;
 }

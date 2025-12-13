@@ -503,8 +503,19 @@ int coap_appl_client_prepare_net_info(char *buf, size_t len, int flags)
             buf[index++] = '\n';
          }
          start = index;
-         index += snprintf(buf + index, len - index, "PDN: %s,%s",
-                           params.network_info.apn, params.network_info.local_ip);
+         if (strstart(params.network_info.local_ip6, "0000:0000:0000:0000:", false)) {
+            modem_read_pdn_info(&params.network_info);
+         }
+         if (params.network_info.local_ip[0] && params.network_info.local_ip6[0]) {
+            index += snprintf(buf + index, len - index, "PDN: %s,%s,%s",
+                              params.network_info.apn, params.network_info.local_ip, params.network_info.local_ip6);
+         } else if (params.network_info.local_ip[0]) {
+            index += snprintf(buf + index, len - index, "PDN: %s,%s",
+                              params.network_info.apn, params.network_info.local_ip);
+         } else if (params.network_info.local_ip6[0]) {
+            index += snprintf(buf + index, len - index, "PDN: %s,%s",
+                              params.network_info.apn, params.network_info.local_ip6);
+         }
          if (params.network_info.rate_limit) {
             if (params.network_info.rate_limit_time) {
                index += snprintf(buf + index, len - index, ",rate-limit %u exceeded,%u s left",

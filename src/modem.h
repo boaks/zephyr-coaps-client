@@ -24,6 +24,8 @@
 #define MODEM_ID_SIZE 24
 #define MODEM_PLMN_SIZE 7
 #define MODEM_APN_SIZE 32
+#define MODEM_IP_ADDR_SIZE 16
+#define MODEM_IP6_ADDR_SIZE 46
 
 typedef struct lte_modem_info {
    char version[MODEM_ID_SIZE];
@@ -78,7 +80,8 @@ typedef struct lte_network_info {
    uint32_t cell;
    uint32_t earfcn;
    char apn[MODEM_APN_SIZE];
-   char local_ip[16];
+   char local_ip[MODEM_IP_ADDR_SIZE];
+   char local_ip6[MODEM_IP6_ADDR_SIZE];
 } lte_network_info_t;
 
 #define INVALID_SIGNAL_VALUE 0x7fff
@@ -198,6 +201,8 @@ void modem_set_transmission_time(void);
 void modem_set_scan_time(void);
 
 int modem_read_network_info(struct lte_network_info* info, bool callbacks);
+
+int modem_read_pdn_info(struct lte_network_info *info);
 
 int modem_read_statistic(struct lte_network_statistic* statistic);
 
