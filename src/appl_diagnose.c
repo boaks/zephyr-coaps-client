@@ -57,6 +57,7 @@ static atomic_t diagnose_flags = ATOMIC_INIT(0);
 
 static const struct device *const wdt = DEVICE_DT_GET_OR_NULL(DT_ALIAS(watchdog0));
 static int wdt_channel_id = -1;
+static int wdt_queue_channel_id = -1;
 
 static volatile uint32_t reset_cause = 0;
 static volatile int32_t reset_error = 0;
@@ -68,27 +69,20 @@ const char *appl_get_version(void)
    return appl_version;
 }
 
-struct work_queue_check {
-   struct k_spinlock lock;
-   int64_t last;
-   bool pending;
-};
+static void diagnose_watchdog_io_queue_fn(struct k_work *work);
 
-static struct work_queue_check diagnose_work_queue_check;
+static K_WORK_DELAYABLE_DEFINE(diagnose_watchdog_io_queue_work, diagnose_watchdog_io_queue_fn);
 
 static void diagnose_work_queue_check_init(void)
 {
-   int64_t now = k_uptime_get();
-   K_SPINLOCK(&diagnose_work_queue_check.lock)
-   {
-      diagnose_work_queue_check.last = now;
-      diagnose_work_queue_check.pending = false;
+   if (wdt && wdt_queue_channel_id >= 0) {
+      work_schedule_for_cmd_queue(&diagnose_watchdog_io_queue_work, K_SECONDS(WATCHDOG_TIMEOUT_S / 2));
    }
 }
 
 static void diagnose_watchdog_feed_fn(struct k_work *work)
 {
-   wdt_feed(wdt, wdt_channel_id);
+   wdt_feed(wdt, wdt_queue_channel_id);
    diagnose_work_queue_check_init();
    LOG_INF("alive check done.");
 }
@@ -109,23 +103,10 @@ static void diagnose_watchdog_io_queue_fn(struct k_work *work)
    work_schedule_for_io_queue(&diagnose_watchdog_system_queue_work, K_MSEC(100));
 }
 
-static K_WORK_DELAYABLE_DEFINE(diagnose_watchdog_io_queue_work, diagnose_watchdog_io_queue_fn);
-
 void watchdog_feed(void)
 {
    if (wdt && wdt_channel_id >= 0) {
-      int64_t now = k_uptime_get();
-      K_SPINLOCK(&diagnose_work_queue_check.lock)
-      {
-         int delta = (now - diagnose_work_queue_check.last) / MSEC_PER_SEC;
-         if (!diagnose_work_queue_check.pending && delta > 120) {
-            diagnose_work_queue_check.pending = true;
-            // feed via work queue schedule => add monitoring for that queue
-            LOG_DBG("alive check cmd-queue.");
-            work_schedule_for_cmd_queue(&diagnose_watchdog_io_queue_work, K_MSEC(100));
-            wdt_feed(wdt, wdt_channel_id);
-         }
-      }
+      wdt_feed(wdt, wdt_channel_id);
    }
 }
 
@@ -534,7 +515,7 @@ static int appl_watchdog_init(void)
 
        .window.min = 0,
        /* Expire watchdog after max. window, +10s extra */
-       .window.max = (WATCHDOG_TIMEOUT_S + 10) * MSEC_PER_SEC,
+       .window.max = ((WATCHDOG_TIMEOUT_S) + 10) * MSEC_PER_SEC,
    };
 
    if (!wdt) {
@@ -553,6 +534,13 @@ static int appl_watchdog_init(void)
       return err;
    }
    wdt_channel_id = err;
+
+   err = wdt_install_timeout(wdt, &wdt_config);
+   if (err < 0) {
+      LOG_INF("Queue Watchdog install error %d, %s\n", err, strerror(errno));
+      return err;
+   }
+   wdt_queue_channel_id = err;
 
    err = wdt_setup(wdt, WDT_OPT_PAUSE_HALTED_BY_DBG);
    if (err < 0) {
