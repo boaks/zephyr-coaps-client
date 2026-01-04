@@ -1240,7 +1240,7 @@ int power_manager_init(void)
 #endif
 
    pm_init = true;
-   rc = power_manager_voltage(NULL);
+   rc = power_manager_voltage(NULL, NULL);
    if (rc) {
       LOG_WRN("Read battery voltage failed %d (%s).", rc, strerror(-rc));
       pm_init = rc == -ESTALE;
@@ -1372,12 +1372,14 @@ int power_manager_pulse(k_timeout_t time)
    return res;
 }
 
-int power_manager_voltage(uint16_t *voltage)
+int power_manager_voltage(uint16_t *voltage, power_manager_status_t *status)
 {
    int rc = -ENOTSUP;
 
    if (pm_init) {
       bool charger = false;
+      bool raw = voltage && *voltage == 0;
+      power_manager_status_t internal_status = POWER_UNKNOWN;
       uint16_t internal_voltage = PM_INVALID_VOLTAGE;
       uint16_t charger_voltage = PM_INVALID_VOLTAGE;
       int64_t now = k_uptime_get();
@@ -1385,9 +1387,8 @@ int power_manager_voltage(uint16_t *voltage)
 
 #ifdef CONFIG_ADP536X_POWER_MANAGEMENT
       {
-         power_manager_status_t status = POWER_UNKNOWN;
-         adp536x_power_manager_read_status(&status);
-         if (FROM_BATTERY != status) {
+         adp536x_power_manager_read_status(&internal_status);
+         if (FROM_BATTERY != internal_status) {
             rc = adp536x_power_manager_voltage(&charger_voltage);
             if (!rc) {
                LOG_INF("ADP536X %u mV", charger_voltage);
@@ -1397,9 +1398,8 @@ int power_manager_voltage(uint16_t *voltage)
       }
 #elif CONFIG_NPM1300_CHARGER
       {
-         power_manager_status_t status = POWER_UNKNOWN;
-         rc = npm1300_power_manager_read_status(&status, &charger_voltage, NULL, 0);
-         if (rc >= 0 && FROM_BATTERY != status && FROM_EXTERNAL != status) {
+         rc = npm1300_power_manager_read_status(&internal_status, &charger_voltage, NULL, 0);
+         if (rc >= 0 && FROM_BATTERY != internal_status && FROM_EXTERNAL != internal_status) {
             LOG_INF("NPM1300 %u mV", charger_voltage);
             charger = true;
          }
@@ -1407,7 +1407,7 @@ int power_manager_voltage(uint16_t *voltage)
 #endif
 
       k_mutex_lock(&pm_mutex, K_FOREVER);
-      if (!charger && !last_voltage_charger && last_voltage_uptime) {
+      if (!raw && !charger && !last_voltage_charger && last_voltage_uptime) {
          time = now - last_voltage_uptime;
       }
       internal_voltage = last_voltage;
@@ -1452,7 +1452,9 @@ int power_manager_voltage(uint16_t *voltage)
          if (!rc) {
             k_mutex_lock(&pm_mutex, K_FOREVER);
             if (1000 < internal_voltage) {
-               internal_voltage = calculate_linear_regresion(&now, internal_voltage);
+               if (!raw) {
+                  internal_voltage = calculate_linear_regresion(&now, internal_voltage);
+               }
                last_voltage_uptime = k_uptime_get();
                last_voltage = internal_voltage;
                last_voltage_charger = charger;
@@ -1463,8 +1465,13 @@ int power_manager_voltage(uint16_t *voltage)
             k_mutex_unlock(&pm_mutex);
          }
       }
-      if (!rc && voltage) {
-         *voltage = internal_voltage;
+      if (!rc) {
+         if (voltage) {
+            *voltage = internal_voltage;
+         }
+         if (status) {
+            *status = internal_status;
+         }
       }
    }
    return rc;
@@ -1498,22 +1505,16 @@ int power_manager_status(uint8_t *level, uint16_t *voltage, power_manager_status
 
    if (pm_init) {
       uint16_t internal_voltage = PM_INVALID_VOLTAGE;
+      power_manager_status_t internal_status = POWER_UNKNOWN;
 
       LOG_DBG("Read battery monitor status ...");
 
-      rc = power_manager_voltage(&internal_voltage);
+      rc = power_manager_voltage(&internal_voltage, &internal_status);
       if (!rc) {
          int64_t now = k_uptime_get();
-         power_manager_status_t internal_status = POWER_UNKNOWN;
          int16_t days = -1;
          uint16_t internal_level = PM_INVALID_INTERNAL_LEVEL;
 
-#ifdef CONFIG_ADP536X_POWER_MANAGEMENT
-         adp536x_power_manager_read_status(&internal_status);
-#endif
-#ifdef CONFIG_NPM1300_CHARGER
-         npm1300_power_manager_read_status(&internal_status, NULL, NULL, 0);
-#endif
          internal_level = transform_curve(internal_voltage, pm_get_battery_profile()->curve);
 
          days = calculate_forecast(&now, internal_level, &internal_status);

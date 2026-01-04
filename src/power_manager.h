@@ -48,7 +48,7 @@ int power_manager_3v3(bool enable);
 
 int power_manager_1v8(bool enable);
 
-int power_manager_voltage(uint16_t *voltage);
+int power_manager_voltage(uint16_t *voltage, power_manager_status_t *status);
 
 int power_manager_voltage_ext(uint16_t *voltage);
 
