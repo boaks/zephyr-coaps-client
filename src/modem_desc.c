@@ -122,7 +122,7 @@ const char *modem_get_registration_description(enum lte_lc_nw_reg_status reg_sta
       case LTE_LC_NW_REG_REGISTRATION_DENIED:
          return "Not Registered - denied";
       case LTE_LC_NW_REG_UNKNOWN:
-         break;
+         return "Unknown";
       case LTE_LC_NW_REG_REGISTERED_ROAMING:
          return "Registered - roaming network";
       case LTE_LC_NW_REG_UICC_FAIL:
@@ -130,7 +130,7 @@ const char *modem_get_registration_description(enum lte_lc_nw_reg_status reg_sta
       default:
          break;
    }
-   return "Unknown";
+   return "Unknown?";
 }
 
 const char *modem_get_registration_short_description(enum lte_lc_nw_reg_status reg_status)

@@ -241,7 +241,6 @@ static void modem_ready_work_fn(struct k_work *work)
 
 static K_WORK_DELAYABLE_DEFINE(modem_ready_work, modem_ready_work_fn);
 
-
 struct modem_state_change_callback {
    struct k_work work;
    enum lte_state_type type;
@@ -257,11 +256,11 @@ static void modem_state_change_callback_work_fn(struct k_work *work)
    }
 }
 
-#define MODEM_STATE_CHANGE(WORK, E, A) \
-   struct modem_state_change_callback WORK = { \
-      .work = Z_WORK_INITIALIZER(modem_state_change_callback_work_fn), \
-      .type = E, \
-      .active = A}
+#define MODEM_STATE_CHANGE(WORK, E, A)                                  \
+   struct modem_state_change_callback WORK = {                          \
+       .work = Z_WORK_INITIALIZER(modem_state_change_callback_work_fn), \
+       .type = E,                                                       \
+       .active = A}
 
 static MODEM_STATE_CHANGE(modem_on_callback_work, LTE_STATE_ON, true);
 static MODEM_STATE_CHANGE(modem_off_callback_work, LTE_STATE_ON, false);
@@ -603,6 +602,15 @@ static void lte_network_sleeping_set(bool sleep)
    k_mutex_unlock(&lte_mutex);
 }
 
+static void modem_set_low_power(void)
+{
+   MODEM_STATE_CHANGE_CALLBACK(&modem_low_voltage_callback_work);
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   ++lte_low_voltage;
+   atomic_set_bit(&modem_states, MODEM_LOW_POWER);
+   k_mutex_unlock(&lte_mutex);
+}
+
 AT_MONITOR(modem_monitor, ANY, modem_monitor_handler);
 
 static const char *IGNORE_NOTIFY[] = {"%NCELLMEAS:", NULL};
@@ -675,7 +683,7 @@ static void lte_registration(enum lte_lc_nw_reg_status reg_status)
    } else {
       MODEM_STATE_CHANGE_CALLBACK(&modem_unregistered_callback_work);
    }
-   LOG_INF("Network status: %s", description);
+   LOG_INF("Network status: %s/%d", description, reg_status);
    lte_registration_set(registered);
 }
 
@@ -1059,11 +1067,7 @@ static void lte_handler(const struct lte_lc_evt *const evt)
       case LTE_LC_EVT_MODEM_EVENT:
          if (evt->modem_evt == LTE_LC_MODEM_EVT_BATTERY_LOW) {
             LOG_INF("LTE modem Battery Low!");
-            MODEM_STATE_CHANGE_CALLBACK(&modem_low_voltage_callback_work);
-            k_mutex_lock(&lte_mutex, K_FOREVER);
-            ++lte_low_voltage;
-            atomic_set_bit(&modem_states, MODEM_LOW_POWER);
-            k_mutex_unlock(&lte_mutex);
+            modem_set_low_power();
          } else if (evt->modem_evt == LTE_LC_MODEM_EVT_OVERHEATED) {
             LOG_INF("LTE modem Overheated!");
          } else if (evt->modem_evt == LTE_LC_MODEM_EVT_RESET_LOOP) {
@@ -1771,6 +1775,7 @@ void modem_interrupt_wait(void)
 
 int modem_start(const k_timeout_t timeout, bool save)
 {
+   char buf[32];
    int err = 0;
    int64_t time;
 
@@ -1787,14 +1792,21 @@ int modem_start(const k_timeout_t timeout, bool save)
 
    modem_init_rai();
 
-   // activate UICC
-   err = modem_at_cmd(NULL, 0, NULL, "AT+CFUN=41");
+   err = modem_at_cmd(buf, sizeof(buf), "%XVBAT: ", "AT%XVBAT");
    if (err > 0) {
-      modem_sim_read_info(NULL, true);
-      if (atomic_test_bit(&modem_states, MODEM_LTE_MODE_PREFERENCE)) {
-         modem_sim_apply_iccid_preference();
+      int voltage = atoi(buf);
+      if (voltage > 3025) {
+         LOG_DBG("Modem %u mV", voltage);
+         // activate UICC, blocks on low voltage
+         err = modem_at_cmd(NULL, 0, NULL, "AT+CFUN=41");
+         if (err > 0) {
+            modem_sim_read_info(NULL, true);
+            if (atomic_test_bit(&modem_states, MODEM_LTE_MODE_PREFERENCE)) {
+               modem_sim_apply_iccid_preference();
+            }
+            modem_at_set_offline();
+         }
       }
-      modem_at_set_offline();
    }
 
    ui_led_op(LED_COLOR_BLUE, LED_SET);
