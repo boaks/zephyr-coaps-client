@@ -4,7 +4,7 @@
 
 ## Reliable - Efficient - Encrypted
 
-Version 0.14.0 - September 2025
+Version 0.16.0 - March 2026
 
 This [zephyr](https://www.zephyrproject.org/) client demonstrates to use coaps ([CoAP](https://tools.ietf.org/html/rfc7252) over [DTLS 1.2](https://tools.ietf.org/html/rfc6347)) with the [Eclipse/TinyDtls Library](https://github.com/eclipse/tinydtls). In combination with [Eclipse/Californium](https://github.com/eclipse/californium) as Cloud-Server, it enables a device to use [DTLS 1.2 Connection ID](https://tools.ietf.org/html/rfc9146), which obsolete the commonly used frequently DTLS handshakes and eliminates that expensive overhead.
 Reducing the messages exchange mostly down to two ip-messages (one request, one response), it enables your device for
@@ -42,12 +42,14 @@ For now, only [nRF9160](https://www.nordicsemi.com/products/nrf9160), [nRF9161](
 | [Nordic Semiconductor, nRF9160 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9160-DK)<br>Works "out-of-the-box" on the desk. Comes with a 8MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9160-DK/nRF9160-DK.png) |
 | [Nordic Semiconductor, nRF9151 DK](https://www.nordicsemi.com/Products/Development-hardware/nRF9151-DK)<br>Works "out-of-the-box" on the desk. Comes with a 32MB flash. The design allows to easily add custom sensors. | [<img src="https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png" width="300"/>](https://www.nordicsemi.com/-/media/Images/Products/DevKits/nRF91-Series/nRF9151-DK/get-started-nRF9151-DK/nRF9151-get-started.png) |
 
-**Note:** for all supported **EXT** boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, please consider to use them with NCS 2.9.2 or NCS 3.1.0. 
+**Note:** for all supported **EXT** boards you need to copy the board definitions in folder `extra` into the destination folders. The manufacturer of the boards already announced to offer support for NCS 2.7.0 and newer, please consider to use them with NCS 2.9.2, NCS 3.1.0 or NCS 3.2.4. 
 
 See [extras/README](./extras/README.md) for more information.
 
-The demo works with [ncs-3.1.0](https://github.com/nrfconnect/sdk-nrf/tree/v3.1.0).
-If [ncs-2.9.2](https://github.com/nrfconnect/sdk-nrf/tree/v2.9.2) or [ncs-2.6.4](https://github.com/nrfconnect/sdk-nrf/tree/v2.6.4) is required, you may use the [ncs_2_9_x](https://github.com/boaks/zephyr-coaps-client/tree/ncs_2_9_x) branch or the[ncs_2_6_x](https://github.com/boaks/zephyr-coaps-client/tree/ncs_2_6_x) branch to build the clients, but the future development will be for v3.1.0 or newer.
+The demo works with [ncs-3.2.4](https://github.com/nrfconnect/sdk-nrf/tree/v3.2.4).
+If [ncs-3.1.0](https://github.com/nrfconnect/sdk-nrf/tree/v3.1.0) or [ncs-2.9.2](https://github.com/nrfconnect/sdk-nrf/tree/v2.9.2) is required, you may use the [ncs_3_1_x](https://github.com/boaks/zephyr-coaps-client/tree/ncs_3_1_x) branch, or [ncs_2_9_x](https://github.com/boaks/zephyr-coaps-client/tree/ncs_2_9_x) branch to build the clients, but the future development will be for v3.2.4 or newer.
+
+The support for `NCS 2.6.4` is not longer maintained.
 
 Neither `NCS 2.7.0`, `NCS 2.8.0` nor `NCS 3.0.x` are supported.
 
