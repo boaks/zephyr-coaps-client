@@ -199,7 +199,7 @@ static volatile bool moved = false;
 #define MAX_DTLS_BUF 512
 static uint8_t dtls_buffer[MAX_DTLS_BUF];
 static size_t dtls_buffer_len = 0;
-static struct k_spinlock dtls_buffer_lock;
+static K_MUTEX_DEFINE(dtls_buffer_mutex);
 
 #define MAX_APPL_BUF 1600
 static uint8_t appl_buffer[MAX_APPL_BUF];
@@ -1237,16 +1237,15 @@ dtls_send_to_peer(dtls_context_t *ctx,
    int result = 0;
    dtls_app_data_t *app = dtls_get_app_data(ctx);
    if (app->dtls_flight > 1) {
-      K_SPINLOCK(&dtls_buffer_lock)
-      {
-         if (dtls_buffer_len + len > sizeof(dtls_buffer)) {
-            send_to_peer(app, dtls_buffer, dtls_buffer_len);
-            dtls_buffer_len = 0;
-         }
-         memmove(&dtls_buffer[dtls_buffer_len], data, len);
-         dtls_buffer_len += len;
-         result = len;
+      k_mutex_lock(&dtls_buffer_mutex, K_FOREVER);
+      if (dtls_buffer_len + len > sizeof(dtls_buffer)) {
+         send_to_peer(app, dtls_buffer, dtls_buffer_len);
+         dtls_buffer_len = 0;
       }
+      memmove(&dtls_buffer[dtls_buffer_len], data, len);
+      dtls_buffer_len += len;
+      result = len;
+      k_mutex_unlock(&dtls_buffer_mutex);
       if (result) {
          dtls_info("append handshake message %d bytes", len);
       }
@@ -1305,10 +1304,9 @@ dtls_handle_event(dtls_context_t *ctx, session_t *session,
          app->dtls_pending = 0;
          app->dtls_next_flight = 0;
          app->dtls_flight = 0;
-         K_SPINLOCK(&dtls_buffer_lock)
-         {
-            dtls_buffer_len = 0;
-         }
+         k_mutex_lock(&dtls_buffer_mutex, K_FOREVER);
+         dtls_buffer_len = 0;
+         k_mutex_unlock(&dtls_buffer_mutex);
          peer = dtls_get_peer(ctx, session);
          if (peer) {
             const dtls_security_parameters_t *security_params = peer->security_params[0];
@@ -1372,14 +1370,13 @@ recvfrom_peer(dtls_app_data_t *app, dtls_context_t *ctx)
       }
       result = dtls_handle_message(ctx, &session, appl_buffer, result);
       if (app->dtls_flight) {
-         K_SPINLOCK(&dtls_buffer_lock)
-         {
-            if (dtls_buffer_len) {
-               dtls_coap_set_request_state("dtls handle receive", app, SEND);
-               result = send_to_peer(app, dtls_buffer, dtls_buffer_len);
-               dtls_buffer_len = 0;
-            }
+         k_mutex_lock(&dtls_buffer_mutex, K_FOREVER);
+         if (dtls_buffer_len) {
+            dtls_coap_set_request_state("dtls handle receive", app, SEND);
+            result = send_to_peer(app, dtls_buffer, dtls_buffer_len);
+            dtls_buffer_len = 0;
          }
+         k_mutex_unlock(&dtls_buffer_mutex);
          dtls_coap_set_request_state("dtls received", app, RECEIVE);
       }
       return result;
@@ -1423,14 +1420,13 @@ sendto_peer(dtls_app_data_t *app, struct dtls_context_t *ctx)
       if (app->dtls_flight) {
          app->dtls_next_flight = 0;
          dtls_check_retransmit(ctx, NULL);
-         K_SPINLOCK(&dtls_buffer_lock)
-         {
-            if (dtls_buffer_len) {
-               dtls_coap_set_request_state("dtls resend", app, SEND);
-               result = send_to_peer(app, dtls_buffer, dtls_buffer_len);
-               dtls_buffer_len = 0;
-            }
+         k_mutex_lock(&dtls_buffer_mutex, K_FOREVER);
+         if (dtls_buffer_len) {
+            dtls_coap_set_request_state("dtls resend", app, SEND);
+            result = send_to_peer(app, dtls_buffer, dtls_buffer_len);
+            dtls_buffer_len = 0;
          }
+         k_mutex_unlock(&dtls_buffer_mutex);
       } else {
          dtls_peer_t *peer = dtls_get_peer(ctx, &app->destination);
          if (peer) {
