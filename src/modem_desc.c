@@ -31,6 +31,8 @@ const char *modem_get_system_mode_description(
          return "LTE-M/GPS";
       case LTE_LC_SYSTEM_MODE_NBIOT_GPS:
          return "NB-IoT/GPS";
+      case LTE_LC_SYSTEM_MODE_NTN_NBIOT:
+         return "NTN";
       case LTE_LC_SYSTEM_MODE_LTEM_NBIOT:
          switch (lte_preference) {
             case LTE_LC_SYSTEM_MODE_PREFER_AUTO:
@@ -78,6 +80,8 @@ const char *modem_get_system_mode_cfg(
          return "m1 (GPS)";
       case LTE_LC_SYSTEM_MODE_NBIOT_GPS:
          return "nb (GPS)";
+      case LTE_LC_SYSTEM_MODE_NTN_NBIOT:
+         return "nt";
       case LTE_LC_SYSTEM_MODE_LTEM_NBIOT:
          switch (lte_preference) {
             case LTE_LC_SYSTEM_MODE_PREFER_AUTO:
@@ -127,6 +131,8 @@ const char *modem_get_registration_description(enum lte_lc_nw_reg_status reg_sta
          return "Registered - roaming network";
       case LTE_LC_NW_REG_UICC_FAIL:
          return "Not Registered - UICC fail";
+      case LTE_LC_NW_REG_NO_SUITABLE_CELL:
+         return "Not Registered - cell fail";
       default:
          break;
    }
@@ -150,6 +156,8 @@ const char *modem_get_registration_short_description(enum lte_lc_nw_reg_status r
          return "roaming";
       case LTE_LC_NW_REG_UICC_FAIL:
          return "UICC fail";
+      case LTE_LC_NW_REG_NO_SUITABLE_CELL:
+         return "cell fail";
       default:
          break;
    }
@@ -165,9 +173,11 @@ const char *modem_get_network_mode_description(enum lte_lc_lte_mode mode)
          return "CAT-M1";
       case LTE_LC_LTE_MODE_NBIOT:
          return "NB-IoT";
+      case LTE_LC_LTE_MODE_NTN_NBIOT:
+         return "NTN";
    }
    return "Unknown";
-}
+} 
 
 const char *modem_get_rai_description(enum lte_network_rai rai)
 {

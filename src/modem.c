@@ -925,6 +925,82 @@ static void lte_rai(const struct lte_lc_rai_cfg *rai_cfg)
 
 #endif /* CONFIG_LTE_LC_RAI_MODULE */
 
+#ifdef CONFIG_LTE_LC_PDN_MODULE
+
+#include "appl_settings.h"
+
+static void lte_pdn_status_set(bool pdn_active)
+{
+   k_mutex_lock(&lte_mutex, K_FOREVER);
+   if (network_info.pdn_active != (pdn_active ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF)) {
+      network_info.pdn_active = pdn_active ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
+      lte_connection_status();
+   }
+   k_mutex_unlock(&lte_mutex);
+}
+
+static void lte_pdn(const struct lte_lc_pdn_evt* event)
+{
+
+   const char *reason_description = NULL;
+   char reason_bin[9] = "00000000";
+   if (event->type == LTE_LC_EVT_PDN_ESM_ERROR) {
+      print_bin(reason_bin, 8, event->esm_err);
+#if CONFIG_LTE_LC_PDN_ESM_STRERROR
+      reason_description = lte_lc_pdn_esm_strerror(event->esm_err);
+#endif
+   }
+
+   switch (event->type) {
+      case LTE_LC_EVT_PDN_ESM_ERROR:
+         if (reason_description) {
+            LOG_INF("PDN CID %u, error %d, 0b%s, %s", event->cid, event->esm_err, reason_bin, reason_description);
+         } else {
+            LOG_INF("PDN CID %u, error %d, 0b%s", event->cid, event->esm_err, reason_bin);
+         }
+         break;
+      case LTE_LC_EVT_PDN_ACTIVATED:
+         LOG_INF("PDN CID %u, activated", event->cid);
+         lte_pdn_status_set(true);
+         break;
+      case LTE_LC_EVT_PDN_DEACTIVATED:
+         LOG_INF("PDN CID %u, deactivated", event->cid);
+         lte_pdn_status_set(false);
+         break;
+      case LTE_LC_EVT_PDN_IPV6_UP:
+         LOG_INF("PDN CID %u, IPv6 up", event->cid);
+         break;
+      case LTE_LC_EVT_PDN_IPV6_DOWN:
+         LOG_INF("PDN CID %u, IPv6 down", event->cid);
+         break;
+      case LTE_LC_EVT_PDN_NETWORK_DETACH:
+         LOG_INF("PDN CID %u, detach", event->cid);
+         lte_pdn_status_set(false);
+         break;
+      case LTE_LC_EVT_PDN_APN_RATE_CONTROL_ON:
+         LOG_INF("PDN CID %u, rate limit reached", event->cid);
+         break;
+      case LTE_LC_EVT_PDN_APN_RATE_CONTROL_OFF:
+         LOG_INF("PDN CID %u, rate limit off", event->cid);
+         break;
+      case LTE_LC_EVT_PDN_CTX_DESTROYED:
+         LOG_INF("PDN CID %u, context destroyed", event->cid);
+         break;
+   }
+}
+
+static void modem_apply_apn(void)
+{
+   char apn[MODEM_APN_SIZE];
+   if (appl_settings_get_apn(apn, sizeof(apn))) {
+      int err = lte_lc_pdn_ctx_configure(0, apn, LTE_LC_PDN_FAM_IPV4, NULL);
+      if (err) {
+         LOG_WRN("Failed to set PDN '%s': %d (%s)", apn, err, strerror(err));
+      }
+   }
+}
+#endif /* CONFIG_LTE_LC_PDN_MODULE */
+
 static void lte_handler(const struct lte_lc_evt *const evt)
 {
    static uint8_t phase = 0;
@@ -1065,16 +1141,16 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          break;
 #endif /* CONFIG_LTE_LC_MODEM_SLEEP_MODULE */
       case LTE_LC_EVT_MODEM_EVENT:
-         if (evt->modem_evt == LTE_LC_MODEM_EVT_BATTERY_LOW) {
+         if (evt->modem_evt.type == LTE_LC_MODEM_EVT_BATTERY_LOW) {
             LOG_INF("LTE modem Battery Low!");
             modem_set_low_power();
-         } else if (evt->modem_evt == LTE_LC_MODEM_EVT_OVERHEATED) {
+         } else if (evt->modem_evt.type == LTE_LC_MODEM_EVT_OVERHEATED) {
             LOG_INF("LTE modem Overheated!");
-         } else if (evt->modem_evt == LTE_LC_MODEM_EVT_RESET_LOOP) {
+         } else if (evt->modem_evt.type == LTE_LC_MODEM_EVT_RESET_LOOP) {
             LOG_INF("LTE modem Reset Loop!");
-         } else if (evt->modem_evt == LTE_LC_MODEM_EVT_SEARCH_DONE) {
+         } else if (evt->modem_evt.type == LTE_LC_MODEM_EVT_SEARCH_DONE) {
             LOG_INF("LTE modem search done.");
-         } else if (evt->modem_evt == LTE_LC_MODEM_EVT_LIGHT_SEARCH_DONE) {
+         } else if (evt->modem_evt.type == LTE_LC_MODEM_EVT_LIGHT_SEARCH_DONE) {
             LOG_INF("LTE modem light search done.");
          }
          break;
@@ -1088,91 +1164,15 @@ static void lte_handler(const struct lte_lc_evt *const evt)
          lte_rai(&evt->rai_cfg);
          break;
 #endif /* CONFIG_LTE_LC_RAI_MODULE */
+#if defined(CONFIG_LTE_LC_PDN_MODULE)
+      case LTE_LC_EVT_PDN:
+         lte_pdn(&evt->pdn);
+         break;
+#endif /* CONFIG_LTE_LC_PDN_MODULE */
       default:
          break;
    }
 }
-
-#ifdef CONFIG_PDN
-
-#include "appl_settings.h"
-#include <modem/pdn.h>
-
-static void lte_pdn_status_set(bool pdn_active)
-{
-   k_mutex_lock(&lte_mutex, K_FOREVER);
-   if (network_info.pdn_active != (pdn_active ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF)) {
-      network_info.pdn_active = pdn_active ? LTE_NETWORK_STATE_ON : LTE_NETWORK_STATE_OFF;
-      lte_connection_status();
-   }
-   k_mutex_unlock(&lte_mutex);
-}
-
-static void pdn_handler(uint8_t cid, enum pdn_event event,
-                        int reason)
-{
-   if (appl_reboots()) {
-      return;
-   }
-
-   const char *reason_description = NULL;
-   char reason_bin[9] = "00000000";
-   if (event == PDN_EVENT_CNEC_ESM) {
-      print_bin(reason_bin, 8, reason);
-#if CONFIG_PDN_ESM_STRERROR
-      reason_description = pdn_esm_strerror(reason);
-#endif
-   }
-
-   switch (event) {
-      case PDN_EVENT_CNEC_ESM:
-         if (reason_description) {
-            LOG_INF("PDN CID %u, error %d, 0b%s, %s", cid, reason, reason_bin, reason_description);
-         } else {
-            LOG_INF("PDN CID %u, error %d, 0b%s", cid, reason, reason_bin);
-         }
-         break;
-      case PDN_EVENT_ACTIVATED:
-         LOG_INF("PDN CID %u, activated", cid);
-         lte_pdn_status_set(true);
-         break;
-      case PDN_EVENT_DEACTIVATED:
-         LOG_INF("PDN CID %u, deactivated", cid);
-         lte_pdn_status_set(false);
-         break;
-      case PDN_EVENT_IPV6_UP:
-         LOG_INF("PDN CID %u, IPv6 up", cid);
-         break;
-      case PDN_EVENT_IPV6_DOWN:
-         LOG_INF("PDN CID %u, IPv6 down", cid);
-         break;
-      case PDN_EVENT_NETWORK_DETACH:
-         LOG_INF("PDN CID %u, detach", cid);
-         lte_pdn_status_set(false);
-         break;
-      case PDN_EVENT_APN_RATE_CONTROL_ON:
-         LOG_INF("PDN CID %u, rate limit reached", cid);
-         break;
-      case PDN_EVENT_APN_RATE_CONTROL_OFF:
-         LOG_INF("PDN CID %u, rate limit off", cid);
-         break;
-      case PDN_EVENT_CTX_DESTROYED:
-         LOG_INF("PDN CID %u, context destroyed", cid);
-         break;
-   }
-}
-
-static void modem_apply_apn(void)
-{
-   char apn[MODEM_APN_SIZE];
-   if (appl_settings_get_apn(apn, sizeof(apn))) {
-      int err = pdn_ctx_configure(0, apn, CONFIG_PDN_DEFAULT_FAM, NULL);
-      if (err) {
-         LOG_WRN("Failed to set PDN '%s': %d (%s)", apn, err, strerror(err));
-      }
-   }
-}
-#endif /* CONFIG_PDN */
 
 #ifdef CONFIG_SMS
 
@@ -1264,7 +1264,7 @@ static void modem_on_cfun(int mode, void *ctx)
             }
          }
 #endif /* CONFIG_AS_RAI_ON */
-#ifdef CONFIG_PDN
+#ifdef CONFIG_LTE_LC_PDN_MODULE
          modem_apply_apn();
 #endif
          MODEM_STATE_CHANGE_CALLBACK(&modem_off_callback_work);
@@ -1652,15 +1652,14 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
          LOG_INF("SSRDA: OK");
       }
 
-#ifdef CONFIG_PDN
-      pdn_default_ctx_cb_reg(pdn_handler);
+#ifdef CONFIG_LTE_LC_PDN_MODULE
       modem_apply_apn();
 #if defined(CONFIG_PDN_LEGACY_PCO)
       LOG_INF("Legacy ePCO=0 used");
 #else  /* CONFIG_PDN_LEGACY_PCO */
       LOG_INF("ePCO=1 used");
 #endif /* CONFIG_PDN_LEGACY_PCO */
-#endif /* CONFIG_PDN */
+#endif /* CONFIG_LTE_LC_PDN_MODULE */
 
 #if NCS_VERSION_NUMBER < 0x20600
       /* deprecated with NCS 2.6.0 */

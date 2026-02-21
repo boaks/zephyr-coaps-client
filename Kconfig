@@ -1127,6 +1127,13 @@ endif
 
 source "${ZEPHYR_BASE}/subsys/logging/Kconfig.formatting"
 
+if BOARD_THINGY91X || BOARD_THINGY91
+# Seems the board definitions of NCS 3.2 for the
+# Thingy:91 and Thingy:91X are missing that.
+# Workaround for not being able to have commas in macro arguments
+DT_CHOSEN_Z_CODE_PARTITION := zephyr,code-partition
+endif
+
 menu "Zephyr Kernel"
 source "Kconfig.zephyr"
 endmenu
