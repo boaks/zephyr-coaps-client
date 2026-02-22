@@ -1786,6 +1786,10 @@ int modem_start(const k_timeout_t timeout, bool save)
    memset(&network_info, 0, sizeof(network_info));
    network_info.plmn_lock = err;
    memset(&ce_info, 0, sizeof(ce_info));
+   ce_info.rsrp = INVALID_SIGNAL_VALUE;
+   ce_info.rsrq = INVALID_SIGNAL_VALUE;
+   ce_info.cinr = INVALID_SIGNAL_VALUE;
+   ce_info.snr = INVALID_SIGNAL_VALUE;
    rai_time = -1;
    rai_network_state = LTE_NETWORK_RAI_UNKNOWN;
    k_mutex_unlock(&lte_mutex);
@@ -2120,6 +2124,7 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
    char buf[160];
    struct lte_network_info temp;
    int16_t rsrp = NONE_SIGNAL_VALUE;
+   int16_t rsrq = NONE_SIGNAL_VALUE;
    int16_t snr = NONE_SIGNAL_VALUE;
 
    long value;
@@ -2244,7 +2249,7 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
             if (value == 255) {
                rsrp = INVALID_SIGNAL_VALUE;
             } else {
-               rsrp = (int16_t)(value - 140);
+               rsrp = (int16_t)(value - 141);
             }
          }
       }
@@ -2258,7 +2263,7 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
             if (value == 127) {
                snr = INVALID_SIGNAL_VALUE;
             } else {
-               snr = (int16_t)(value - 24);
+               snr = (int16_t)(value - 25);
             }
          }
       }
@@ -2297,6 +2302,20 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
          LOG_DBG("Tau> %s", cur);
          t = &buf[tau - buf];
          n = parse_next_qtext(cur, '"', t, 9);
+      }
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         // snr
+         LOG_DBG("RSRQ> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
+            if (value == 127) {
+               rsrq = INVALID_SIGNAL_VALUE;
+            } else {
+               rsrq = (int16_t)(value - 40);
+            }
+         }
       }
    }
 
@@ -2373,6 +2392,9 @@ int modem_read_network_info(struct lte_network_info *info, bool callbacks)
    }
    if (snr != NONE_SIGNAL_VALUE) {
       ce_info.snr = snr;
+   }
+   if (rsrq != NONE_SIGNAL_VALUE) {
+      ce_info.rsrq = rsrq;
    }
    if (callbacks) {
       network_info.registered = LTE_NETWORK_STATE_INIT;
@@ -2479,21 +2501,31 @@ int modem_read_statistic(struct lte_network_statistic *statistic)
 int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
 {
    int err;
-   int err2;
-   char buf[64];
+   char buf[128];
    struct lte_ce_info temp;
 
+   memset(&temp, 0, sizeof(temp));
+   temp.ce_supported = 0;
+   temp.state = 'U';
+   temp.uplink_repetition = 0;
+   temp.downlink_repetition = 0;
+   temp.rsrp = INVALID_SIGNAL_VALUE;
+   temp.rsrq = INVALID_SIGNAL_VALUE;
+   temp.cinr = INVALID_SIGNAL_VALUE;
+   temp.snr = INVALID_SIGNAL_VALUE;
+
    if (info) {
-      info->state = 'U';
-      info->rsrp = INVALID_SIGNAL_VALUE;
-      info->cinr = INVALID_SIGNAL_VALUE;
-      info->snr = INVALID_SIGNAL_VALUE;
+      *info = temp;
    }
 
-   memset(&temp, 0, sizeof(temp));
+#ifdef CONFIG_MODEM_USE_CEINFO
+
    err = modem_at_cmd(buf, sizeof(buf), "+CEINFO: ", "AT+CEINFO?");
    if (err > 0) {
+      int err2;
       uint16_t values[3] = {0, 0, 0};
+
+      memset(&temp, 0, sizeof(temp));
       // CEINFO: 0,1,I,8,2,-97,9
       // "%hhu" is not supported
       err = sscanf(buf, " %*u,%hu,%c,%hu,%hu,%hd,%hd",
@@ -2514,14 +2546,6 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
          if (temp.cinr == 127) {
             temp.cinr = INVALID_SIGNAL_VALUE;
          }
-         if (info) {
-            info->ce_supported = values[0];
-            info->state = temp.state;
-            info->downlink_repetition = values[1];
-            info->uplink_repetition = values[2];
-            info->rsrp = temp.rsrp;
-            info->cinr = temp.cinr;
-         }
          err2 = modem_at_cmd(buf, sizeof(buf), "%XSNRSQ: ", "AT%XSNRSQ?");
          if (err2 > 0) {
             LOG_INF("XSNRSQ: %s", buf);
@@ -2537,31 +2561,283 @@ int modem_read_coverage_enhancement_info(struct lte_ce_info *info)
                }
             }
          }
-         k_mutex_lock(&lte_mutex, K_FOREVER);
-         if (err2 <= 0) {
-            temp.snr = ce_info.snr;
-         }
-         if (network_info.rrc_active != LTE_NETWORK_STATE_ON) {
-            if (temp.downlink_repetition == 0) {
-               temp.downlink_repetition = ce_info.downlink_repetition;
-            }
-            if (temp.uplink_repetition == 0) {
-               temp.uplink_repetition = ce_info.uplink_repetition;
-            }
-            if (temp.rsrp == INVALID_SIGNAL_VALUE) {
-               temp.rsrp = ce_info.rsrp;
-            }
-            if (temp.cinr == INVALID_SIGNAL_VALUE) {
-               temp.cinr = ce_info.cinr;
-            }
-            if (temp.snr == INVALID_SIGNAL_VALUE) {
-               temp.snr = ce_info.snr;
-            }
-         }
-         ce_info = temp;
-         k_mutex_unlock(&lte_mutex);
       } else {
          LOG_ERR("CEINFO: %s => %d", buf, err);
+         return err;
+      }
+#else  /* CONFIG_MODEM_USE_CEINFO */
+   const char *cur = buf;
+   const char *n = cur;
+   long value;
+   err = modem_at_cmd(buf, sizeof(buf), "%CONEVAl: ", "AT%CONEVAl");
+
+   if (err < 0) {
+      return err;
+   } else if (err == 0) {
+      return -ENODATA;
+   }
+   LOG_INF("CONEVAl: %s", buf);
+
+   // %CONEVAL: 0,0,7,30,16,31,"01CC2B00","26201",289,1300,3,0,0,18,1,8,122
+
+   n = parse_next_long(cur, 10, &value);
+
+   if (cur != n && 0 == value && *n == ',') {
+      // success
+      cur = n + 1;
+      n = parse_next_long(cur, 10, &value);
+      temp.state = 1 == value ? 'C' : 'I';
+      // skip 1 parameter
+      n = parse_next_chars(cur, ',', 2);
+      if (*n) {
+         cur = n;
+         // rsrp
+         LOG_DBG("RSRP> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
+            if (value == 255) {
+               temp.rsrp = INVALID_SIGNAL_VALUE;
+            } else {
+               temp.rsrp = (int16_t)(value - 140);
+               if (value > 0) {
+                  --temp.rsrp;
+               }
+            }
+         }
+      }
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         // rsrq
+         LOG_DBG("RSRQ> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
+            if (value == 255) {
+               temp.rsrq = INVALID_SIGNAL_VALUE;
+            } else {
+               if (value < 0) {
+                  temp.rsrq = (int16_t)(value - 39);
+               } else if (value < 34) {
+                  temp.rsrq = (int16_t)(value - 40);
+               } else {
+                  temp.rsrq = (int16_t)(value - 41);
+               }
+            }
+         }
+      }
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         // snr
+         LOG_DBG("SNR> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
+            if (value == 127) {
+               temp.snr = INVALID_SIGNAL_VALUE;
+            } else {
+               temp.snr = (int16_t)(value - 25);
+            }
+         }
+      }
+      // skip 9 parameter
+      n = parse_next_chars(cur, ',', 9);
+      if (*n) {
+         cur = n;
+         // up_repetition
+         LOG_DBG("UP.REP> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
+            temp.uplink_repetition = value;
+            temp.ce_supported = 1;
+         }
+      }
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         // down_repetition
+         LOG_DBG("DOWN.REP> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
+            temp.downlink_repetition = value;
+            temp.ce_supported = 1;
+         }
+      }
+#endif /* CONFIG_MODEM_USE_CEINFO */
+
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      if (network_info.rrc_active != LTE_NETWORK_STATE_ON) {
+         if (temp.downlink_repetition == 0) {
+            temp.downlink_repetition = ce_info.downlink_repetition;
+         }
+         if (temp.uplink_repetition == 0) {
+            temp.uplink_repetition = ce_info.uplink_repetition;
+         }
+         if (temp.rsrp == INVALID_SIGNAL_VALUE) {
+            temp.rsrp = ce_info.rsrp;
+         }
+         if (temp.rsrq == INVALID_SIGNAL_VALUE) {
+            temp.rsrq = ce_info.rsrq;
+         }
+         if (temp.cinr == INVALID_SIGNAL_VALUE) {
+            temp.cinr = ce_info.cinr;
+         }
+         if (temp.snr == INVALID_SIGNAL_VALUE) {
+            temp.snr = ce_info.snr;
+         }
+      }
+      ce_info = temp;
+      k_mutex_unlock(&lte_mutex);
+      if (info) {
+         *info = temp;
+      }
+   }
+   return err;
+}
+
+int modem_read_connection_info(struct lte_ce_info *info)
+{
+   int err;
+   char buf[128];
+   const char *cur = buf;
+   const char *n = cur;
+   long value;
+   struct lte_ce_info temp;
+
+   if (info) {
+      info->state = 'U';
+      info->uplink_repetition = 0;
+      info->downlink_repetition = 0;
+      info->rsrp = INVALID_SIGNAL_VALUE;
+      info->rsrq = INVALID_SIGNAL_VALUE;
+      info->cinr = INVALID_SIGNAL_VALUE;
+      info->snr = INVALID_SIGNAL_VALUE;
+   }
+   memset(&temp, 0, sizeof(temp));
+   temp.state = 'U';
+   temp.uplink_repetition = 0;
+   temp.downlink_repetition = 0;
+   temp.rsrp = INVALID_SIGNAL_VALUE;
+   temp.rsrq = INVALID_SIGNAL_VALUE;
+   temp.cinr = INVALID_SIGNAL_VALUE;
+   temp.snr = INVALID_SIGNAL_VALUE;
+
+   err = modem_at_cmd(buf, sizeof(buf), "%CONEVAl: ", "AT%CONEVAl");
+
+   if (err < 0) {
+      return err;
+   } else if (err == 0) {
+      return -ENODATA;
+   }
+   LOG_INF("CONEVAl: %s", buf);
+
+   // %CONEVAL: 0,0,7,30,16,31,"01CC2B00","26201",289,1300,3,0,0,18,1,8,122
+
+   n = parse_next_long(cur, 10, &value);
+
+   if (cur != n && 0 == value && *n == ',') {
+      // success
+      cur = n + 1;
+      n = parse_next_long(cur, 10, &value);
+      temp.state = 1 == value ? 'C' : 'I';
+      // skip 1 parameter
+      n = parse_next_chars(cur, ',', 2);
+      if (*n) {
+         cur = n;
+         // rsrp
+         LOG_DBG("RSRP> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
+            if (value == 255) {
+               temp.rsrp = INVALID_SIGNAL_VALUE;
+            } else {
+               temp.rsrp = (int16_t)(value - 140);
+               if (value > 0) {
+                  --temp.rsrp;
+               }
+            }
+         }
+      }
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         // rsrq
+         LOG_DBG("RSRQ> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
+            if (value == 255) {
+               temp.rsrq = INVALID_SIGNAL_VALUE;
+            } else {
+               if (value < 0) {
+                  temp.rsrq = (int16_t)(value - 39);
+               } else if (value < 34) {
+                  temp.rsrq = (int16_t)(value - 40);
+               } else {
+                  temp.rsrq = (int16_t)(value - 41);
+               }
+            }
+         }
+      }
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         // snr
+         LOG_DBG("SNR> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
+            if (value == 127) {
+               temp.snr = INVALID_SIGNAL_VALUE;
+            } else {
+               temp.snr = (int16_t)(value - 25);
+            }
+         }
+      }
+      // skip 9 parameter
+      n = parse_next_chars(cur, ',', 9);
+      if (*n) {
+         cur = n;
+         // up_repetition
+         LOG_DBG("UP.REP> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
+            temp.uplink_repetition = value;
+         }
+      }
+      if (*n == ',') {
+         // skip ,
+         cur = n + 1;
+         // down_repetition
+         LOG_DBG("DOWN.REP> %s", cur);
+         n = parse_next_long(cur, 10, &value);
+         if (cur != n) {
+            temp.downlink_repetition = value;
+         }
+      }
+
+      k_mutex_lock(&lte_mutex, K_FOREVER);
+      if (network_info.rrc_active != LTE_NETWORK_STATE_ON) {
+         if (temp.downlink_repetition == 0) {
+            temp.downlink_repetition = ce_info.downlink_repetition;
+         }
+         if (temp.uplink_repetition == 0) {
+            temp.uplink_repetition = ce_info.uplink_repetition;
+         }
+         if (temp.rsrp == INVALID_SIGNAL_VALUE) {
+            temp.rsrp = ce_info.rsrp;
+         }
+         if (temp.rsrq == INVALID_SIGNAL_VALUE) {
+            temp.rsrq = ce_info.rsrq;
+         }
+         if (temp.cinr == INVALID_SIGNAL_VALUE) {
+            temp.cinr = ce_info.cinr;
+         }
+         if (temp.snr == INVALID_SIGNAL_VALUE) {
+            temp.snr = ce_info.snr;
+         }
+      }
+      ce_info = temp;
+      k_mutex_unlock(&lte_mutex);
+      if (info) {
+         *info = temp;
       }
    }
    return err;

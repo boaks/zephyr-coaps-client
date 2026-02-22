@@ -202,14 +202,14 @@ static void at_coneval_result(const char *result)
             break;
       }
       rsrp -= 140;
-      rsrq = (rsrq - 39) / 2;
-      snr -= 24;
+      rsrq = (rsrq - 39);
+      snr -= 25;
       if (desc) {
-         LOG_INF("> eval: quality %s, rsrp %d dBm, rsrq %d dB, snr %d dB",
-                 desc, rsrp, rsrq, snr);
+         LOG_INF("> eval: quality %s, rsrp %d dBm, rsrq %d.%c dB, snr %d dB",
+                 desc, rsrp, rsrq / 2, rsrq % 2 == 0 ? '0' : '5', snr);
       } else {
-         LOG_INF("> eval: quality %d, rsrp %d dBm, rsrq %d dB, snr %d dB",
-                 quality, rsrp, rsrq, snr);
+         LOG_INF("> eval: quality %d, rsrp %d dBm, rsrq %d.%c dB, snr %d dB",
+                 quality, rsrp, rsrq / 2, rsrq % 2 == 0 ? '0' : '5', snr);
       }
    } else {
       LOG_INF("> eval parse %d", err);

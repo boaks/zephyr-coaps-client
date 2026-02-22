@@ -402,6 +402,10 @@ config MODEM_FAULT_THRESHOLD
 	help
 	   Threshold for modem faults per week to reboot the device.
 
+config MODEM_USE_CEINFO
+    bool "Use CEINFO to read repetition factors and signal strengths."
+	default n
+
 config PROTOCOL_CONFIG_SWITCH
 	bool "Enable protocol configuration switch"
 	default n

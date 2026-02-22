@@ -593,43 +593,43 @@ int coap_appl_client_prepare_net_stats(char *buf, size_t len, int flags)
 
    memset(&params, 0, sizeof(params));
    if (modem_get_coverage_enhancement_info(&params.ce_info) >= 0) {
-      if (params.ce_info.ce_supported) {
-
-         index = snprintf(buf, len, "CE:");
-         start = index;
-         if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
-            index += snprintf(buf + index, len - index, " down: %u, up: %u",
-                              params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
-         }
-         if (params.ce_info.rsrp < INVALID_SIGNAL_VALUE) {
-            if (index > start && index < len) {
-               buf[index++] = ',';
-            }
-            index += snprintf(buf + index, len - index, " RSRP: %d dBm",
-                              params.ce_info.rsrp);
-         }
-         if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
-            if (params.ce_info.cinr < INVALID_SIGNAL_VALUE) {
-               if (index > start && index < len) {
-                  buf[index++] = ',';
-               }
-               index += snprintf(buf + index, len - index, " CINR: %d dB",
-                                 params.ce_info.cinr);
-            }
-         }
-         if (params.ce_info.snr < INVALID_SIGNAL_VALUE) {
-            if (index > start && index < len) {
-               buf[index++] = ',';
-            }
-            index += snprintf(buf + index, len - index, " SNR: %d dB",
-                              params.ce_info.snr);
-         }
-         dtls_info("%s", buf);
+      start = index;
+      if (params.ce_info.ce_supported && !(flags & COAP_SEND_FLAG_MINIMAL)) {
+         index += snprintf(buf + index, len - index, "CE: down: %u, up: %u",
+                           params.ce_info.downlink_repetition, params.ce_info.uplink_repetition);
       }
+      if (params.ce_info.rsrp < INVALID_SIGNAL_VALUE) {
+         if (index > start && index < len) {
+            index += snprintf(buf + index, len - index, ", ");
+         }
+         index += snprintf(buf + index, len - index, "RSRP: %d dBm",
+                           params.ce_info.rsrp);
+      }
+      if (params.ce_info.rsrq < INVALID_SIGNAL_VALUE && !(flags & COAP_SEND_FLAG_MINIMAL)) {
+         if (index > start && index < len) {
+            buf[index++] = ',';
+         }
+         index += snprintf(buf + index, len - index, " RSRQ: %d.%c dB",
+                           params.ce_info.rsrq / 2, params.ce_info.rsrq % 2 == 0 ? '0' : '5');
+      }
+      if (params.ce_info.cinr < INVALID_SIGNAL_VALUE && !(flags & COAP_SEND_FLAG_MINIMAL)) {
+         if (index > start && index < len) {
+            index += snprintf(buf + index, len - index, ", ");
+         }
+         index += snprintf(buf + index, len - index, "CINR: %d dB",
+                           params.ce_info.cinr);
+      }
+      if (params.ce_info.snr < INVALID_SIGNAL_VALUE) {
+         if (index > start && index < len) {
+            index += snprintf(buf + index, len - index, ", ");
+         }
+         index += snprintf(buf + index, len - index, "SNR: %d dB",
+                           params.ce_info.snr);
+      }
+      dtls_info("%s", buf);
    }
 
    if (!(flags & COAP_SEND_FLAG_MINIMAL)) {
-
       memset(&params, 0, sizeof(params));
       if (modem_read_statistic(&params.network_statistic) >= 0) {
          if (index) {

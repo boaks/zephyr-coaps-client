@@ -93,6 +93,7 @@ typedef struct lte_ce_info {
    uint8_t downlink_repetition;
    uint8_t uplink_repetition;
    int16_t rsrp;
+   int16_t rsrq;
    int16_t cinr;
    int16_t snr;
 } lte_ce_info_t;
@@ -207,6 +208,8 @@ int modem_read_pdn_info(struct lte_network_info *info);
 int modem_read_statistic(struct lte_network_statistic* statistic);
 
 int modem_read_coverage_enhancement_info(struct lte_ce_info* info);
+
+int modem_read_connection_info(struct lte_ce_info* info);
 
 int modem_read_rate_limit_time(uint32_t* time);
 
