@@ -455,6 +455,10 @@ config SH_CMD
 
 if (SH_CMD) 
 
+config SH_CMD_INIT_PRIORITY
+	int "sh cmd init priority"
+	default 60
+
 config SH_CMD_TEST
     bool "Enable sh cmd support."
     depends on SH_CMD
@@ -479,24 +483,27 @@ config SH_CMD_MODEM_TRACE
 	bool
 	default NRF_MODEM_LIB_TRACE
 
+endif
 
-if (SH_CMD_UNLOCK && INIT_SETTINGS) 
-
+if (INIT_SETTINGS) 
 config SH_CMD_UNLOCK_PASSWORD
     string "Unlock cmd password."
     default "unlock"
     help
         Must be replaced by secret password!
+endif
 	   
-endif
-endif
-
 menu "Extra Functions"
 
 config UART_MANAGER
     bool "Use UART manager for sh-cmd console."
     depends on !ALL_POWER_OFF
 	default n
+
+config UART_MANAGER_INIT_PRIORITY
+	int "UART manager init priority"
+	default 60
+    depends on UART_MANAGER
 
 config UART_RX_PULLDOWN
     bool "Use pulldown for RX."
@@ -1031,7 +1038,6 @@ config USE_APPL_STORAGE
     default y if FLASH_APPL_STORAGE
     default y if EEPROM_APPL_STORAGE
     default y if NAU7802_SCALE
-
 
 # Application/HW Model
 

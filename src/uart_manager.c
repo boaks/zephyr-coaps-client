@@ -899,4 +899,4 @@ static int uart_manager_init(void)
    return err;
 }
 
-SYS_INIT(uart_manager_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+SYS_INIT(uart_manager_init, APPLICATION, CONFIG_UART_MANAGER_INIT_PRIORITY);

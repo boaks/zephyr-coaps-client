@@ -438,11 +438,6 @@ int get_send_interval(void)
    return atomic_get(&send_interval) & 0xffffff;
 }
 
-static void set_send_interval(int interval)
-{
-   atomic_set(&send_interval, interval & 0xffffff);
-}
-
 static bool set_next_send_interval(int new_interval)
 {
    long current = atomic_get(&send_interval);
@@ -2577,6 +2572,11 @@ static int sh_cmd_send_alert(const char *parameter)
    LOG_INF(">> send alert");
    dtls_cmd_trigger("alert", false, 3);
    return 0;
+}
+
+static void set_send_interval(int interval)
+{
+   atomic_set(&send_interval, interval & 0xffffff);
 }
 
 static int sh_cmd_send_interval(const char *parameter)

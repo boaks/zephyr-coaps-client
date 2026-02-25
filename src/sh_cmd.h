@@ -69,11 +69,49 @@ int sh_app_set_inactive(const k_timeout_t delay);
 
 #else
 
-#define sh_cmd_execute(cmd) 0
-#define sh_cmd_schedule(cmd, delay) 0
-#define sh_cmd_append(cmd, delay) 0;
-#define sh_busy() 0
-#define sh_protected() 0
+static inline int sh_cmd_execute(const char *cmd) {
+   (void) cmd;
+   return 0;
+}
+
+static inline int sh_cmd_schedule(const char *cmd, const k_timeout_t delay) {
+   (void) cmd;
+   (void) delay;
+   return 0;
+}
+
+static inline int sh_cmd_prepend(const char *cmd, const k_timeout_t delay) {
+   (void) cmd;
+   (void) delay;
+   return 0;
+}
+
+static inline int sh_cmd_append(const char *cmd, const k_timeout_t delay) {
+   (void) cmd;
+   (void) delay;
+   return 0;
+}
+
+static inline int sh_busy(void) {
+   return 0;
+}
+
+static inline int sh_protected(void) {
+   return 0;
+}
+
+static inline int sh_app_active(void) {
+   return 0;
+}
+
+static inline int sh_app_set_active(void) {
+   return 0;
+}
+
+static inline int sh_app_set_inactive(const k_timeout_t delay) {
+   (void) delay;
+   return 0;
+}
 
 #endif
 

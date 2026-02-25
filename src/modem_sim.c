@@ -246,33 +246,6 @@ static size_t get_plmn(const char *buf, size_t len, char *plmn)
    return 0;
 }
 
-static size_t encode_plmn(const char *buf, char *encoded_plmn, size_t len)
-{
-   int l = strspn(buf, "0123456789ABCDEF");
-
-   if ((5 == l || 6 == l) && len > 6) {
-      // according to TS 24.008 [9].
-      // For instance, using 246 for the MCC and 81 for the MNC
-      // and if this is stored in PLMN 3 the contents is as follows:
-      // Bytes 7 to 9: '42' 'F6' '18'.
-      encoded_plmn[0] = buf[1];
-      encoded_plmn[1] = buf[0];
-      encoded_plmn[3] = buf[2];
-      if (6 == l) {
-         encoded_plmn[2] = buf[3];
-         encoded_plmn[4] = buf[5];
-         encoded_plmn[5] = buf[4];
-      } else {
-         encoded_plmn[2] = 'F';
-         encoded_plmn[4] = buf[4];
-         encoded_plmn[5] = buf[3];
-      }
-      encoded_plmn[6] = 0;
-      return 6;
-   }
-   return 0;
-}
-
 static bool has_service(const char *service_table, size_t len, int service)
 {
    char digit[3];
@@ -983,6 +956,33 @@ static void modem_sim_on_cfun(int mode, void *ctx)
 }
 
 #ifdef CONFIG_SH_CMD
+
+static size_t encode_plmn(const char *buf, char *encoded_plmn, size_t len)
+{
+   int l = strspn(buf, "0123456789ABCDEF");
+
+   if ((5 == l || 6 == l) && len > 6) {
+      // according to TS 24.008 [9].
+      // For instance, using 246 for the MCC and 81 for the MNC
+      // and if this is stored in PLMN 3 the contents is as follows:
+      // Bytes 7 to 9: '42' 'F6' '18'.
+      encoded_plmn[0] = buf[1];
+      encoded_plmn[1] = buf[0];
+      encoded_plmn[3] = buf[2];
+      if (6 == l) {
+         encoded_plmn[2] = buf[3];
+         encoded_plmn[4] = buf[5];
+         encoded_plmn[5] = buf[4];
+      } else {
+         encoded_plmn[2] = 'F';
+         encoded_plmn[4] = buf[4];
+         encoded_plmn[5] = buf[3];
+      }
+      encoded_plmn[6] = 0;
+      return 6;
+   }
+   return 0;
+}
 
 static int modem_cmd_sim(const char *parameter)
 {

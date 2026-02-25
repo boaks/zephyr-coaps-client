@@ -688,4 +688,4 @@ static int sh_cmd_init(void)
    return 0;
 }
 
-SYS_INIT(sh_cmd_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+SYS_INIT(sh_cmd_init, APPLICATION, CONFIG_SH_CMD_INIT_PRIORITY);
