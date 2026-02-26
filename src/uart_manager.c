@@ -58,7 +58,7 @@ static int uart_init(void);
 
 #if defined(CONFIG_SERIAL) && DT_HAS_CHOSEN(zephyr_console) && DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_console), okay)
 static const struct device *const uart_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
-#else  /* CONFIG_SERIAL */
+#else /* CONFIG_SERIAL */
 #error "missing console uart!"
 #endif /* CONFIG_SERIAL */
 
@@ -493,16 +493,28 @@ static void uart_pause_tx_fn(struct k_work *work)
 
 static void uart_enable_rx_fn(struct k_work *work)
 {
-   int err = uart_get_lines();
+   enum pm_device_state state = PM_DEVICE_STATE_OFF;
+   bool pm_started = k_uptime_get() > 10000;
+   int result = pm_device_state_get(uart_dev, &state);
 
-   if (err == 1) {
-      pm_device_action_run(uart_dev, PM_DEVICE_ACTION_RESUME);
-      atomic_clear_bit(&uart_state, UART_SUSPENDED);
+   if (result) {
+      LOG_WRN("UART PM n.a.");
+      uart_reschedule_rx_enable(K_MSEC(CONFIG_UART_RX_CHECK_INTERVAL_MS));
+      return;
+   }
+   result = uart_get_lines();
+   LOG_DBG("UART %s%d %s", pm_started ? "" : "uptime ", result, pm_device_state_str(state));
+
+   if (result == 1) {
+      if (PM_DEVICE_STATE_ACTIVE != state && pm_started) {
+         pm_device_action_run(uart_dev, PM_DEVICE_ACTION_RESUME);
+         atomic_clear_bit(&uart_state, UART_SUSPENDED);
+      }
 #ifdef CONFIG_UART_LED
       ui_led_op(LED_UART, LED_SET);
 #endif /* CONFIG_UART_LED */
-   } else if (err == 0) {
-      if (k_uptime_get() > 10000 && !uart_tx_pending()) {
+   } else if (result == 0) {
+      if (PM_DEVICE_STATE_ACTIVE == state && pm_started && !uart_tx_pending()) {
          // early suspend seems to crash
          atomic_set_bit(&uart_state, UART_SUSPENDED);
 #ifdef CONFIG_UART_LED
@@ -516,19 +528,19 @@ static void uart_enable_rx_fn(struct k_work *work)
       ui_led_op(LED_UART, LED_BLINKING);
 #endif
    }
-   if (err == 1 || err == -ENODATA) {
-      err = uart_err_check(uart_dev);
-      if (err && err != -ENOSYS) {
-         LOG_DBG("UART async rx err %d", err);
+   if (result == 1 || result == -ENODATA) {
+      result = uart_err_check(uart_dev);
+      if (result && result != -ENOSYS) {
+         LOG_DBG("UART async rx err %d", result);
          uart_reschedule_rx_enable(K_MSEC(CONFIG_UART_RX_CHECK_INTERVAL_MS));
          return;
       }
-      err = uart_rx_enable(uart_dev, uart_rx_buf[uart_rx_buf_id], CONFIG_UART_BUFFER_LEN, 10000);
-      if (err == -EBUSY) {
+      result = uart_rx_enable(uart_dev, uart_rx_buf[uart_rx_buf_id], CONFIG_UART_BUFFER_LEN, 10000);
+      if (result == -EBUSY) {
          LOG_DBG("UART async rx already enabled.");
          return;
-      } else if (err) {
-         LOG_DBG("UART async rx not enabled! %d", err);
+      } else if (result) {
+         LOG_DBG("UART async rx not enabled! %d", result);
       } else {
          LOG_INF("UART async rx enabled.");
          return;
@@ -881,12 +893,11 @@ static int uart_init(void)
 
 static int uart_manager_init(void)
 {
-   int err;
    struct k_work_queue_config uart_cfg = {
        .name = "uart_workq",
    };
 
-   err = uart_init();
+   int err = uart_init();
 
    uart_init_lines();
 
