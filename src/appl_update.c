@@ -158,6 +158,11 @@ int appl_update_cmd(const char *config)
       if (written) {
          LOG_INF("Update %u bytes written.", written);
       }
+      if (dfu_context.flash_area->fa_dev && dfu_context.flash_area->fa_size) {
+         LOG_INF("Update area %d 0x%lx size 0x%x on %s.", dfu_context.flash_area->fa_id,
+                 dfu_context.flash_area->fa_off, dfu_context.flash_area->fa_size,
+                 dfu_context.flash_area->fa_dev->name);
+      }
       memset(&dfu_context, 0, sizeof(dfu_context));
       rc = appl_update_dump_header(false, NULL, 0);
       if (rc < 0) {
@@ -251,8 +256,8 @@ int appl_update_erase(void)
       return -ESHUTDOWN;
    }
    if (dfu_flash_area_id >= 0) {
-      return boot_erase_img_bank((uint8_t)dfu_flash_area_id);
       dfu_time = -1;
+      return boot_erase_img_bank((uint8_t)dfu_flash_area_id);
    }
    return -EINVAL;
 }
