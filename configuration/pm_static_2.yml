@@ -1,0 +1,228 @@
+EMPTY_0:
+  address: 0xc000
+  end_address: 0x10000
+  placement:
+    before:
+    - mcuboot_pad
+  region: flash_primary
+  size: 0x4000
+EMPTY_1:
+  address: 0xfa000
+  end_address: 0x100000
+  placement:
+    after:
+    - settings_storage
+  region: flash_primary
+  size: 0x6000
+EMPTY_2:
+  address: 0xf0000
+  end_address: 0xf8000
+  placement:
+    after:
+    - mcuboot_secondary
+  region: flash_primary
+  size: 0x8000
+app:
+  address: 0x18000
+  end_address: 0x80000
+  region: flash_primary
+  size: 0x68000
+mcuboot:
+  address: 0x0
+  end_address: 0xc000
+  placement:
+    align:
+      end: 0x1000
+    before:
+    - mcuboot_primary
+  region: flash_primary
+  size: 0xc000
+mcuboot_pad:
+  address: 0x10000
+  end_address: 0x10200
+  placement:
+    align:
+      start: 0x8000
+    before:
+    - mcuboot_primary_app
+  region: flash_primary
+  size: 0x200
+mcuboot_primary:
+  address: 0x10000
+  end_address: 0x80000
+  orig_span: &id001
+  - app
+  - mcuboot_pad
+  - tfm
+  region: flash_primary
+  sharers: 0x1
+  size: 0x70000
+  span: *id001
+mcuboot_primary_app:
+  address: 0x10200
+  end_address: 0x80000
+  orig_span: &id002
+  - app
+  - tfm
+  region: flash_primary
+  size: 0x6fe00
+  span: *id002
+mcuboot_secondary:
+  address: 0x80000
+  end_address: 0xf0000
+  placement:
+    after:
+    - mcuboot_primary
+    align:
+      start: 0x8000
+  region: flash_primary
+  share_size:
+  - mcuboot_primary
+  size: 0x70000
+mcuboot_sram:
+  address: 0x20000000
+  end_address: 0x20008000
+  orig_span: &id003
+  - tfm_sram
+  region: sram_primary
+  size: 0x8000
+  span: *id003
+nonsecure_storage:
+  address: 0xf8000
+  end_address: 0xfa000
+  orig_span: &id004
+  - settings_storage
+  region: flash_primary
+  size: 0x2000
+  span: *id004
+nrf_modem_lib_ctrl:
+  address: 0x20008000
+  end_address: 0x200084e8
+  inside:
+  - sram_nonsecure
+  placement:
+    after:
+    - tfm_sram
+    - start
+  region: sram_primary
+  size: 0x4e8
+nrf_modem_lib_rx:
+  address: 0x2000a568
+  end_address: 0x2000c568
+  inside:
+  - sram_nonsecure
+  placement:
+    after:
+    - nrf_modem_lib_tx
+  region: sram_primary
+  size: 0x2000
+nrf_modem_lib_sram:
+  address: 0x20008000
+  end_address: 0x20010568
+  orig_span: &id005
+  - nrf_modem_lib_ctrl
+  - nrf_modem_lib_tx
+  - nrf_modem_lib_rx
+  - nrf_modem_lib_trace
+  region: sram_primary
+  size: 0x8568
+  span: *id005
+nrf_modem_lib_trace:
+  address: 0x2000c568
+  end_address: 0x20010568
+  inside:
+  - sram_nonsecure
+  placement:
+    after:
+    - nrf_modem_lib_rx
+  region: sram_primary
+  size: 0x4000
+nrf_modem_lib_tx:
+  address: 0x200084e8
+  end_address: 0x2000a568
+  inside:
+  - sram_nonsecure
+  placement:
+    after:
+    - nrf_modem_lib_ctrl
+  region: sram_primary
+  size: 0x2080
+otp:
+  address: 0xff8108
+  end_address: 0xff83fc
+  region: otp
+  size: 0x2f4
+settings_storage:
+  address: 0xf8000
+  end_address: 0xfa000
+  inside:
+  - nonsecure_storage
+  placement:
+    align:
+      start: 0x8000
+    before:
+    - end
+  region: flash_primary
+  size: 0x2000
+sram_nonsecure:
+  address: 0x20008000
+  end_address: 0x20040000
+  orig_span: &id006
+  - sram_primary
+  - nrf_modem_lib_ctrl
+  - nrf_modem_lib_tx
+  - nrf_modem_lib_rx
+  - nrf_modem_lib_trace
+  region: sram_primary
+  size: 0x38000
+  span: *id006
+sram_primary:
+  address: 0x20010568
+  end_address: 0x20040000
+  region: sram_primary
+  size: 0x2fa98
+sram_secure:
+  address: 0x20000000
+  end_address: 0x20008000
+  orig_span: &id007
+  - tfm_sram
+  region: sram_primary
+  size: 0x8000
+  span: *id007
+tfm:
+  address: 0x10200
+  end_address: 0x18000
+  inside:
+  - mcuboot_primary_app
+  placement:
+    before:
+    - app
+  region: flash_primary
+  size: 0x7e00
+tfm_nonsecure:
+  address: 0x18000
+  end_address: 0x80000
+  orig_span: &id008
+  - app
+  region: flash_primary
+  size: 0x68000
+  span: *id008
+tfm_secure:
+  address: 0x10000
+  end_address: 0x18000
+  orig_span: &id009
+  - mcuboot_pad
+  - tfm
+  region: flash_primary
+  size: 0x8000
+  span: *id009
+tfm_sram:
+  address: 0x20000000
+  end_address: 0x20008000
+  inside:
+  - sram_secure
+  placement:
+    after:
+    - start
+  region: sram_primary
+  size: 0x8000
