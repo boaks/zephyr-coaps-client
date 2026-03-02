@@ -308,6 +308,14 @@ else()
 set(BUILD_SUMUP12 "Build without application storage.")
 endif()
 
+zephyr_get(USE_NEW_PARTITION_LAYOUT SYSBUILD)
+
+if (USE_NEW_PARTITION_LAYOUT)
+set(BUILD_SUMUP13 "Build with new partition layout.")
+else()
+set(BUILD_SUMUP13 "Build with old partition layout.")
+endif()
+
 message(STATUS "PM_STATIC_YML_FILE: ${PM_STATIC_YML_FILE}")
 
 add_custom_command(TARGET app POST_BUILD
@@ -323,6 +331,7 @@ add_custom_command(TARGET app POST_BUILD
                    COMMAND echo "${BUILD_SUMUP10}"
                    COMMAND echo "${BUILD_SUMUP11}"
                    COMMAND echo "${BUILD_SUMUP12}"
+                   COMMAND echo "${BUILD_SUMUP13}"
                    COMMAND echo "Build with network search timeout ${CONFIG_MODEM_SEARCH_TIMEOUT}s"
                    COMMAND echo "${CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION}"
                    )
