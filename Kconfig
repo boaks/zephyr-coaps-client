@@ -629,7 +629,7 @@ config BATTERY_ADC
 config INT_BATTERY_ADC
 	bool "Internal battery voltage ADC measurement"
 	depends on BATTERY_VOLTAGE_DIVIDER
-	default y if "$(dt_path_enabled,/vbatt)"
+	default y if $(dt_path_enabled,/vbatt)
 	select BATTERY_ADC
 	help
 	   Enable internal battery measurement
@@ -637,7 +637,7 @@ config INT_BATTERY_ADC
 config EXT_BATTERY_ADC
 	bool "External battery voltage ADC measurement"
 	depends on BATTERY_VOLTAGE_DIVIDER
-	default y if "$(dt_path_enabled,/vbatt2)"
+	default y if $(dt_path_enabled,/vbatt2)
 	select BATTERY_ADC
 	help
 	   Enable external battery measurement
@@ -777,7 +777,7 @@ config ADC_SCALE
 
 config ADC_SCALE_SETUP
 	bool "Enable button setup"
-	default y
+	default y if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
 	depends on ADC_SCALE
 
 if SENSOR
@@ -920,11 +920,11 @@ endif # BME680_BSEC
 
 config ENVIRONMENT_SENSOR
     bool	
-    default y if "$(dt_alias_enabled,temperature-sensor)"
-    default y if "$(dt_alias_enabled,pressure-sensor)"
-    default y if "$(dt_alias_enabled,humidity-sensor)"
-    default y if "$(dt_alias_enabled,gas-sensor)"
-    default y if "$(dt_alias_enabled,environment-sensor)"
+    default y if $(dt_alias_enabled,temperature-sensor)
+    default y if $(dt_alias_enabled,pressure-sensor)
+    default y if $(dt_alias_enabled,humidity-sensor)
+    default y if $(dt_alias_enabled,gas-sensor)
+    default y if $(dt_alias_enabled,environment-sensor)
 
 if ENVIRONMENT_SENSOR
 
@@ -947,7 +947,7 @@ config SAMPLE_INTERVAL_S
 
 endif # !BME680_BSEC
 
-if "$(dt_alias_enabled,pressure-sensor)"
+if $(dt_alias_enabled,pressure-sensor)
 
 config ENVIRONMENT_PRESSURE_DELTA
     int "Max. barometric pressure delta"
@@ -1022,14 +1022,20 @@ config DISABLE_REALTIME_CLOCK
 if FLASH
 config FLASH_APPL_STORAGE
 	bool "Flash support for application storage."
-    default y if "$(dt_alias_enabled,appl-storage-flash)"
+    default y if $(dt_alias_enabled,appl-storage-flash)
     depends on !ALL_POWER_OFF
 endif
 
 if EEPROM
+
+# scale v2 configuration EEPROM
+DT_COMPAT_NAU7802_SCALE := nau7802-scale
+DT_PROP_CALIBRATION_STORAGE := calibration_storage
+
 config EEPROM_APPL_STORAGE
 	bool "EEPROM support for application storage."
-    default y if "$(dt_alias_enabled,appl-storage-eeprom)"
+    default y if $(dt_alias_enabled,appl-storage-eeprom)
+    default y if $(dt_compat_any_has_prop,$(DT_COMPAT_NAU7802_SCALE),$(DT_PROP_CALIBRATION_STORAGE))
     depends on !ALL_POWER_OFF
 endif
 
@@ -1053,6 +1059,7 @@ config APPL_MODEL
 	default "bm" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && EXT_BATTERY_ADC
 	default "fh" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
 	default "f1" if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NRF9161_NS
+	default "f51sc" if BOARD_CIRCUITDOJO_FEATHER_NRF9151_NRF9151_NS && ADC_SCALE
 	default "f51" if BOARD_CIRCUITDOJO_FEATHER_NRF9151_NRF9151_NS
 	default "csp" if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
 	default "cs51" if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
@@ -1072,6 +1079,7 @@ config APPL_MODEL_DESCRIPTION
 	default "nRF9160-monitor" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS && EXT_BATTERY_ADC
 	default "nRF9160-feather" if BOARD_CIRCUITDOJO_FEATHER_NRF9160_NS
 	default "nRF9161-feather" if BOARD_CIRCUITDOJO_FEATHER_NRF9161_NRF9161_NS
+	default "FT51 scale" if BOARD_CIRCUITDOJO_FEATHER_NRF9151_NRF9151_NS && ADC_SCALE
 	default "nRF9151-feather" if BOARD_CIRCUITDOJO_FEATHER_NRF9151_NRF9151_NS
 	default "conexio-nRF9151" if BOARD_CONEXIO_STRATUS_PRO_NRF9151_NS
 	default "conexio-nRF9161" if BOARD_CONEXIO_STRATUS_PRO_NRF9161_NS
