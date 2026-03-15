@@ -67,6 +67,7 @@ static int uart_rx_buf_id = 0;
 static uint8_t uart_rx_buf[2][CONFIG_UART_BUFFER_LEN];
 
 static atomic_t uart_state = ATOMIC_INIT(0);
+static struct k_spinlock uart_lock;
 
 #define UART_SUSPENDED 0
 
@@ -134,7 +135,7 @@ static int uart_reschedule_rx_enable(const k_timeout_t delay)
 static const struct gpio_dt_spec uart_rx = GPIO_DT_SPEC_GET(DT_NODELABEL(rx0), gpios);
 static struct gpio_callback uart_rx_cb_data;
 
-static int uart_get_lines(void)
+static int uart_get_rx_line(void)
 {
    int res = -ENODATA;
    if (device_is_ready(uart_rx.port)) {
@@ -246,14 +247,23 @@ static int uart_tx_out(uint8_t *data, size_t length)
       if (length == 1) {
          uart_poll_out(uart_dev, data[0]);
       } else {
-         atomic_set_bit(&uart_state, UART_PENDING);
-         k_sem_reset(&uart_tx_sem);
+         bool send;
+         K_SPINLOCK(&uart_lock)
+         {
+            send = !atomic_test_bit(&uart_state, UART_SUSPENDED);
+            if (send) {
+               atomic_set_bit(&uart_state, UART_PENDING);
+            }
+         }
+         if (send) {
+            k_sem_reset(&uart_tx_sem);
 
-         /* SYS_FOREVER_US disable timeout */
-         uart_tx(uart_dev, data, length, SYS_FOREVER_US);
+            /* SYS_FOREVER_US disable timeout */
+            uart_tx(uart_dev, data, length, SYS_FOREVER_US);
 
-         k_sem_take(&uart_tx_sem, K_MSEC(CONFIG_UART_TX_OUTPUT_TIMEOUT_MS));
-         atomic_clear_bit(&uart_state, UART_PENDING);
+            k_sem_take(&uart_tx_sem, K_MSEC(CONFIG_UART_TX_OUTPUT_TIMEOUT_MS));
+            atomic_clear_bit(&uart_state, UART_PENDING);
+         }
       }
    }
 #endif
@@ -493,35 +503,33 @@ static void uart_pause_tx_fn(struct k_work *work)
 
 static void uart_enable_rx_fn(struct k_work *work)
 {
-   enum pm_device_state state = PM_DEVICE_STATE_OFF;
-   bool pm_started = k_uptime_get() > 10000;
-   int result = pm_device_state_get(uart_dev, &state);
-
-   if (result) {
-      LOG_WRN("UART PM n.a.");
-      uart_reschedule_rx_enable(K_MSEC(CONFIG_UART_RX_CHECK_INTERVAL_MS));
-      return;
-   }
-   result = uart_get_lines();
-   LOG_DBG("UART %s%d %s", pm_started ? "" : "uptime ", result, pm_device_state_str(state));
+   int result = uart_get_rx_line();
+   LOG_DBG("UART rx line %d", result);
 
    if (result == 1) {
-      if (PM_DEVICE_STATE_ACTIVE != state && pm_started) {
+      if (!IS_ENABLED(CONFIG_PM_DEVICE_RUNTIME)) {
          pm_device_action_run(uart_dev, PM_DEVICE_ACTION_RESUME);
-         atomic_clear_bit(&uart_state, UART_SUSPENDED);
       }
+      atomic_clear_bit(&uart_state, UART_SUSPENDED);
 #ifdef CONFIG_UART_LED
       ui_led_op(LED_UART, LED_SET);
 #endif /* CONFIG_UART_LED */
    } else if (result == 0) {
-      if (PM_DEVICE_STATE_ACTIVE == state && pm_started && !uart_tx_pending()) {
-         // early suspend seems to crash
-         atomic_set_bit(&uart_state, UART_SUSPENDED);
+      bool suspend;
+      K_SPINLOCK(&uart_lock)
+      {
+         suspend = !uart_tx_pending();
+         if (suspend) {
+            atomic_set_bit(&uart_state, UART_SUSPENDED);
+         }
+      }
+      if (suspend) {
 #ifdef CONFIG_UART_LED
          ui_led_op(LED_UART, LED_CLEAR);
 #endif /* CONFIG_UART_LED */
-         pm_device_action_run(uart_dev, PM_DEVICE_ACTION_SUSPEND);
-         uart_tx_ready();
+         if (!IS_ENABLED(CONFIG_PM_DEVICE_RUNTIME)) {
+            pm_device_action_run(uart_dev, PM_DEVICE_ACTION_SUSPEND);
+         }
       }
    } else {
 #ifdef CONFIG_UART_LED
