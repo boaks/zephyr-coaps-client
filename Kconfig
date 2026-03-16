@@ -533,6 +533,7 @@ config LOG_BACKEND_UART_THROTTLE
    bool "Throttle UART log backend"
    depends on LOG_BACKEND_UART_MANAGER
    default y if BOARD_THINGY91X_NRF9151_NS
+   default y if BOARD_NRF9151_CONNECTKIT_NRF9151_NS
     help
       Throttle UART log backend. Thingy:91X connectivity
       bridge seems to has some issues.
@@ -593,7 +594,7 @@ config LOCATION_ENABLE
 
 config LOCATION_ENABLE_CONTINUES_MODE
 	bool "Enable GNSS Location Continues Mode"
-	default y
+	default n
 	depends on LOCATION_ENABLE
 	help
 	   Enable GNSS location to run continues.
@@ -601,12 +602,28 @@ config LOCATION_ENABLE_CONTINUES_MODE
 	   when the GPS runs mostly continuesly.
 	   This requires a high current of 50mA!  
 
+config LOCATION_ENABLE_AUTO_MODE
+	bool "Enable GNSS Location Auto Mode"
+	default n
+	depends on LOCATION_ENABLE
+	help
+	   Enable GNSS location depending on the
+	   battery level.
+
 config LOCATION_ENABLE_TRIGGER_MESSAGE
 	bool "Enable GNSS Location Triggers Message"
-	default n
+	default y
 	depends on !LOCATION_ENABLE_CONTINUES_MODE && LOCATION_ENABLE
 	help
 	   Enable GNSS location to trigger a message
+
+config LOCATION_ENABLE_TRIGGER_MESSAGE_MIN_INTERVAL
+	int "Minimum interval before new messages triggered by GNSS. In seconds."
+	default 1200
+	depends on LOCATION_ENABLE_TRIGGER_MESSAGE
+	help
+	   Miniumum interval before new messages are triggered
+	   by GNSS positions. In seconds.
 
 config APPL_ADC
 	bool "Voltage ADC measurement"

@@ -651,6 +651,40 @@ int sh_app_set_inactive(const k_timeout_t delay)
    return res;
 }
 
+int sh_cmd_get_catalog_value(const sh_cmd_catalog_t *catalog, const char *name, int short_name)
+{
+   for (int index = 0; catalog[index].name; ++index) {
+      if (!stricmp(name, catalog[index].name)) {
+         return catalog[index].value;
+      }
+   }
+   if (0 < short_name && short_name < 10) {
+      char head1[10];
+      char head2[10];
+      head1[short_name] = 0;
+      strncpy(head1, name, short_name);
+      int len = strlen(head1);
+      head2[len] = 0;
+      for (int index = 0; catalog[index].name; ++index) {
+         strncpy(head2, catalog[index].name, len);
+         if (!stricmp(head1, head2)) {
+            return catalog[index].value;
+         }
+      }
+   }
+   return -EINVAL;
+}
+
+const char *sh_cmd_get_catalog_name(const sh_cmd_catalog_t *catalog, int value)
+{
+   for (int index = 0; catalog[index].name; ++index) {
+      if (value == catalog[index].value) {
+         return catalog[index].name;
+      }
+   }
+   return NULL;
+}
+
 #ifdef CONFIG_USE_JOB_QUEUE_ALIVE_CHECK
 static void sh_cmd_alive_fn(struct k_work *work);
 

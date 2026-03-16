@@ -770,6 +770,22 @@ static void dtls_cmd_trigger(const char *source, bool led, int mode)
    }
 }
 
+#ifdef CONFIG_LOCATION_ENABLE
+static void dtls_location_trigger(void)
+{
+#ifdef CONFIG_LOCATION_ENABLE_TRIGGER_MESSAGE
+   static int64_t last_message = 0;
+   if (coap_send_flags & COAP_SEND_FLAG_LOCATION_TRIGGER) {
+      int64_t now = k_uptime_get();
+      if ((now - last_message) > MSEC_PER_SEC * CONFIG_LOCATION_ENABLE_TRIGGER_MESSAGE_MIN_INTERVAL) {
+         last_message = now;
+         dtls_trigger("location", true);
+      }
+   }
+#endif /* CONFIG_LOCATION_ENABLE_TRIGGER_MESSAGE */
+}
+#endif /* CONFIG_LOCATION_ENABLE */
+
 static void dtls_timer_trigger_fn(struct k_work *work);
 
 static K_WORK_DELAYABLE_DEFINE(dtls_timer_trigger_work, dtls_timer_trigger_fn);
@@ -1875,7 +1891,8 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
    uint16_t battery_voltage = 0xffff;
 #endif
 
-#ifdef CONFIG_LOCATION_ENABLE
+#ifdef CONFIG_LOCATION_ENABLE_AUTO_MODE
+   int64_t next_battery_check = 0;
    bool location_init = true;
 #endif
 
@@ -1901,7 +1918,8 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
 
    while (1) {
       int f = -1;
-#ifdef CONFIG_LOCATION_ENABLE
+
+#ifdef CONFIG_LOCATION_ENABLE_AUTO_MODE
       power_manager_status_t battery_status = POWER_UNKNOWN;
       uint8_t battery_level = 0xff;
       bool force = false;
@@ -1909,27 +1927,30 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
       force = moved;
       moved = false;
 #endif
-      power_manager_status(&battery_level, NULL, &battery_status, NULL);
-      if (location_enabled()) {
-         if (battery_level < 20 && battery_status == FROM_BATTERY) {
-            dtls_info("Low battery, switch off GNSS");
-            location_stop();
-         } else if (force) {
-            dtls_info("Motion detected, force GNSS");
-            location_start(force);
-         }
-      } else if (!app->dtls_pending) {
-         if ((battery_level > 80 && battery_level < 0xff) ||
-             (battery_status != FROM_BATTERY && battery_status != POWER_UNKNOWN)) {
-            dtls_info("High battery, switch on GNSS");
-            location_start(false);
-         } else if (location_init && (battery_level == 0xff || battery_level >= 20)) {
-            location_init = false;
-            dtls_info("Starting, switch on GNSS");
-            location_start(false);
+      if (force || (k_uptime_get() - next_battery_check) > 0) {
+         next_battery_check = k_uptime_get() + (60 * MSEC_PER_SEC);
+         power_manager_status(&battery_level, NULL, &battery_status, NULL);
+         if (location_enabled()) {
+            if (battery_level < 20 && battery_status == FROM_BATTERY) {
+               dtls_info("Low battery, switch off GNSS");
+               location_stop();
+            } else if (force) {
+               dtls_info("Motion detected, force GNSS");
+               location_start(force);
+            }
+         } else if (!app->dtls_pending) {
+            if ((battery_level > 80 && battery_level < 0xff) ||
+                (battery_status != FROM_BATTERY && battery_status != POWER_UNKNOWN)) {
+               dtls_info("High battery, switch on GNSS");
+               location_start(false);
+            } else if (location_init && (battery_level == 0xff || battery_level >= 20)) {
+               location_init = false;
+               dtls_info("Starting, switch on GNSS");
+               location_start(false);
+            }
          }
       }
-#endif
+#endif /* CONFIG_LOCATION_ENABLE_AUTO_MODE */
       watchdog_feed();
 
       if (!atomic_test_bit(&general_states, APPL_INITIAL_SUCCESS) &&
@@ -2744,56 +2765,47 @@ static void sh_cmd_wakeup_on_incoming_connect_timeout_help(void)
    LOG_INF("  woic <time> : set wakeup on incoming connect timeout in seconds. 0 to disable.");
 }
 
-typedef struct flags_definition {
-   const char *name;
-   const char *desc;
-   const int flag;
-} flags_definition_t;
-
-static flags_definition_t coap_send_flags_definitions[] = {
-    {.name = "nores", .desc = "request without response", .flag = COAP_SEND_FLAG_NO_RESPONSE},
-    {.name = "init", .desc = "initial infos", .flag = COAP_SEND_FLAG_INITIAL},
-    {.name = "min", .desc = "minimal infos", .flag = COAP_SEND_FLAG_MINIMAL},
-    {.name = "dev", .desc = "device info", .flag = COAP_SEND_FLAG_MODEM_INFO},
-    {.name = "sim", .desc = "sim-card info", .flag = COAP_SEND_FLAG_SIM_INFO},
-    {.name = "net", .desc = "network info", .flag = COAP_SEND_FLAG_NET_INFO},
-    {.name = "stat", .desc = "network statistics", .flag = COAP_SEND_FLAG_NET_STATS},
-    {.name = "env", .desc = "environment info", .flag = COAP_SEND_FLAG_ENV_INFO},
-    {.name = "scan", .desc = "network scan result", .flag = COAP_SEND_FLAG_NET_SCAN_INFO},
+static const sh_cmd_catalog_t coap_send_flags_definitions[] = {
+    {.name = "nores", .desc = "request without response", .value = COAP_SEND_FLAG_NO_RESPONSE},
+    {.name = "init", .desc = "initial infos", .value = COAP_SEND_FLAG_INITIAL},
+    {.name = "min", .desc = "minimal infos", .value = COAP_SEND_FLAG_MINIMAL},
+    {.name = "dev", .desc = "device info", .value = COAP_SEND_FLAG_MODEM_INFO},
+    {.name = "sim", .desc = "sim-card info", .value = COAP_SEND_FLAG_SIM_INFO},
+    {.name = "net", .desc = "network info", .value = COAP_SEND_FLAG_NET_INFO},
+    {.name = "stat", .desc = "network statistics", .value = COAP_SEND_FLAG_NET_STATS},
+    {.name = "env", .desc = "environment info", .value = COAP_SEND_FLAG_ENV_INFO},
+    {.name = "scan", .desc = "network scan result", .value = COAP_SEND_FLAG_NET_SCAN_INFO},
 #ifdef CONFIG_ADC_SCALE
-    {.name = "scale", .desc = "scale info", .flag = COAP_SEND_FLAG_SCALE_INFO},
+    {.name = "scale", .desc = "scale info", .value = COAP_SEND_FLAG_SCALE_INFO},
 #else  /* CONFIG_ADC_SCALE */
-    {.name = "scale", .desc = "scale info", .flag = 0},
+    {.name = "scale", .desc = "scale info", .value = 0},
 #endif /* CONFIG_ADC_SCALE */
 #ifdef CONFIG_LOCATION_ENABLE
-    {.name = "loc", .desc = "location info", .flag = COAP_SEND_FLAG_LOCATION_INFO},
+    {.name = "loc", .desc = "location info", .value = COAP_SEND_FLAG_LOCATION_INFO},
+    {.name = "loctrig", .desc = "location trigger", .value = COAP_SEND_FLAG_LOCATION_TRIGGER},
 #else  /* CONFIG_LOCATION_ENABLE */
-    {.name = "loc", .desc = "location info", .flag = 0},
+    {.name = "loc", .desc = "location info", .value = 0},
+    {.name = "loctrig", .desc = "location trigger", .value = 0},
 #endif /* CONFIG_LOCATION_ENABLE */
-    {.name = NULL, .desc = NULL, .flag = 0},
+    {.name = NULL, .desc = NULL, .value = 0},
 };
-
-static int sh_cmd_get_coap_sendflag(const char *value)
-{
-   for (int index = 0; coap_send_flags_definitions[index].name; ++index) {
-      if (!stricmp(value, coap_send_flags_definitions[index].name)) {
-         return coap_send_flags_definitions[index].flag;
-      }
-   }
-   return -EINVAL;
-}
 
 static int sh_cmd_dump_coap_sendflags(char *buf, size_t len, int flags)
 {
    int idx = 0;
 
-   for (int index = 0; coap_send_flags_definitions[index].name; ++index) {
-      if (flags & coap_send_flags_definitions[index].flag) {
-         idx += snprintf(&buf[idx], len - idx, "%s ", coap_send_flags_definitions[index].name);
-         if (idx >= len) {
-            break;
+   for (int bit = 1; flags && bit > 0; bit <<= 1) {
+      if (flags & 1) {
+         const char *name = sh_cmd_get_catalog_name(coap_send_flags_definitions, bit);
+         if (name) {
+            idx += snprintf(&buf[idx], len - idx, "%s ", name);
+            if (idx >= len) {
+               idx = len;
+               break;
+            }
          }
       }
+      flags >>= 1;
    }
    if (idx > 0) {
       buf[--idx] = 0;
@@ -2815,7 +2827,7 @@ static int sh_cmd_coap_sendflags(const char *parameter)
          char value[10];
          cur = parse_next_text(cur, ' ', value, sizeof(value));
          while (value[0]) {
-            int flag = sh_cmd_get_coap_sendflag(value);
+            int flag = sh_cmd_get_catalog_value(coap_send_flags_definitions, value, 0);
             if (flag >= 0) {
                flags |= flag;
             } else {
@@ -2862,10 +2874,12 @@ static void sh_cmd_coap_sendflags_help(void)
    LOG_INF("            <0xflags>        : flags in hexadecimal.");
    LOG_INF("  sendflags <id> [<id2> ...] : set coap from names.");
    for (int index = 0; coap_send_flags_definitions[index].name; ++index) {
-      LOG_INF("            %-17s: %s (flag %d).",
-              coap_send_flags_definitions[index].name,
-              coap_send_flags_definitions[index].desc,
-              coap_send_flags_definitions[index].flag);
+      if (coap_send_flags_definitions[index].value) {
+         LOG_INF("            %-17s: %s (flag %d).",
+                 coap_send_flags_definitions[index].name,
+                 coap_send_flags_definitions[index].desc,
+                 coap_send_flags_definitions[index].value);
+      }
    }
 }
 
@@ -3080,14 +3094,9 @@ int main(void)
    power_manager_init();
 
 #ifdef CONFIG_LOCATION_ENABLE
-#ifdef CONFIG_LOCATION_ENABLE_TRIGGER_MESSAGE
-   dtls_info("location with trigger");
-   location_init(dtls_trigger);
-#else  /* CONFIG_LOCATION_ENABLE_TRIGGER_MESSAGE */
-   dtls_info("location without trigger");
-   location_init(NULL);
-#endif /* CONFIG_LOCATION_ENABLE_TRIGGER_MESSAGE */
-#else  /* CONFIG_LOCATION_ENABLE */
+   dtls_info("with location");
+   location_init(dtls_location_trigger);
+#else /* CONFIG_LOCATION_ENABLE */
    dtls_warn("no location");
 #endif
 

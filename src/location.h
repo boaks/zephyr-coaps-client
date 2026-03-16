@@ -14,25 +14,30 @@
 #ifndef LOCATION_H
 #define LOCATION_H
 
+#include <nrf_modem_gnss.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <nrf_modem_gnss.h>
 
 typedef enum modem_gnss_result {
-	MODEM_GNSS_NOT_AVAILABLE,
-	MODEM_GNSS_TIMEOUT,
-	MODEM_GNSS_ERROR,
-	MODEM_GNSS_INVISIBLE,
-	MODEM_GNSS_POSITION
+   MODEM_GNSS_NOT_AVAILABLE,
+   MODEM_GNSS_TIMEOUT,
+   MODEM_GNSS_ERROR,
+   MODEM_GNSS_INVISIBLE,
+   MODEM_GNSS_POSITION
 } modem_gnss_result_t;
 
 struct modem_gnss_state {
-	enum modem_gnss_result result;
-	uint32_t execution_time;
-	uint32_t satellites_time;	
-	uint8_t max_satellites;	
-	bool valid;
-	struct nrf_modem_gnss_pvt_data_frame position;
+   enum modem_gnss_result result;
+   uint32_t execution_time;
+   uint32_t satellites_time;
+   uint32_t records;
+   uint32_t pvts;
+   uint32_t fixes;
+   uint32_t timeouts;
+   uint8_t max_satellites;
+   uint8_t max_healthy_satellites;
+   bool valid;
+   struct nrf_modem_gnss_pvt_data_frame position;
 };
 
 typedef void (*location_callback_handler_t)(void);
@@ -45,6 +50,6 @@ void location_start(bool force);
 
 void location_stop(void);
 
-modem_gnss_result_t location_get(struct modem_gnss_state *location, bool* running);
+modem_gnss_result_t location_get(struct modem_gnss_state *location, bool *running);
 
 #endif /* LOCATION_H */

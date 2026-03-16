@@ -51,6 +51,12 @@ struct sh_cmd_entry {
 #define SH_CMD_APP_ACTIVE BIT(BIT_SH_CMD_APP_ACTIVE)
 #define SH_CMD_QUEUED BIT(BIT_SH_CMD_QUEUED)
 
+typedef struct sh_cmd_catalog {
+   const char *name;
+   const char *desc;
+   const int value;
+} sh_cmd_catalog_t;
+
 #ifdef CONFIG_SH_CMD
 
 void sh_cmd_at_finish(void);
@@ -66,6 +72,9 @@ int sh_protected(void);
 int sh_app_active(void);
 int sh_app_set_active(void);
 int sh_app_set_inactive(const k_timeout_t delay);
+
+int sh_cmd_get_catalog_value(const sh_cmd_catalog_t* catalog, const char *name, int short_name);
+const char* sh_cmd_get_catalog_name(const sh_cmd_catalog_t* catalog, int value);
 
 #else
 
