@@ -60,22 +60,22 @@ struct battery_adc_status {
    int64_t last_uptime;
 };
 
-#define CREATE_VBATT_INSTANCE(NODE, ID, INTERVAL)                                                                                                             \
-   static const struct battery_adc_config battery_adc_config_##NODE = {                                                                                       \
-       .name = #NODE,                                                                                                                                         \
-       .adc = DEVICE_DT_GET(DT_IO_CHANNELS_CTLR(NODE)),                                                                                                       \
-       .adc_channel = DT_IO_CHANNELS_INPUT(NODE),                                                                                                             \
-       .power_gpios = GPIO_DT_SPEC_GET_OR(NODE, power_gpios, {}),                                                                                             \
-       .output_ohm = DT_PROP(NODE, output_ohms),                                                                                                              \
-       .full_ohm = DT_PROP(NODE, full_ohms),                                                                                                                  \
-       .sample_min_interval = INTERVAL,                                                                                                                       \
-       .adc_cfg = {                                                                                                                                           \
-           .channel_id = ID,                                                                                                                                  \
-           .gain = ADC_GAIN_1_6,                                                                                                                              \
-           .reference = ADC_REF_INTERNAL,                                                                                                                     \
-           .acquisition_time = ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 40),                                                                                   \
-           .input_positive = DT_NODE_HAS_PROP(NODE, output_ohms) ? SAADC_CH_PSELP_PSELP_AnalogInput0 + DT_IO_CHANNELS_INPUT(NODE) : SAADC_CH_PSELP_PSELP_VDD, \
-       },                                                                                                                                                     \
+#define CREATE_VBATT_INSTANCE(NODE, ID, INTERVAL)                                                                         \
+   static const struct battery_adc_config battery_adc_config_##NODE = {                                                   \
+       .name = #NODE,                                                                                                     \
+       .adc = DEVICE_DT_GET(DT_IO_CHANNELS_CTLR(NODE)),                                                                   \
+       .adc_channel = DT_IO_CHANNELS_INPUT(NODE),                                                                         \
+       .power_gpios = GPIO_DT_SPEC_GET_OR(NODE, power_gpios, {}),                                                         \
+       .output_ohm = DT_PROP(NODE, output_ohms),                                                                          \
+       .full_ohm = DT_PROP(NODE, full_ohms),                                                                              \
+       .sample_min_interval = INTERVAL,                                                                                   \
+       .adc_cfg = {                                                                                                       \
+           .channel_id = ID,                                                                                              \
+           .gain = ADC_GAIN_1_6,                                                                                          \
+           .reference = ADC_REF_INTERNAL,                                                                                 \
+           .acquisition_time = ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 40),                                               \
+           .input_positive = DT_NODE_HAS_PROP(NODE, output_ohms) ? DT_IO_CHANNELS_INPUT(NODE) : SAADC_CH_PSELP_PSELP_VDD, \
+       },                                                                                                                 \
    }
 
 #ifdef VBATT
