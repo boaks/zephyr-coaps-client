@@ -993,7 +993,7 @@ static void modem_apply_apn(void)
 {
    char apn[MODEM_APN_SIZE];
    if (appl_settings_get_apn(apn, sizeof(apn))) {
-      int err = lte_lc_pdn_ctx_configure(0, apn, LTE_LC_PDN_FAM_IPV4, NULL);
+      int err = lte_lc_pdn_ctx_configure(0, apn, CONFIG_LTE_LC_PDN_DEFAULT_FAM, NULL);
       if (err) {
          LOG_WRN("Failed to set PDN '%s': %d (%s)", apn, err, strerror(err));
       }
@@ -1654,11 +1654,11 @@ int modem_init(int config, lte_state_change_callback_handler_t state_handler)
 
 #ifdef CONFIG_LTE_LC_PDN_MODULE
       modem_apply_apn();
-#if defined(CONFIG_PDN_LEGACY_PCO)
+#if defined(CONFIG_LTE_LC_PDN_LEGACY_PCO)
       LOG_INF("Legacy ePCO=0 used");
-#else  /* CONFIG_PDN_LEGACY_PCO */
+#else  /* CONFIG_LTE_LC_PDN_LEGACY_PCO */
       LOG_INF("ePCO=1 used");
-#endif /* CONFIG_PDN_LEGACY_PCO */
+#endif /* CONFIG_LTE_LC_PDN_LEGACY_PCO */
 #endif /* CONFIG_LTE_LC_PDN_MODULE */
 
 #if NCS_VERSION_NUMBER < 0x20600
