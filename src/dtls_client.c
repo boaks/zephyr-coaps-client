@@ -599,6 +599,11 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
 
    int ai_family = app->destination.addr.sa.sa_family;
 
+   if (ai_family != AF_INET && ai_family != AF_INET6) {
+      dtls_warn("> %s, reopen UDP socket failed, address family missing", loc);
+      return false;
+   }
+
    app->fd = socket(ai_family, SOCK_DGRAM, IPPROTO_UDP);
    if (app->fd < 0) {
       dtls_warn("> %s, reopen UDP socket failed, %d, errno %d (%s), restart",
@@ -2068,6 +2073,9 @@ static int dtls_loop(dtls_app_data_t *app, int reboot)
                }
                sendto_peer(app, dtls_context);
             }
+         } else {
+            k_sleep(K_SECONDS(60));
+            continue;
          }
          reopen_cause = NULL;
       }
@@ -2492,10 +2500,11 @@ static int init_destination(dtls_app_data_t *app)
       snprintf(port, sizeof(port), "%u", appl_settings_get_destination_port(app->protocol == PROTOCOL_COAP_DTLS));
       rc = getaddrinfo(app->host, port, &hints, &result);
       while (rc == -EAGAIN && count < 10) {
-         k_sleep(K_MSEC(1000));
          ++count;
+         dtls_warn("WARN: %d. getaddrinfo failed %d %s, retry.", count, rc, strerror(-rc));
+         k_sleep(K_MSEC(1000));
          watchdog_feed();
-         rc = getaddrinfo(app->host, NULL, &hints, &result);
+         rc = getaddrinfo(app->host, port, &hints, &result);
       }
       if (rc < 0) {
          dtls_warn("ERROR: getaddrinfo failed %d %s", rc, strerror(-rc));
