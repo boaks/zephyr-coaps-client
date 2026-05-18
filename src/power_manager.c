@@ -857,15 +857,23 @@ static const struct device *npm1300_mfd_dev = DEVICE_DT_GET(NPM1300_MFD_NODE);
 
 #define NPM1300_SYSREG_BASE 0x2
 #define NPM1300_SYSREG_OFFSET_USBCDETECTSTATUS 0x5
+#define NPM1300_SYSREG_OFFSET_VBUSINSTATUS 0x7
 
 #define NPM1300_BUCK_BASE 0x4
 #define NPM1300_BUCK_OFFSET_BUCKCTRL0 0x15
 #define NPM1300_BUCK2_PULLDOWN_EN BIT(3)
 
-#ifdef CONFIG_MFD_NPM13XX_DISABLE_NTC
 #define NPM1300_CHGR_BASE 0x3
+#define NPM1300_CHGR_OFFSET_ERR_CLR     0x00U
+#define NPM1300_CHGR_OFFSET_EN_SET      0x04U
+#define NPM1300_CHGR_OFFSET_EN_CLR      0x05U
+#define NPM1300_CHGR_OFFSET_ISET        0x08U
+
+#ifdef CONFIG_MFD_NPM13XX_DISABLE_NTC
+
 #define NPM1300_CHGR_OFFSET_DIS_SET 0x06
 #define NPM1300_CHGR_OFFSET_DIS_SET_DISABLE_NTC BIT(1)
+
 #endif /* CONFIG_MFD_NPM13XX_DISABLE_NTC */
 
 static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
@@ -875,28 +883,30 @@ static int npm1300_mfd_detect_usb(uint8_t *usb, bool switch_regulator)
 #endif /* !CONFIG_MFD_NPM13XX_BUCK2_WITH_USB */
 
    int ret = 0;
-   uint8_t status = 0;
+   uint8_t usb_status = 0;
+   uint8_t vbus_status = 0;
 
    if (!device_is_ready(npm1300_mfd_dev)) {
       LOG_WRN("NPM1300 mfd not ready!");
       return -ENOTSUP;
    }
 
-   ret = mfd_npm13xx_reg_read(npm1300_mfd_dev, NPM1300_SYSREG_BASE, NPM1300_SYSREG_OFFSET_USBCDETECTSTATUS, &status);
+   mfd_npm13xx_reg_read(npm1300_mfd_dev, NPM1300_SYSREG_BASE, NPM1300_SYSREG_OFFSET_VBUSINSTATUS, &vbus_status);
+   ret = mfd_npm13xx_reg_read(npm1300_mfd_dev, NPM1300_SYSREG_BASE, NPM1300_SYSREG_OFFSET_USBCDETECTSTATUS, &usb_status);
    if (ret < 0) {
       LOG_WRN("NPM1300 read usb status failed, %d (%s)!", ret, strerror(-ret));
       return ret;
    } else {
-      LOG_INF("NPM1300 USB 0x%x", status);
+      LOG_INF("NPM1300 USB 0x%02x, VBUS 0x%02x", usb_status, vbus_status);
       if (usb) {
-         *usb = status;
+         *usb = usb_status;
       }
 #ifdef CONFIG_MFD_NPM13XX_BUCK2_WITH_USB
       if (switch_regulator) {
-         npm1300_buck2_enable(status);
-         status = status ? 0 : NPM1300_BUCK2_PULLDOWN_EN;
+         npm1300_buck2_enable(usb_status);
+         usb_status = usb_status ? 0 : NPM1300_BUCK2_PULLDOWN_EN;
          /* Write to MFD to enable/disable pulldown for BUCK2 */
-         ret = mfd_npm13xx_reg_update(npm1300_mfd_dev, NPM1300_BUCK_BASE, NPM1300_BUCK_OFFSET_BUCKCTRL0, status, NPM1300_BUCK2_PULLDOWN_EN);
+         ret = mfd_npm13xx_reg_update(npm1300_mfd_dev, NPM1300_BUCK_BASE, NPM1300_BUCK_OFFSET_BUCKCTRL0, usb_status, NPM1300_BUCK2_PULLDOWN_EN);
       }
 #endif /* CONFIG_MFD_NPM13XX_BUCK2_WITH_USB */
    }
@@ -940,7 +950,7 @@ static int npm1300_mfd_init(void)
 
    gpio_init_callback(&event_cb, npm1300_event_callback,
                       BIT(NPM13XX_EVENT_VBUS_DETECTED) |
-                          BIT(NPM13XX_EVENT_VBUS_REMOVED));
+                      BIT(NPM13XX_EVENT_VBUS_REMOVED) );
 
    ret = mfd_npm13xx_add_callback(npm1300_mfd_dev, &event_cb);
    if (ret) {
@@ -989,12 +999,6 @@ static int npm1300_power_manager_read_temperatures(void)
 
    double die_temp = sensor_value_to_double(&value);
 
-   ret = sensor_sample_fetch_chan(npm1300_charger_dev, SENSOR_CHAN_GAUGE_TEMP);
-   if (ret < 0) {
-      LOG_WRN("NPM1300 fetch gauge temp failed, %d (%s)!", ret, strerror(-ret));
-      return ret;
-   }
-
    ret = sensor_channel_get(npm1300_charger_dev, SENSOR_CHAN_GAUGE_TEMP, &value);
    if (ret < 0) {
       LOG_WRN("NPM1300 get gauge temp failed, %d (%s)!", ret, strerror(-ret));
@@ -1022,14 +1026,22 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, uin
 {
    power_manager_status_t current_status = POWER_UNKNOWN;
    struct sensor_value value = {0, 0};
+   uint8_t raw_status = 0;
    int ret = 0;
+   int ret2 = 0;
    int index = 0;
+
+   if (!npm1300_charger_dev) {
+      LOG_WRN("NPM1300 charger not defined!");
+      return -ENOTSUP;
+   }
 
    if (!device_is_ready(npm1300_charger_dev)) {
       LOG_WRN("NPM1300 charger not ready!");
       return -ENOTSUP;
    }
 
+   // NPM13XX fetchs always all chanels
    ret = sensor_sample_fetch_chan(npm1300_charger_dev, SENSOR_CHAN_NPM13XX_CHARGER_STATUS);
    if (ret < 0) {
       LOG_WRN("NPM1300 fetch status failed, %d (%s)!", ret, strerror(-ret));
@@ -1041,33 +1053,41 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, uin
       LOG_WRN("NPM1300 get status failed, %d (%s)!", ret, strerror(-ret));
       return ret;
    }
-   LOG_DBG("NPM1300 status 0x%02x", value.val1);
-   if (buf && len && value.val1) {
-      index += snprintf(&buf[index], len - index, " 0x%02x", value.val1);
-      ret = index;
-   } else {
-      ret = 0;
-   }
-   if (value.val1 & NPM1300_CHG_STATUS_HIGH_TEMPERATURE) {
+   raw_status = value.val1; 
+   LOG_DBG("NPM1300 status 0x%02x", raw_status);
+   if (raw_status & NPM1300_CHG_STATUS_HIGH_TEMPERATURE) {
       LOG_WRN("NPM1300 status high temperature");
    }
-   if (value.val1 & NPM1300_CHG_STATUS_BATTERY_DETECTED) {
+   if (raw_status & NPM1300_CHG_STATUS_BATTERY_DETECTED) {
       LOG_DBG("NPM1300 status battery");
-      if (value.val1 & NPM1300_CHG_STATUS_COMPLETED) {
+      if (raw_status & NPM1300_CHG_STATUS_COMPLETED) {
          LOG_DBG("NPM1300 status battery full");
          current_status = CHARGING_COMPLETED;
-      } else if (value.val1 & NPM1300_CHG_STATUS_TRICKLE) {
+      } else if (raw_status & NPM1300_CHG_STATUS_TRICKLE) {
          LOG_DBG("NPM1300 status battery trickle");
          current_status = CHARGING_TRICKLE;
-      } else if (value.val1 & NPM1300_CHG_STATUS_CURRENT) {
+      } else if (raw_status & NPM1300_CHG_STATUS_CURRENT) {
          LOG_DBG("NPM1300 status battery current");
          current_status = CHARGING_I;
-      } else if (value.val1 & NPM1300_CHG_STATUS_VOLTAGE) {
+      } else if (raw_status & NPM1300_CHG_STATUS_VOLTAGE) {
          LOG_DBG("NPM1300 status battery voltage");
          current_status = CHARGING_V;
       } else {
          LOG_DBG("NPM1300 status from battery");
          current_status = FROM_BATTERY;
+      }
+      if (buf && len) {
+         ret2 = sensor_channel_get(npm1300_charger_dev, SENSOR_CHAN_GAUGE_AVG_CURRENT, &value);
+         if (ret2) {
+            LOG_WRN("NPM1300 get charging current failed, %d (%s)!", ret2, strerror(-ret2));
+         } else {
+            uint16_t current = (value.val1 * 1000) + (value.val2 / 1000);
+            index += snprintf(&buf[index], len - index, " %u mA", current);
+         }
+         if (raw_status && index < len) {
+            index += snprintf(&buf[index], len - index, " 0x%02x", raw_status);
+         }
+         ret = index;
       }
    } else {
       current_status = FROM_BATTERY;
@@ -1085,27 +1105,33 @@ static int npm1300_power_manager_read_status(power_manager_status_t *status, uin
 #endif /* CONFIG_MFD_NPM13XX */
       LOG_DBG("NPM1300 status not charging, USB %sconnected", current_status == FROM_EXTERNAL ? "" : "not ");
    }
+
+   ret2 = sensor_attr_get(npm1300_charger_dev, SENSOR_CHAN_NPM13XX_CHARGER_VBUS_STATUS, SENSOR_ATTR_NPM13XX_CHARGER_VBUS_PRESENT, &value);
+   if (!ret2 && value.val1) {
+      ret2 = sensor_attr_get(npm1300_charger_dev, SENSOR_CHAN_NPM13XX_CHARGER_VBUS_STATUS, SENSOR_ATTR_NPM13XX_CHARGER_VBUS_OVERVLT_PROT, &value);
+      if (!ret2 && value.val1) {
+         LOG_INF("NPM1300 Vbus overvoltage.");
+      }
+      ret2 = sensor_attr_get(npm1300_charger_dev, SENSOR_CHAN_NPM13XX_CHARGER_VBUS_STATUS, SENSOR_ATTR_NPM13XX_CHARGER_VBUS_UNDERVLT, &value);
+      if (!ret2 && value.val1) {
+         LOG_INF("NPM1300 Vbus undervoltage.");      
+      }
+   }
+
    if (status) {
       *status = current_status;
    }
    if (voltage) {
-      int ret2 = sensor_sample_fetch_chan(npm1300_charger_dev, SENSOR_CHAN_GAUGE_VOLTAGE);
+      ret2 = sensor_channel_get(npm1300_charger_dev, SENSOR_CHAN_GAUGE_VOLTAGE, &value);
       if (ret2 < 0) {
-         LOG_WRN("NPM1300 fetch gauge voltage failed, %d (%s)!", ret2, strerror(-ret2));
-      } else {
-         ret2 = sensor_channel_get(npm1300_charger_dev, SENSOR_CHAN_GAUGE_VOLTAGE, &value);
-         if (ret2 < 0) {
-            LOG_WRN("NPM1300 get gauge voltage failed, %d (%s)!", ret2, strerror(-ret2));
-         } else {
-            int milliVolt = value.val1 * 1000 + value.val2 / 1000;
-            LOG_DBG("NPM1300 gauge voltage %d mV", milliVolt);
-            if (voltage) {
-               *voltage = (uint16_t)milliVolt;
-            }
-         }
-      }
-      if (ret2 < 0) {
+         LOG_WRN("NPM1300 get gauge voltage failed, %d (%s)!", ret2, strerror(-ret2));
          ret = ret2;
+      } else {
+         int milliVolt = value.val1 * 1000 + value.val2 / 1000;
+         LOG_DBG("NPM1300 gauge voltage %d mV", milliVolt);
+         if (voltage) {
+            *voltage = (uint16_t)milliVolt;
+         }
       }
       npm1300_power_manager_read_temperatures();
    }
