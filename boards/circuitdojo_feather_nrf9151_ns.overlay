@@ -25,6 +25,7 @@
 		/* alias for sensor with SENSOR_CHAN_ACCEL_XYZ channels */
 		accelerometer-sensor = &lis2dh;
 		multi-leds = &npm1300_leds;
+		disable-1 = &w25q128jv;
 
 	};
 };

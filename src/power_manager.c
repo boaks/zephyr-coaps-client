@@ -1271,6 +1271,9 @@ int power_manager_init(void)
       pm_init = rc == -ESTALE;
    }
 
+   power_manager_suspend_device(DEVICE_DT_GET_OR_NULL(DT_ALIAS(disable_1)));
+   power_manager_suspend_device(DEVICE_DT_GET_OR_NULL(DT_ALIAS(disable_2)));
+
    return rc;
 }
 
