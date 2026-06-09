@@ -1559,6 +1559,24 @@ void appl_settings_provisioning_done(void)
 #endif /* CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
 }
 
+bool appl_settings_provisioning_reset(void)
+{
+#if defined(CONFIG_DTLS_ECDSA_AUTO_PROVISIONING)
+   bool res;
+   k_mutex_lock(&settings_mutex, K_FOREVER);
+   if (!ecdsa_provisioning_enabled) {
+      if (appl_settings_init_provisioning()) {
+         ecdsa_provisioning_enabled = true;
+      }
+   }
+   res = ecdsa_provisioning_enabled;
+   k_mutex_unlock(&settings_mutex);
+   return res;
+#else /* CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
+   return false;
+#endif /* CONFIG_DTLS_ECDSA_AUTO_PROVISIONING */
+}
+
 bool appl_settings_unlock(const char *value)
 {
 #ifdef CONFIG_SH_CMD_UNLOCK

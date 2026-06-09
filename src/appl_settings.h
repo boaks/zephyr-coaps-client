@@ -39,6 +39,7 @@ int appl_settings_add_reboot_code(uint16_t reboot_code);
 int appl_settings_get_provisioning(char *buf, size_t len);
 bool appl_settings_is_provisioning(void);
 void appl_settings_provisioning_done(void);
+bool appl_settings_provisioning_reset(void);
 
 bool appl_settings_unlock(const char* value);
 

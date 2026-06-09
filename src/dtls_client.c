@@ -1293,6 +1293,22 @@ dtls_handle_event(dtls_context_t *ctx, session_t *session,
    } else if (level == DTLS_ALERT_LEVEL_FATAL) {
       dtls_info("dtls event alert fatal 0x%04x", code);
       dtls_coap_failure(app, "dtls alert");
+#ifdef CONFIG_DTLS_ECDSA_AUTO_PROVISIONING
+      if (DTLS_ALERT_BAD_CERTIFICATE == code) {
+         if (appl_settings_is_provisioning()) {
+            dtls_info("dtls provisioning failed!");
+         } else {
+            appl_settings_provisioning_reset();
+            if (appl_settings_is_provisioning()) {
+               dtls_pending(app);
+               dtls_info("dtls reenable auto provisioning.");
+               work_reschedule_for_io_queue(&dtls_timer_trigger_work, K_SECONDS(5));
+            } else {
+               dtls_info("dtls failed to reenable auto provisioning.");
+            }
+         }
+      }
+#endif
    } else if (level == 0) {
       if (DTLS_EVENT_CONNECTED == code) {
          dtls_coap_set_request_state("dtls event connected", app, NONE);
