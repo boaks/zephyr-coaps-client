@@ -310,7 +310,7 @@ static struct scale_config *configs[] =
 #endif /* HAS_SCALE_B */
 };
 
-static const int max_configs = sizeof(configs) / sizeof(struct scale_config *);
+static const int max_configs = ARRAY_SIZE(configs);
 
 static volatile enum calibrate_phase current_calibrate_phase = CALIBRATE_NONE;
 static volatile enum calibrate_phase next_calibrate_phase = CALIBRATE_START;
@@ -520,6 +520,12 @@ static void scale_load_setup(struct scale_config *scale_dev)
       setup->pga_cap = *cal++ ? true : false;
       setup->sps = sys_get_be16(cal);
       cal += 2;
+      if ((cal - calibration) > CALIBRATE_VALUE_SIZE) {
+         LOG_ERR("ADC %s setup too large %d > %d.", scale_dev->channel_name, (cal - calibration), CALIBRATE_VALUE_SIZE);
+      }
+      if (setup->sps == 0) {
+         setup->sps = scale_dev->default_setup->sps;         
+      }      
       setup->divider = NORMALIZE_DIVIDER(setup->divider, setup->min_divider);
       if (setup->divider > 0) {
          LOG_INF("ADC %s setup 0x%06x, %d, %.1f loaded.", scale_dev->channel_name,
@@ -1207,6 +1213,10 @@ static int scale_read_internal_offset(struct scale_config *scale_dev)
       return rc;
    }
 
+   scale_dev->internal_offset = 0;
+   scale_dev->internal_offset_dither = 0;
+   scale_dev->weight_dither = 0;
+
    rc = scale_read_channel_value(scale_dev, MAX_INTERNAL_LOOPS, MIN_INTERNAL_ADC_SAMPLES, scale_dev->setup.max_dither);
    scale_dev->internal_offset_dither = scale_dev->cur_dither;
    if (scale_dev->dither_status == DITHER_ERROR) {
@@ -1326,9 +1336,6 @@ static int scale_resume(struct scale_config *scale_dev)
       return rc;
    }
 
-   scale_dev->internal_offset = 0;
-   scale_dev->internal_offset_dither = 0;
-   scale_dev->weight_dither = 0;
    rc = scale_read_internal_offset(scale_dev);
 
    return rc;
@@ -1386,9 +1393,6 @@ static int scale_init_channel(struct scale_config *scale_dev)
    if (rc == -EAGAIN && !scale_dev->setup.int_osc) {
       scale_dev->setup.int_osc = true;
       scale_set_osc(scale_dev);
-      scale_dev->internal_offset = 0;
-      scale_dev->internal_offset_dither = 0;
-      scale_dev->weight_dither = 0;
       rc = scale_read_internal_offset(scale_dev);
    }
 
@@ -1409,9 +1413,6 @@ static int scale_init_channel(struct scale_config *scale_dev)
          if (rc) {
             return rc;
          }
-         scale_dev->internal_offset = 0;
-         scale_dev->internal_offset_dither = 0;
-         scale_dev->weight_dither = 0;
          rc = scale_read_internal_offset(scale_dev);
          if (rc) {
             return rc;
