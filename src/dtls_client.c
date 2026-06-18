@@ -17,8 +17,15 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <poll.h>
+
 #include <zephyr/net/coap.h>
-#include <zephyr/net/socket.h>
+//#include <zephyr/net/socket.h>
+//#include <zephyr/posix/sys/socket.h>
 #include <zephyr/spinlock.h>
 
 #include "appl_diagnose.h"

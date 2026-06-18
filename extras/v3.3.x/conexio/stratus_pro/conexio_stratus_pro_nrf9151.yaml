@@ -1,0 +1,18 @@
+identifier: conexio_stratus_pro_nrf9151/nrf9151
+name: Conexio-Stratus-Pro-nRF9151
+type: mcu
+arch: arm
+toolchain:
+  - gnuarmemb
+  - xtools
+  - zephyr
+ram: 88
+flash: 1024
+supported:
+  - gpio
+  - i2c
+  - serial
+  - spi
+  - pwm
+  - watchdog
+  - counter

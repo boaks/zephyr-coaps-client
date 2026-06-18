@@ -16,9 +16,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/net/socket.h>
+//#include <zephyr/net/socket.h>
+//#include <zephyr/posix/sys/socket.h>
 #include <zephyr/spinlock.h>
 #include <zephyr/sys/slist.h>
 
@@ -973,6 +976,12 @@ static void lte_pdn(const struct lte_lc_pdn_evt* event)
       case LTE_LC_EVT_PDN_IPV6_DOWN:
          LOG_INF("PDN CID %u, IPv6 down", event->cid);
          break;
+      case LTE_LC_EVT_PDN_SUSPENDED:
+         LOG_INF("PDN CID %u, suspended", event->cid);
+         break;
+      case LTE_LC_EVT_PDN_RESUMED:
+         LOG_INF("PDN CID %u, resumed", event->cid);
+         break;
       case LTE_LC_EVT_PDN_NETWORK_DETACH:
          LOG_INF("PDN CID %u, detach", event->cid);
          lte_pdn_status_set(false);
@@ -1283,7 +1292,10 @@ static int modem_connect(void)
       enum lte_lc_system_mode lte_mode;
       enum lte_lc_system_mode_preference lte_preference;
 
+#if NCS_VERSION_NUMBER < 0x030300
+      /* deprecated with NCS 3.3.0 */
       lte_lc_modem_events_enable();
+#endif
       err = lte_lc_connect_async(lte_handler);
       if (err) {
          if (err == -EINPROGRESS) {
