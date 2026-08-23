@@ -11,12 +11,18 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+/delete-node/ &slot1_partition;
+/delete-node/ &storage_partition;
+
+#include "common_ns.dtsi"
+
+
 / {
 
 	outs {
 		compatible = "gpio-leds";
 		status = "okay";
-		
+
 		exp_port_enable: exp_port_enable {
 			gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
 		};

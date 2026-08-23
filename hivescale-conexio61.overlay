@@ -18,10 +18,8 @@
  *
  * west build -d build_conexio_stratus_pro_nrf9161_ns -b conexio_stratus_pro/nrf9161/ns --pristine -- \
  *    -DOVERLAY_CONFIG="60min0-prj.conf;uart-prj.conf;hivescale-prj.conf" \
- *    -DDTC_OVERLAY_FILE="hivescale-conexio61.overlay" -DCONFIG_BATTERY_TYPE_ENELOOP_2000_MAH=y
+ *    -DEXTRA_DTC_OVERLAY_FILE="hivescale-conexio61.overlay" -DCONFIG_BATTERY_TYPE_ENELOOP_2000_MAH=y
  */
-
-#include "boards/conexio_stratus_pro_nrf9161_ns.overlay"
 
 &i2c2 {
 
@@ -39,11 +37,12 @@
 	scale_a: scale@2a {
 		compatible = "nau7802-scale";
 		reg = <0x2a>;
-		avref_mv = <2700>;
+		avref_mv = <3000>;
 		ext_avref_mv = <0>;
-		gain = <32>;
+		gain = <128>;
+		sps = <40>;
 		min_divider = <500>;
-		max_dither = <64>;
+		max_dither = <250>;
 		internal_oscilator;
 		pga_cap;
 //		calibration_storage = <&eeprom_a>;

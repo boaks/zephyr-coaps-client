@@ -16,10 +16,8 @@
  *
  * west build -d build_conexio_stratus_pro_nrf9151_ns -b conexio_stratus_pro/nrf9151/ns --pristine -- \
  *    -DOVERLAY_CONFIG="60min0-prj.conf;uart-prj.conf;hivescale-prj.conf" \
- *    -DDTC_OVERLAY_FILE="hivescale-conexio51.overlay" -DCONFIG_BATTERY_TYPE_ENELOOP_2000_MAH=y
+ *    -DEXTRA_DTC_OVERLAY_FILE="hivescale-conexio51.overlay" -DCONFIG_BATTERY_TYPE_ENELOOP_2000_MAH=y
  */
-
-#include "boards/conexio_stratus_pro_nrf9151_ns.overlay"
 
 &i2c2 {
 

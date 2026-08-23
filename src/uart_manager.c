@@ -327,6 +327,14 @@ static int uart_tx_out_func(int c, void *ctx)
    return 0;
 }
 
+static int uart_tx_data_out(const char* buf, size_t len)
+{
+   while (len-- > 0 && *buf) {
+      uart_tx_out_func((uint8_t)*buf++, NULL);
+   }
+   return 0;
+}
+
 #define HEXDUMP_BYTES_IN_LINE 16
 #define HEXDUMP_BYTES_IN_BLOCK 8
 
@@ -341,13 +349,16 @@ static void uart_log_dump_hex_line(int prefix, int bytes, const uint8_t *data, s
 {
    uart_log_spaces(prefix);
 
+   char buf[5];
+
    for (int i = 0; i < bytes; i++) {
       if (i > 0 && !(i % HEXDUMP_BYTES_IN_BLOCK)) {
          uart_tx_out_func(' ', NULL);
       }
 
       if (i < data_len) {
-         cbprintf(uart_tx_out_func, NULL, "%02x ", data[i]);
+         int res = snprintf(buf, sizeof(buf), "%02x ", data[i]);
+         uart_tx_data_out(buf, res);
       } else {
          uart_log_spaces(3);
       }
@@ -414,6 +425,7 @@ static void uart_log_process(const struct log_backend *const backend,
          }
 #endif
          if (level) {
+            char buf[24];
             uint32_t cycles = sys_clock_hw_cycles_per_sec();
             log_timestamp_t seconds = (msg->log.hdr.timestamp / cycles) % 100;
             log_timestamp_t milliseconds = ((msg->log.hdr.timestamp % cycles) * 1000 / cycles);
@@ -422,8 +434,8 @@ static void uart_log_process(const struct log_backend *const backend,
             } else if (sh_busy()) {
                level = 'b';
             }
-            prefix = cbprintf(uart_tx_out_func, NULL, "%c %02d.%03d : ",
-                              level, seconds, milliseconds);
+            prefix = snprintf(buf, sizeof(buf), "%c %02d.%03d : ", level, seconds, milliseconds);
+            uart_tx_data_out(buf, prefix);
          }
          if (plen) {
             cbpprintf(uart_tx_out_func, NULL, package);
@@ -460,8 +472,9 @@ static void uart_log_panic(struct log_backend const *const backend)
 static void uart_log_dropped(const struct log_backend *const backend, uint32_t cnt)
 {
    ARG_UNUSED(backend);
-   cbprintf(uart_tx_out_func, NULL,
-            "--- %u  messages dropped ---", cnt);
+   char buf[32];
+   int res = snprintf(buf, sizeof(buf), "--- %u  messages dropped ---", cnt);
+   uart_tx_data_out(buf, res);
    uart_tx_out_flush();
 }
 

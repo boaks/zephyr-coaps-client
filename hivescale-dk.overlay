@@ -15,10 +15,8 @@
  * Usage:
  *
  * west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- \
- *    -DOVERLAY_CONFIG="hivescale-prj.conf" -DDTC_OVERLAY_FILE="hivescale-dk.overlay"
+ *    -DEXTRA_OVERLAY_CONFIG="hivescale-prj.conf" -DDTC_OVERLAY_FILE="hivescale-dk.overlay"
  */
-
-#include "boards/nrf9160dk_nrf9160_ns.overlay"
 
 &pinctrl {
 

@@ -1,0 +1,23 @@
+#
+# Copyright (c) 2026 Nordic Semiconductor ASA
+#
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+#
+
+config PARTITION_MANAGER
+	default n
+
+if BOARD_THINGY91X_NRF9151 || BOARD_THINGY91X_NRF9151_NS
+
+choice THINGY91X_LAYOUT
+	prompt "Pre-defined Thingy:91 X partition layout"
+	default THINGY91X_NO_PREDEFINED_LAYOUT
+
+config THINGY91X_NO_PREDEFINED_LAYOUT
+	bool "None [EXPERIMENTAL]"
+
+endchoice
+
+endif
+
+source "share/sysbuild/Kconfig"

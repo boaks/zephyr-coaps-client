@@ -1,0 +1,15 @@
+board:
+  name: circuitdojo_feather_nrf9151
+  full_name: Circuit Dojo Feather nRF9151
+  vendor: circuitdojo
+  socs:
+    - name: nrf9151
+      variants:
+        - name: ns
+  revision:
+    format: number
+    default: "3"
+    revisions:
+      - name: "1"
+      - name: "2"
+      - name: "3"

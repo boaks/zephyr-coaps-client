@@ -25,6 +25,9 @@ config BOARD_CIRCUITDOJO_FEATHER_NRF9161_NRF9161_NS
 	default y
 endif
 
+config SECURE_BOOT
+	default n
+
 config ALL_POWER_OFF
 	bool "Switchign off, only test quiescent current"
 

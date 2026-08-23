@@ -26,7 +26,6 @@ LOG_MODULE_DECLARE(MODEM, CONFIG_MODEM_LOG_LEVEL);
 
 #include <modem/lte_lc.h>
 #include <modem/nrf_modem_lib.h>
-#include <modem/pdn.h>
 #include <nrf_modem_at.h>
 
 #include "modem.h"

@@ -11,6 +11,8 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include "common_ns.dtsi"
+
 / {
 
 	ins {
@@ -44,8 +46,8 @@
 
 		/* alias for watchdog */
 		watchdog0 = &wdt0;
-		
-		pmic = &pmic0; 
+
+		pmic = &pmic0;
 	};
 
 };
@@ -62,7 +64,7 @@
 		timeout = <5>;
 		status = "disabled";
 	};
-    
+
 	pmic0: pmic@46 {};
 };
 

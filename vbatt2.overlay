@@ -15,7 +15,7 @@
  * Usage: 
  *
  * west build -d build_feather_nrf9160_ns -b circuitdojo_feather_nrf9160_ns --pristine -- \
- *    -DOVERLAY_CONFIG="60min0-prj.conf" -DDTC_OVERLAY_FILE="boards/circuitdojo_feather_nrf9160_ns.overlay;vbatt2.overlay" \
+ *    -DOVERLAY_CONFIG="60min0-prj.conf" -DEXTRA_DTC_OVERLAY_FILE="vbatt2.overlay" \
  *    -DCONFIG_EXT_BATTERY_ADC=y
  */
 

@@ -1,0 +1,58 @@
+/*
+ * Copyright (c) 2016-2025 Makerdiary <https://makerdiary.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#include "nrf9151_connectkit_nrf9151_common-pinctrl.dtsi"
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+
+/ {
+	model = "Makerdiary nRF9151 Connect Kit nRF9151";
+	compatible = "makerdiary,nrf9151-connectkit-nrf9151";
+
+	chosen {
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+		zephyr,uart-mcumgr = &uart0;
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+		button0: button_0 {
+			gpios = <&gpio0 25 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "Push button 1";
+			zephyr,code = <INPUT_KEY_0>;
+		};
+	};
+
+	/* These aliases are provided for compatibility with samples */
+	aliases {
+		sw0 = &button0;
+		mcuboot-button0 = &button0;
+		watchdog0 = &wdt0;
+	};
+};
+
+&adc {
+	status = "okay";
+};
+
+&gpiote {
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&uart0 {
+	status = "okay";
+	current-speed = <115200>;
+	pinctrl-0 = <&uart0_default>;
+	pinctrl-1 = <&uart0_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+/* Include default memory partition configuration file */
+#include <nordic/nrf91xx_partition.dtsi>
+

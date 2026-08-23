@@ -144,7 +144,7 @@ static int appl_update_coap_normalize(const char *resource, char *normalized, si
    } else {
       ++cur;
    }
-   while (l > 0 && *cur && *cur != term) {
+   while (l > 1 && *cur && *cur != term) {
       *normalized++ = *cur++;
       --l;
    }
@@ -254,7 +254,7 @@ int appl_update_coap_cmd(const char *config)
 {
    int rc = 0;
    char cmd[10];
-   char version[32];
+   char version[APP_COAP_MAX_RES_PATH_LEN];
    const char *cur = config;
 
    if (appl_reboots()) {

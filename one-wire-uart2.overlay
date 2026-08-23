@@ -18,7 +18,7 @@
  * Usage: 
  *
  * west build -d build_feather_nrf9160_ns -b circuitdojo_feather_nrf9160_ns --pristine -- \
- *    -DOVERLAY_CONFIG="one-wire-prj.conf" -DDTC_OVERLAY_FILE="boards/circuitdojo_feather_nrf9160_ns.overlay;one-wire-uart2.overlay"
+ *    -DOVERLAY_CONFIG="one-wire-prj.conf" -DEXTRA_DTC_OVERLAY_FILE="one-wire-uart2.overlay"
  */
 
 one_wire_serial: &uart2 {

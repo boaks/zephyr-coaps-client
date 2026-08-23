@@ -11,17 +11,19 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include "common_ns.dtsi"
+
 /	{
 
 /*
  * Add outputs for LTE states "RRC connected" "LTE ready"
- * (ready := connected, PDN active, registered). 
- */ 
+ * (ready := connected, PDN active, registered).
+ */
 
 	outs {
 		compatible = "gpio-leds";
 		status = "okay";
-		
+
 		out1: out_1 {
 			gpios = <&gpio0 10 0>;
 			label = "LTE OUT 1";

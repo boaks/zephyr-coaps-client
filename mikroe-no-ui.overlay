@@ -15,10 +15,8 @@
  * Usage: 
  *
  * west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- \
- *    -DOVERLAY_CONFIG="60min0-prj.conf;mikroe-prj.conf" -DDTC_OVERLAY_FILE="mikroe-no-ui.overlay"
+ *    -DOVERLAY_CONFIG="60min0-prj.conf;mikroe-prj.conf" -DEXTRA_DTC_OVERLAY_FILE="mikroe-no-ui.overlay"
  */
-
-#include "boards/nrf9160dk_nrf9160_ns.overlay"
 
 &spi3 {
 	status = "disabled";

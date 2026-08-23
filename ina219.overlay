@@ -15,7 +15,7 @@
  * Usage: 
  * 
  * west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- \
- *    -DOVERLAY_CONFIG="60min0-prj.conf;mikroe-prj.conf" -DDTC_OVERLAY_FILE="mikroe.overlay;ina219.overlay"
+ *    -DOVERLAY_CONFIG="60min0-prj.conf;mikroe-prj.conf" -DEXTRA_DTC_OVERLAY_FILE="mikroe.overlay;ina219.overlay"
  *
  * Note: the INA219 modules may come with different I2C addresses and with different
  *       SHUNTs. That may require to adapt the DTS description.

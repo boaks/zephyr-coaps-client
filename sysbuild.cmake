@@ -13,19 +13,6 @@
 
 cmake_minimum_required(VERSION 3.21.0)
 
-if (USE_NEW_PARTITION_LAYOUT)
-# Enable west build -b ... -- -DUSE_NEW_PARTITION_LAYOUT=On
-# Select enlarged app partitions without obsolete scratch partition
-# Requires to flash mcuboot, fota will not work from previous mcuboot
-# partitions
-set(PM_STATIC_YML_FILE ${CMAKE_CURRENT_LIST_DIR}/configuration/pm_static_2.yml CACHE INTERNAL "")
-else()
-set(PM_STATIC_YML_FILE ${CMAKE_CURRENT_LIST_DIR}/configuration/pm_static.yml CACHE INTERNAL "")
-endif()
-
-
-message(STATUS "PM_STATIC_YML_FILE: ${PM_STATIC_YML_FILE}")
-
 if (COPY_PREBUILDS_FULL)
    # Enable west build -b ... -- -DCOPY_PREBUILDS_FULL=On
    # Copies the .hex files before the build!

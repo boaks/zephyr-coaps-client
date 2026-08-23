@@ -18,7 +18,7 @@
  * Usage: 
  *
  * west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- \
- *    -DOVERLAY_CONFIG="one-wire-prj.conf" -DDTC_OVERLAY_FILE="boards/nrf9160dk_nrf9160_ns.overlay;one-wire-uart1.overlay" 
+ *    -DOVERLAY_CONFIG="one-wire-prj.conf" -DEXTRA_DTC_OVERLAY_FILE="one-wire-uart1.overlay" 
  */
 
 one_wire_serial: &uart1 {

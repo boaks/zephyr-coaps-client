@@ -16,10 +16,8 @@
  *
  * west build -d build_thingy91x_nrf9151_ns -b thingy91x/nrf9151/ns --pristine -- \
  *    -DOVERLAY_CONFIG="60min0-prj.conf;at-cmd-prj.conf;hivescale-prj.conf" \
- *    -DDTC_OVERLAY_FILE="hivescale-thingy91x.overlay"
+ *    -DEXTRA_DTC_OVERLAY_FILE="hivescale-thingy91x.overlay"
  */
-
-#include "boards/thingy91x_nrf9151_ns.overlay"
 
 &i2c2 {
 
@@ -28,11 +26,12 @@
 	scale_a: scale@2a {
 		compatible = "nau7802-scale";
 		reg = <0x2a>;
-		avref_mv = <2700>;
+		avref_mv = <3000>;
 		ext_avref_mv = <0>;
-		gain = <32>;
+		gain = <128>;
+		sps = <40>;
 		min_divider = <500>;
-		max_dither = <64>;
+		max_dither = <250>;		
 		internal_oscilator;
 		pga_cap;
 	};

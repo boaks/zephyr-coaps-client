@@ -15,7 +15,7 @@
  * Usage: 
  *
  * west build -d build_nrf9160dk_nrf9160_ns -b nrf9160dk_nrf9160_ns --pristine -- \
- *    -DOVERLAY_CONFIG="sht3x-prj.conf" -DDTC_OVERLAY_FILE="boards/nrf9160dk_nrf9160_ns.overlay;sht3x.overlay" 
+ *    -DOVERLAY_CONFIG="sht3x-prj.conf" -DEXTRA_DTC_OVERLAY_FILE="sht3x.overlay" 
  */ 
 
 / {

@@ -11,6 +11,14 @@
  * SPDX-License-Identifier: EPL-2.0
  */
 
+#include "../../../boards/circuitdojo_feather_nrf9161_ns.overlay"
+
+/ {
+	chosen {
+		zephyr,code-partition = &boot_partition;
+	};
+};
+
 &uart0 {
 	current-speed = <115200>;
 };
