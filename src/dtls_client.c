@@ -23,6 +23,8 @@
 #include <arpa/inet.h>
 #include <poll.h>
 
+#include <zephyr/net/socket_ncs.h>
+
 #include <zephyr/net/coap.h>
 //#include <zephyr/net/socket.h>
 //#include <zephyr/posix/sys/socket.h>
@@ -72,7 +74,7 @@
 #define COAP_ACK_TIMEOUT 3
 #define ADD_ACK_TIMEOUT 3
 
-#define MIN_COAP_ACK_TIMEOUT_NTN 20
+#define MIN_COAP_ACK_TIMEOUT_NTN 50
 #define ADD_ACK_TIMEOUT_NTN 10
 
 #define LED_APPLICATION LED_LTE_1
@@ -628,6 +630,10 @@ static bool restart_modem(bool power_off)
    }
 }
 
+static void modem_sendcb(const struct socket_ncs_sendcb_params *params) {
+   dtls_info("> sent %d %d bytes", params->status, params->bytes_sent);
+}
+
 static void close_socket(dtls_app_data_t *app)
 {
    if (app->fd >= 0) {
@@ -693,6 +699,13 @@ static bool reopen_socket(dtls_app_data_t *app, const char *loc)
 #endif
    modem_set_rai_mode(RAI_MODE_OFF, app->fd);
    dtls_info("> %s, reopened socket.", loc);
+
+   if (modem_support_ntn()) {
+      const struct timeval stv = {.tv_sec = 120};
+      const struct socket_ncs_sendcb cb = { .callback = modem_sendcb};
+      rc = setsockopt(app->fd, SOL_SOCKET, SO_SNDTIMEO, &stv, sizeof(stv));
+      rc = setsockopt(app->fd, SOL_SOCKET, SO_SENDCB, &cb, sizeof(cb));
+   }
 
 #if defined(CONFIG_UDP_WAKEUP_ENABLE) && (CONFIG_UDP_WAKEUP_PORT != 0)
    app->fd2 = socket(ai_family, SOCK_DGRAM, IPPROTO_UDP);
